@@ -41,3 +41,10 @@ The aim of this software is to give an overview of thermodynamic and kinetic cal
 * Multiple Binding sites within one mRNA: Pedersen 2020
 * Histogram of binned delta_delta_G for inexactly matching binding sites in target pre-mRNA
 
+
+## Pre-requisites
+
+* Working installation of Bowtie2 (path for bowtie index needs to be stated in config
+* pyensemble, biopython
+* RNAcofold (command line tool from ViennaRNA)
+

@@ -5,11 +5,18 @@ import sys
 import logging
 from src.oligo_extractor import OligoExtractor
 from Bio.Seq import Seq
+import configparser
 
-DATA_DIR_OLIGO = "/Users/ngocht/data/oligos/"
 
 
 if __name__ == '__main__':
+
+    # Create a configparser object
+    config = configparser.ConfigParser()
+
+    # Read the configuration file
+    config.read('config.ini')
+
     parser = argparse.ArgumentParser(
         description="Run the ASO thermodynamics pipeline to retrieve the ddG landscape for "
                     "selective oligos by the Ensemble gene ID of interest"
@@ -34,6 +41,12 @@ if __name__ == '__main__':
         help="mouse or human (default)"
     )
     parser.add_argument(
+        "--genome-assembly", "-g",
+        type=int,
+        default=38,
+        help="Ensemble release, default=111"
+    )
+    parser.add_argument(
         "--ensembl-release", "-e",
         type=int,
         default=111,
@@ -52,12 +65,12 @@ if __name__ == '__main__':
 
     if args.species == "mouse":
         scaffold_path = None
-        bowtie_index = f"GRCm38_{args.ensembl_release}"
+        bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
     elif args.species == "human":
-        scaffold_path = f"/Users/ngocht/Library/Caches/pyensembl/GRCh38/ensembl{args.ensembl_release}/Homo_sapiens.GRCh38.{args.ensembl_release}.chr_patch_hapl_scaff.gtf"
-        bowtie_index = "GRCh38"
+        scaffold_path = f"/Users/ngocht/Library/Caches/pyensembl/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf"
+        bowtie_index = f"GRCh{args.genome_assembly}"
     else:
-        raise ValueError("Only mouse or human species implemented.")
+        raise ValueError("Only mouse and human species implemented.")
 
     logging.info(args)
     oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.species, args.k, None, scaffold_path)
@@ -65,7 +78,7 @@ if __name__ == '__main__':
     oligo_obj.run_bowtie()
 
     # TODO: make optional
-    with open(f"{DATA_DIR_OLIGO}{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
+    with open(f"{config['DEFAULT']['DataDirOligo']}{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
         writer = csv.writer(filteredkmerfile)
         writer.writerows([[str(Seq(x).reverse_complement())] for x in oligo_obj.filtered_kmers])
 

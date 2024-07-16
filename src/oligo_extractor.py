@@ -6,8 +6,14 @@ from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
 import logging
 import time
+import configparser 
 
-DATA_DIR_OLIGO = "/Users/ngocht/data/oligos/"
+# Create a configparser object
+config = configparser.ConfigParser()
+
+# Read the configuration file
+config.read('config.ini')
+
 
 
 class OligoExtractor:

@@ -44,7 +44,13 @@ if __name__ == '__main__':
         "--genome-assembly", "-g",
         type=int,
         default=38,
-        help="Ensemble release, default=111"
+        help="Genome Assembly, default=38"
+    )
+    parser.add_argument(
+        '--collect-data', '-cd',
+        action=argparse.BooleanOptionalAction, 
+        default=False,
+        help='If specified, Collects ...' # TODO
     )
     parser.add_argument(
         "--ensembl-release", "-e",
@@ -67,7 +73,7 @@ if __name__ == '__main__':
         scaffold_path = None
         bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
     elif args.species == "human":
-        scaffold_path = f"/Users/ngocht/Library/Caches/pyensembl/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf"
+        scaffold_path = f"{config['DEFAULT']['DataDir']}/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf"
         bowtie_index = f"GRCh{args.genome_assembly}"
     else:
         raise ValueError("Only mouse and human species implemented.")
@@ -78,7 +84,7 @@ if __name__ == '__main__':
     oligo_obj.run_bowtie()
 
     # TODO: make optional
-    with open(f"{config['DEFAULT']['DataDirOligo']}{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
+    with open(f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
         writer = csv.writer(filteredkmerfile)
         writer.writerows([[str(Seq(x).reverse_complement())] for x in oligo_obj.filtered_kmers])
 

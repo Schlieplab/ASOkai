@@ -2,6 +2,7 @@
 import csv
 import argparse
 import sys
+from utils.file_operations import download_scaffold
 import logging
 from src.oligo_extractor import OligoExtractor
 from Bio.Seq import Seq
@@ -50,7 +51,7 @@ if __name__ == '__main__':
         '--collect-data', '-cd',
         action=argparse.BooleanOptionalAction, 
         default=False,
-        help='If specified, Collects ...' # TODO
+        help='If specified, Collects scaffold(human), ' # TODO
     )
     parser.add_argument(
         "--ensembl-release", "-e",
@@ -73,7 +74,10 @@ if __name__ == '__main__':
         scaffold_path = None
         bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
     elif args.species == "human":
-        scaffold_path = f"{config['DEFAULT']['DataDir']}/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf"
+        if args.collect_data:
+            download_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
+            
+        scaffold_path = f"{config['DEFAULT']['DataDir']}/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf.gz"
         bowtie_index = f"GRCh{args.genome_assembly}"
     else:
         raise ValueError("Only mouse and human species implemented.")

@@ -45,6 +45,7 @@ class OligoExtractor:
                 reference_name='GRCh38',
                 annotation_name='scaffolds',
                 gtf_path_or_url=scaffold_path,
+                copy_local_files_to_cache=False,
             )
             self.ensembl_obj_scaffolds.download()
             self.ensembl_obj_scaffolds.index()

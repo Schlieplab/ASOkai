@@ -7,6 +7,8 @@ import logging
 from src.oligo_extractor import OligoExtractor
 from Bio.Seq import Seq
 import configparser
+import os
+
 
 
 
@@ -17,6 +19,9 @@ if __name__ == '__main__':
 
     # Read the configuration file
     config.read('config.ini')
+    
+
+    os.environ['PYENSEMBL_CACHE_DIR'] = F'{config["DEFAULT"]["DataDir"]}'
 
     parser = argparse.ArgumentParser(
         description="Run the ASO thermodynamics pipeline to retrieve the ddG landscape for "
@@ -74,16 +79,16 @@ if __name__ == '__main__':
         scaffold_path = None
         bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
     elif args.species == "human":
-        if args.collect_data:
-            download_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
+        # download_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
             
-        scaffold_path = f"{config['DEFAULT']['DataDir']}/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf.gz"
+        scaffold_path = f"{config['DEFAULT']['DataDir']}/pyensembl/GRCh{args.genome_assembly}/ensembl{args.ensembl_release}/Homo_sapiens.GRCh{args.genome_assembly}.{args.ensembl_release}.chr_patch_hapl_scaff.gtf.gz"
+        print(scaffold_path)
         bowtie_index = f"GRCh{args.genome_assembly}"
     else:
         raise ValueError("Only mouse and human species implemented.")
 
     logging.info(args)
-    oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.species, args.k, None, scaffold_path)
+    oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, None, scaffold_path)
     oligo_obj.get_candidate_oligos_by_gene()
     oligo_obj.run_bowtie()
 

@@ -17,20 +17,20 @@ config.read('config.ini')
 
 
 class OligoExtractor:
-    def __init__(self, gene_id, e_release, species, k, gc_bounds= None, scaffold_path=None):
+    def __init__(self, gene_id, e_release, g_assembly, species, k, gc_bounds= None, scaffold_path=None):
         self.gene_id = gene_id
         self.k = k
         self.filtered_kmers = []
         self.gc_bounds=gc_bounds
-        self.bowtie_infile = f"/Users/ngocht/data/bowtie2Home/{self.gene_id}_{self.k}mers.fa"
+        self.bowtie_infile = f"{config['DEFAULT']['DataDir']}/bowtie2Home/{self.gene_id}_{self.k}mers.fa"
 
         if species == "mouse":
             species = "mus_musculus"
             # mouse doesn't have scaffold so far...
-            self.bowtie_index = f"GRCm38_{e_release}"
+            self.bowtie_index = f"GRCm{g_assembly}_{e_release}"
         elif species == "human":
             species = "homo_sapiens"
-            self.bowtie_index = "GRCh38"
+            self.bowtie_index = f"GRCh{g_assembly}"
         else:
             raise ValueError("Only mouse or human species implemented.")
 
@@ -42,10 +42,9 @@ class OligoExtractor:
 
         if scaffold_path:
             self.ensembl_obj_scaffolds = Genome(
-                reference_name='GRCh38',
+                reference_name=f'GRCh{g_assembly}',
                 annotation_name='scaffolds',
                 gtf_path_or_url=scaffold_path,
-                copy_local_files_to_cache=False,
             )
             self.ensembl_obj_scaffolds.download()
             self.ensembl_obj_scaffolds.index()
@@ -53,7 +52,7 @@ class OligoExtractor:
         self.gene = self.ensembl_obj.gene_by_id(gene_id=gene_id)
         logging.info(f"Gene name: {self.gene.gene_name}")
         logging.info(f"Build transcript gene references")
-        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file="transcript_gene_mapping_GRCm38.csv")
+        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRCm{g_assembly}.csv")
 
     def _kmers(self, s):
         kmers_list = [s[i:i + self.k] for i in range(len(s) - self.k + 1)]
@@ -98,7 +97,7 @@ class OligoExtractor:
         # Run RNAcofold
         logging.info("Running Bowtie2")
 
-        command = f'bowtie2 --no-head -t -p 10 -N 0 -a -f -x /Users/ngocht/data/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} --norc'
+        command = f'bowtie2 --no-head -t -p 10 -N 0 -a -f -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} --norc'
         logging.info("Command: {}".format(command))
         return_code = self._runCommand(command)
         logging.info("Return Code: {}".format(return_code))

@@ -53,5 +53,5 @@ The aim of this software is to give an overview of thermodynamic and kinetic cal
 The Bowtie index of the genome needs to be build prior to using the tool and should be build on the same data that Ensembl provides over the pyensembl interface.
 
 ```
-bowtie2-build ~/Library/Caches/pyensembl/GRCh38/ensembl111/Homo_sapiens.GRCh38.cdna.all.fa GRCh38
+bowtie2-build <path to cache>/pyensembl/GRCh38/ensembl111/Homo_sapiens.GRCh38.cdna.all.fa <bowtie index name>
 ```

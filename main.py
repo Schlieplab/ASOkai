@@ -3,7 +3,7 @@ import csv
 import argparse
 import sys
 from utils.file_operations import collect_scaffold
-from utils.bowtie2_operations import build_bowtie_index
+from utils.file_operations import build_bowtie_index
 import logging
 from src.oligo_extractor import OligoExtractor
 from Bio.Seq import Seq
@@ -21,7 +21,7 @@ if __name__ == '__main__':
     # Read the configuration file
     config.read('config.ini')
     
-
+    # Set Environment variables to use the data dir from config file
     os.environ['PYENSEMBL_CACHE_DIR'] = F'{config["DEFAULT"]["DataDir"]}'
     os.environ['BOWTIE2_INDEXES '] = F'{config["DEFAULT"]["DataDir"]}/bowtie2Home'
 
@@ -83,14 +83,14 @@ if __name__ == '__main__':
         bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
     elif args.species == "human":
             
-        # scaffold_path = collect_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
-        scaffold_path = None
+        scaffold_path = collect_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
 
         bowtie_index = f"GRCh{args.genome_assembly}"
     else:
         raise ValueError("Only mouse and human species implemented.")
 
     logging.info(args)
+    
     oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, bowtie_index, None, scaffold_path)
     oligo_obj.get_candidate_oligos_by_gene()
     
@@ -99,7 +99,8 @@ if __name__ == '__main__':
         
     oligo_obj.run_bowtie()
 
-    # TODO: make optional
+    os.makedirs(f"{config['DEFAULT']['DataDir']}/oligos", exist_ok=True)
+
     with open(f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
         writer = csv.writer(filteredkmerfile)
         writer.writerows([[str(Seq(x).reverse_complement())] for x in oligo_obj.filtered_kmers])

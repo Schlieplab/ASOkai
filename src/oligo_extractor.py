@@ -51,7 +51,7 @@ class OligoExtractor:
         self.gene = self.ensembl_obj.gene_by_id(gene_id=gene_id)
         logging.info(f"Gene name: {self.gene.gene_name}")
         logging.info(f"Build transcript gene references")
-        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRCm{g_assembly}.csv")
+        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRC{species[0]}{g_assembly}.csv")
 
     def _kmers(self, s):
         kmers_list = [s[i:i + self.k] for i in range(len(s) - self.k + 1)]
@@ -96,7 +96,7 @@ class OligoExtractor:
         # Run RNAcofold
         logging.info("Running Bowtie2")
 
-        command = f'bowtie2 --no-head -t -p 10 -N 0 -a -f -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} --norc {config["DEFAULT"]["BowtieArgs"]}'
+        command = f'bowtie2 -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} {config["DEFAULT"]["BowtieArgs"]}'
         logging.info("Command: {}".format(command))
         return_code = self._runCommand(command)
         logging.info("Return Code: {}".format(return_code))

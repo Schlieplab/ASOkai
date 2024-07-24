@@ -54,9 +54,9 @@ def collect_scaffold(path, genome_assembly, ensembl_release):
                 logging.error('Could not collect Scaffold')
                 return None
             
-            logging.info('Downloaded', filename, 'Scaffold')
+            logging.info(f'Downloaded {filename} Scaffold')
     else:
-        logging.info('Using', filename, 'Scaffold')
+        logging.info(f'Using {filename} Scaffold')
     return filepath + filename
 
 def build_bowtie_index(e_release, g_assembly, species, bowtie_index):
@@ -81,9 +81,9 @@ def build_bowtie_index(e_release, g_assembly, species, bowtie_index):
     logging.info("Running Bowtie2 index build")
 
     if species == 'human':
-        command = f'bowtie2-build {config["DEFAULT"]["DataDir"]}/pyensembl/GRCh{g_assembly}/ensembl{e_release}/Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index}'
+        command = f'bowtie2-build {config["DEFAULT"]["DataDir"]}/pyensembl/GRCh{g_assembly}/ensembl{e_release}/Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
     elif species == 'mouse':
-        command = f'bowtie2-build {config["DEFAULT"]["DataDir"]}/pyensembl/GRCm{g_assembly}/ensembl{e_release}/Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index}'
+        command = f'bowtie2-build {config["DEFAULT"]["DataDir"]}/pyensembl/GRCm{g_assembly}/ensembl{e_release}/Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
     
     logging.info("Command: {}".format(command))
 

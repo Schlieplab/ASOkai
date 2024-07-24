@@ -6,25 +6,30 @@ from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
 import logging
 import time
+import configparser 
 
-DATA_DIR_OLIGO = "/Users/ngocht/data/oligos/"
+# Create a configparser object
+config = configparser.ConfigParser()
+
+# Read the configuration file
+config.read('config.ini')
+
 
 
 class OligoExtractor:
-    def __init__(self, gene_id, e_release, species, k, gc_bounds= None, scaffold_path=None):
+    def __init__(self, gene_id, e_release, g_assembly, species, k, bowtie_index, gc_bounds= None, scaffold_path=None):
         self.gene_id = gene_id
         self.k = k
         self.filtered_kmers = []
         self.gc_bounds=gc_bounds
-        self.bowtie_infile = f"/Users/ngocht/data/bowtie2Home/{self.gene_id}_{self.k}mers.fa"
+        self.bowtie_index = bowtie_index
+        self.bowtie_infile = f"{config['DEFAULT']['DataDir']}/bowtie2Home/{self.gene_id}_{self.k}mers.fa"
 
         if species == "mouse":
             species = "mus_musculus"
             # mouse doesn't have scaffold so far...
-            self.bowtie_index = f"GRCm38_{e_release}"
         elif species == "human":
             species = "homo_sapiens"
-            self.bowtie_index = "GRCh38"
         else:
             raise ValueError("Only mouse or human species implemented.")
 
@@ -36,7 +41,7 @@ class OligoExtractor:
 
         if scaffold_path:
             self.ensembl_obj_scaffolds = Genome(
-                reference_name='GRCh38',
+                reference_name=f'GRCh{g_assembly}',
                 annotation_name='scaffolds',
                 gtf_path_or_url=scaffold_path,
             )
@@ -46,7 +51,7 @@ class OligoExtractor:
         self.gene = self.ensembl_obj.gene_by_id(gene_id=gene_id)
         logging.info(f"Gene name: {self.gene.gene_name}")
         logging.info(f"Build transcript gene references")
-        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file="transcript_gene_mapping_GRCm38.csv")
+        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRC{species[0]}{g_assembly}.csv")
 
     def _kmers(self, s):
         kmers_list = [s[i:i + self.k] for i in range(len(s) - self.k + 1)]
@@ -67,7 +72,7 @@ class OligoExtractor:
             print(len(transcripts))
 
         if save_to_file:
-            file = open(save_to_file, "w")
+            file = open(f"{config['DEFAULT']['DataDir']}/{save_to_file}", "w")
         for t in transcripts:
             if t.transcript_id not in transcript_lookup.keys():
                 transcript_lookup[t.transcript_id] = {"gene_id": t.gene_id, "gene_name": t.gene_name}
@@ -91,7 +96,7 @@ class OligoExtractor:
         # Run RNAcofold
         logging.info("Running Bowtie2")
 
-        command = f'bowtie2 --no-head -t -p 10 -N 0 -a -f -x /Users/ngocht/data/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} --norc'
+        command = f'bowtie2 -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} {config["DEFAULT"]["BowtieArgs"]}'
         logging.info("Command: {}".format(command))
         return_code = self._runCommand(command)
         logging.info("Return Code: {}".format(return_code))
@@ -159,6 +164,7 @@ class OligoExtractor:
         logging.info(f"{len(candidate_oligos)} candidate {self.k}mers found")
         seq_count_id = 1
 
+        os.makedirs(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home', exist_ok=True)
         with open(self.bowtie_infile, "w") as tmp_bowtie_in:
             for can in candidate_oligos:
                 tmp_bowtie_in.write(">S" + str(seq_count_id).zfill(6) + "\n")

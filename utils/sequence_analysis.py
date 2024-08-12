@@ -3,6 +3,7 @@ import multiprocessing
 from tqdm import tqdm
 import pandas as pd
 import configparser
+import os
 
 
 # Create a configparser object
@@ -89,7 +90,8 @@ def create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, ensemb
     """
     Create a dictionary of sequence occurrences using multiprocessing.
     """
-    with multiprocessing.Pool() as pool:
+    num_cpus = os.cpu_count()
+    with multiprocessing.Pool(processes=num_cpus) as pool:
         pbar = tqdm(total=len(unique_seqs), desc="Processing Sequences", position=0, leave=True)
 
         results = []

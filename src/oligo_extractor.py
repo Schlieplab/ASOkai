@@ -183,7 +183,7 @@ class OligoExtractor:
         sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/ENSG00000133703_16mers.sam', sep="\t", header=None)
         transcript_gene_mapping = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/transcript_gene_mapping_GRCh38.csv', sep=",", header=None)
         
-        sam_out = get_kmer_occurances(sam_out, transcript_gene_mapping, self.ensembl_obj)
+        sam_out = get_kmer_occurances(sam_out, transcript_gene_mapping, self.ensembl_obj, self.ensembl_obj_scaffolds)
         sam_out.to_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/ENSG00000133703_16mers_test.sam', sep='\t', index=False, header=False)
         
 

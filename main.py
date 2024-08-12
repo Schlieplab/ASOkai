@@ -16,12 +16,20 @@ if __name__ == '__main__':
     # Create a configparser object
     config = configparser.ConfigParser()
 
-    # Read the configuration file
-    config.read('config.ini')
+    try:
+        # Read the configuration file
+        config.read('config.ini')
+    except Exception as e:
+        logging.error(f"Failed to read the configuration file: {e}")
+        sys.exit(1)
     
-    # Set Environment variables to use the data dir from config file
-    os.environ['PYENSEMBL_CACHE_DIR'] = F'{config["DEFAULT"]["DataDir"]}'
-    os.environ['BOWTIE2_INDEXES '] = F'{config["DEFAULT"]["DataDir"]}/bowtie2Home'
+    try:
+        # Set Environment variables to use the data dir from config file
+        os.environ['PYENSEMBL_CACHE_DIR'] = F'{config["DEFAULT"]["DataDir"]}'
+        os.environ['BOWTIE2_INDEXES '] = F'{config["DEFAULT"]["DataDir"]}/bowtie2Home'
+    except KeyError as e:
+        logging.error(f"Missing configuration parameter: {e}")
+        sys.exit(1)
 
 
     parser = argparse.ArgumentParser(
@@ -76,36 +84,57 @@ if __name__ == '__main__':
     )
     logging.info("%s starting up" % sys.argv[0])
 
-    if args.species == "mouse":
-        scaffold_path = None
-        bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
-    elif args.species == "human":
-            
-        scaffold_path = collect_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
-
-        bowtie_index = f"GRCh{args.genome_assembly}"
-    else:
-        raise ValueError("Only mouse and human species implemented.")
-
+    try:
+        if args.species == "mouse":
+            scaffold_path = None
+            bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
+        elif args.species == "human":
+            scaffold_path = collect_scaffold(config['DEFAULT']['DataDir'], args.genome_assembly, args.ensembl_release)
+            bowtie_index = f"GRCh{args.genome_assembly}"
+        else:
+            raise ValueError("Only mouse and human species implemented.")
+    except Exception as e:
+        logging.error(f"Error while setting species and genome assembly: {e}")
+        sys.exit(1)
     logging.info(args)
     
-    oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, bowtie_index, None, scaffold_path)
-    oligo_obj.get_candidate_oligos_by_gene()
+    try:
+        oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, bowtie_index, None, scaffold_path)
+        oligo_obj.get_candidate_oligos_by_gene()
+    except Exception as e:
+        logging.error(f"Error during oligo extraction: {e}")
+        sys.exit(1)
     
     if args.bowtie2_index:
-        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index)
+        try:
+            build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index)
+        except Exception as e:
+            logging.error(f"Error building Bowtie2 index: {e}")
+            sys.exit(1)
         
-    oligo_obj.run_bowtie()
+    try:
+        oligo_obj.run_bowtie()
+    except Exception as e:
+        logging.error(f"Error running Bowtie2: {e}")
+        sys.exit(1)
     
-    oligo_obj.get_kmer_occurances()
+    try:
+        oligo_obj.get_kmer_occurances()
+    except Exception as e:
+        logging.error(f"Error getting kmer occurrences: {e}")
+        sys.exit(1)
 
-    os.makedirs(f"{config['DEFAULT']['DataDir']}/oligos", exist_ok=True) 
+    try:
+        os.makedirs(f"{config['DEFAULT']['DataDir']}/oligos", exist_ok=True)
+        with open(f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
+            writer = csv.writer(filteredkmerfile)
+            writer.writerows([[str(Seq(x).reverse_complement())] for x in oligo_obj.filtered_kmers])
+    except Exception as e:
+        logging.error(f"Error writing kmer results to file: {e}")
+        sys.exit(1)
 
-    with open(f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers_test.csv", "w") as filteredkmerfile:
-        writer = csv.writer(filteredkmerfile)
-        writer.writerows([[str(Seq(x).reverse_complement())] for x in oligo_obj.filtered_kmers])
+    logging.info("Pipeline completed successfully.")
 
 
-    # Sampling kmers from tissues, assumes existence of KMC kmer counts with k length
 
 

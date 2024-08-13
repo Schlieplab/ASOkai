@@ -51,6 +51,9 @@ class OligoExtractor:
             )
             self.ensembl_obj_scaffolds.download()
             self.ensembl_obj_scaffolds.index()
+        else:
+            self.ensembl_obj_scaffolds = None
+        
 
         self.gene = self.ensembl_obj.gene_by_id(gene_id=gene_id)
         
@@ -180,10 +183,12 @@ class OligoExtractor:
        
     def get_kmer_occurances(self):
         
-        sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep="\t", header=None)
+        sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep="\t", header=None, usecols=list(range(11)))
         transcript_gene_mapping = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/transcript_gene_mapping_GRC{self.species[0]}{self.g_assembly}.csv', sep=",", header=None)
         
         sam_out = get_kmer_occurances(sam_out, transcript_gene_mapping, self.ensembl_obj, self.ensembl_obj_scaffolds)
+
+
         sam_out.to_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep='\t', index=False, header=False)
         
 

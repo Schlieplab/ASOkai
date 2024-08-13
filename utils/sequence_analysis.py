@@ -12,7 +12,7 @@ config = configparser.ConfigParser()
 # Read the configuration file
 config.read('config.ini')
 
-def get_chromosomal_positions_per_transcript(row, ensembl_obj, ensembl_obj_scaffolds, transcript_map_dict):
+def get_chromosomal_positions_per_transcript(row, ensembl_obj, transcript_map_dict, ensembl_obj_scaffolds = None):
     transcript_id = row[2].split(".")[0]
     chromosome, _ = transcript_map_dict[transcript_id].split(':')
 
@@ -60,7 +60,7 @@ def calculate_chromosomal_positions(exon_intervals, pos, strand):
             accumulated += (exon[1] - exon[0] + 1)
 
 
-def calculate_occurances(transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, candidates):
+def calculate_occurances(transcript_map_dict, ensembl_obj, candidates, ensembl_obj_scaffolds = None):
     """
     Calculate the number of distinct positions a sequence occurs at.
     """
@@ -71,7 +71,7 @@ def calculate_occurances(transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds
     
     def rcheck(row):
 
-        key = get_chromosomal_positions_per_transcript(row, ensembl_obj, ensembl_obj_scaffolds, transcript_map_dict)
+        key = get_chromosomal_positions_per_transcript(row, ensembl_obj, transcript_map_dict, ensembl_obj_scaffolds)
         
         if key not in distinct_positions:
             distinct_positions.add(key)
@@ -80,13 +80,13 @@ def calculate_occurances(transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds
     
     return len(distinct_positions)
 
-def worker(seq, transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, candidates):
+def worker(seq, transcript_map_dict, ensembl_obj, candidates, ensembl_obj_scaffolds = None):
     """
     Worker function to calculate occurrences for a given sequence.
     """
-    return seq, calculate_occurances(transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, candidates)
+    return seq, calculate_occurances(transcript_map_dict, ensembl_obj, candidates, ensembl_obj_scaffolds)
 
-def create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, sam_out):
+def create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, sam_out, ensembl_obj_scaffolds = None):
     """
     Create a dictionary of sequence occurrences using multiprocessing.
     """
@@ -95,7 +95,7 @@ def create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, ensemb
         pbar = tqdm(total=len(unique_seqs), desc="Processing Sequences", position=0, leave=True)
 
         results = []
-        async_results = [pool.apply_async(worker, (seq, transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, sam_out[sam_out[9] == seq]), 
+        async_results = [pool.apply_async(worker, (seq, transcript_map_dict, ensembl_obj, sam_out[sam_out[9] == seq], ensembl_obj_scaffolds), 
                                           callback=lambda _: pbar.update()) for seq in unique_seqs]
 
         for r in async_results:
@@ -105,14 +105,14 @@ def create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, ensemb
 
     return dict(results)
 
-def get_kmer_occurances(sam_out, transcript_gene_mapping, ensembl_obj, ensembl_obj_scaffolds):
+def get_kmer_occurances(sam_out, transcript_gene_mapping, ensembl_obj, ensembl_obj_scaffolds = None):
     """
     Main function to get k-mer occurrences and add them to the SAM output.
     """
     transcript_map_dict = dict(zip(transcript_gene_mapping[0], transcript_gene_mapping[3]))
     unique_seqs = sam_out[9].unique()
     print(f"Unique sequences count: {len(unique_seqs)}")
-    occurrence_dict = create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, ensembl_obj_scaffolds, sam_out)
+    occurrence_dict = create_occurrence_dict(unique_seqs, transcript_map_dict, ensembl_obj, sam_out, ensembl_obj_scaffolds)
     sam_out['occurance'] = sam_out.apply(lambda x: f'KM:i:{occurrence_dict[x[9]]}', axis=1)
     return sam_out
 

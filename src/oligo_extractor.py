@@ -4,7 +4,9 @@ import shlex
 import os
 from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
-from utils.sequence_analysis import get_kmer_occurances, get_chromosomal_positions_per_transcript, get_exon_id
+from utils.sequence_analysis import get_chromosomal_positions_per_transcript
+from utils.sequence_analysis import get_exon_id, gc_content, longest_at_run, longest_t_run
+
 import logging
 import time
 import configparser 
@@ -67,8 +69,7 @@ class OligoExtractor:
         if self.gc_bounds:
             kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
         kmers_set = set(kmers_list)
-        # if len(kmers_list) - len(kmers_set) > 0:
-        #     print(len(kmers_list) - len(kmers_set), "multiple occurences")
+
         return kmers_set
 
     def _get_gene_transcript_mapping(self, save_to_file=None):
@@ -76,9 +77,7 @@ class OligoExtractor:
         transcript_lookup = dict()
         transcripts = self.ensembl_obj.transcripts()
         if self.scaffold_path:
-            print(len(transcripts))
             transcripts.extend(self.ensembl_obj_scaffolds.transcripts())
-            print(len(transcripts))
 
         if save_to_file:
             file = open(f"{config['DEFAULT']['DataDir']}/{save_to_file}", "w")
@@ -208,12 +207,28 @@ class OligoExtractor:
        
     def get_kmer_occurances(self):
         
-        sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep="\t", header=None, usecols=list(range(11)))
+        logging.info(f"Calculating number of kmer occurances")
+
         
-        occurance_dictionary = get_kmer_occurances(sam_out, self.ensembl_obj, self.ensembl_obj_scaffolds)
-        self.occurance_dictionary = occurance_dictionary
-         
-        return occurance_dictionary       
+        def calculate_occurances(group):
+            # Extract relevant columns
+            positions = group.apply(lambda row: get_chromosomal_positions_per_transcript(row[2], row[3], self.ensembl_obj, self.ensembl_obj_scaffolds), axis=1)
+            # Calculate the number of unique positions
+            unique_positions = positions.nunique()
+            return unique_positions
+    
+        sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep="\t", header=None, usecols=list(range(11)))
+        sam_out = sam_out[[2, 3, 9]]
+        # Group by the 9th column (which is index 8 in 0-based indexing)
+        sam_out_agg = sam_out.groupby(9).apply(calculate_occurances).reset_index(name='UniquePositions')
+        
+        # Rename columns for clarity (optional)
+        sam_out_agg.columns = ['Group', 'UniquePositions']
+        
+        # Convert to dictionary
+        self.occurance_dictionary = sam_out_agg.set_index('Group').to_dict()['UniquePositions']
+        
+        return self.occurance_dictionary
     
     def get_kmer_results(self, cofoldOutFile): 
         
@@ -229,6 +244,9 @@ class OligoExtractor:
         # result csv column names
         columns = ['seq_num',  
                    'oligo_reverse_comp', 
+                   'oligo_gc_content',
+                   'oligo_longest_at_run',
+                   'oligo_longest_t_run',
                    'target', 
                    'absolute_loc', 
                    'ordered_transcripts', 
@@ -243,20 +261,18 @@ class OligoExtractor:
             can = oligo_candidates.loc[idx]
             res_temp.append((idx,                                             # seq_num
                              can['seq'],                                      # oligo_reverse_comp
+                             gc_content(can['seq']),                          # oligo_gc_content
+                             longest_at_run(can['seq']),                      # oligo_longest_at_run
+                             longest_t_run(can['seq']),                       # oligo_longest_t_run
                              str(Seq(can['seq']).reverse_complement()),       # target
                              can['chromosomal_position'],                     # absolute_loc
                              can['transcripts'],                              # ordered_transcripts
                              can['exons'],                                    # ordered_exons
-                             self.occurance_dictionary.get(can['seq'], 0),  # multiplicity
-                             cofold_out.loc[idx]['dG_binding'])                              # dG_binding
+                             self.occurance_dictionary.get(can['seq'], 0),    # multiplicity
+                             cofold_out.loc[idx]['dG_binding'])               # dG_binding
                             )
             
         kmer_results = pd.DataFrame(res_temp, columns=columns)
         
         kmer_results.set_index('seq_num', inplace=True)
         kmer_results.to_csv(f'{config["DEFAULT"]["DataDir"]}/oligos/{self.gene_id}_{self.k}mer_results.csv')
-        
-            
-
-    
-

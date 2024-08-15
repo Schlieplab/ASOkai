@@ -35,7 +35,6 @@ def get_chromosomal_positions_per_transcript(transcript, position_in_transcript,
     key = f'{transcript.contig}:{start_pos}-{end_pos}:{transcript.strand}'
     return key
 
-
 def calculate_chromosomal_positions(exon_intervals, pos, strand):
     
     accumulated = 0
@@ -59,65 +58,6 @@ def calculate_chromosomal_positions(exon_intervals, pos, strand):
                 return start_pos, start_pos + 16
             
             accumulated += (exon[1] - exon[0] + 1)
-
-
-
-
-def calculate_occurances(ensembl_obj, candidates, ensembl_obj_scaffolds = None):
-    """
-    Calculate the number of distinct positions a sequence occurs at.
-    """
-    distinct_positions = set()
-
-
-                
-    
-    def rcheck(row):
-
-        key = get_chromosomal_positions_per_transcript(row[2], row[3], ensembl_obj, ensembl_obj_scaffolds)
-        
-        if key not in distinct_positions:
-            distinct_positions.add(key)
-
-    candidates.apply(lambda row: rcheck(row), axis=1)
-    
-    return len(distinct_positions)
-
-def worker(seq, ensembl_obj, candidates, ensembl_obj_scaffolds = None):
-    """
-    Worker function to calculate occurrences for a given sequence.
-    """
-    return seq, calculate_occurances(ensembl_obj, candidates, ensembl_obj_scaffolds)
-
-def create_occurrence_dict(unique_seqs, ensembl_obj, sam_out, ensembl_obj_scaffolds = None):
-    """
-    Create a dictionary of sequence occurrences using multiprocessing.
-    """
-    num_cpus = os.cpu_count()
-    with multiprocessing.Pool(processes=num_cpus) as pool:
-        pbar = tqdm(total=len(unique_seqs), desc="Processing Sequences", position=0, leave=True, mininterval=10)
-
-        results = []
-        async_results = [pool.apply_async(worker, (seq, ensembl_obj, sam_out[sam_out[9] == seq], ensembl_obj_scaffolds), 
-                                          callback=lambda _: pbar.update()) for seq in unique_seqs]
-
-        for r in async_results:
-            results.append(r.get())
-
-        pbar.close()
-
-    return dict(results)
-
-def get_kmer_occurances(sam_out, ensembl_obj, ensembl_obj_scaffolds = None):
-    """
-    Main function to get k-mer occurrences and add them to the SAM output. 
-    Returns a Dictionary with kmers as key and the number of occurences as value
-    """
-    unique_seqs = sam_out[9].unique()
-    print(f"Unique sequences count: {len(unique_seqs)}")
-    occurrence_dict = create_occurrence_dict(unique_seqs, ensembl_obj, sam_out, ensembl_obj_scaffolds)
-    
-    return occurrence_dict
 
 def getRNAcofoldEnergy(rnaCofoldInFile):
     rcfOutFileName = os.path.splitext(rnaCofoldInFile)[0] + ".rnacofoldout"
@@ -166,3 +106,57 @@ def get_exon_id(pos_in_transcript, transcript):
             
             accumulated += (exon.end - exon.start + 1)
 
+def gc_content(seq):
+    # Convert sequence to uppercase to handle mixed cases
+    seq = seq.upper()
+    
+    # Count G and C in the sequence
+    g_count = seq.count('G')
+    c_count = seq.count('C')
+    
+    # Calculate GC content as a percentage
+    gc_percentage = (g_count + c_count) / len(seq)
+    
+    return gc_percentage   
+
+def longest_at_run(seq):
+    # Convert sequence to uppercase to handle mixed cases
+    seq = seq.upper()
+    
+    # Initialize variables for the longest AT-run
+    max_at_run = 0
+    current_at_run = 0
+    
+    # Iterate through the sequence
+    for nucleotide in seq:
+        if nucleotide in 'AT':
+            current_at_run += 1
+            if current_at_run > max_at_run:
+                max_at_run = current_at_run
+        else:
+            current_at_run = 0  # Reset AT-run counter if not A or T
+    
+    proportion_at_run = max_at_run / len(seq)
+
+    return proportion_at_run 
+
+def longest_t_run(seq):
+    # Convert sequence to uppercase to handle mixed cases
+    seq = seq.upper()
+    
+    # Initialize variables for the longest T-run
+    max_t_run = 0
+    current_t_run = 0
+    
+    # Iterate through the sequence
+    for nucleotide in seq:
+        if nucleotide == 'T':
+            current_t_run += 1
+            if current_t_run > max_t_run:
+                max_t_run = current_t_run
+        else:
+            current_t_run = 0  # Reset T-run counter if not T
+    
+    proportion_t_run = max_t_run / len(seq)
+
+    return proportion_t_run

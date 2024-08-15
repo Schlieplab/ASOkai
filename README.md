@@ -48,3 +48,17 @@ The aim of this software is to give an overview of thermodynamic and kinetic cal
 * pyensemble, biopython
 * RNAcofold (command line tool from ViennaRNA)
 
+### Bowtie index
+
+The Bowtie index of the genome needs to be build prior to using the tool and should be build on the same data that Ensembl provides over the pyensembl interface.
+
+```
+bowtie2-build <path to cache>/pyensembl/GRCh38/ensembl111/Homo_sapiens.GRCh38.cdna.all.fa <bowtie index name>
+```
+
+The resulting index only contains coding DNA, the transcriptome. For genome, the chromosomes for the specific release should be downloaded from Ensemble, combined in a file and then used in Bowtie2
+
+```
+cat Homo_sapiens.GRCh38.dna.chromosome.*.fa > Homo_sapiens.GRCh38.dna.all.fa
+bowtie2-build --threads <i> <path to file>/Homo_sapiens.GRCh38.dna.all.fa <bowtie index name>
+```

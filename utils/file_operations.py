@@ -13,7 +13,7 @@ config = configparser.ConfigParser()
 config.read('config.ini')
 
 
-def collect_scaffold(path, genome_assembly, ensembl_release):
+def collect_scaffold(genome_assembly, ensembl_release):
     """
     Download the specified human scaffold file from Ensembl if it is not already present
     in the specified directory. In either case, return the file path to the scaffold.
@@ -24,7 +24,6 @@ def collect_scaffold(path, genome_assembly, ensembl_release):
     it skips the download and returns the path to the existing file.
 
     Parameters:
-        path (str): The base directory path where the scaffold file should be stored.
         genome_assembly (int): The genome assembly version (e.g., 38).
         ensembl_release (int): The Ensembl release version (e.g., 101).
 
@@ -36,7 +35,7 @@ def collect_scaffold(path, genome_assembly, ensembl_release):
     - Prints an error message if the download fails.
     """
         
-    filepath = path + f"/pyensembl/GRCh{genome_assembly}/ensembl{ensembl_release}/"
+    filepath = config['DEFAULT']['PyEnsemblDataDir'] + f"/pyensembl/GRCh{genome_assembly}/ensembl{ensembl_release}/"
     filename = f"Homo_sapiens.GRCh{genome_assembly}.{ensembl_release}.chr_patch_hapl_scaff.gtf.gz"
 
     if not os.path.exists(filepath+filename):  # Don't re-download.
@@ -59,9 +58,10 @@ def collect_scaffold(path, genome_assembly, ensembl_release):
         logging.info(f'Using {filename} Scaffold')
     return filepath + filename
 
-def build_bowtie_index(e_release, g_assembly, species, bowtie_index):
+def build_bowtie_index(e_release, g_assembly, species, bowtie_index_name):
     """
-    Builds a Bowtie2 index for the specified species using the given Ensembl release and genome assembly.
+    Builds a Bowtie2 index for the specified species if it is not already present
+    in the data directory using the given Ensembl release and genome assembly.
 
     Parameters:
         e_release (str): The Ensembl release version.
@@ -85,15 +85,15 @@ def build_bowtie_index(e_release, g_assembly, species, bowtie_index):
     for file in os.listdir(f"{config['DEFAULT']['DataDir']}/bowtie2Home/"):
         
         print(file)
-        if file.startswith(bowtie_index + "."):
+        if file.startswith(bowtie_index_name + "."):
             file_exists = True
             break
         
     if not file_exists:  # Don't re-download.
         if species == 'human':
-            command = f'bowtie2-build {config["DEFAULT"]["PyEnsemblDataDir"]}/pyensembl/GRCh{g_assembly}/ensembl{e_release}/Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
+            command = f'bowtie2-build {config["DEFAULT"]["PyEnsemblDataDir"]}/pyensembl/GRCh{g_assembly}/ensembl{e_release}/Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index_name} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
         elif species == 'mouse':
-            command = f'bowtie2-build {config["DEFAULT"]["PyEnsemblDataDir"]}/pyensembl/GRCm{g_assembly}/ensembl{e_release}/Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
+            command = f'bowtie2-build {config["DEFAULT"]["PyEnsemblDataDir"]}/pyensembl/GRCm{g_assembly}/ensembl{e_release}/Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index_name} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
     
         logging.info("Command: {}".format(command))
 
@@ -102,7 +102,7 @@ def build_bowtie_index(e_release, g_assembly, species, bowtie_index):
         logging.info("Return Code: {}".format(return_code))
     
     else:
-        logging.info(f'Using {bowtie_index} as index')
+        logging.info(f'Using {bowtie_index_name} as index')
         return 0
         
 

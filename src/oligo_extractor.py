@@ -23,6 +23,54 @@ config.read('config.ini')
 
 
 class OligoExtractor:
+    """
+    A class to extract and analyze oligonucleotide (k-mer) sequences from a specified gene, 
+    using data from the Ensembl database and aligning them with Bowtie2.
+
+    This class provides functionalities to:
+    - Extract k-mer sequences from a specified gene.
+    - Align k-mers using Bowtie2 and analyze alignment results to find viable kmers for ASO Design.
+    - Compute result k-mers along with their Intrinsic and Extrinsic feautres.
+
+    Attributes:
+        gene_id (str): The Ensembl gene ID for the target gene.
+        e_release (int): The Ensembl release version to use.
+        g_assembly (str): The genome assembly version (e.g., '38' for GRCh38).
+        species (str): The species of interest, either "mouse" or "human".
+        k (int): The length of k-mers to extract.
+        bowtie_index (str): The path to the Bowtie2 index file.
+        gc_bounds (tuple, optional): A tuple specifying the lower and upper GC content bounds for filtering k-mers.
+        scaffold_path (str, optional): Path to a GTF file for scaffold annotations.
+        filtered_kmers (list): A list to store k-mers that pass all filters.
+        bowtie_infile (str): The path to the input FASTA file for Bowtie2.
+        ensembl_obj (Genome): An instance of EnsemblRelease for querying gene and transcript data.
+        ensembl_obj_scaffolds (Genome, optional): An optional Genome object for scaffold annotations.
+        gene (Gene): The Gene object representing the target gene.
+        transcript_lookup (dict): A dictionary mapping transcript IDs to gene information.
+    
+    Methods:
+        _kmers(s: str) -> set:
+            Generate k-mers from the input sequence and optionally filter them by GC content.
+
+        _runCommand(command: str) -> int:
+            Execute a shell command and return the exit code.
+            
+        get_gene_transcript_mapping(save_to_file: str = None) -> dict:
+            Create a mapping of transcript IDs to gene information, and optionally save to a file.
+
+        run_bowtie():
+            Execute Bowtie2 alignment for the k-mers and filter the aligned k-mers.
+
+        get_candidate_oligos_by_gene():
+            Extract k-mers from the target gene, map them to chromosomal positions, and save the candidate oligos to a CSV file.
+
+        get_kmer_occurrences() -> dict:
+            Calculate the number of occurrences of each k-mer across the whole Genome.
+
+        store_kmer_results(cofoldOutFile: str):
+            Combine the k-mer analysis results and save the final results to a CSV file.
+    """
+
     def __init__(self, gene_id, e_release, g_assembly, species, k, bowtie_index, gc_bounds= None, scaffold_path=None):
         self.gene_id = gene_id
         self.k = k
@@ -62,9 +110,18 @@ class OligoExtractor:
         
         logging.info(f"Gene name: {self.gene.gene_name}")
         logging.info(f"Build transcript gene references")
-        self.transcript_lookup = self._get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRC{self.species[0]}{g_assembly}.csv")
+        self.transcript_lookup = self.get_gene_transcript_mapping(save_to_file=f"transcript_gene_mapping_GRC{self.species[0]}{g_assembly}.csv")
 
     def _kmers(self, s):
+        """
+        Generate k-mers from the input sequence and filter them based on GC bounds if specified.
+
+        Parameters:
+            s (str): The input DNA sequence from which k-mers are generated.
+
+        Returns:
+            set: A set of tuples, where each tuple contains a k-mer and its starting position in the sequence.
+        """
         kmers_list = [(s[i:i + self.k], i+1) for i in range(len(s) - self.k + 1)]
         if self.gc_bounds:
             kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
@@ -72,7 +129,18 @@ class OligoExtractor:
 
         return kmers_set
 
-    def _get_gene_transcript_mapping(self, save_to_file=None):
+    def get_gene_transcript_mapping(self, save_to_file=None):
+        """
+        Create a mapping of transcript IDs to gene information.
+
+        Optionally, save the mapping to a CSV file, including details about each transcript's exons.
+
+        Parameters:
+            save_to_file (str, optional): If provided, the path to the file where the mapping will be saved.
+
+        Returns:
+            dict: A dictionary mapping transcript IDs to gene information.
+        """
         # TODO: might be extended to exon mapping
         transcript_lookup = dict()
         transcripts = self.ensembl_obj.transcripts()
@@ -98,6 +166,11 @@ class OligoExtractor:
         return return_code
 
     def run_bowtie(self):
+        """
+        Execute Bowtie2 alignment for the k-mers and filter the aligned k-mers.
+
+        The method runs Bowtie2 with the specified parameters, processes the alignment output.
+        """
         outFile = os.path.splitext(self.bowtie_infile)[0] + ".sam"
 
         # Run RNAcofold
@@ -131,8 +204,7 @@ class OligoExtractor:
                     exon_hits_target_gene = set()
 
                 transcript_id = row[2].split(".")[0]  # RNAME field in SAM
-                if row[17] == 'NM:i:1':
-                    continue
+
                 try:
                     ah_gene_id = self.transcript_lookup[transcript_id]["gene_id"]
                     ah_gene_name = self.transcript_lookup[transcript_id]["gene_name"]
@@ -157,14 +229,31 @@ class OligoExtractor:
 
     def get_candidate_oligos_by_gene(self):
         """
+        Extract and process candidate oligos (k-mers) from a specified gene and save results to files.
 
-        :param gene_id: String using the Ensembl ID of the gene
-        :param e_release: Ensemble Release
-        :param k: length of oligo/kmers to extract
-        :return: list of distinct candidate of oligos
+        This method identifies candidate oligos of length `k` from the gene transcripts associated with the gene id. 
+        It calculates their absolute chromosomal positions, associates them with the relevant transcripts and exons, and then 
+        saves the results to a CSV file. Additionally, it creates a Bowtie input file for sequence alignment.
+
+        The method performs the following steps:
+        1. Retrieves the transcripts for the specified gene.
+        2. Extracts k-mers from each transcript and computes their chromosomal positions, transcript IDs, and exon IDs.
+        3. Aggregates k-mer data into a DataFrame, grouping by sequence and chromosomal position.
+        4. Saves the k-mer data to a CSV file with custom indexing `SXXXXXX`.
+        5. Creates a Bowtie input file with the k-mer sequences formatted for alignment.
+
+        Parameters:
+            None: The method uses instance variables `self.gene_id`, `self.k`, `self.ensembl_obj`, `self.ensembl_obj_scaffolds`, 
+                and `self.bowtie_infile`.
+
+        Returns:
+            None: The method saves results to a CSV file and writes to a Bowtie input file.
+
+        Notes:
+            - The CSV file is saved in a directory specified by the configuration file, with a filename based on the gene ID 
+            and k-mer length.
+            - The Bowtie input file is created with k-mers in FASTA format, suitable for sequence alignment tools.
         """
-
-            
         logging.info(f"Extract {self.k}mers from gene {self.gene_id}")
 
         transcripts = self.gene.transcripts
@@ -175,7 +264,7 @@ class OligoExtractor:
             kmers_set = self._kmers(t.sequence)
             
             kmers_set = {(tup[0], 
-                          get_chromosomal_positions_per_transcript(t.transcript_id, tup[1], self.ensembl_obj, self.ensembl_obj_scaffolds), 
+                          get_chromosomal_positions_per_transcript(t.transcript_id, tup[1], self.ensembl_obj, self.k, self.ensembl_obj_scaffolds), 
                           t.transcript_id,
                           get_exon_id(tup[1], t)) for tup in kmers_set}
             
@@ -206,13 +295,31 @@ class OligoExtractor:
     
        
     def get_kmer_occurrences(self):
+        """
+        Calculate the number of unique chromosomal positions in the Genome for each k-mer based on Bowtie2 alignment data.
+
+        This method processes the Bowtie2 alignment results to determine the number of unique  absolute chromosomal positions 
+        associated with each k-mer. It reads a SAM file generated by Bowtie2, groups the data by k-mer sequence, 
+        and calculates the number of unique chromosomal positions for each group.
+
+        The method performs the following steps:
+        1. Reads the SAM file into a DataFrame.
+        2. Groups the data by k-mer sequence and calculates the number of unique chromosomal positions for each group.
+        3. Stores the results in a dictionary where keys are k-mer sequences and values are the number of unique positions.
         
+        The output dictionary is also stored as occurrence_dictionary in the object.
+
+        Returns:
+            dict: A dictionary where keys are k-mer sequences and values are the number of unique chromosomal positions.
+                The dictionary provides the count of unique positions for each k-mer based on the alignment results.
+
+        """
         logging.info(f"Calculating number of kmer occurrences")
 
         
         def calculate_occurrences(group):
             # Extract relevant columns
-            positions = group.apply(lambda row: get_chromosomal_positions_per_transcript(row[2], row[3], self.ensembl_obj, self.ensembl_obj_scaffolds), axis=1)
+            positions = group.apply(lambda row: get_chromosomal_positions_per_transcript(row[2], row[3], self.ensembl_obj, self.k, self.ensembl_obj_scaffolds), axis=1)
             # Calculate the number of unique positions
             unique_positions = positions.nunique()
             return unique_positions
@@ -230,8 +337,22 @@ class OligoExtractor:
         
         return self.occurrence_dictionary
     
-    def get_kmer_results(self, cofoldOutFile): 
-        
+    def store_kmer_results(self, cofoldOutFile): 
+        """
+        Generate a CSV file with detailed results for each k-mer, including various properties and metrics.
+
+        This method processes k-mer candidates and RNAcofold output to compile a comprehensive results file. It merges 
+        information about each k-mer's sequence, its reverse complement, GC content, longest AT-run, longest T-run, 
+        chromosomal positions, associated transcripts and exons in the Gene, multiplicity, and RNAcofold binding energy. The results 
+        are saved to a CSV file.
+
+        Parameters:
+            cofoldOutFile (str): The path to the RNAcofold output file in CSV format, containing binding energy information 
+                                for the k-mers.
+
+        Returns:
+            None: The results are saved directly to a CSV file in the specified directory. No value is returned by the method.
+        """
         logging.info(f"Completing final results")
 
         cofold_out = pd.read_csv(cofoldOutFile)
@@ -250,8 +371,8 @@ class OligoExtractor:
                    'target', 
                    'absolute_loc', 
                    'ordered_transcripts', 
-                   'ordered_exons', 
-                    'multiplicity', 
+                   'ordered_exons',
+                   'multiplicity', 
                    'dG_binding']
         
         kmer_indices = [x[0] for x in self.filtered_kmers]

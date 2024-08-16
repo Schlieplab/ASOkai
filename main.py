@@ -84,7 +84,7 @@ if __name__ == '__main__':
             scaffold_path = None
             bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
         elif args.species == "human":
-            scaffold_path = collect_scaffold(config['DEFAULT']['PyEnsemblDataDir'], args.genome_assembly, args.ensembl_release)
+            scaffold_path = collect_scaffold(args.genome_assembly, args.ensembl_release)
             bowtie_index = f"GRCh{args.genome_assembly}"
         else:
             raise ValueError("Only mouse and human species implemented.")
@@ -137,7 +137,7 @@ if __name__ == '__main__':
         sys.exit(1)    
       
     try:
-        oligo_obj.get_kmer_results(RNAcofoldFile)
+        oligo_obj.store_kmer_results(RNAcofoldFile)
     except Exception as e:
         logging.error(f"Error writing kmer results to file: {e}")
         sys.exit(1)

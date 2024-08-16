@@ -68,12 +68,6 @@ if __name__ == '__main__':
         default=111,
         help="Ensemble release, default=111"
     )
-    parser.add_argument(
-        '--bowtie2-index', '-bi',
-        action=argparse.BooleanOptionalAction, 
-        default=False,
-        help='If passed, builds bowtie2 index of the genome'
-    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -107,12 +101,11 @@ if __name__ == '__main__':
         logging.error(f"Error during oligo extraction: {e}")
         sys.exit(1)
     
-    if args.bowtie2_index:
-        try:
-            build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index)
-        except Exception as e:
-            logging.error(f"Error building Bowtie2 index: {e}")
-            sys.exit(1)
+    try:
+        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index)
+    except Exception as e:
+        logging.error(f"Error building Bowtie2 index: {e}")
+        sys.exit(1)
         
     try:
         oligo_obj.run_bowtie()
@@ -138,7 +131,7 @@ if __name__ == '__main__':
         sys.exit(1)
   
     try:
-        oligo_obj.get_kmer_occurances()
+        oligo_obj.get_kmer_occurrences()
     except Exception as e:
         logging.error(f"Error getting kmer occurrences: {e}")
         sys.exit(1)    

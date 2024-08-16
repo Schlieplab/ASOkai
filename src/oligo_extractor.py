@@ -205,12 +205,12 @@ class OligoExtractor:
         
     
        
-    def get_kmer_occurances(self):
+    def get_kmer_occurrences(self):
         
-        logging.info(f"Calculating number of kmer occurances")
+        logging.info(f"Calculating number of kmer occurrences")
 
         
-        def calculate_occurances(group):
+        def calculate_occurrences(group):
             # Extract relevant columns
             positions = group.apply(lambda row: get_chromosomal_positions_per_transcript(row[2], row[3], self.ensembl_obj, self.ensembl_obj_scaffolds), axis=1)
             # Calculate the number of unique positions
@@ -220,15 +220,15 @@ class OligoExtractor:
         sam_out = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.gene_id}_{self.k}mers.sam', sep="\t", header=None, usecols=list(range(11)))
         sam_out = sam_out[[2, 3, 9]]
         # Group by the 9th column (which is index 8 in 0-based indexing)
-        sam_out_agg = sam_out.groupby(9).apply(calculate_occurances).reset_index(name='UniquePositions')
+        sam_out_agg = sam_out.groupby(9).apply(calculate_occurrences).reset_index(name='UniquePositions')
         
         # Rename columns for clarity (optional)
         sam_out_agg.columns = ['Group', 'UniquePositions']
         
         # Convert to dictionary
-        self.occurance_dictionary = sam_out_agg.set_index('Group').to_dict()['UniquePositions']
+        self.occurrence_dictionary = sam_out_agg.set_index('Group').to_dict()['UniquePositions']
         
-        return self.occurance_dictionary
+        return self.occurrence_dictionary
     
     def get_kmer_results(self, cofoldOutFile): 
         
@@ -268,7 +268,7 @@ class OligoExtractor:
                              can['chromosomal_position'],                     # absolute_loc
                              can['transcripts'],                              # ordered_transcripts
                              can['exons'],                                    # ordered_exons
-                             self.occurance_dictionary.get(can['seq'], 0),    # multiplicity
+                             self.occurrence_dictionary.get(can['seq'], 0),    # multiplicity
                              cofold_out.loc[idx]['dG_binding'])               # dG_binding
                             )
             

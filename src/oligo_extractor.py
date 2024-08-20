@@ -12,6 +12,7 @@ import time
 import configparser 
 import pandas as pd
 from Bio.Seq import Seq
+import polars as pl
 
 
 # Create a configparser object
@@ -46,7 +47,7 @@ class OligoExtractor:
         ensembl_obj (Genome): An instance of EnsemblRelease for querying gene and transcript data.
         ensembl_obj_scaffolds (Genome, optional): An optional Genome object for scaffold annotations.
         gene (Gene): The Gene object representing the target gene.
-        transcript_lookup (dict): A dictionary mapping transcript IDs to gene information.
+        transcript_lookup (dict): A dictionary mapping transcript IDs to gene IDs.
     
     Methods:
         _kmers(s: str) -> set:
@@ -151,7 +152,7 @@ class OligoExtractor:
             file = open(f"{config['DEFAULT']['DataDir']}/{save_to_file}", "w")
         for t in transcripts:
             if t.transcript_id not in transcript_lookup.keys():
-                transcript_lookup[t.transcript_id] = {"gene_id": t.gene_id, "gene_name": t.gene_name}
+                transcript_lookup[t.transcript_id] = t.gene_id
                 if save_to_file:
                     for e in t.exons:
                         file.write(
@@ -171,57 +172,37 @@ class OligoExtractor:
 
         The method runs Bowtie2 with the specified parameters, processes the alignment output.
         """
-        outFile = os.path.splitext(self.bowtie_infile)[0] + ".sam"
 
+                
         # Run RNAcofold
         logging.info("Running Bowtie2")
+        
+        outFile = os.path.splitext(self.bowtie_infile)[0] + ".sam"
 
         command = f'bowtie2 -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index} -U {self.bowtie_infile} -S {outFile} {config["DEFAULT"]["BowtieArgs"]}'
         logging.info("Command: {}".format(command))
         return_code = self._runCommand(command)
         logging.info("Return Code: {}".format(return_code))
         start = time.time()
-        with open(outFile, 'r') as btFile:
-            align_file = csv.reader(btFile, delimiter='\t')
-            # allheader = ["QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ", "QUAL", "ALIGN SCORE", "XS", "XN", "XM", "XO", "XG", "EDIT DIST REF", "MISMATCH POS", "YT"]
-            current_targetSite, current_ah_genes, exon_hits_target_gene = None, set(), set()
-            for row in align_file:
-                if not current_targetSite:
-                    current_targetSite = row[9]  # SEQ field in SAM
-                    current_targetSite_id = row[0]
-                if current_targetSite != row[9]:
-                    if current_targetSite == 'AAAGACTCCTAATAGC':
-                        print(f"AZD4785: {current_ah_genes}")
-                    if len(current_ah_genes) == 0:
+        
 
-                        # if len(exon_hits_target_gene) < 2:
-                        self.filtered_kmers.append(tuple([current_targetSite_id, current_targetSite]))
-                        
-                    current_targetSite = row[9]
-                    current_targetSite_id = row[0]
-
-                    current_ah_genes = set()
-                    exon_hits_target_gene = set()
-
-                transcript_id = row[2].split(".")[0]  # RNAME field in SAM
-
-                try:
-                    ah_gene_id = self.transcript_lookup[transcript_id]["gene_id"]
-                    ah_gene_name = self.transcript_lookup[transcript_id]["gene_name"]
-                except KeyError:
-                    logging.error(f"Transcript {transcript_id} not found. Check on ensembl.org! Skipping Alignment")
-                    continue
-
-                if ah_gene_id != self.gene_id:
-                    current_ah_genes.add(ah_gene_id)
-                    if ah_gene_name == self.gene.gene_name:
-                        logging.info(f"{self.gene.gene_name} has additional gene ID: {ah_gene_id}")
-                else:
-                    t = self.ensembl_obj.transcript_by_id(transcript_id)
-                    abs_pos = t.start + int(row[3]) - 1  # absolute position from POS field in SAM
-                    for e in t.exons:
-                        if e.start <= abs_pos <= e.end:
-                            exon_hits_target_gene.add(e.exon_id)
+        align_file = pl.read_csv(outFile ,separator='\t', has_header=False)
+        res = (align_file
+               .group_by('column_10')
+               .agg(
+                    pl.col('column_3')
+                    .str.split(".")  # Split the string on "."
+                    .list.first().alias('transcript_id')
+                    .replace(self.transcript_lookup)
+                    .alias('genes'),
+                pl.col('column_1').first().alias('seq_id'),  # Aggregate `column_1`  
+                ).with_columns(
+                    pl.col('genes').list.set_difference([self.gene_id])
+                ).filter(pl.col('genes').list.len() == 0)
+                .select([pl.exclude('genes')])  # Remove the `genes` column
+            )
+        
+        self.filtered_kmers = res.select(["seq_id", "column_10"]).to_numpy().tolist()
                             
         end = time.time() - start
         logging.info(f"Viable  {self.k}mers candidates after Bowtie: {len(self.filtered_kmers)}")

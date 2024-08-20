@@ -96,7 +96,7 @@ def getRNAcofoldEnergy(rnaCofoldInFile):
     
     # Run RNAcofold
     logging.info("Running RNAcofold")
-    command = f'RNAcofold -p0  --output-format=D --jobs=0 --noPS --noconv {rnaCofoldInFile}'
+    command = f'RNAcofold -p0  --output-format=D --jobs=0 --noPS --noconv {rnaCofoldInFile} {config["DEFAULT"]["CofoldParamFile"]}'
     logging.info("Command: {}".format(command))
     
     with open(outFile, 'w') as rcfOutFile:

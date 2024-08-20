@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     logging.basicConfig(
-        # force=True,
+        force=True,
         level=logging.INFO,
         stream=sys.stdout,
         format='### INFO - %(asctime)s - %(message)s',
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         sys.exit(1)
     
     try:
-        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index)
+        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index, args.gene_id)
     except Exception as e:
         logging.error(f"Error building Bowtie2 index: {e}")
         sys.exit(1)

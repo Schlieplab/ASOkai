@@ -4,8 +4,9 @@ import shlex
 import os
 from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
-from utils.sequence_analysis import get_chromosomal_positions_per_transcript
+from utils.sequence_analysis import get_chromosomal_positions_per_transcript, get_seq_by_transcript_position
 from utils.sequence_analysis import get_exon_id, gc_content, longest_at_run, longest_t_run
+from utils.file_operations import build_cofold_in
 from utils.kmer_searcher import KmerSearcher
 import logging
 import time
@@ -281,31 +282,38 @@ class OligoExtractor:
         """
         Extract prone multiplicity for each k-mer by running Bowtie2 on the local gene region.
         """
-        outFile = self.run_bowtie(local_gene_only=True) 
-        
         def calculate_occurrences(group):
-            
-            # Extract relevant columns
-            positions = group.apply(lambda row: get_chromosomal_positions_per_transcript(row['RNAME'], 
-                                                                                         row['POS'], 
-                                                                                         self.ensembl_obj, 
-                                                                                         self.multiplicity_layout[1], 
-                                                                                         self.ensembl_obj_scaffolds), 
-                                    axis=1)
-            
-            unique_positions = positions.nunique()
-            return unique_positions
+            # Extract positions and sequences for each row
+            result = group.apply(lambda row: {
+                                        'positions': get_chromosomal_positions_per_transcript(row['RNAME'], 
+                                                                                            row['POS'], 
+                                                                                            self.ensembl_obj, 
+                                                                                            self.multiplicity_layout[1], 
+                                                                                            self.ensembl_obj_scaffolds),
+                                        'seq': get_seq_by_transcript_position(row['RNAME'], 
+                                                                            row['POS']-self.multiplicity_layout[0]-1, 
+                                                                            self.ensembl_obj, 
+                                                                            self.k, 
+                                                                            self.ensembl_obj_scaffolds)
+                                        }, 
+                                axis=1)
+
+            # Extract unique positions
+            result = pd.DataFrame(result.tolist())
+            result = result.dropna()
+            result = result.drop_duplicates()
+
+            return list(result.itertuples(index=False, name=None))
+        
+        outFile = self.run_bowtie(local_gene_only=True) 
     
         columns = ["QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ", "QUAL", "ALIGN SCORE", "XS", "XN", "XM", "XO", "XG", "EDIT DIST REF", "MISMATCH POS", "YT"]
 
         sam_out = pd.read_csv(outFile, sep="\t", header=None, names = columns)
-        # Group by SEQ
-        sam_out_agg = sam_out.groupby('QNAME').apply(calculate_occurrences).reset_index(name='UniquePositions')
-        # Rename columns for clarity (optional)
-        sam_out_agg.columns = ['QNAME', 'UniquePositions']
-        
+        sam_out_agg = sam_out.groupby('QNAME').apply(calculate_occurrences)
         # Convert to dictionary
-        self.prone_multiplicity = sam_out_agg.set_index('QNAME').to_dict()['UniquePositions']
+        self.prone_multiplicity = sam_out_agg.to_dict()
+        
         
     def extract_non_prone_multiplicity(self):
         """
@@ -317,7 +325,10 @@ class OligoExtractor:
                                 f"{config['DEFAULT']['DataDir']}/oligos/{self.gene_id}_{self.k}mer_non_prone_multiplicities.fa")
         
         self.non_prone_multiplicity = searcher.search(self.filtered_kmers)
-                
+    
+    def extract_secondary_target_sites():
+        pass
+    
     def store_kmer_results(self, cofoldOutFile): 
         """
         Generate a CSV file with detailed results for each k-mer, including various properties and metrics.

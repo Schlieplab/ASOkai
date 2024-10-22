@@ -88,6 +88,23 @@ def get_chromosomal_positions_per_transcript(transcript, position_in_transcript,
     key = f'{transcript.contig}:{start_pos}-{end_pos}:{transcript.strand}'
     return key
 
+def get_seq_by_transcript_position(transcript, position_in_transcript, ensembl_obj, k, ensembl_obj_scaffolds = None):
+    
+    transcript_id = transcript.split(".")[0]
+
+    try:
+        transcript = ensembl_obj.transcript_by_id(transcript_id=transcript_id)
+    except Exception as e:
+        try:
+            transcript = ensembl_obj_scaffolds.transcript_by_id(transcript_id=transcript_id)
+        except Exception as e:
+            logging.warning(e)
+            return None
+        
+    if len(transcript) < position_in_transcript+k or position_in_transcript < 0:
+        return None
+    
+    return transcript.sequence[position_in_transcript:position_in_transcript+k]
 
             
 def getRNAcofoldEnergy(rnaCofoldInFile):

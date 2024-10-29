@@ -1,11 +1,10 @@
-import csv
 import subprocess
 import shlex
 import os
 from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
 from utils.sequence_analysis import get_chromosomal_positions_per_transcript, get_seq_by_transcript_position
-from utils.sequence_analysis import get_exon_id, gc_content, longest_at_run, longest_t_run
+from utils.sequence_analysis import get_exon_id, get_gc_content, longest_at_run, longest_t_run, get_rna_cofold_energy
 from utils.file_operations import build_cofold_in
 from utils.kmer_searcher import KmerSearcher
 import logging
@@ -163,7 +162,7 @@ class OligoExtractor:
         return return_code
 
 
-    def get_candidate_oligos_by_gene(self):
+    def extract_candidate_oligos_by_gene(self):
         """
         Extract and process candidate oligos (k-mers) from the specified gene and save results to files.
 
@@ -248,7 +247,7 @@ class OligoExtractor:
         return outFile
 
 
-    def get_viable_kmers(self, in_file):
+    def extract_viable_kmers(self, in_file):
         """
         Filter the aligned k-mers based on Bowtie2 alignment results.
 
@@ -313,7 +312,19 @@ class OligoExtractor:
         sam_out_agg = sam_out.groupby('QNAME').apply(calculate_occurrences)
         # Convert to dictionary
         self.prone_multiplicity = sam_out_agg.to_dict()
+    
+    
+    def get_secondary_target_site_candidates(self, cofold_in):
+        """
+        Extract prone multiplicity for each k-mer and run RNAcofold for each secondary candidate, return cofold out path.
+        """
+        self.extract_prone_multiplicity()
         
+        build_cofold_in(cofold_in, self.filtered_kmers, self.prone_multiplicity)
+        cofold_out_path = get_rna_cofold_energy(cofold_in)
+        
+        return cofold_out_path
+
         
     def extract_non_prone_multiplicity(self):
         """
@@ -326,20 +337,25 @@ class OligoExtractor:
         
         self.non_prone_multiplicity = searcher.search(self.filtered_kmers)
     
-    def extract_secondary_target_sites():
-        pass
+
     
-    def store_kmer_results(self, cofoldOutFile): 
+    def store_kmer_results(self, cofold_out, cofold_out_secondary): 
         """
         Generate a CSV file with detailed results for each k-mer, including various properties and metrics.
 
         Parameters:
-            cofoldOutFile (str): The path to the RNAcofold output file in CSV format.
+            cofold_out (str): The path to the RNAcofold output file in CSV format.
+            cofold_out_secondary (str): The path to the RNAcofold output file for secondary candidates in CSV format.
+
         """
         logging.info(f"Completing final results")
 
-        cofold_out = pd.read_csv(cofoldOutFile)
+        cofold_out = pd.read_csv(cofold_out)
         cofold_out.set_index('seq_id', inplace=True)
+        
+        cofold_out_secondary = pd.read_csv(cofold_out_secondary)
+        cofold_out_secondary.set_index('seq_id', inplace=True)
+        
 
         oligo_candidates = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/oligos/{self.gene_id}_{self.k}mer_candidates.csv', index_col=0)
 
@@ -355,7 +371,7 @@ class OligoExtractor:
                    'absolute_loc', 
                    'ordered_transcripts', 
                    'ordered_exons',
-                   'prone_multiplicity', 
+                   'secondary_target_site_multiplicity', 
                    'non_prone_multiplicity', 
                    'dG_binding']
         
@@ -364,16 +380,21 @@ class OligoExtractor:
         
         for idx in kmer_indices:
             can = oligo_candidates.loc[idx]
+            secondary_cans = cofold_out_secondary[cofold_out_secondary.index.str.startswith(idx)].copy()
+            drop_indices = secondary_cans[(secondary_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) > int(config['DEFAULT']['maxddG'])].index
+            secondary_cans.drop(index=drop_indices, inplace=True)
+
+            
             res_temp.append((idx,                                             # seq_num
                              can['seq'],                                      # oligo_reverse_comp
-                             gc_content(can['seq']),                          # oligo_gc_content
+                             get_gc_content(can['seq']),                          # oligo_gc_content
                              longest_at_run(can['seq']),                      # oligo_longest_at_run
                              longest_t_run(can['seq']),                       # oligo_longest_t_run
                              str(Seq(can['seq']).reverse_complement()),       # target
                              can['chromosomal_position'],                     # absolute_loc
                              can['transcripts'],                              # ordered_transcripts
                              can['exons'],                                    # ordered_exons
-                             self.prone_multiplicity.get(idx, 0),             # prone_multiplicity
+                             len(secondary_cans),                             # secondary_target_site_multiplicity
                              self.non_prone_multiplicity.get(idx, 0),         # non_prone_multiplicity
                              cofold_out.loc[idx]['dG_binding'])               # dG_binding
                             )

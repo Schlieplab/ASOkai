@@ -3,7 +3,7 @@ import csv
 import argparse
 import sys
 from utils.file_operations import collect_scaffold, build_bowtie_index, build_cofold_in
-from utils.sequence_analysis import getRNAcofoldEnergy
+from utils.sequence_analysis import get_rna_cofold_energy
 import logging
 from src.oligo_extractor import OligoExtractor
 from Bio.Seq import Seq
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     try:
         os.makedirs(f"{config['DEFAULT']['DataDir']}/oligos", exist_ok=True)
         oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, bowtie_index, None, scaffold_path)
-        oligo_obj.get_candidate_oligos_by_gene()
+        oligo_obj.extract_candidate_oligos_by_gene()
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
         sys.exit(1)
@@ -116,13 +116,23 @@ if __name__ == '__main__':
         sys.exit(1)
         
     try:
-        oligo_obj.get_viable_kmers(bowtieOut)
+        oligo_obj.extract_viable_kmers(bowtieOut)
     except Exception as e:
         logging.error(f"Error getting viable kmers: {e}")
         sys.exit(1)
+
         
     try:
-        oligo_obj.extract_prone_multiplicity()
+        cofold_in = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers.rnacofoldin"
+        build_cofold_in(cofold_in, oligo_obj.filtered_kmers)   
+        cofold_out = get_rna_cofold_energy(cofold_in)
+    except Exception as e:
+        logging.error(f"Error getting binding affinity: {e}")
+        sys.exit(1)
+  
+    try:
+        cofold_in_secondary = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_prone_{args.k}mers.rnacofoldin"
+        cofold_out_secondary = oligo_obj.get_secondary_target_site_candidates(cofold_in_secondary)
     except Exception as e:
         logging.error(f"Error extracting prone multiplicity: {e}")
         sys.exit(1)
@@ -132,22 +142,9 @@ if __name__ == '__main__':
     except Exception as e:
         logging.error(f"Error extracting non-prone multiplicity: {e}")
         sys.exit(1)
-
-        
-    try:
-        cofold_in = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers.rnacofoldin"
-        
-        build_cofold_in(cofold_in, oligo_obj.filtered_kmers)   
-        RNAcofoldFile = getRNAcofoldEnergy(f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers.rnacofoldin")
-        
-    except Exception as e:
-        logging.error(f"Error getting binding affinity: {e}")
-        sys.exit(1)
-  
-  
       
     try:
-        oligo_obj.store_kmer_results(RNAcofoldFile)
+        oligo_obj.store_kmer_results(cofold_out, cofold_out_secondary)
     except Exception as e:
         logging.error(f"Error writing kmer results to file: {e}")
         sys.exit(1)

@@ -141,7 +141,7 @@ def build_cofold_in(cofold_in, kmers, targets = None):
     kmers (list): A list of tuples, where each tuple contains:
                   - k-mer identifier (str)
                   - k-mer sequence (str)
-    targets (dict, optional): A dictionary mapping k-mer identifiers to a list of target sequences.
+    targets (dict, optional): A dictionary mapping k-mer identifiers to a list of target sequences (in second index for each target sequence).
                               If provided, the reverse complement of each target sequence will be used
                               instead of the k-mer reverse complement.
 
@@ -150,7 +150,7 @@ def build_cofold_in(cofold_in, kmers, targets = None):
 
     Example:
     >>> kmers = [('S000001', 'ATCG'), ('S000002', 'GCTA')]
-    >>> targets = {'S000001': ['GGTT', 'AACC'], 'S000002': ['TTAA']}
+    >>> targets = {'S000001': [(_, 'GGTT'), (_, 'AACC')], 'S000002': [(_, 'TTAA')]}
     >>> build_cofold_in('/path/to/cofold_input.txt', kmers, targets)
     """
 
@@ -164,10 +164,10 @@ def build_cofold_in(cofold_in, kmers, targets = None):
             for x in kmers:
                 for i, y in enumerate(targets[x[0]]):
                     # First line: '>kmer' (where x[0] is the kmer identifier)
-                    filteredkmerfile.write('>' + x[0] + '_' + i + '\n')
+                    filteredkmerfile.write('>' + x[0] + '_' + str(i) + '\n')
                     
                     # Second line: 'kmer&reverse_complement'
-                    filteredkmerfile.write(x[1] + '&' + str(Seq(y).reverse_complement()) + '\n')
+                    filteredkmerfile.write(x[1] + '&' + str(Seq(y[1]).reverse_complement()) + '\n')
         else:
             for x in kmers:
                 # First line: '>kmer' (where x[0] is the kmer identifier)

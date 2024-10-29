@@ -1,7 +1,4 @@
 import logging
-import multiprocessing
-from tqdm import tqdm
-import pandas as pd
 import configparser
 import os
 import subprocess
@@ -107,7 +104,7 @@ def get_seq_by_transcript_position(transcript, position_in_transcript, ensembl_o
     return transcript.sequence[position_in_transcript:position_in_transcript+k]
 
             
-def getRNAcofoldEnergy(rnaCofoldInFile):
+def get_rna_cofold_energy(rnaCofoldInFile):
     """
     Run RNAcofold to calculate RNA secondary structure energies and save the results to a CSV file.
 
@@ -180,7 +177,7 @@ def get_exon_id(pos_in_transcript, transcript):
             
             accumulated += (exon.end - exon.start + 1)
 
-def gc_content(seq):
+def get_gc_content(seq):
     """
     Calculate the GC content of a nucleotide sequence.
 

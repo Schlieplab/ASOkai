@@ -98,6 +98,8 @@ def get_seq_by_transcript_position(transcript, position_in_transcript, ensembl_o
             logging.warning(e)
             return None
         
+    position_in_transcript = position_in_transcript - 1
+    
     if len(transcript) < position_in_transcript+k or position_in_transcript < 0:
         return None
     

@@ -220,12 +220,12 @@ class OligoExtractor:
             candidate_oligos.apply(lambda x: tmp_bowtie_in.write(">" + str(x.name) + "\n" + x['seq'] + "\n"), axis = 1)
             
             
-    def run_bowtie(self, local_gene_only = False):
+    def run_bowtie(self, gene_only = False):
         """
         Execute Bowtie2 alignment for the k-mers.
 
         Parameters:
-            local_gene_only (bool): If True, aligns only to the local gene region.
+            gene_only (bool): If True, aligns only to the local gene region.
 
         Returns:
             str: The path to the output SAM file.
@@ -235,7 +235,7 @@ class OligoExtractor:
         
         start = time.time()
         
-        if local_gene_only:    
+        if gene_only:    
             outFile = os.path.splitext(self.bowtie_infile)[0] + '_gene_only_middle' + ".sam"
             trim = ' --trim3 ' + str(int(self.multiplicity_layout[2])) + ' --trim5 ' + str(int(self.multiplicity_layout[0]))
             command = (f'bowtie2 -x {config["DEFAULT"]["DataDir"]}/bowtie2Home/{self.bowtie_index}_{self.gene_id}_only '
@@ -290,16 +290,20 @@ class OligoExtractor:
         """
         Extract prone multiplicity for each k-mer by running Bowtie2 on the local gene region.
         """
-        def calculate_occurrences(group):
+        def calculate_occurrences(group, position_to_ignore):
             # Extract positions and sequences for each row
             result = group.apply(lambda row: {
-                                        'positions': get_chromosomal_positions_per_transcript(row['RNAME'], 
-                                                                                            row['POS'], 
-                                                                                            self.ensembl_obj, 
-                                                                                            self.multiplicity_layout[1], 
-                                                                                            self.ensembl_obj_scaffolds),
+                                        'positions': (lambda result: result if result != position_to_ignore else None)(
+                                            get_chromosomal_positions_per_transcript(
+                                                row['RNAME'], 
+                                                row['POS'] - self.multiplicity_layout[0], 
+                                                self.ensembl_obj, 
+                                                self.k, 
+                                                self.ensembl_obj_scaffolds
+                                            )
+                                        ),
                                         'seq': get_seq_by_transcript_position(row['RNAME'], 
-                                                                            row['POS']-self.multiplicity_layout[0]-1, 
+                                                                            row['POS']-self.multiplicity_layout[0], 
                                                                             self.ensembl_obj, 
                                                                             self.k, 
                                                                             self.ensembl_obj_scaffolds)
@@ -311,28 +315,22 @@ class OligoExtractor:
             result = result.dropna()
             result = result.drop_duplicates()
 
+
             return list(result.itertuples(index=False, name=None))
         
-        outFile = self.run_bowtie(local_gene_only=True) 
+        outFile = self.run_bowtie(gene_only=True) 
     
         columns = ["QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ", "QUAL", "ALIGN SCORE", "XS", "XN", "XM", "XO", "XG", "EDIT DIST REF", "MISMATCH POS", "YT"]
 
+        oligo_candidates = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/oligos/{self.gene_id}_{self.k}mer_candidates.csv', index_col=0)
+        
         sam_out = pd.read_csv(outFile, sep="\t", header=None, names = columns)
-        sam_out_agg = sam_out.groupby('QNAME').apply(calculate_occurrences)
+        sam_out_agg = sam_out.groupby('QNAME').apply(lambda x : calculate_occurrences(x, oligo_candidates.loc[x['QNAME'],'chromosomal_position'].iloc[0]))
         # Convert to dictionary
         self.prone_multiplicity = sam_out_agg.to_dict()
+        
     
     
-    def get_secondary_target_site_candidates(self, cofold_in):
-        """
-        Extract prone multiplicity for each k-mer and run RNAcofold for each secondary candidate, return cofold out path.
-        """
-        self.extract_prone_multiplicity()
-        
-        build_cofold_in(cofold_in, self.filtered_kmers, self.prone_multiplicity)
-        cofold_out_path = get_rna_cofold_energy(cofold_in)
-        
-        return cofold_out_path
 
         
     def extract_non_prone_multiplicity(self):
@@ -372,40 +370,45 @@ class OligoExtractor:
         
         # result csv column names
         columns = ['seq_num',  
+                   'target', 
+                   'absolute_loc', 
                    'oligo_reverse_comp', 
                    'oligo_gc_content',
                    'oligo_longest_at_run',
                    'oligo_longest_t_run',
-                   'target', 
-                   'absolute_loc', 
-                   'ordered_transcripts', 
-                   'ordered_exons',
                    'secondary_target_site_multiplicity', 
                    'non_prone_multiplicity', 
-                   'dG_binding']
+                   'dG_binding',
+                   'ordered_transcripts', 
+                   'ordered_exons',
+                   ]
         
         kmer_indices = [x[0] for x in self.filtered_kmers]
         res_temp = []
         
         for idx in kmer_indices:
+            
             can = oligo_candidates.loc[idx]
+            
+            # extract secondary candidates with higher ddG than maxddG
             secondary_cans = cofold_out_secondary[cofold_out_secondary.index.str.startswith(idx)].copy()
-            drop_indices = secondary_cans[(secondary_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) > int(config['DEFAULT']['maxddG'])].index
+            drop_indices = secondary_cans[(secondary_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) > int(config['DEFAULT']['maxddG'])].index.tolist()
             secondary_cans.drop(index=drop_indices, inplace=True)
 
             
             res_temp.append((idx,                                             # seq_num
-                             can['seq'],                                      # oligo_reverse_comp
-                             get_gc_content(can['seq']),                          # oligo_gc_content
+                             can['seq'],                                      # target
+                             can['chromosomal_position'],                     # absolute_loc
+                             str(Seq(can['seq']).reverse_complement()),       # oligo_reverse_comp
+                             get_gc_content(can['seq']),                      # oligo_gc_content
                              longest_at_run(can['seq']),                      # oligo_longest_at_run
                              longest_t_run(can['seq']),                       # oligo_longest_t_run
-                             str(Seq(can['seq']).reverse_complement()),       # target
-                             can['chromosomal_position'],                     # absolute_loc
-                             can['transcripts'],                              # ordered_transcripts
-                             can['exons'],                                    # ordered_exons
                              len(secondary_cans),                             # secondary_target_site_multiplicity
                              self.non_prone_multiplicity.get(idx, 0),         # non_prone_multiplicity
-                             cofold_out.loc[idx]['dG_binding'])               # dG_binding
+                             cofold_out.loc[idx]['dG_binding'],               # dG_binding
+                             can['transcripts'],                              # ordered_transcripts
+                             can['exons'],                                    # ordered_exons
+                             )                                   
                             )
             
         kmer_results = pd.DataFrame(res_temp, columns=columns)

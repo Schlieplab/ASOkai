@@ -18,9 +18,7 @@ config.read('config.ini')
 class KmerSearcher:
     """
     A class for searching and analyzing k-mers in a given set of oligonucleotides.
-
-    This class implements methods for finding mismatches and calculating multiplicities
-    of k-mers, using parallel processing for improved performance.
+    
 
     Attributes:
         max_distance (int): The maximum allowed Hamming distance for mismatches.
@@ -50,9 +48,6 @@ class KmerSearcher:
         search(self, oligos):
             Perform a parallel search for k-mers in the given set of oligonucleotides.
 
-    The class uses multiprocessing to parallelize the search process, significantly
-    improving performance for large datasets. It also implements caching to optimize
-    recursive mismatch calculations.
     """
     def __init__(self, reference_kmers, max_distance, rnas_h_cleavage_length, out_file):
         self.max_distance = max_distance

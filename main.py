@@ -128,17 +128,17 @@ if __name__ == '__main__':
         
 
     try:
-        oligo_obj.extract_prone_multiplicity()
+        oligo_obj.extract_repeated_sites()
     except Exception as e:
         logging.error(f"Error extracting prone multiplicity: {e}")
         sys.exit(1)
         
     try:
-        cofold_in_secondary = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_prone_{args.k}mers.rnacofoldin"
-        build_cofold_in(cofold_in_secondary, oligo_obj.filtered_kmers, oligo_obj.prone_multiplicity)   
-        cofold_out_secondary = get_rna_cofold_energy(cofold_in_secondary)
+        cofold_in_repeated = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_prone_{args.k}mers.rnacofoldin"
+        build_cofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.prone_multiplicity)   
+        cofold_out_repeated = get_rna_cofold_energy(cofold_in_repeated)
     except Exception as e:
-        logging.error(f"Error getting binding affinity for secondary target sites: {e}")
+        logging.error(f"Error getting binding affinity for repeated target sites: {e}")
         sys.exit(1)  
         
     
@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
       
     # try:
-    oligo_obj.store_kmer_results(cofold_out, cofold_out_secondary)
+    oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
     # except Exception as e:
     #     logging.error(f"Error writing kmer results to file: {e}")
     #     sys.exit(1)

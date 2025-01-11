@@ -286,9 +286,9 @@ class OligoExtractor:
                             
         logging.info(f"Viable  {self.k}mers candidates after Bowtie: {len(self.filtered_kmers)}")
 
-    def extract_prone_multiplicity(self):
+    def extract_repeated_sites(self):
         """
-        Extract prone multiplicity for each k-mer by running Bowtie2 on the local gene region.
+        Extract repeated sites with up to some missmatches in the flanks for each k-mer by running Bowtie2 on the local gene region.
         """
         def calculate_occurrences(group, position_to_ignore):
             # Extract positions and sequences for each row
@@ -346,13 +346,13 @@ class OligoExtractor:
     
 
     
-    def store_kmer_results(self, cofold_out, cofold_out_secondary): 
+    def store_kmer_results(self, cofold_out, cofold_out_repeated): 
         """
         Generate a CSV file with detailed results for each k-mer, including various properties and metrics.
 
         Parameters:
             cofold_out (str): The path to the RNAcofold output file in CSV format.
-            cofold_out_secondary (str): The path to the RNAcofold output file for secondary candidates in CSV format.
+            cofold_out_repeated (str): The path to the RNAcofold output file for repeated candidates in CSV format.
 
         """
         logging.info(f"Completing final results")
@@ -360,8 +360,8 @@ class OligoExtractor:
         cofold_out = pd.read_csv(cofold_out)
         cofold_out.set_index('seq_id', inplace=True)
         
-        cofold_out_secondary = pd.read_csv(cofold_out_secondary)
-        cofold_out_secondary.set_index('seq_id', inplace=True)
+        cofold_out_repeated = pd.read_csv(cofold_out_repeated)
+        cofold_out_repeated.set_index('seq_id', inplace=True)
         
 
         oligo_candidates = pd.read_csv(f'{config["DEFAULT"]["DataDir"]}/oligos/{self.gene_id}_{self.k}mer_candidates.csv', index_col=0)
@@ -376,7 +376,7 @@ class OligoExtractor:
                    'oligo_gc_content',
                    'oligo_longest_at_run',
                    'oligo_longest_t_run',
-                   'secondary_target_site_multiplicity', 
+                   'repeated_target_site_multiplicity', 
                    'non_prone_multiplicity', 
                    'dG_binding',
                    'ordered_transcripts', 
@@ -390,10 +390,10 @@ class OligoExtractor:
             
             can = oligo_candidates.loc[idx]
             
-            # extract secondary candidates with higher ddG than maxddG
-            secondary_cans = cofold_out_secondary[cofold_out_secondary.index.str.startswith(idx)].copy()
-            drop_indices = secondary_cans[(secondary_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) > int(config['DEFAULT']['maxddG'])].index.tolist()
-            secondary_cans.drop(index=drop_indices, inplace=True)
+            # extract repeated candidates with higher ddG than maxddG
+            repeated_cans = cofold_out_repeated[cofold_out_repeated.index.str.startswith(idx)].copy()
+            drop_indices = repeated_cans[(repeated_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) <= float(config['DEFAULT']['maxddG'])].index.tolist()
+            repeated_cans.drop(index=drop_indices, inplace=True)
 
             
             res_temp.append((idx,                                             # seq_num
@@ -403,7 +403,7 @@ class OligoExtractor:
                              get_gc_content(can['seq']),                      # oligo_gc_content
                              longest_at_run(can['seq']),                      # oligo_longest_at_run
                              longest_t_run(can['seq']),                       # oligo_longest_t_run
-                             len(secondary_cans),                             # secondary_target_site_multiplicity
+                             len(repeated_cans),                             # repeated_target_site_multiplicity
                              self.non_prone_multiplicity.get(idx, 0),         # non_prone_multiplicity
                              cofold_out.loc[idx]['dG_binding'],               # dG_binding
                              can['transcripts'],                              # ordered_transcripts

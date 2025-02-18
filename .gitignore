@@ -169,3 +169,5 @@ submit_job.sh
 slurm*
 src/oligo_extractor copy.py
 *.ipynb
+ResearchModule/
+input_file

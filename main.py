@@ -15,6 +15,21 @@ if __name__ == '__main__':
     # Create a configparser object
     config = configparser.ConfigParser()
 
+    parser = argparse.ArgumentParser(
+        description="Run the ASO thermodynamics pipeline to retrieve the ddG landscape for " # TODO
+                    "selective oligos by the Ensemble gene ID of interest"
+    )
+    
+    parser.add_argument(
+        "--args", "-as",
+        type=str,
+        default="DEFAULT",
+        help="Set of Arguments in config.ini to use (default)"
+    )
+
+
+    args_set = parser.parse_args().args
+    
     try:
         # Read the configuration file
         config.read('config.ini')
@@ -24,50 +39,14 @@ if __name__ == '__main__':
     
     try:
         # Set Environment variables to use the data dir from config file
-        os.environ['PYENSEMBL_CACHE_DIR'] = F'{config["DEFAULT"]["PyEnsemblDataDir"]}'
-        os.environ['BOWTIE2_INDEXES '] = F'{config["DEFAULT"]["DataDir"]}/bowtie2Home'
+        os.environ['PYENSEMBL_CACHE_DIR'] = F'{config[args_set]["PyEnsemblDataDir"]}'
+        os.environ['BOWTIE2_INDEXES '] = F'{config[args_set]["Bowtie2Dir"]}/bowtie2Home'
     except KeyError as e:
         logging.error(f"Missing configuration parameters: {e}")
         sys.exit(1)
 
 
-    parser = argparse.ArgumentParser(
-        description="Run the ASO thermodynamics pipeline to retrieve the ddG landscape for " # TODO
-                    "selective oligos by the Ensemble gene ID of interest"
-    )
 
-    parser.add_argument(dest='gene_id',
-                        type=str,
-                        help="Gene Name to be searched for candidate oligos")
-    parser.add_argument(dest='k',
-                        type=int,
-                        help='Length of oligo'
-                        )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Outputs progress information on the console."
-    )
-    parser.add_argument(
-        "--species", "-s",
-        type=str,
-        default="human",
-        help="mouse or human (default)"
-    )
-    parser.add_argument(
-        "--genome-assembly", "-g",
-        type=int,
-        default=38,
-        help="Genome Assembly, default=38"
-    )
-    parser.add_argument(
-        "--ensembl-release", "-e",
-        type=int,
-        default=113,
-        help="Ensemble release, default=113"
-    )
-
-    args = parser.parse_args()
     logging.basicConfig(
         force=True,
         level=logging.INFO,
@@ -78,12 +57,12 @@ if __name__ == '__main__':
     logging.info("%s starting up" % sys.argv[0])
 
     try:
-        if args.species == "mouse":
+        if config[args_set]["Species"] == "mouse":
             scaffold_path = None
-            bowtie_index = f"GRCm{args.genome_assembly}_{args.ensembl_release}"
-        elif args.species == "human":
-            scaffold_path = collect_scaffold(args.genome_assembly, args.ensembl_release)
-            bowtie_index = f"GRCh{args.genome_assembly}"
+            bowtie_index = f'GRCm{int(config[args_set]["GenomeAssembly"])}_{int(config[args_set]["EnsembleRelease"])}'
+        elif config[args_set]["Species"] == "human":
+            scaffold_path = collect_scaffold(int(config[args_set]["GenomeAssembly"]), int(config[args_set]["EnsembleRelease"]))
+            bowtie_index = f'GRCh{int(config[args_set]["GenomeAssembly"])}'
         else:
             raise ValueError("Only mouse and human species implemented.")
     except Exception as e:
@@ -91,70 +70,112 @@ if __name__ == '__main__':
         sys.exit(1)
     
     try:
-        os.makedirs(f"{config['DEFAULT']['DataDir']}/oligos", exist_ok=True)
-        oligo_obj = OligoExtractor(args.gene_id, args.ensembl_release, args.genome_assembly, args.species, args.k, bowtie_index, None, scaffold_path)
-        oligo_obj.extract_candidate_oligos_by_gene()
+        os.makedirs(f"{config[args_set]['OligoDir']}/oligos", exist_ok=True)
+        os.makedirs(f"{config[args_set]['Bowtie2Dir']}/bowtie2Home", exist_ok=True)
+
+        oligo_obj = OligoExtractor(config[args_set]["TargetGene"], 
+                                   int(config[args_set]["EnsembleRelease"]), 
+                                   int(config[args_set]["GenomeAssembly"]), 
+                                   config[args_set]["Species"], 
+                                   int(config[args_set]["OligoLen"]), 
+                                   [int(x) for x in config[args_set]["MultiplicityLayout"].split(',')],
+                                   bowtie_index, 
+                                   config[args_set]['OligoDir'],
+                                   None, 
+                                   scaffold_path)
+        
+        bowtie_infile = f"{config[args_set]['Bowtie2Dir']}/bowtie2Home/" + \
+                        f'{config[args_set]["TargetGene"]}_{config[args_set]["OligoLen"]}mers.fa'
+                        
+        oligo_obj.extract_candidate_oligos_by_gene(bowtie_infile)
+        
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
         sys.exit(1)
     
-    try:
-        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index, args.gene_id)
-        build_bowtie_index(args.ensembl_release, args.genome_assembly, args.species, bowtie_index, args.gene_id, gene_only=True)
+    try: # TODO: subfolder for indices
+        build_bowtie_index(int(config[args_set]["EnsembleRelease"]), 
+                           int(config[args_set]["GenomeAssembly"]), 
+                           config[args_set]["Species"], 
+                           bowtie_index, 
+                           config[args_set]["TargetGene"])
+        
+        build_bowtie_index(int(config[args_set]["EnsembleRelease"]), 
+                           int(config[args_set]["GenomeAssembly"]), 
+                           config[args_set]["Species"], 
+                           bowtie_index, 
+                           config[args_set]["TargetGene"], 
+                           gene_only=True)
+        
     except Exception as e:
         logging.error(f"Error building Bowtie2 index: {e}")
         sys.exit(1)
         
     try:
-        bowtieOut = oligo_obj.run_bowtie()
+        bowtie_out = oligo_obj.run_bowtie(bowtie_infile, 
+                                         config[args_set]['Bowtie2Dir'], 
+                                         config["DEFAULT"]["BowtieArgs"])
+        
+
+        bowtie_out_gene_gnly = oligo_obj.run_bowtie(bowtie_infile, 
+                                config[args_set]['Bowtie2Dir'], 
+                                config["DEFAULT"]["BowtieArgs"], gene_only=True)
     except Exception as e:
         logging.error(f"Error running Bowtie2: {e}")
         sys.exit(1)
         
     try:
-        oligo_obj.extract_viable_kmers(bowtieOut)
+        oligo_obj.extract_viable_kmers(bowtie_out)
     except Exception as e:
         logging.error(f"Error getting viable kmers: {e}")
         sys.exit(1)
 
         
     try:
-        cofold_in = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_filtered_{args.k}mers.rnacofoldin"
+        cofold_in = f"{config[args_set]['OligoDir']}/oligos/{bowtie_index}_{config[args_set]['TargetGene']}" + \
+                    f"_filtered_{config[args_set]['OligoLen']}mers.rnacofoldin"
+                    
         build_cofold_in(cofold_in, oligo_obj.filtered_kmers)   
         cofold_out = get_rna_cofold_energy(cofold_in)
+        
     except Exception as e:
         logging.error(f"Error getting binding affinity: {e}")
         sys.exit(1)
         
 
     try:
-        oligo_obj.extract_repeated_sites()
+        oligo_obj.extract_repeated_sites(bowtie_out_gene_gnly)
     except Exception as e:
         logging.error(f"Error extracting prone multiplicity: {e}")
         sys.exit(1)
         
-    try:
-        cofold_in_repeated = f"{config['DEFAULT']['DataDir']}/oligos/{bowtie_index}_{args.gene_id}_prone_{args.k}mers.rnacofoldin"
-        build_cofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.prone_multiplicity)   
-        cofold_out_repeated = get_rna_cofold_energy(cofold_in_repeated)
-    except Exception as e:
-        logging.error(f"Error getting binding affinity for repeated target sites: {e}")
-        sys.exit(1)  
+    # try:
+    #     cofold_in_repeated = f"{config[args_set]['OligoDir']}/oligos/{bowtie_index}" + \
+    #                          f'_{config[args_set]["TargetGene"]}_prone_{int(config[args_set]["OligoLen"])}mers.rnacofoldin'
+                             
+                             
+    #     build_cofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.prone_multiplicity)   
+    #     cofold_out_repeated = get_rna_cofold_energy(cofold_in_repeated)
+        
+    # except Exception as e:
+    #     logging.error(f"Error getting binding affinity for repeated target sites: {e}")
+    #     sys.exit(1)  
         
     
     try:
-        oligo_obj.extract_non_prone_multiplicity()
+        oligo_obj.extract_non_prone_multiplicity(int(config[args_set]["MissmatchCoreRegion"]),
+                                                 int(config[args_set]["ConsecutiveMatchesCoreRegion"]))
     except Exception as e:
         logging.error(f"Error extracting non-prone multiplicity: {e}")
         sys.exit(1)
     
 
       
-    # try:
-    oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
-    # except Exception as e:
-    #     logging.error(f"Error writing kmer results to file: {e}")
-    #     sys.exit(1)
+    try:
+        oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
+    except Exception as e:
+        logging.error(f"Error writing kmer results to file: {e}")
+        sys.exit(1)
         
 
 

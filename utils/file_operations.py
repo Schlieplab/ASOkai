@@ -147,14 +147,14 @@ def build_bowtie_index(e_release, g_assembly, species, bowtie_index_name, gene_i
         extract_gene(cdna_file, local_file, gene_id)
         
     file_exists = False
-    for file in os.listdir(f"{config['DEFAULT']['DataDir']}/bowtie2Home/"):
+    for file in os.listdir(f"{config['DEFAULT']['Bowtie2Dir']}/bowtie2Home/"):
         
         if file.startswith(bowtie_index_name + "."):
             file_exists = True
             break
         
     if not file_exists:  # Don't re-download.
-        command = f'bowtie2-build {local_file if gene_only else cdna_file} {config["DEFAULT"]["DataDir"]}/bowtie2Home/{bowtie_index_name} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
+        command = f'bowtie2-build {local_file if gene_only else cdna_file} {config["DEFAULT"]["Bowtie2Dir"]}/bowtie2Home/{bowtie_index_name} {config["DEFAULT"]["BowtieBuildIndexArg"]}'
     
         logging.info("Command: {}".format(command))
         return_code = subprocess.call(shlex.split(command))

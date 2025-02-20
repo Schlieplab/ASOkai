@@ -1,10 +1,17 @@
 import subprocess
 import shlex
 import os
+from typing import List, Set, Tuple, Dict, Optional, Any, Union
 from Bio.SeqUtils import gc_fraction
 from pyensembl import EnsemblRelease, Genome
-from utils.sequence_analysis import get_chromosomal_positions_per_transcript, get_seq_by_transcript_position
-from utils.sequence_analysis import get_exon_id, get_gc_content, longest_at_run, longest_t_run
+from utils.sequence_analysis import (
+    get_chromosomal_positions_per_transcript,
+    get_seq_by_transcript_position,
+    get_exon_id,
+    get_gc_content,
+    longest_at_run,
+    longest_t_run
+)
 from utils.kmer_searcher import KmerSearcher
 import logging
 import time
@@ -42,47 +49,49 @@ class OligoExtractor:
         ensembl_obj (Genome): An instance of EnsemblRelease for querying gene and transcript data.
         ensembl_obj_scaffolds (Genome, optional): An optional Genome object for scaffold annotations.
         gene (Gene): The Gene object representing the target gene.
-        transcript_lookup (dict): A dictionary mapping transcript IDs to gene IDs.
+        transcript_gene_lookup (dict): A dictionary mapping transcript IDs to gene IDs.
     """
 
-    def __init__(self, gene_id, e_release, g_assembly, species, k, multiplicity_layout, bowtie_index, oligo_dir, gc_bounds= None, scaffold_path=None):
-        self.gene_id = gene_id
-        self.k = k
-        self.g_assembly =  g_assembly
-        self.e_release = e_release
-        self.gene_kmers = []
-        self.filtered_kmers = []
-        self.multiplicity_layout = multiplicity_layout
-        self.gc_bounds=gc_bounds
-        self.oligo_dir = oligo_dir
-        self.bowtie_index = bowtie_index
-        self.repeated_sites = dict()
-        self.non_prone_multiplicity = dict()
+    def __init__(self, gene_id: str, e_release: int, g_assembly: int, species: str, k: int,
+                 multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str,
+                 gc_bounds: Optional[Tuple[float, float]] = None, scaffold_path: Optional[str] = None) -> None:
+        self.gene_id: str = gene_id
+        self.k: int = k
+        self.g_assembly: int = g_assembly
+        self.e_release: int = e_release
+        self.gene_kmers: List[str] = []
+        self.filtered_kmers: List[Tuple[str, str]] = []
+        self.multiplicity_layout: List[int] = multiplicity_layout
+        self.gc_bounds: Optional[Tuple[float, float]] = gc_bounds
+        self.oligo_dir: str = oligo_dir
+        self.bowtie_index: str = bowtie_index
+        self.repeated_sites: Dict[str, Any] = {}
+        self.non_prone_multiplicity: Dict[str, Union[int, float]] = {}
 
         if species == "mouse":
-            self.species = "mus_musculus"
+            self.species: str = "mus_musculus"
             # mouse doesn't have scaffold
         elif species == "human":
-            self.species = "homo_sapiens"
+            self.species: str = "homo_sapiens"
         else:
             raise ValueError("Only mouse or human species implemented.")
         
-        self.ensembl_obj =  Genome(
-                reference_name=f'GRC{self.species[0]}{self.g_assembly}',
-                annotation_name="ensembl",
-                annotation_version=self.e_release,
-                gtf_path_or_url=ref(species=self.species, which=['gtf'], release=self.e_release, ftp=True)[0],
-                transcript_fasta_paths_or_urls=ref(species=self.species, which=['cdna'], release=self.e_release, ftp=True)[0],
-                protein_fasta_paths_or_urls=ref(species=self.species, which=['pep'], release=self.e_release, ftp=True)[0],
-            )
+        self.ensembl_obj: Genome = Genome(
+            reference_name=f'GRC{self.species[0]}{self.g_assembly}',
+            annotation_name="ensembl",
+            annotation_version=self.e_release,
+            gtf_path_or_url=ref(species=self.species, which=['gtf'], release=self.e_release, ftp=True)[0],
+            transcript_fasta_paths_or_urls=ref(species=self.species, which=['cdna'], release=self.e_release, ftp=True)[0],
+            protein_fasta_paths_or_urls=ref(species=self.species, which=['pep'], release=self.e_release, ftp=True)[0],
+        )
         
         self.ensembl_obj.download()
         self.ensembl_obj.index()
-        self.scaffold_path = scaffold_path
+        self.scaffold_path: Optional[str] = scaffold_path
 
 
         if scaffold_path:
-            self.ensembl_obj_scaffolds = Genome(
+            self.ensembl_obj_scaffolds: Optional[Genome] = Genome(
                 reference_name=f'GRCh{g_assembly}',
                 annotation_name='scaffolds',
                 gtf_path_or_url=scaffold_path,
@@ -96,10 +105,10 @@ class OligoExtractor:
         self.gene = self.ensembl_obj.gene_by_id(gene_id=gene_id)
         
         logging.info(f"Gene name: {self.gene.gene_name}")
-        logging.info(f"Build transcript gene references. This may take a while...")
-        self.transcript_lookup = self.get_gene_transcript_mapping()
+        logging.info("Building transcript gene references. This may take a while...")
+        self.transcript_gene_lookup: Dict[str, str] = self.get_gene_transcript_mapping()
 
-    def _kmers(self, s, k):
+    def _kmers(self, s: str, k: int) -> Set[Tuple[str, int]]:
         """
         Generate k-mers from the input sequence and filter them based on GC bounds if specified.
 
@@ -110,15 +119,13 @@ class OligoExtractor:
         Returns:
             set: A set of tuples, where each tuple contains a k-mer and its starting position in the sequence.
         """
-        kmers_list = [(s[i:i + k], i+1) for i in range(len(s) - k + 1)]
+        kmers_list = [(s[i:i + k], i + 1) for i in range(len(s) - k + 1)]
         
         if self.gc_bounds:
             kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
-        kmers_set = set(kmers_list)
+        return set(kmers_list)
 
-        return kmers_set
-
-    def get_gene_transcript_mapping(self):
+    def get_gene_transcript_mapping(self) -> Dict[str, str]:
         """
         Create a mapping of transcript IDs to gene information.
 
@@ -126,18 +133,18 @@ class OligoExtractor:
             dict: A dictionary mapping transcript IDs to gene information.
         """
         # TODO: might be extended to exon mapping
-        transcript_lookup = dict()
+        transcript_lookup: Dict[str, str] = {}
         transcripts = self.ensembl_obj.transcripts()
-        if self.scaffold_path:
+        if self.scaffold_path and self.ensembl_obj_scaffolds:
             transcripts.extend(self.ensembl_obj_scaffolds.transcripts())
 
         for t in transcripts:
-            if t.transcript_id not in transcript_lookup.keys():
+            if t.transcript_id not in transcript_lookup:
                 transcript_lookup[t.transcript_id] = t.gene_id
                 
         return transcript_lookup
 
-    def _runCommand(self, command):
+    def _run_command(self, command: str) -> int:
         """
         Execute a shell command and return the exit code.
 
@@ -147,11 +154,16 @@ class OligoExtractor:
         Returns:
             int: The exit code of the executed command.
         """
-        return_code = subprocess.call(shlex.split(command))
-        return return_code
+        try:
+            result = subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
+            logging.info(f"Command Output: {result.stdout}")
+            return result.returncode
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Command '{command}' failed with error: {e.stderr}")
+            return e.returncode
 
 
-    def extract_candidate_oligos_by_gene(self, outfile):
+    def extract_candidate_oligos_by_gene(self, outfile: str) -> None:
         """
         Extract and process candidate oligos (k-mers) from the specified gene and save results to files.
 
@@ -159,7 +171,7 @@ class OligoExtractor:
         chromosomal positions, associates them with relevant transcripts and exons, and saves the results 
         to a CSV file. It also creates a Bowtie input file for sequence alignment.
         """
-        logging.info(f"Extract {self.k}mers from gene {self.gene_id}")
+        logging.info(f"Extracting {self.k}mers from gene {self.gene_id}")
 
         transcripts = self.gene.transcripts
         candidate_oligos = set()
@@ -168,41 +180,44 @@ class OligoExtractor:
             # TODO: make GC content bounds a parameter
             kmers_set = self._kmers(t.sequence, self.k)
             
-            kmers_set = {(tup[0], 
-                          get_chromosomal_positions_per_transcript(t.transcript_id, 
-                                                                   tup[1], 
-                                                                   self.ensembl_obj, 
-                                                                   self.k, 
-                                                                   self.ensembl_obj_scaffolds), 
-                          t.transcript_id,
-                          get_exon_id(tup[1], t)) for tup in kmers_set}
+            kmers_set = {
+                (
+                    tup[0],
+                    get_chromosomal_positions_per_transcript(
+                        t.transcript_id, tup[1], self.ensembl_obj, self.k, self.ensembl_obj_scaffolds
+                    ),
+                    t.transcript_id,
+                    get_exon_id(tup[1], t)
+                )
+                for tup in kmers_set
+            }
             
             candidate_oligos.update(kmers_set)
             
         
         
         columns = ['seq', 'chromosomal_position', 'transcripts', 'exons']
-        candidate_oligos = pd.DataFrame(columns=columns, data=candidate_oligos)
+        candidate_df = pd.DataFrame(columns=columns, data=candidate_oligos)
         
-        candidate_oligos = candidate_oligos.groupby(['seq', 'chromosomal_position']).agg({
+        candidate_df = candidate_df.groupby(['seq', 'chromosomal_position']).agg({
             'exons' : lambda x: list(x),
             'transcripts' : lambda x: list(x),
         }).reset_index()
         
-        custom_index = [f'S{str(i).zfill(6)}' for i in range(1, len(candidate_oligos) + 1)]
-        candidate_oligos.index = custom_index
+        custom_index = [f'S{str(i).zfill(6)}' for i in range(1, len(candidate_df) + 1)]
+        candidate_df.index = custom_index
         
-        logging.info(f"{len(candidate_oligos)} candidate {self.k}mers found")
+        logging.info(f"{len(candidate_df)} candidate {self.k}mers found")
 
-        candidate_oligos.to_csv(f'{self.oligo_dir}/oligos/{self.gene_id}_{self.k}mer_candidates.csv')
+        candidate_df.to_csv(f'{self.oligo_dir}/oligos/{self.gene_id}_{self.k}mer_candidates.csv')
         
-        self.gene_kmers = candidate_oligos['seq'].to_numpy().tolist()
+        self.gene_kmers = candidate_df['seq'].to_numpy().tolist()
                 
         with open(outfile, "w") as tmp_bowtie_in:
-            candidate_oligos.apply(lambda x: tmp_bowtie_in.write(">" + str(x.name) + "\n" + x['seq'] + "\n"), axis = 1)
+            candidate_df.apply(lambda x: tmp_bowtie_in.write(f">{x.name}\n{x['seq']}\n"), axis=1)
             
             
-    def run_bowtie(self, infile, bowtie_dir, bowtie_args, gene_only = False):
+    def run_bowtie(self, infile: str, bowtie_dir: str, bowtie_args: str, gene_only: bool = False) -> str:
         """
         Execute Bowtie2 alignment for the k-mers.
 
@@ -218,27 +233,27 @@ class OligoExtractor:
         start = time.time()
         
         if gene_only:    
-            outFile = os.path.splitext(infile)[0] + '_gene_only_middle' + ".sam"
-            trim = ' --trim3 ' + str(int(self.multiplicity_layout[2])) + ' --trim5 ' + str(int(self.multiplicity_layout[0]))
+            out_file = os.path.splitext(infile)[0] + '_gene_only_middle.sam'
+            trim = f" --trim3 {int(self.multiplicity_layout[2])} --trim5 {int(self.multiplicity_layout[0])}"
             command = (f'bowtie2 -x {bowtie_dir}/bowtie2Home/{self.bowtie_index}_{self.gene_id}_only '
-                    f'-U {infile} -S {outFile} {bowtie_args}' + trim)
+                       f'-U {infile} -S {out_file} {bowtie_args}{trim}')
             
         else:
-            outFile = os.path.splitext(infile)[0] + ".sam"
-            command = f'bowtie2 -x {bowtie_dir}/bowtie2Home/{self.bowtie_index} -U {infile} -S {outFile} {bowtie_args}'
+            out_file = os.path.splitext(infile)[0] + ".sam"
+            command = f'bowtie2 -x {bowtie_dir}/bowtie2Home/{self.bowtie_index} -U {infile} -S {out_file} {bowtie_args}'
             
-        logging.info("Command: {}".format(command))
-        return_code = self._runCommand(command)
-        logging.info("Return Code: {}".format(return_code))
+        logging.info(f"Command: {command}")
+        return_code = self._run_command(command)
+        logging.info(f"Return Code: {return_code}")
         
-        end = time.time() - start
+        elapsed = time.time() - start
 
-        logging.info(f"Bowtie Processing time: {end}")
+        logging.info(f"Bowtie Processing time: {elapsed:.2f} seconds")
         
-        return outFile
+        return out_file
 
 
-    def extract_viable_kmers(self, in_file): # TODO: Add option to not filter
+    def extract_viable_kmers(self, in_file: str) -> None: # TODO: Add option to not filter
         """
         Filter the aligned k-mers based on Bowtie2 alignment results.
 
@@ -261,7 +276,7 @@ class OligoExtractor:
                     pl.col('RNAME')
                     .str.split(".")  
                     .list.first().alias('transcript_id')
-                    .replace(self.transcript_lookup)
+                    .replace(self.transcript_gene_lookup)
                     .alias('genes'),
                 pl.col('QNAME').first().alias('seq_id'),  
                 ).with_columns(
@@ -272,9 +287,9 @@ class OligoExtractor:
         
         self.filtered_kmers = res.select(["seq_id", "SEQ"]).to_numpy().tolist()
                             
-        logging.info(f"Viable  {self.k}mers candidates after Bowtie: {len(self.filtered_kmers)}")
+        logging.info(f"Viable {self.k}mers candidates after Bowtie: {len(self.filtered_kmers)}")
 
-    def extract_repeated_sites(self, infile):
+    def extract_repeated_sites(self, infile: str) -> None:
         """
         Extract repeated sites with up to some missmatches in the flanks for each k-mer by running Bowtie2 on the local gene region.
         
@@ -282,10 +297,10 @@ class OligoExtractor:
             in_file (str): Path to the input SAM file from Bowtie2 alignment.
             
         """
-        def calculate_occurrences(group, position_to_ignore):
+        def calculate_occurrences(group: pd.DataFrame, position_to_ignore: Any) -> List[Tuple]:
             # Extract positions and sequences for each row
             result = group.apply(lambda row: {
-                                        'positions': (lambda result: result if result != position_to_ignore else None)(
+                                        'positions': (lambda pos: pos if pos != position_to_ignore else None)(
                                             get_chromosomal_positions_per_transcript(
                                                 row['RNAME'], 
                                                 row['POS'] - self.multiplicity_layout[0], 
@@ -294,11 +309,13 @@ class OligoExtractor:
                                                 self.ensembl_obj_scaffolds
                                             )
                                         ),
-                                        'seq': get_seq_by_transcript_position(row['RNAME'], 
-                                                                            row['POS']-self.multiplicity_layout[0], 
-                                                                            self.ensembl_obj, 
-                                                                            self.k, 
-                                                                            self.ensembl_obj_scaffolds)
+                                        'seq': get_seq_by_transcript_position(
+                                            row['RNAME'], 
+                                            row['POS'] - self.multiplicity_layout[0], 
+                                            self.ensembl_obj, 
+                                            self.k, 
+                                            self.ensembl_obj_scaffolds
+                                        )
                                         }, 
                                 axis=1)
 
@@ -311,7 +328,7 @@ class OligoExtractor:
             return list(result.itertuples(index=False, name=None))
         
     
-        columns = ["QNAME", "FLAG", "RNAME", 
+        cols = ["QNAME", "FLAG", "RNAME", 
                    "POS", "MAPQ", "CIGAR", 
                    "RNEXT", "PNEXT", "TLEN", 
                    "SEQ", "QUAL", "ALIGN SCORE", 
@@ -320,7 +337,7 @@ class OligoExtractor:
 
         oligo_candidates = pd.read_csv(f'{self.oligo_dir}/oligos/{self.gene_id}_{self.k}mer_candidates.csv', index_col=0)
         
-        sam_out = pd.read_csv(infile, sep="\t", header=None, names = columns)
+        sam_out = pd.read_csv(infile, sep="\t", header=None, names=cols)
         sam_out_agg = sam_out.groupby('QNAME').apply(lambda x : calculate_occurrences(x, oligo_candidates.loc[x['QNAME'],'chromosomal_position'].iloc[0]))
         # Convert to dictionary
         self.repeated_sites = sam_out_agg.to_dict()
@@ -328,7 +345,7 @@ class OligoExtractor:
     
 
         
-    def extract_non_prone_multiplicity(self, core_missmatch_count, core_consecutive_matches):
+    def extract_non_prone_multiplicity(self, core_missmatch_count: int, core_consecutive_matches: int) -> None:
         """
         Extract non-prone multiplicity for each k-mer using the KmerSearcher class.
         """
@@ -341,7 +358,7 @@ class OligoExtractor:
     
 
     
-    def store_kmer_results(self, cofold_out, cofold_out_repeated): 
+    def store_kmer_results(self, cofold_out: str, cofold_out_repeated: str) -> None: 
         """
         Generate a CSV file with detailed results for each k-mer, including various properties and metrics.
 
@@ -350,14 +367,14 @@ class OligoExtractor:
             cofold_out_repeated (str): The path to the RNAcofold output file for repeated candidates in CSV format.
 
         """
-        logging.info(f"Completing final results")
+        logging.info("Completing final results")
 
-        cofold_out = pd.read_csv(cofold_out)
-        cofold_out.set_index('seq_id', inplace=True)
+        cofold_df = pd.read_csv(cofold_out)
+        cofold_df.set_index('seq_id', inplace=True)
         
         
-        cofold_out_repeated = pd.read_csv(cofold_out_repeated)
-        cofold_out_repeated.set_index('seq_id', inplace=True)
+        cofold_rep_df = pd.read_csv(cofold_out_repeated)
+        cofold_rep_df.set_index('seq_id', inplace=True)
         
 
         oligo_candidates = pd.read_csv(f'{self.oligo_dir}/oligos/{self.gene_id}_{self.k}mer_candidates.csv', index_col=0, 
@@ -384,13 +401,21 @@ class OligoExtractor:
         kmer_indices = [x[0] for x in self.filtered_kmers]
         res_temp = []
         
+        # Assuming 'config' is available in the context where this method is called.
+        # Consider passing max_ddG as a parameter instead.
+        from configparser import ConfigParser
+        config = ConfigParser()
+        config.read('config.ini')
+
         for idx in kmer_indices:
             
             can = oligo_candidates.loc[idx]
             
             # extract repeated candidates with higher ddG than maxddG
-            repeated_cans = cofold_out_repeated[cofold_out_repeated.index.str.startswith(idx)].copy()
-            drop_indices = repeated_cans[(repeated_cans.dG_binding - cofold_out.loc[idx, 'dG_binding']) <= float(config['DEFAULT']['MaxddG'])].index.tolist()
+            repeated_cans = cofold_rep_df[cofold_rep_df.index.str.startswith(idx)].copy()
+            drop_indices = repeated_cans[
+                (repeated_cans.dG_binding - cofold_df.loc[idx, 'dG_binding']) <= float(config['DEFAULT']['MaxddG'])
+            ].index.tolist()
             repeated_cans.drop(index=drop_indices, inplace=True)
 
             ensembl_link = f"https://www.ensembl.org/{self.species}/Location/View?r={can['chromosomal_position'].rstrip(':+-')}"
@@ -404,8 +429,8 @@ class OligoExtractor:
                              longest_t_run(can['seq']),                         # oligo_longest_t_run
                              len(repeated_cans),                                # repeated_target_site_multiplicity
                              self.non_prone_multiplicity.get(idx, 0),           # non_prone_multiplicity
-                             cofold_out.loc[idx]['dG_binding'],                 # dG_binding
-                             len(can['transcripts'])/len(self.gene.transcripts),# transcript_prevalence_ratio
+                             cofold_df.loc[idx]['dG_binding'],                 # dG_binding
+                             len(can['transcripts']) / len(self.gene.transcripts),  # transcript_prevalence_ratio
                              can['transcripts'],                                # ordered_transcripts
                              can['exons'],                                      # ordered_exons
                              ensembl_link,                                      # ensembl_link

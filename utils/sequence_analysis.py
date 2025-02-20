@@ -1,276 +1,247 @@
 import logging
-import configparser
 import os
 import subprocess
 import shlex
+from typing import Optional, Tuple, Any, List
 
-
-# Create a configparser object
-config = configparser.ConfigParser()
-
-# Read the configuration file
-config.read('config.ini')
-
-def get_chromosomal_positions_per_transcript(transcript, position_in_transcript, ensembl_obj, k, ensembl_obj_scaffolds = None):
+def get_chromosomal_positions_per_transcript(
+    transcript: str,
+    position_in_transcript: int,
+    ensembl_obj: Any,
+    k: int,
+    ensembl_obj_scaffolds: Optional[Any] = None
+) -> Optional[str]:
     """
-    Retrieve the absolute chromosomal positions corresponding to a specific relative position within a transcript.
+    Retrieve the absolute chromosomal coordinates corresponding to a specific relative position within a transcript.
 
     This function calculates the chromosomal coordinates for a given position within a transcript.
-    It first attempts to find the transcript using the main Ensembl object. If not found, it checks
-    within an optional scaffold annotation if provided.
+    It first attempts to locate the transcript using the main Ensembl object, and if not found, uses an optional
+    scaffold annotation.
 
     Parameters:
         transcript (str): The Ensembl transcript ID.
-        position_in_transcript (int): The position within the transcript for which chromosomal coordinates are needed.
-        ensembl_obj (Genome): The main EnsemblRelease object for querying transcript data.
-        ensembl_obj_scaffolds (Genome, optional): An optional Genome object for scaffold annotations.
+        position_in_transcript (int): The 1-based position within the transcript.
+        ensembl_obj (Any): The main EnsemblRelease object for querying transcript data.
+        k (int): The window length for coordinate calculation.
+        ensembl_obj_scaffolds (Optional[Any]): Optional Genome object for scaffold annotations.
 
     Returns:
-        str: A string key representing the chromosomal coordinates in the format 
-             'contig:start_pos-end_pos:strand', or None if the transcript is not found.
+        Optional[str]: A string key in the format 'contig:start_pos-end_pos:strand', or None if the transcript is not found.
     """
-    
-    def calculate_chromosomal_positions(exon_intervals, pos, strand, k):
-        
-        def return_pos(pos):
-            
+    def calculate_chromosomal_positions(
+        exon_intervals: List[Tuple[int, int]], pos: int, strand: str, k: int
+    ) -> Tuple[int, int]:
+        def return_pos(p: int) -> int:
             accumulated = 0
-
             if strand == '-':
-                
                 for exon in exon_intervals:
-                    if (accumulated + (exon[1] - exon[0] + 1)) > pos:
-                        pos = (exon[1] - (pos - accumulated) + 1)
-                        return pos
-                    
-                    accumulated += (exon[1] - exon[0] + 1)
-                    
+                    exon_length = exon[1] - exon[0] + 1
+                    if (accumulated + exon_length) > p:
+                        return exon[1] - (p - accumulated) + 1
+                    accumulated += exon_length
             elif strand == '+':
-                
                 for exon in reversed(exon_intervals):
-                    if (accumulated + (exon[1] - exon[0] + 1)) > pos:
-                        pos = (exon[0] + (pos - accumulated) - 1)
-                        return pos
-                    
-                    accumulated += (exon[1] - exon[0] + 1)
-                
-        
+                    exon_length = exon[1] - exon[0] + 1
+                    if (accumulated + exon_length) > p:
+                        return exon[0] + (p - accumulated) - 1
+                    accumulated += exon_length
+            return p
+
+        # Sort exons in descending order by start coordinate.
         exon_intervals = sorted(exon_intervals, key=lambda x: x[0], reverse=True)
-        
         if strand == '-':
             return return_pos(pos + k - 1), return_pos(pos)
-                
         elif strand == '+':
             return return_pos(pos), return_pos(pos + k - 1)
-        
-        
-    transcript_id = transcript.split(".")[0]
+        else:
+            return pos, pos
 
+    transcript_id = transcript.split(".")[0]
     try:
-        transcript = ensembl_obj.transcript_by_id(transcript_id=transcript_id)
+        transcript_obj = ensembl_obj.transcript_by_id(transcript_id=transcript_id)
     except Exception as e:
-        try:
-            transcript = ensembl_obj_scaffolds.transcript_by_id(transcript_id=transcript_id)
-        except Exception as e:
-            logging.warning(e)
+        logging.warning(f"Main lookup failed for transcript {transcript_id}: {e}")
+        if ensembl_obj_scaffolds:
+            try:
+                transcript_obj = ensembl_obj_scaffolds.transcript_by_id(transcript_id=transcript_id)
+            except Exception as e2:
+                logging.warning(f"Scaffold lookup failed for transcript {transcript_id}: {e2}")
+                return None
+        else:
             return None
 
     start_pos, end_pos = calculate_chromosomal_positions(
-        transcript.exon_intervals,
+        transcript_obj.exon_intervals,
         position_in_transcript,
-        transcript.strand,
+        transcript_obj.strand,
         k
     )
-    
-    key = f'{transcript.contig}:{start_pos}-{end_pos}:{transcript.strand}'
+    key = f'{transcript_obj.contig}:{start_pos}-{end_pos}:{transcript_obj.strand}'
     return key
 
-def get_seq_by_transcript_position(transcript, position_in_transcript, ensembl_obj, k, ensembl_obj_scaffolds = None):
-    
+
+def get_seq_by_transcript_position(
+    transcript: str,
+    position_in_transcript: int,
+    ensembl_obj: Any,
+    k: int,
+    ensembl_obj_scaffolds: Optional[Any] = None
+) -> Optional[str]:
+    """
+    Retrieve a subsequence of length k from a transcript, starting at a specified 1-based position.
+
+    Parameters:
+        transcript (str): The Ensembl transcript ID.
+        position_in_transcript (int): 1-based starting position within the transcript.
+        ensembl_obj (Any): The main EnsemblRelease object.
+        k (int): The length of the subsequence.
+        ensembl_obj_scaffolds (Optional[Any]): Optional Genome object for scaffold annotations.
+
+    Returns:
+        Optional[str]: The subsequence of length k, or None if the transcript is not found or indexes are out-of-bound.
+    """
     transcript_id = transcript.split(".")[0]
-
     try:
-        transcript = ensembl_obj.transcript_by_id(transcript_id=transcript_id)
+        transcript_obj = ensembl_obj.transcript_by_id(transcript_id=transcript_id)
     except Exception as e:
-        try:
-            transcript = ensembl_obj_scaffolds.transcript_by_id(transcript_id=transcript_id)
-        except Exception as e:
-            logging.warning(e)
+        logging.warning(f"Main lookup failed for transcript {transcript_id}: {e}")
+        if ensembl_obj_scaffolds:
+            try:
+                transcript_obj = ensembl_obj_scaffolds.transcript_by_id(transcript_id=transcript_id)
+            except Exception as e2:
+                logging.warning(f"Scaffold lookup failed for transcript {transcript_id}: {e2}")
+                return None
+        else:
             return None
-        
-    position_in_transcript = position_in_transcript - 1
-    
-    if len(transcript) < position_in_transcript+k or position_in_transcript < 0:
-        return None
-    
-    return transcript.sequence[position_in_transcript:position_in_transcript+k]
 
-            
-def get_rna_cofold_energy(rnaCofoldInFile):
+    idx = position_in_transcript - 1  # Convert to 0-based index.
+    seq_len = len(transcript_obj.sequence)
+    # Guard against indices out of bounds.
+    if idx < 0 or (idx + k) > seq_len:
+        return None
+    return transcript_obj.sequence[idx:idx + k]
+
+
+def get_rna_cofold_energy(rnaCofoldInFile: str, paramFile: str) -> str:
     """
     Run RNAcofold to calculate RNA secondary structure energies and save the results to a CSV file.
 
-    This function executes the RNAcofold tool to perform RNA secondary structure folding calculations on
-    the input RNA sequences file. The results, including the free energy of the fold, are saved to an output 
-    CSV file. The function logs the process and any error messages.
-
     Parameters:
-        rnaCofoldInFile (str): The path to the input file containing RNA sequences in the format suitable for RNAcofold.
+        rnaCofoldInFile (str): Path to the RNA sequences input file for RNAcofold.
+        paramFile (str): Parameter file for RNAcofold.
 
     Returns:
-        str: The path to the output CSV file where the RNAcofold results are saved.
+        str: The path to the output CSV file containing RNAcofold results.
     """
     outFile = os.path.splitext(rnaCofoldInFile)[0] + "_cofold_out.csv"
-
-    
-    # Run RNAcofold
     logging.info("Running RNAcofold")
-    command = f'RNAcofold -p0  --output-format=D --jobs=0 --noPS --noconv {rnaCofoldInFile} {config["DEFAULT"]["CofoldParamFile"]}'
-    logging.info("Command: {}".format(command))
-    
+    command = f'RNAcofold -p0 --output-format=D --jobs=0 --noPS --noconv {rnaCofoldInFile} {paramFile}'
+    logging.info(f"Command: {command}")
+
     with open(outFile, 'w') as rcfOutFile:
-        process = subprocess.Popen(shlex.split(command), stdout=rcfOutFile, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            shlex.split(command), stdout=rcfOutFile, stderr=subprocess.PIPE, text=True
+        )
         while True:
-            output = process.stderr.readline().decode()
+            output = process.stderr.readline()
             if output == '' and process.poll() is not None:
                 break
             if output:
                 logging.info(output.strip())
-        rc = process.poll()
-
+        process.wait()
     return outFile
 
-def get_exon_id(pos_in_transcript, transcript):
-    """
-    Retrieve the exon ID corresponding to a specific position within a transcript.
 
-    This function determines which exon contains the given position within the transcript sequence. 
-    The function processes exons in the correct order depending on the strand orientation to find the 
-    exon containing the position.
+def get_exon_id(pos_in_transcript: int, transcript: Any) -> Optional[str]:
+    """
+    Retrieve the exon ID corresponding to a given position within a transcript.
 
     Parameters:
-        pos_in_transcript (int): The position within the transcript sequence for which the exon ID is needed.
-        transcript (Transcript): A transcript object containing exon information and strand orientation.
+        pos_in_transcript (int): The position within the transcript.
+        transcript (Any): A transcript object containing exon information and strand orientation.
 
     Returns:
-        str: The exon ID of the exon containing the specified position within the transcript. If no exon 
-             contains the position, the function returns None.
+        Optional[str]: The exon ID where the position is located, or None if not found.
     """
-    
     accumulated = 0
-    
-    exons = sorted(transcript.exons, key=lambda x: x.start, reverse=True)
-    
+    # Sort exons by start coordinate; process in reverse order for '-' strand.
+    exons = sorted(transcript.exons, key=lambda exon: exon.start, reverse=True)
     if transcript.strand == '-':
-        
         for exon in exons:
-            
-            if (accumulated + (exon.end - exon.start + 1)) > pos_in_transcript:
+            exon_length = exon.end - exon.start + 1
+            if (accumulated + exon_length) > pos_in_transcript:
                 return exon.exon_id
-            
-            accumulated += (exon.end - exon.start + 1)
-            
+            accumulated += exon_length
     elif transcript.strand == '+':
-        
         for exon in reversed(exons):
-            if (accumulated + (exon.end - exon.start + 1)) > pos_in_transcript:
+            exon_length = exon.end - exon.start + 1
+            if (accumulated + exon_length) > pos_in_transcript:
                 return exon.exon_id
+            accumulated += exon_length
+    return None
 
-            
-            accumulated += (exon.end - exon.start + 1)
 
-def get_gc_content(seq):
+def get_gc_content(seq: str) -> float:
     """
     Calculate the GC content of a nucleotide sequence.
 
-    The GC content is the proportion of nucleotides in a sequence that are either guanine (G) or cytosine (C). 
-    This function handles mixed cases by converting the sequence to uppercase before performing calculations.
-
     Parameters:
-        seq (str): The nucleotide sequence for which GC content is to be calculated.
+        seq (str): The nucleotide sequence.
 
     Returns:
-        float: The GC content of the sequence as a proportion (0 to 1). The proportion is the number of G and C nucleotides 
-               divided by the total length of the sequence.
+        float: The proportion of nucleotides that are G or C.
     """
-    # Convert sequence to uppercase to handle mixed cases
     seq = seq.upper()
-    
-    # Count G and C in the sequence
+    if not seq:
+        return 0.0
     g_count = seq.count('G')
     c_count = seq.count('C')
-    
-    # Calculate GC content as a percentage
-    gc_percentage = (g_count + c_count) / len(seq)
-    
-    return gc_percentage   
+    return (g_count + c_count) / len(seq)
 
-def longest_at_run(seq):
+
+def longest_at_run(seq: str) -> float:
     """
-    Find the proportion of the longest run of A or T nucleotides in a sequence.
-
-    This function identifies the longest contiguous run of adenine (A) or thymine (T) nucleotides in the sequence 
-    and calculates its proportion relative to the total length of the sequence. The sequence is handled in uppercase 
-    to account for mixed cases.
+    Calculate the proportion occupied by the longest contiguous run of A or T nucleotides.
 
     Parameters:
-        seq (str): The nucleotide sequence in which to find the longest AT run.
+        seq (str): The nucleotide sequence.
 
     Returns:
-        float: The proportion of the sequence occupied by the longest run of A or T nucleotides. This is the length of the 
-               longest AT-run divided by the total length of the sequence.
+        float: The length of the longest A/T run divided by the total length of the sequence.
     """
-    # Convert sequence to uppercase to handle mixed cases
     seq = seq.upper()
-    
-    # Initialize variables for the longest AT-run
+    if not seq:
+        return 0.0
     max_at_run = 0
     current_at_run = 0
-    
-    # Iterate through the sequence
     for nucleotide in seq:
         if nucleotide in 'AT':
             current_at_run += 1
-            if current_at_run > max_at_run:
-                max_at_run = current_at_run
+            max_at_run = max(max_at_run, current_at_run)
         else:
-            current_at_run = 0  # Reset AT-run counter if not A or T
-    
-    proportion_at_run = max_at_run / len(seq)
+            current_at_run = 0
+    return max_at_run / len(seq)
 
-    return proportion_at_run 
 
-def longest_t_run(seq):
+def longest_t_run(seq: str) -> float:
     """
-    Find the proportion of the longest run of T nucleotides in a sequence.
-
-    This function identifies the longest contiguous run of thymine (T) nucleotides in the sequence 
-    and calculates its proportion relative to the total length of the sequence. The sequence is handled in uppercase 
-    to account for mixed cases.
+    Calculate the proportion occupied by the longest contiguous run of T nucleotides.
 
     Parameters:
-        seq (str): The nucleotide sequence in which to find the longest T run.
+        seq (str): The nucleotide sequence.
 
     Returns:
-        float: The proportion of the sequence occupied by the longest run of T nucleotides. This is the length of the 
-               longest T-run divided by the total length of the sequence.
+        float: The length of the longest T run divided by the total length of the sequence.
     """
-    # Convert sequence to uppercase to handle mixed cases
     seq = seq.upper()
-    
-    # Initialize variables for the longest T-run
+    if not seq:
+        return 0.0
     max_t_run = 0
     current_t_run = 0
-    
-    # Iterate through the sequence
     for nucleotide in seq:
         if nucleotide == 'T':
             current_t_run += 1
-            if current_t_run > max_t_run:
-                max_t_run = current_t_run
+            max_t_run = max(max_t_run, current_t_run)
         else:
-            current_t_run = 0  # Reset T-run counter if not T
-    
-    proportion_t_run = max_t_run / len(seq)
-
-    return proportion_t_run
+            current_t_run = 0
+    return max_t_run / len(seq)

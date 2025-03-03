@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import sys
-from utils.file_operations import collect_scaffold, build_bowtie_index, build_cofold_in
+from utils.file_operations import collect_scaffold, build_bowtie_index, build_RNAcofold_in, build_RNAduplex_in
 from utils.sequence_analysis import get_rna_cofold_energy
 import logging
 from src.oligo_extractor import OligoExtractor
@@ -58,9 +58,11 @@ def create_directories(config):
         sys.exit(1)
 
 def main():
+    # Setup logging
     setup_logging()
     logging.info("Pipeline starting up")
 
+    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Run the ASO Design pipeline to retrieve candidate ASOs for "
                     "selective gene of interest"
@@ -73,6 +75,7 @@ def main():
     )
     args_set = parser.parse_args().args
 
+    # Read configuration file
     config = read_config(args_set)
     set_environment_variables(config)
     scaffold_path, bowtie_index = get_scaffold_and_index(config)
@@ -114,6 +117,45 @@ def main():
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")
     
+        
+    try:
+        bowtie_out = oligo_obj.run_bowtie(bowtie_infile, 
+                                         config['Bowtie2Dir'], 
+                                         config["BowtieArgs"])
+
+    except Exception as e:
+        logging.error(f"Error running Bowtie2: {e}")
+        sys.exit(1)
+        
+    try:
+        oligo_obj.extract_viable_kmers(bowtie_out)
+    except Exception as e:
+        logging.error(f"Error extracting viable kmers: {e}")
+        sys.exit(1)
+
+    # NOTE: The following code is not listed
+    try:
+        duplex_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
+                    f"_filtered_{config['OligoLen']}mers.rnaduplexin"
+                    
+        build_RNAduplex_in(duplex_in, oligo_obj.filtered_kmers, oligo_obj.filtered_kmers)   
+        logging.info(f"Built RNAduplex {duplex_in}")
+    except Exception as e:
+        logging.error(f"Error getting binding affinity: {e}")
+        sys.exit(1)
+    
+    
+    try:
+        cofold_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
+                    f"_filtered_{config['OligoLen']}mers.rnacofoldin"
+                    
+        build_RNAcofold_in(cofold_in, oligo_obj.filtered_kmers)   
+        cofold_out = get_rna_cofold_energy(cofold_in, " -P "+ config["CofoldParamFile"])
+        
+    except Exception as e:
+        logging.error(f"Error getting binding affinity: {e}")
+        sys.exit(1)
+    
     try:
         build_bowtie_index(int(config["EnsembleRelease"]), 
                            int(config["GenomeAssembly"]), 
@@ -126,34 +168,13 @@ def main():
         logging.error(f"Error building Bowtie2 target gene index: {e}")
         sys.exit(1)
         
-    try:
-        bowtie_out = oligo_obj.run_bowtie(bowtie_infile, 
-                                         config['Bowtie2Dir'], 
-                                         config["BowtieArgs"])
         
+    try:      
         bowtie_out_gene_gnly = oligo_obj.run_bowtie(bowtie_infile, 
                                 config['Bowtie2Dir'], 
                                 config["BowtieArgs"], gene_only=True)
     except Exception as e:
-        logging.error(f"Error running Bowtie2: {e}")
-        sys.exit(1)
-        
-    try:
-        oligo_obj.extract_viable_kmers(bowtie_out)
-    except Exception as e:
-        logging.error(f"Error extracting viable kmers: {e}")
-        sys.exit(1)
-
-        
-    try:
-        cofold_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
-                    f"_filtered_{config['OligoLen']}mers.rnacofoldin"
-                    
-        build_cofold_in(cofold_in, oligo_obj.filtered_kmers)   
-        cofold_out = get_rna_cofold_energy(cofold_in, " -P "+config["CofoldParamFile"])
-        
-    except Exception as e:
-        logging.error(f"Error getting binding affinity: {e}")
+        logging.error(f"Error running Bowtie2 for target gene: {e}")
         sys.exit(1)
         
 
@@ -168,7 +189,7 @@ def main():
             f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}_prone_"
             f"{int(config['OligoLen'])}mers.rnacofoldin"
         )
-        build_cofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
+        build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
         cofold_out_repeated = get_rna_cofold_energy(cofold_in_repeated, " -P "+config["CofoldParamFile"])
     except Exception as exc:
         logging.error("Error getting binding affinity for repeated target sites: %s", exc)
@@ -191,7 +212,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-

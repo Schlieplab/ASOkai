@@ -297,7 +297,7 @@ class OligoExtractor:
             in_file (str): Path to the input SAM file from Bowtie2 alignment.
             
         """
-        def calculate_occurrences(group: pd.DataFrame, position_to_ignore: Any) -> List[Tuple]:
+        def calculate_occurrences(group: pd.DataFrame, position_to_ignore: str) -> List[Tuple]:
             # Extract positions and sequences for each row
             result = group.apply(lambda row: {
                                         'positions': (lambda pos: pos if pos != position_to_ignore else None)(
@@ -429,8 +429,9 @@ class OligoExtractor:
                              longest_t_run(can['seq']),                         # oligo_longest_t_run
                              len(repeated_cans),                                # repeated_target_site_multiplicity
                              self.non_prone_multiplicity.get(idx, 0),           # non_prone_multiplicity
-                             cofold_df.loc[idx]['dG_binding'],                 # dG_binding
-                             len(can['transcripts']) / len(self.gene.transcripts),  # transcript_prevalence_ratio
+                             cofold_df.loc[idx]['dG_binding'],                  # dG_binding
+                             round(len(can['transcripts']) /                    # transcript_prevalence_ratio
+                                   len(self.gene.transcripts), 3),  
                              can['transcripts'],                                # ordered_transcripts
                              can['exons'],                                      # ordered_exons
                              ensembl_link,                                      # ensembl_link

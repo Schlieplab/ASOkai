@@ -133,7 +133,7 @@ def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_ind
         return 0
 
 
-def build_cofold_in(cofold_in: str, kmers: List[Tuple[str, str]], 
+def build_RNAcofold_in(cofold_in: str, kmers: List[Tuple[str, str]], 
                     targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None) -> None:
     """
     Builds an input file for RNAcofold analysis from filtered k-mers.
@@ -150,22 +150,48 @@ def build_cofold_in(cofold_in: str, kmers: List[Tuple[str, str]],
     Example:
     >>> kmers = [('S000001', 'ATCG'), ('S000002', 'GCTA')]
     >>> targets = {'S000001': [(_, 'GGTT'), (_, 'AACC')], 'S000002': [(_, 'TTAA')]}
-    >>> build_cofold_in('/path/to/cofold_input.txt', kmers, targets)
+    >>> build_RNAcofold_in('/path/to/cofold_input.txt', kmers, targets)
     """
     directory: str = os.path.dirname(cofold_in)
     os.makedirs(directory, exist_ok=True)
 
-    with open(cofold_in, "w") as filteredkmerfile:
+    with open(cofold_in, "w") as filtered_kmer_file:
         if targets:
             for kmer_id, seq in kmers:
                 if kmer_id in targets:
                     for i, target in enumerate(targets[kmer_id]):
                         # Write header and sequence lines.
-                        filteredkmerfile.write(f">{kmer_id}_{i}\n")
-                        filteredkmerfile.write(f"{seq}&{str(Seq(target[1]).reverse_complement())}\n")
+                        filtered_kmer_file.write(f">{kmer_id}_{i}\n")
+                        filtered_kmer_file.write(f"{seq}&{str(Seq(target[1]).reverse_complement())}\n")
                 else:
                     logging.warning(f"No target found for k-mer {kmer_id}, skipping targets.")
         else:
             for kmer_id, seq in kmers:
-                filteredkmerfile.write(f">{kmer_id}\n")
-                filteredkmerfile.write(f"{seq}&{str(Seq(seq).reverse_complement())}\n")
+                filtered_kmer_file.write(f">{kmer_id}\n")
+                filtered_kmer_file.write(f"{seq}&{str(Seq(seq).reverse_complement())}\n")
+                
+                
+def build_RNAduplex_in(duplex_in: str, kmers: List[Tuple[str, str]], 
+                       targets: List[Tuple[str, str]]) -> None:
+    """
+    Builds an input file for RNAduplex analysis from filtered k-mers.
+    
+    Parameters:
+        duplex_in (str): Path to the output file for RNAduplex input.
+        kmers (List[Tuple[str, str]]): List of tuples containing k-mer identifier and sequence.
+        targets (List[Tuple[str, str]]): target sequences that will be prepended to the reverse complement
+                      of each k-mer sequence.
+    
+    Returns:
+        None
+    """
+    directory: str = os.path.dirname(duplex_in)
+    os.makedirs(directory, exist_ok=True)
+
+    with open(duplex_in, "w") as filtered_kmer_file:
+        for kmer_id, seq in kmers:
+            seq = str(Seq(seq).reverse_complement())
+            for target_id, target_seq in targets:
+                # Write header and sequence lines.
+                filtered_kmer_file.write(f">{kmer_id}_{target_id}\n")
+                filtered_kmer_file.write(f"{target_seq}&{seq}\n")

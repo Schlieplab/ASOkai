@@ -171,3 +171,6 @@ src/oligo_extractor copy.py
 *.ipynb
 ResearchModule/
 input_file
+genmap/*
+genmap-index/*
+genmap-build/*

@@ -23,14 +23,46 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-def read_config(args_set):
-    config = configparser.ConfigParser()
-    try:
-        config.read('config.ini')
-    except Exception as e:
-        logging.error(f"Failed to read the configuration file: {e}")
+def read_config(args_set: str):
+
+    config_parser = configparser.ConfigParser()
+    files_read = config_parser.read('config.ini')
+    if not files_read:
+        logging.error("Configuration file 'config.ini' not found or could not be read.")
         sys.exit(1)
-    return config[args_set]
+    
+    if args_set not in config_parser:
+        logging.error("Configuration section '%s' not found in 'config.ini'.", args_set)
+        sys.exit(1)
+    
+    config = config_parser[args_set]
+
+    return config
+
+def convert_tsl_list(tsl_str):
+    # Retrieve and process transcript support levels
+    tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
+    converted_tsls = []
+
+    for token in tsl_tokens:
+        if token.lower().startswith("tsl"):
+            value_part = token[3:]
+            if value_part.lower() == "na":
+                converted_tsls.append(None)
+            else:
+                try:
+                    converted_tsls.append(int(value_part))
+                except ValueError:
+                    logging.warning("Invalid transcript support level '%s'; using None.", token)
+                    converted_tsls.append(None)
+        else:
+            try:
+                converted_tsls.append(int(token))
+            except ValueError:
+                logging.warning("Invalid transcript support level '%s'; using None.", token)
+                converted_tsls.append(None)
+
+    return converted_tsls
 
 def set_environment_variables(config):
     try:
@@ -41,6 +73,7 @@ def set_environment_variables(config):
         sys.exit(1)
 
 def get_scaffold_and_index(config):
+    
     try:
         if config["Species"] == "mouse":
             scaffold_path = None # Mouse doesn't have a scaffold
@@ -53,6 +86,7 @@ def get_scaffold_and_index(config):
     except Exception as e:
         logging.error(f"Error while collecting scaffold: {e}")
         sys.exit(1)
+
     return scaffold_path, bowtie_index
 
 def create_directories(config, bowtie_index):
@@ -88,6 +122,8 @@ def main():
     scaffold_path, bowtie_index = get_scaffold_and_index(config)
     create_directories(config, bowtie_index)
 
+
+
     try:
         oligo_obj = OligoExtractor(str(config["TargetGene"]), 
                                    int(config["EnsembleRelease"]), 
@@ -97,45 +133,77 @@ def main():
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    bowtie_index, 
                                    str(config['OligoDir']),
+                                   convert_tsl_list(config["transcriptSupportLevels"]),
                                    None, 
-                                   scaffold_path)
+                                   scaffold_path,) 
         
     except Exception as e:
         logging.error(f"Error creating OligoExtractor object: {e}")
         sys.exit(1)
+    
+    
     
     try:
         bowtie_infile = f"{config['Bowtie2Dir']}/bowtie2Home/" + \
                         f'{config["TargetGene"]}_{config["OligoLen"]}mers.fa'
                         
         oligo_obj.extract_candidate_oligos_by_gene(bowtie_infile)
-        
+  
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
         sys.exit(1)
+    
+    
     
     try: # TODO: subfolder for indices
         build_bowtie_index(int(config["EnsembleRelease"]), 
                            int(config["GenomeAssembly"]), 
                            config["Species"], 
                            bowtie_index, 
-                           config["TargetGene"])
+                           config["TargetGene"],
+                           tsl=True,
+                           genome=oligo_obj.genome,
+                           tsl_list=convert_tsl_list(config["transcriptSupportLevels"]))
     
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")
     
+    
+    
     # Run Bowtie2 for pre-filtering viable oligos
-    bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
-    bowtie_out = run_bowtie(bowtie_infile, 
-                            bowtie_index_dir,
-                            config["BowtieArgs"])
-
+    try:
+        bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
+        bowtie_out = run_bowtie(bowtie_infile, 
+                                bowtie_index_dir,
+                                config["BowtieArgs"])
+    except Exception as e:
+        logging.error(f"Error running Bowtie2 for oligo pre-filtering: {e}")
+        sys.exit(1)
+        
+        
     # Extract viable kmers based on Bowtie output
     try:
-        oligo_obj.extract_viable_kmers(bowtie_out)
+        bowtie_offtarget_infile = f"{config['Bowtie2Dir']}/bowtie2Home/" + \
+                f'{config["TargetGene"]}_{config["OligoLen"]}mers_filtered.fa'
+        oligo_obj.extract_viable_kmers(bowtie_out, bowtie_offtarget_infile)
+        
     except Exception as e:
         logging.error(f"Error extracting viable kmers: {e}")
         sys.exit(1)
+        
+        
+    try:
+        bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
+        bowtie_out = run_bowtie(bowtie_offtarget_infile, 
+                                bowtie_index_dir,
+                                config["BowtieArgs"],
+                                trim=True,
+                                multiplicity_layout=oligo_obj.multiplicity_layout)
+    except Exception as e:
+        logging.error(f"Error running Bowtie2 for oligo pre-filtering: {e}")
+        sys.exit(1)
+
+
 
     # NOTE: The following code is not listed
     # try:
@@ -149,6 +217,7 @@ def main():
     #     sys.exit(1)
     
     
+    
     try:
         cofold_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
                     f"_filtered_{config['OligoLen']}mers.rnacofoldin"
@@ -159,6 +228,8 @@ def main():
     except Exception as e:
         logging.error(f"Error getting binding affinity: {e}")
         sys.exit(1)
+    
+    
     
     try:
         build_bowtie_index(int(config["EnsembleRelease"]), 
@@ -173,6 +244,7 @@ def main():
         sys.exit(1)
         
         
+        
     try:      
         bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
         bowtie_out_gene_only = run_bowtie(bowtie_infile, 
@@ -180,11 +252,13 @@ def main():
                                           config["BowtieArgs"],
                                           gene_only=True,
                                           gene_id=oligo_obj.gene_id,
+                                          trim=True,
                                           multiplicity_layout=oligo_obj.multiplicity_layout)
         
     except Exception as e:
         logging.error(f"Error running Bowtie2 for target gene: {e}")
         sys.exit(1)
+        
         
 
     try:
@@ -193,6 +267,8 @@ def main():
         logging.error(f"Error extracting repeated sites: {e}")
         sys.exit(1)
         
+        
+        
     try:
         cofold_in_repeated = (
             f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}_prone_"
@@ -200,9 +276,12 @@ def main():
         )
         build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
         cofold_out_repeated = run_RNAcofold(cofold_in_repeated, " -P "+config["CofoldParamFile"])
+        
     except Exception as exc:
         logging.error("Error getting binding affinity for repeated target sites: %s", exc)
         sys.exit(1)
+    
+    
     
     try:
         oligo_obj.extract_non_prone_multiplicity(int(config["MissmatchCoreRegion"]),
@@ -210,6 +289,8 @@ def main():
     except Exception as e:
         logging.error(f"Error extracting non-prone multiplicity: {e}")
         sys.exit(1)
+    
+    
     
     try:
         oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)

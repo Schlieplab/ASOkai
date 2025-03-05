@@ -52,7 +52,7 @@ class OligoExtractor:
     """
 
     def __init__(self, gene_id: str, e_release: int, g_assembly: int, species: str, k: int,
-                 multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str,
+                 multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str, tsl_list: List[int],
                  gc_bounds: Optional[Tuple[float, float]] = None, scaffold_path: Optional[str] = None) -> None:
         self.gene_id: str = gene_id
         self.k: int = k
@@ -63,6 +63,7 @@ class OligoExtractor:
         self.multiplicity_layout: List[int] = multiplicity_layout
         self.gc_bounds: Optional[Tuple[float, float]] = gc_bounds
         self.oligo_dir: str = oligo_dir
+        self.tsl_list: List[int] = tsl_list
         self.bowtie_index: str = bowtie_index
         self.repeated_sites: Dict[str, Any] = {}
         self.non_prone_multiplicity: Dict[str, Union[int, float]] = {}
@@ -159,6 +160,8 @@ class OligoExtractor:
         for t in transcripts:
             # rev_comp_t = Seq(t.sequence).reverse_complement()
             # TODO: make GC content bounds a parameter
+            if t.support_level not in self.tsl_list:
+                continue
             kmers_set = self._kmers(t.sequence, self.k)
             
             kmers_set = {
@@ -199,12 +202,13 @@ class OligoExtractor:
             
 
 
-    def extract_viable_kmers(self, in_file: str) -> None: # TODO: Add option to not filter
+    def extract_viable_kmers(self, in_file: str, out_file: str) -> None: # TODO: Add option to not filter
         """
         Filter the aligned k-mers based on Bowtie2 alignment results.
 
         Parameters:
             in_file (str): Path to the input SAM file from Bowtie2 alignment.
+            out_file (str): Path to the output file to save the filtered k-mers.
         """
         
         columns = ["QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ"]
@@ -233,7 +237,14 @@ class OligoExtractor:
         
         self.filtered_kmers = res.select(["seq_id", "SEQ"]).to_numpy().tolist()
                             
-        logging.info(f"Viable {self.k}mers candidates after Bowtie: {len(self.filtered_kmers)}")
+        logging.info(f"Viable {self.k}-mer candidates after Bowtie: {len(self.filtered_kmers)}")
+        
+        with open(out_file, "w") as tmp_bowtie_in:
+            for x in self.filtered_kmers:
+                tmp_bowtie_in.write(f">{x[0]}\n{x[1]}\n")
+        logging.info(f"Filtered kmers written to file: {out_file}")
+
+        return out_file
 
     def extract_repeated_sites(self, infile: str) -> None:
         """
@@ -365,7 +376,7 @@ class OligoExtractor:
             repeated_cans.drop(index=drop_indices, inplace=True)
 
             ensembl_link = f"https://www.ensembl.org/{self.species}/Location/View?r={can['chromosomal_position'].rstrip(':+-')}"
-            
+            # TODO: add TSL
             res_temp.append((idx,                                               # seq_num
                              can['seq'],                                        # target
                              can['chromosomal_position'],                       # absolute_loc

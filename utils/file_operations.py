@@ -7,10 +7,13 @@ import logging
 from ftplib import FTP
 from typing import Optional, List, Tuple, Dict, Any
 from Bio import SeqIO
+from pyensembl import Genome
 from Bio.Seq import Seq
 from gget import ref
 import time
-import sys
+import re
+
+
 
 # Create a configparser object and read the configuration file.
 config = configparser.ConfigParser()
@@ -66,8 +69,38 @@ def collect_scaffold(genome_assembly: int, ensembl_release: int) -> Optional[str
     return full_path
 
 
-def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_index: str,
-                        gene_id: str, gene_only: bool = False) -> int:
+
+def filter_transcripts_by_tsl(
+    genome: Genome, 
+    tsl_list: List[Optional[int]], 
+    output_fasta: str
+) -> None:
+    """
+    Filter transcripts from a genome object based on transcript support levels (TSL).
+    
+    This function uses PyEnsembl to extract transcripts and their metadata (including TSL)
+    from the genome object. Only transcripts with a TSL value in `tsl_list` are written
+    to the output FASTA file.
+    
+    Args:
+        genome (Genome): PyEnsembl genome object with transcript data loaded.
+        tsl_list (List[Optional[int]]): List of allowed TSL values (e.g., [1, 2, 3, None]).
+        output_fasta (str): Path to the output FASTA file.
+    """
+    # Open the output FASTA file for writing
+    with open(output_fasta, "w") as fout:
+        for transcript in genome.transcripts():
+            # Extract TSL from transcript metadata
+            tsl = transcript.support_level
+            if tsl in tsl_list:
+                # Write transcript to output FASTA
+                fout.write(f">{transcript.id} {transcript.gene_name}\n")
+                fout.write(f"{transcript.sequence}\n")
+
+
+
+def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_index: str, gene_id: str,
+                         tsl: bool = False, tsl_list: Optional[list] = None, genome: Optional[Genome] = None, gene_only: bool = False) -> int:
     """
     Builds a Bowtie2 index for the specified species if not already present.
     
@@ -77,6 +110,9 @@ def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_ind
         species (str): The species ('human' or 'mouse').
         bowtie_index (str): Base name for the Bowtie2 index.
         gene_id (str): Gene identifier to extract if gene_only is True.
+        tsl (bool, optional): Whether to filter transcripts by transcript support level.
+        tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
+        genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
         gene_only (bool, optional): Whether to index only one gene.
     
     Returns:
@@ -91,26 +127,33 @@ def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_ind
     
     base_pyensembl = config["DEFAULT"]["PyEnsemblDataDir"]
     if species == 'human':
-        cdna_file = os.path.join(base_pyensembl,
+        input_file = os.path.join(base_pyensembl,
                                  f"pyensembl/GRCh{g_assembly}/ensembl{e_release}",
                                  f"Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz")
-        local_file = os.path.join(base_pyensembl,
-                                  f"pyensembl/GRCh{g_assembly}/ensembl{e_release}",
-                                  f"Homo_sapiens.GRCh{g_assembly}.cdna.{gene_id}_only.fa.gz")
     else:  # species == 'mouse'
-        cdna_file = os.path.join(base_pyensembl,
+        input_file = os.path.join(base_pyensembl,
                                  f"pyensembl/GRCm{g_assembly}/ensembl{e_release}",
                                  f"Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz")
-        local_file = os.path.join(base_pyensembl,
-                                  f"pyensembl/GRCm{g_assembly}/ensembl{e_release}",
-                                  f"Mus_musculus.GRCm{g_assembly}.cdna.{gene_id}_only.fa.gz")
 
     if gene_only:
+        input_file = f"{os.path.splitext(input_file)[0]}_{gene_id}_only.cdna.all.fa.gz"
         bowtie_index_base = f"{bowtie_index}_{gene_id}_only"
-        extract_gene(cdna_file, local_file, gene_id)
+        extract_gene(input_file, input_file, gene_id)
+    elif tsl:
+        # Create a new filename for the filtered FASTA
+        bowtie_index_base = bowtie_index
+        filtered_file = f"{os.path.splitext(input_file)[0]}_filtered.cdna.all.fa.gz"
+        logging.info("Filtering %s for transcript support levels: %s", input_file, tsl_list)
+        try:
+            filter_transcripts_by_tsl(genome, tsl_list, filtered_file)
+            input_file = filtered_file  # Update input_file to use the filtered version
+        except Exception as e:
+            logging.error("Transcript filtering failed: %s", e)
+            return 1
     else:
         bowtie_index_base = bowtie_index
-
+        
+        
     bowtie_dir = os.path.join(config['DEFAULT']['Bowtie2Dir'], "bowtie2Home", bowtie_index)
 
     try:
@@ -121,7 +164,6 @@ def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_ind
 
     file_exists = any(file.startswith(bowtie_index_base + ".") for file in files_in_dir)
     if not file_exists:
-        input_file = local_file if gene_only else cdna_file
         index_prefix = os.path.join(bowtie_dir, bowtie_index_base)
         command = f"bowtie2-build {input_file} {index_prefix} {config['DEFAULT']['BowtieBuildIndexArg']}"
         logging.info("Executing command: %s", command)
@@ -141,6 +183,7 @@ def run_bowtie(in_file: str,
                bowtie_args: str,
                gene_only: bool = False,
                gene_id: Optional[str] = None,
+               trim: bool = False,
                multiplicity_layout: Optional[List[int]] = None) -> str:
     """
     Execute Bowtie2 alignment for the k-mers.
@@ -151,23 +194,23 @@ def run_bowtie(in_file: str,
         bowtie_args (str): Additional command-line arguments for Bowtie2.
         gene_only (bool): If True, aligns only to the target gene region.
         gene_id (Optional[str]): The gene identifier to use for gene_only alignment. Required if gene_only is True.
+        trim (bool): If True, apply trimming options.
         multiplicity_layout (Optional[List[int]]): A sequence containing at least three integers.
-            When gene_only is True, the first and third elements are used for '--trim5' and '--trim3',
-            respectively.
+            When trim is True, the first and third elements are used for '--trim5' and '--trim3', respectively.
 
     Returns:
         str: The path to the output SAM file.
     """
     if gene_only:
         logging.info("Running Bowtie2 alignment for target gene")
-        if not multiplicity_layout or len(multiplicity_layout) < 3:
-            msg = "When gene_only is True, multiplicity_layout must contain at least three integers."
+        if not gene_id:
+            msg = "gene_id must be provided when gene_only is True."
             logging.error(msg)
             raise ValueError(msg)
-        # Build updated bowtie_index path for gene_only case.
+        # Build updated bowtie_index path for gene-only case.
         bowtie_index = os.path.join(os.path.dirname(bowtie_index),
                                     os.path.basename(bowtie_index),
-                                    os.path.basename(bowtie_index)+f"_{gene_id}_only")
+                                    os.path.basename(bowtie_index) + f"_{gene_id}_only")
         out_file = f"{os.path.splitext(in_file)[0]}_{gene_id}_only.sam"
     else:
         logging.info("Running Bowtie2 alignment")
@@ -176,18 +219,26 @@ def run_bowtie(in_file: str,
                                     os.path.basename(bowtie_index))
         out_file = f"{os.path.splitext(in_file)[0]}.sam"
 
+
+
+    if trim:
+        if not multiplicity_layout or len(multiplicity_layout) < 3:
+            msg = "When trim is True, multiplicity_layout must contain at least three integers."
+            logging.error(msg)
+            raise ValueError(msg)
+        trim5_val = str(multiplicity_layout[0])
+        trim3_val = str(multiplicity_layout[2])
+        out_file = f"{os.path.splitext(out_file)[0]}_trimmed.sam"
+
+
     # Build the initial command as a list to avoid shell injection issues.
     command = ["bowtie2", "-x", bowtie_index, "-U", in_file, "-S", out_file]
     if bowtie_args:
         command.extend(shlex.split(bowtie_args))
-
-    if gene_only:
-        # Use first and third elements for trimming options.
-        trim5_val = str(multiplicity_layout[0])
-        trim3_val = str(multiplicity_layout[2])
+    if trim:
         command.extend(["--trim5", trim5_val, "--trim3", trim3_val])
-
-    logging.debug("Executing Bowtie2 command: %s", " ".join(command))
+        
+    logging.info("Executing Bowtie2 command: %s", " ".join(command))
     start_time = time.time()
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)
@@ -285,8 +336,6 @@ def run_RNAcofold(rnaCofoldInFile: str, paramFile: str) -> str:
         )
         while True:
             output = process.stderr.readline()
-            if output == '' and process.poll() is not None:
-                break
             if output:
                 logging.info(output.strip())
         process.wait()

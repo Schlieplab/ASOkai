@@ -168,7 +168,7 @@ def main():
     intron_dict = parse_gtf_for_introns(gtf_file)
     
     # Step 3: Mask intron regions in the genome and write the masked FASTA.
-    output_file = "GRCh38_masked.fa"
+    output_file = "/home/ayat/Repositories/ASODesignPipeline/data/genmap/GRCh38_masked.fa"
     print("Masking intron regions in the genome...")
     mask_introns(genome_file, intron_dict, output_file)
     

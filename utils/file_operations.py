@@ -4,14 +4,14 @@ import shlex
 import subprocess
 import configparser
 import logging
-from ftplib import FTP
 from typing import Optional, List, Tuple, Dict, Any
 from Bio import SeqIO
-from pyensembl import Genome
 from Bio.Seq import Seq
-from gget import ref
+from Bio.SeqRecord import SeqRecord
+from pyensembl import Genome
 import time
-import re
+import gget
+import urllib.request, urllib.parse
 
 
 
@@ -21,146 +21,170 @@ config.read('config.ini')
 
 ALLOWED_SPECIES = {"human", "mouse"}
 
+def download_genome(index_name: str) -> Tuple[str, str, str, Optional[str]]:
+    # Retrieve the file URLs from gget.ref
+    gtf_url, cdna_url, pep_url = tuple(
+        gget.ref("homo_sapiens", which=["gtf", "cdna", "pep"], release=113, ftp=True)
+    )
 
-def extract_gene(fasta_gz_in: str, fasta_gz_out: str, gene_to_extract: str) -> None:
+    gtf_name = os.path.basename(urllib.parse.urlparse(gtf_url).path)
+    cdna_name = os.path.basename(urllib.parse.urlparse(cdna_url).path)
+    pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
+
+    genome_data_dir = os.path.join(config.get('GenomeDir', '.'), 'genome', index_name)
+    os.makedirs(genome_data_dir, exist_ok=True)
+    
+    scaffold_gtf_path = None
+    if config.get('Species', 'human') == 'human':     
+        scaffold_gtf_url = gtf_url.replace('.gtf.gz', '.chr_patch_hapl_scaff.gtf.gz')
+        
+        scaffold_gtf_name = os.path.basename(urllib.parse.urlparse(scaffold_gtf_url).path)
+        scaffold_gtf_path = os.path.join(genome_data_dir, scaffold_gtf_name)
+        if not os.path.exists(scaffold_gtf_path):
+            urllib.request.urlretrieve(scaffold_gtf_url, scaffold_gtf_path)
+        else:
+            logging.info("Scaffold GTF file already exists at '%s'", scaffold_gtf_path)
+            
+            
+    gtf_path = os.path.join(genome_data_dir, gtf_name)
+    cdna_path = os.path.join(genome_data_dir, cdna_name)
+    pep_path = os.path.join(genome_data_dir, pep_name)
+
+    # Download each file (if not already present)
+    if not os.path.exists(gtf_path):
+        urllib.request.urlretrieve(gtf_url, gtf_path)
+    else:
+        logging.info("GTF file already exists at '%s'", gtf_path)
+    if not os.path.exists(cdna_path):
+        urllib.request.urlretrieve(cdna_url, cdna_path)
+    else:
+        logging.info("cDNA file already exists at '%s'", cdna_path)
+    if not os.path.exists(pep_path):
+        urllib.request.urlretrieve(pep_url, pep_path)
+    else:
+        logging.info("Pep file already exists at '%s'", pep_path)
+
+    # Optionally return the file paths (including our scaffold_gtf_path)
+    return gtf_path, cdna_path, pep_path, scaffold_gtf_path
+
+
+def extract_gene(
+    fasta_gz_in: str, 
+    fasta_gz_out: str, 
+    gene_id: str,
+    ) -> None:
     """
     Extract a specific gene from a .fa.gz file and save the filtered sequences.
+    
     """
     try:
         with gzip.open(fasta_gz_in, "rt") as infile, gzip.open(fasta_gz_out, "wt") as outfile:
             sequences = SeqIO.parse(infile, "fasta")
-            filtered_sequences = (seq for seq in sequences if gene_to_extract in seq.description)
+            filtered_sequences = (seq for seq in sequences if gene_id in seq.description)
             SeqIO.write(filtered_sequences, outfile, "fasta")
     except OSError as e:
         logging.error("Error processing gene extraction files: %s", e)
         raise
 
 
-def collect_scaffold(genome_assembly: int, ensembl_release: int) -> Optional[str]:
-    """
-    Download the specified human scaffold file from Ensembl if it is not already present.
-    
-    Parameters:
-        genome_assembly (int): The genome assembly version (e.g., 38).
-        ensembl_release (int): The Ensembl release version (e.g., 101).
-    
-    Returns:
-        Optional[str]: File path to the scaffold file or None on download failure.
-    """
-    base_path: str = config['DEFAULT']['PyEnsemblDataDir']
-    dir_path: str = os.path.join(base_path, f"pyensembl/GRCh{genome_assembly}/ensembl{ensembl_release}")
-    filename: str = f"Homo_sapiens.GRCh{genome_assembly}.{ensembl_release}.chr_patch_hapl_scaff.gtf.gz"
-    full_path: str = os.path.join(dir_path, filename)
-
-    if not os.path.exists(full_path):  # Don't re-download.
-        try:
-            ftp = FTP('ftp.ensembl.org')
-            ftp.login()
-            ftp.cwd(f'pub/release-{ensembl_release}/gtf/homo_sapiens')
-            os.makedirs(dir_path, exist_ok=True)
-            with open(full_path, 'wb') as fp:
-                ftp.retrbinary("RETR " + filename, fp.write)
-            logging.info(f"Downloaded {filename} Scaffold")
-        except Exception as e:
-            logging.error(f"Could not collect Scaffold: {e}")
-            return None
-    else:
-        logging.info(f"Using existing {filename} Scaffold")
-    return full_path
-
-
-
 def filter_transcripts_by_tsl(
-    genome: Genome, 
-    tsl_list: List[Optional[int]], 
-    output_fasta: str
-) -> None:
+    fasta_gz_in: str,
+    fasta_gz_out: str,
+    genome: Genome,
+    tsl_list: List[Optional[int]],
+    ) -> None:
     """
-    Filter transcripts from a genome object based on transcript support levels (TSL).
-    
-    This function uses PyEnsembl to extract transcripts and their metadata (including TSL)
-    from the genome object. Only transcripts with a TSL value in `tsl_list` are written
-    to the output FASTA file.
+    Filter transcripts from a gzipped FASTA file based on transcript support levels using the
+    genome object for transcript details. The filtered sequences are written to a gzipped FASTA file.
     
     Args:
-        genome (Genome): PyEnsembl genome object with transcript data loaded.
-        tsl_list (List[Optional[int]]): List of allowed TSL values (e.g., [1, 2, 3, None]).
-        output_fasta (str): Path to the output FASTA file.
+        fasta_gz_in (str): Path to the input gzipped FASTA file containing transcript records.
+        fasta_gz_out (str): Path to the output gzipped FASTA file.
+        genome (Genome): Genome object that provides transcript details via a transcripts() method.
+        tsl_list (List[Optional[int]]): List of allowed transcript support level values (e.g., [1, 2, 3, None]).
     """
-    # Open the output FASTA file for writing
-    with open(output_fasta, "w") as fout:
-        for transcript in genome.transcripts():
-            # Extract TSL from transcript metadata
-            tsl = transcript.support_level
-            if tsl in tsl_list:
-                # Write transcript to output FASTA
-                fout.write(f">{transcript.id} {transcript.gene_name}\n")
-                fout.write(f"{transcript.sequence}\n")
+    logging.info("Filtering %s for transcript support levels: %s", genome.annotation_name, tsl_list)
+
+    tsl_set = set(tsl_list)
+
+    transcript_to_gene = {}
+    for t in genome.transcripts():
+        if t.support_level in tsl_set:
+            transcript_to_gene[t.id] = t.gene_name
+    
+    # Process in batches to reduce the number of write operations
+    batch_size = 1000
+    
+    with gzip.open(fasta_gz_in, "rt") as infile, gzip.open(fasta_gz_out, "wt") as outfile:
+        batch = []
+        for seq in SeqIO.parse(infile, "fasta"):
+            transcript_id = seq.id.split('.')[0]
+            if transcript_id in transcript_to_gene:
+                # Create a new SeqRecord with just the gene name as the description
+                # This will result in a FASTA header like ">seq.id gene_name"
+                new_record = SeqRecord(
+                    seq.seq,
+                    id=seq.id,
+                    description=transcript_to_gene[transcript_id]
+                )
+                batch.append(new_record)
+                
+                if len(batch) >= batch_size:
+                    SeqIO.write(batch, outfile, "fasta")
+                    batch = []
+        
+        # Write any remaining records
+        if batch:
+            SeqIO.write(batch, outfile, "fasta")
+        
+    logging.info("Transcript filtering completed.")
 
 
-
-def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_index: str, gene_id: str,
-                         tsl: bool = False, tsl_list: Optional[list] = None, genome: Optional[Genome] = None, gene_only: bool = False) -> int:
+def build_bowtie_index(input_path: str, index_name: str, 
+                       tsl: bool = False, tsl_list: Optional[list] = None, genome: Optional[Genome] = None, 
+                       gene_only: Optional[bool] = False, gene_id: Optional[str] = None) -> None:
     """
     Builds a Bowtie2 index for the specified species if not already present.
     
     Parameters:
-        e_release (int): The Ensembl release version.
-        g_assembly (int): The genome assembly version.
-        species (str): The species ('human' or 'mouse').
-        bowtie_index (str): Base name for the Bowtie2 index.
-        gene_id (str): Gene identifier to extract if gene_only is True.
+        input_path (str): Path to the input FASTA file.
+        index_name (str): Base name for the Bowtie2 index.
         tsl (bool, optional): Whether to filter transcripts by transcript support level.
         tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
         genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
         gene_only (bool, optional): Whether to index only one gene.
+        gene_id (str): Gene identifier to extract if gene_only is True.
+
     
     Returns:
-        int: Return code from the Bowtie2 build command (0 indicates success).
+        None
     """
-    if species not in ALLOWED_SPECIES:
-        msg = "Invalid species provided. Only human and mouse are supported."
-        logging.error(msg)
-        raise ValueError(msg)
 
+    # TODO: change tsl namings for index
+    
     # Build dynamic log message based on parameters
-    log_msg = f"building bowtie index for {bowtie_index}"
+    log_msg = f"building bowtie index for {index_name}"
     if tsl:
         log_msg += f" with tsl active, tsl_list={tsl_list}"
     if gene_only:
         log_msg += f" and gene_only active, gene_id={gene_id}"
     logging.info(log_msg)
-    
-    base_pyensembl = config["DEFAULT"]["PyEnsemblDataDir"]
-    if species == 'human':
-        input_file = os.path.join(base_pyensembl,
-                                 f"pyensembl/GRCh{g_assembly}/ensembl{e_release}",
-                                 f"Homo_sapiens.GRCh{g_assembly}.cdna.all.fa.gz")
-    else:  # species == 'mouse'
-        input_file = os.path.join(base_pyensembl,
-                                 f"pyensembl/GRCm{g_assembly}/ensembl{e_release}",
-                                 f"Mus_musculus.GRCm{g_assembly}.cdna.all.fa.gz")
 
-    if gene_only:
-        input_file = f"{os.path.splitext(input_file)[0]}.cdna._{gene_id}_only.fa.gz"
-        bowtie_index_base = f"{bowtie_index}_{gene_id}_only"
-        extract_gene(input_file, input_file, gene_id)
-    elif tsl:
+    if tsl:
         # Create a new filename for the filtered FASTA
-        bowtie_index_base = bowtie_index
-        filtered_file = f"{os.path.splitext(input_file)[0]}_filtered.cdna.all.fa.gz"
-        logging.info("Filtering %s for transcript support levels: %s", input_file, tsl_list)
-        try:
-            filter_transcripts_by_tsl(genome, tsl_list, filtered_file)
-            input_file = filtered_file  # Update input_file to use the filtered version
-        except Exception as e:
-            logging.error("Transcript filtering failed: %s", e)
-            return 1
-    else:
-        bowtie_index_base = bowtie_index
+        tsl_input_path = input_path.replace('.all.fa.gz', f'.tsl{"_".join(map(str, tsl_list))}.fa.gz')
+        filter_transcripts_by_tsl(input_path, tsl_input_path, genome, tsl_list)
+        input_path = tsl_input_path
         
-        
-    bowtie_dir = os.path.join(config['DEFAULT']['Bowtie2Dir'], "bowtie2Home", bowtie_index)
+    bowtie_dir = os.path.join(config['DEFAULT']['Bowtie2Dir'], "bowtie2Home", index_name)
+    os.makedirs(bowtie_dir, exist_ok=True)
+    
+    if gene_only:
+        gene_input_path = input_path.replace('.all.fa.gz', f'.{gene_id}.fa.gz')
+        extract_gene(input_path, gene_input_path, gene_id)
+        input_path = gene_input_path
+        index_name = f"{index_name}_{gene_id}_only"
+
 
     try:
         files_in_dir = os.listdir(bowtie_dir)
@@ -168,21 +192,19 @@ def build_bowtie_index(e_release: int, g_assembly: int, species: str, bowtie_ind
         logging.error("Error reading directory %s: %s", bowtie_dir, e)
         return 1
 
-    file_exists = any(file.startswith(bowtie_index_base + ".") for file in files_in_dir)
+    file_exists = any(file.startswith(index_name + ".") for file in files_in_dir)
     if not file_exists:
-        index_prefix = os.path.join(bowtie_dir, bowtie_index_base)
-        command = f"bowtie2-build {input_file} {index_prefix} {config['DEFAULT']['BowtieBuildIndexArg']}"
+        index_prefix = os.path.join(bowtie_dir, index_name)
+        command = f"bowtie2-build {input_path} {index_prefix} {config['DEFAULT']['BowtieBuildIndexArg']}"
         logging.info("Executing command: %s", command)
-        try:
-            result = subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
-            logging.info("Bowtie2 index build completed.")
-            return result.returncode
-        except subprocess.CalledProcessError as e:
-            logging.error("bowtie2-build failed: %s", e.stderr)
-            raise RuntimeError("Bowtie2 index build failed.") from e
+        
+        result = subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
+        logging.info("Bowtie2 index build completed.")
+        return result.returncode
+
     else:
-        logging.info("Using existing index: %s", bowtie_index_base)
-        return 0
+        logging.info("Using existing index: %s", index_name)
+        return
 
 
 def run_bowtie(in_file: str,
@@ -295,31 +317,6 @@ def build_RNAcofold_in(cofold_in: str, kmers: List[Tuple[str, str]],
                 filtered_kmer_file.write(f">{kmer_id}\n")
                 filtered_kmer_file.write(f"{seq}&{str(Seq(seq).reverse_complement())}\n")
                 
-                
-# def build_RNAduplex_in(duplex_in: str, kmers: List[Tuple[str, str]], 
-#                        targets: List[Tuple[str, str]]) -> None:
-#     """
-#     Builds an input file for RNAduplex analysis from filtered k-mers.
-    
-#     Parameters:
-#         duplex_in (str): Path to the output file for RNAduplex input.
-#         kmers (List[Tuple[str, str]]): List of tuples containing k-mer identifier and sequence.
-#         targets (List[Tuple[str, str]]): target sequences that will be prepended to the reverse complement
-#                       of each k-mer sequence.
-    
-#     Returns:
-#         None
-#     """
-#     directory: str = os.path.dirname(duplex_in)
-#     os.makedirs(directory, exist_ok=True)
-
-#     with open(duplex_in, "w") as filtered_kmer_file:
-#         for kmer_id, seq in kmers:
-#             seq = str(Seq(seq).reverse_complement())
-#             for target_id, target_seq in targets:
-#                 # Write header and sequence lines.
-#                 filtered_kmer_file.write(f">{kmer_id}_{target_id}\n")
-#                 filtered_kmer_file.write(f"{target_seq}&{seq}\n")
                 
 def run_RNAcofold(cofold_in_file: str, param_file: str) -> str:
     """

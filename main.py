@@ -2,16 +2,17 @@
 import argparse
 import sys
 from utils.file_operations import (
-    collect_scaffold, 
     build_bowtie_index, 
     build_RNAcofold_in, 
     run_bowtie,
     run_RNAcofold,
+    download_genome,
     )
 import logging
 from src.oligo_extractor import OligoExtractor
 import configparser
 import os
+
 
 def setup_logging():
     logging.basicConfig(
@@ -38,6 +39,9 @@ def read_config(args_set: str):
 
     return config
 
+
+
+    
 def convert_tsl_list(tsl_str):
     # Retrieve and process transcript support levels
     tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
@@ -71,14 +75,12 @@ def set_environment_variables(config):
         logging.error(f"Missing configuration parameters: {e}")
         sys.exit(1)
 
-def get_scaffold_and_index(config):
+def get_index(config):
     
     try:
         if config["Species"] == "mouse":
-            scaffold_path = None # Mouse doesn't have a scaffold
             bowtie_index = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
         elif config["Species"] == "human":
-            scaffold_path = collect_scaffold(int(config["GenomeAssembly"]), int(config["EnsembleRelease"]))
             bowtie_index = f'GRCh{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
         else:
             raise ValueError("Only mouse and human species implemented.")
@@ -86,21 +88,22 @@ def get_scaffold_and_index(config):
         logging.error(f"Error while collecting scaffold: {e}")
         sys.exit(1)
 
-    return scaffold_path, bowtie_index
+    return bowtie_index
 
 def create_directories(config, bowtie_index):
     try:
         os.makedirs(f"{config['OligoDir']}/oligos", exist_ok=True)
         os.makedirs(f"{config['OligoDir']}/results", exist_ok=True)
-        os.makedirs(f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}", exist_ok=True)
     except Exception as e:
         logging.error(f"Error creating directories: {e}")
         sys.exit(1)
+    
 
 def main():
     # Setup logging
     setup_logging()
     logging.info("Pipeline starting up")
+    logging.info("-----------------------------------")
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -118,8 +121,10 @@ def main():
     # Read configuration file
     config = read_config(args_set)
     set_environment_variables(config)
-    scaffold_path, bowtie_index = get_scaffold_and_index(config)
+    bowtie_index = get_index(config)
+    gtf_path, cdna_path, pep_path, scaffold_gtf_path = download_genome(bowtie_index)
     create_directories(config, bowtie_index)
+    bowtie_index_dir = os.path.join(config['Bowtie2Dir'], "bowtie2Home", bowtie_index)
 
     logging.info("-----------------------------------")
     
@@ -128,13 +133,16 @@ def main():
                                    int(config["EnsembleRelease"]), 
                                    int(config["GenomeAssembly"]), 
                                    str(config["Species"]), 
+                                   gtf_path,
+                                   cdna_path,
+                                   pep_path,
+                                   scaffold_gtf_path,
                                    int(config["OligoLen"]), 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    bowtie_index, 
                                    str(config['OligoDir']),
                                    convert_tsl_list(config["transcriptSupportLevels"]),
-                                   None, 
-                                   scaffold_path,) 
+                                   None,) 
         
     except Exception as e:
         logging.error(f"Error creating OligoExtractor object: {e}")
@@ -143,8 +151,9 @@ def main():
     logging.info("-----------------------------------")
     
     try:
-        bowtie_infile = f"{config['Bowtie2Dir']}/bowtie2Home/" + \
-                        f'{config["TargetGene"]}_{config["OligoLen"]}mers.fa'
+        bowtie_infile = os.path.join(config['Bowtie2Dir'],
+                                     "bowtie2Home",
+                                     f"{config['TargetGene']}_{config['OligoLen']}mers.fa")
                         
         oligo_obj.extract_candidate_oligos_by_gene(bowtie_infile)
   
@@ -154,24 +163,21 @@ def main():
         
     logging.info("-----------------------------------")
 
-    try: # TODO: subfolder for indices
-        build_bowtie_index(int(config["EnsembleRelease"]), 
-                           int(config["GenomeAssembly"]), 
-                           config["Species"], 
+    try: 
+        build_bowtie_index(cdna_path,
                            bowtie_index, 
-                           config["TargetGene"],
                            tsl=True,
                            genome=oligo_obj.genome,
                            tsl_list=convert_tsl_list(config["transcriptSupportLevels"]))
     
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")
-    
+        sys.exit(1)
+
     logging.info("-----------------------------------")
 
     # Run Bowtie2 for pre-filtering viable oligos
     try:
-        bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
         bowtie_out = run_bowtie(bowtie_infile, 
                                 bowtie_index_dir,
                                 config["BowtieArgs"])
@@ -193,33 +199,18 @@ def main():
         
     logging.info("-----------------------------------")
 
-    # try:
-    #     bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
-    #     bowtie_out = run_bowtie(bowtie_offtarget_infile, 
-    #                             bowtie_index_dir,
-    #                             config["BowtieArgs"],
-    #                             trim=True,
-    #                             multiplicity_layout=oligo_obj.multiplicity_layout)
-    # except Exception as e:
-    #     logging.error(f"Error running Bowtie2 for oligo pre-filtering: {e}")
-    #     sys.exit(1)
+    try:
+        bowtie_out = run_bowtie(bowtie_offtarget_infile, 
+                                bowtie_index_dir,
+                                config["BowtieArgs"],
+                                trim=True,
+                                multiplicity_layout=oligo_obj.multiplicity_layout)
+    except Exception as e:
+        logging.error(f"Error running Bowtie2 for specific off-targets: {e}")
+        sys.exit(1)
 
     logging.info("-----------------------------------")
 
-
-    # NOTE: The following code is not listed
-    # try:
-    #     duplex_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
-    #                 f"_filtered_{config['OligoLen']}mers.rnaduplexin"
-                    
-    #     build_RNAduplex_in(duplex_in, oligo_obj.filtered_kmers, oligo_obj.filtered_kmers)   
-    #     logging.info(f"Built RNAduplex {duplex_in}")
-    # except Exception as e:
-    #     logging.error(f"Error getting binding affinity: {e}")
-    #     sys.exit(1)
-    
-    
-    
     try:
         cofold_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
                     f"_filtered_{config['OligoLen']}mers.rnacofoldin"
@@ -231,24 +222,21 @@ def main():
         logging.error(f"Error getting binding affinity: {e}")
         sys.exit(1)
     
-    
+    logging.info("-----------------------------------")
     
     try:
-        build_bowtie_index(int(config["EnsembleRelease"]), 
-                           int(config["GenomeAssembly"]), 
-                           config["Species"], 
+        build_bowtie_index(cdna_path,
                            bowtie_index, 
-                           config["TargetGene"], 
-                           gene_only=True)
+                           gene_only=True,
+                           gene_id=oligo_obj.gene_id)
         
     except Exception as e:
         logging.error(f"Error building Bowtie2 target gene index: {e}")
         sys.exit(1)
         
-        
+    logging.info("-----------------------------------")
         
     try:      
-        bowtie_index_dir = f"{config['Bowtie2Dir']}/bowtie2Home/{bowtie_index}"
         bowtie_out_gene_only = run_bowtie(bowtie_infile, 
                                           bowtie_index_dir,
                                           config["BowtieArgs"],

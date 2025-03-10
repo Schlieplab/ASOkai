@@ -51,9 +51,9 @@ class OligoExtractor:
         transcript_gene_lookup (dict): A dictionary mapping transcript IDs to gene IDs.
     """
 
-    def __init__(self, gene_id: str, e_release: int, g_assembly: int, species: str, k: int,
-                 multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str, tsl_list: List[int],
-                 gc_bounds: Optional[Tuple[float, float]] = None, scaffold_path: Optional[str] = None) -> None:
+    def __init__(self, gene_id: str, e_release: int, g_assembly: int, species: str, gtf_path: str, dna_path: str, 
+                 pep_path: str, scaffold_path: Optional[str], k: int, multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str, tsl_list: List[int], 
+                 gc_bounds: Optional[Tuple[float, float]] = None) -> None:
         
         logging.info("Creating OligoExtractor object")
         
@@ -83,14 +83,14 @@ class OligoExtractor:
             reference_name=f'GRC{self.species[0]}{self.g_assembly}',
             annotation_name="ensembl",
             annotation_version=self.e_release,
-            gtf_path_or_url=ref(species=self.species, which=['gtf'], release=self.e_release, ftp=True)[0],
-            transcript_fasta_paths_or_urls=ref(species=self.species, which=['cdna'], release=self.e_release, ftp=True)[0],
-            protein_fasta_paths_or_urls=ref(species=self.species, which=['pep'], release=self.e_release, ftp=True)[0],
+            gtf_path_or_url=gtf_path,
+            transcript_fasta_paths_or_urls=dna_path,
+            protein_fasta_paths_or_urls=pep_path,
+            
         )
         
-        self.genome.download()
+        self.genome.download(overwrite=False)
         self.genome.index()
-        self.scaffold_path: Optional[str] = scaffold_path
 
 
         if scaffold_path:
@@ -140,7 +140,7 @@ class OligoExtractor:
         # TODO: might be extended to exon mapping
         transcript_lookup: Dict[str, str] = {}
         transcripts = self.genome.transcripts()
-        if self.scaffold_path and self.genome_scaffolds:
+        if self.genome_scaffolds:
             transcripts.extend(self.genome_scaffolds.transcripts())
 
         for t in transcripts:

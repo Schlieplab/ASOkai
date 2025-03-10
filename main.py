@@ -64,16 +64,19 @@ def convert_tsl_list(tsl_str):
                 logging.warning("Invalid transcript support level '%s'; using None.", token)
                 converted_tsls.append(None)
 
-    return converted_tsls
+    all_tsls = [1, 2, 3, 4, 5, None]
+    if converted_tsls == all_tsls:
+        return False, None   # No custom filter is needed
+    return True, converted_tsls
 
 def setup_environment(config):
     
-    if config["Species"] == "mouse":
+    if config["Species"] == "mus_musculus":
         bowtie_index_name = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
-    elif config["Species"] == "human":
+    elif config["Species"] == "homo_sapiens":
         bowtie_index_name = f'GRCh{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
     else:
-        logging.error("Only mouse and human species implemented. Please set appropriate species in config.ini.")
+        logging.error("Only mus_musculus and homo_sapiens species implemented. Please set appropriate species in config.ini.")
         logging.info("Exiting.")
         sys.exit(1)
 
@@ -81,6 +84,9 @@ def setup_environment(config):
         bowtie_index_dir = os.path.join(config['Bowtie2Dir'], "bowtie2Home", bowtie_index_name)
         os.makedirs(bowtie_index_dir, exist_ok=True)
 
+        genome_data_dir = os.path.join(config['GenomeDir'], 'genome', bowtie_index_name)
+        os.makedirs(genome_data_dir, exist_ok=True)
+        
         os.makedirs(os.path.join(config['OligoDir'], 'oligos'), exist_ok=True)
         os.makedirs(os.path.join(config['OligoDir'], 'results'), exist_ok=True)
     except Exception as e:
@@ -95,7 +101,7 @@ def setup_environment(config):
         logging.info("Exiting.")
         sys.exit(1)
     
-    return bowtie_index_name, bowtie_index_dir
+    return bowtie_index_name, bowtie_index_dir, genome_data_dir
 
 def main():
     # Setup logging
@@ -119,10 +125,12 @@ def main():
     # Read configuration file
     config = read_config(args_set)
     
-    index_name, index_dir = setup_environment(config)
+    index_name, index_dir, genome_dir = setup_environment(config)
     
-    gtf_path, cdna_path, pep_path, scaffold_gtf_path = download_genome(index_name)
-
+    gtf_path, cdna_path, pep_path, scaffold_gtf_path = download_genome(config["Species"],
+                                                                       int(config["EnsembleRelease"]),
+                                                                       genome_dir)
+    tsl, tsl_list = convert_tsl_list(config["transcriptSupportLevels"])
     logging.info("-----------------------------------")
     
     try:
@@ -167,9 +175,9 @@ def main():
                                         index_dir, 
                                         index_name,
                                         config["BowtieBuildIndexArgs"],
-                                        tsl=True,
+                                        tsl=tsl,
                                         genome=oligo_obj.genome,
-                                        tsl_list=convert_tsl_list(config["transcriptSupportLevels"]))
+                                        tsl_list=tsl_list)
     
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")

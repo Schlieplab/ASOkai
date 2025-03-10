@@ -30,7 +30,7 @@ class OligoExtractor:
         gene_id (str): The Ensembl gene ID for the target gene.
         e_release (int): The Ensembl release version to use.
         g_assembly (str): The genome assembly version (e.g., '38' for GRCh38).
-        species (str): The species of interest, either "mouse" or "human".
+        species (str): The species of interest, either "mus_musculus" or "homo_sapiens".
         k (int): The length of k-mers to extract.
         bowtie_index (str): The path to the Bowtie2 index file.
         gc_bounds (tuple): A tuple specifying the lower and upper GC content bounds for filtering k-mers.
@@ -77,13 +77,13 @@ class OligoExtractor:
         self.repeated_sites: Dict[str, Any] = {}
         self.non_prone_multiplicity: Dict[str, Union[int, float]] = {}
 
-        if species == "mouse":
+        if species == "mus_musculus":
             self.species: str = "mus_musculus"
-            # mouse doesn't have scaffold
-        elif species == "human":
+            # mus_musculus doesn't have scaffold
+        elif species == "homo_sapiens":
             self.species: str = "homo_sapiens"
         else:
-            raise ValueError("Only mouse or human species implemented.")
+            raise ValueError("Only mus_musculus or homo_sapiens species implemented.")
         
         self.genome: Genome = Genome(
             reference_name=f'GRC{self.species[0]}{self.g_assembly}',

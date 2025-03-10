@@ -2,7 +2,6 @@ import os
 import gzip
 import shlex
 import subprocess
-import configparser
 import logging
 from typing import Optional, List, Tuple, Dict, Any
 from Bio import SeqIO
@@ -15,40 +14,48 @@ import urllib.request, urllib.parse
 
 
 
-# Create a configparser object and read the configuration file.
-config = configparser.ConfigParser()
-config.read('config.ini')
 
-ALLOWED_SPECIES = {"human", "mouse"}
-
-def download_genome(index_name: str) -> Tuple[str, str, str, Optional[str]]:
+def download_genome(
+    species: str,
+    e_release: int,
+    genome_dir: str,
+    ) -> Tuple[str, str, str, Optional[str]]:
+    """
+    Download the genome files for a specified species.
+    
+    Args:
+        species (str): Species name. e.g., 'homo_sapiens'.
+        e_release (int): The Ensembl release version.
+        genome_dir (str): Path to the directory where the genome files will be saved.
+        
+    Returns:
+        Tuple[str, str, str, Optional[str]]: Paths to the GTF, cDNA, and peptide files, and an optional scaffold GTF path.
+    """
     # Retrieve the file URLs from gget.ref
     gtf_url, cdna_url, pep_url = tuple(
-        gget.ref("homo_sapiens", which=["gtf", "cdna", "pep"], release=113, ftp=True)
+        gget.ref(species, which=["gtf", "cdna", "pep"], release=e_release, ftp=True)
     )
 
     gtf_name = os.path.basename(urllib.parse.urlparse(gtf_url).path)
     cdna_name = os.path.basename(urllib.parse.urlparse(cdna_url).path)
     pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
 
-    genome_data_dir = os.path.join(config['DEFAULT'].get('GenomeDir', '.'), 'genome', index_name)
-    os.makedirs(genome_data_dir, exist_ok=True)
     
     scaffold_gtf_path = None
-    if config['DEFAULT'].get('Species', 'human') == 'human':     
+    if species == 'homo_sapiens':     
         scaffold_gtf_url = gtf_url.replace('.gtf.gz', '.chr_patch_hapl_scaff.gtf.gz')
         
         scaffold_gtf_name = os.path.basename(urllib.parse.urlparse(scaffold_gtf_url).path)
-        scaffold_gtf_path = os.path.join(genome_data_dir, scaffold_gtf_name)
+        scaffold_gtf_path = os.path.join(genome_dir, scaffold_gtf_name)
         if not os.path.exists(scaffold_gtf_path):
             urllib.request.urlretrieve(scaffold_gtf_url, scaffold_gtf_path)
         else:
             logging.info("Scaffold GTF file already exists at '%s'", scaffold_gtf_path)
             
             
-    gtf_path = os.path.join(genome_data_dir, gtf_name)
-    cdna_path = os.path.join(genome_data_dir, cdna_name)
-    pep_path = os.path.join(genome_data_dir, pep_name)
+    gtf_path = os.path.join(genome_dir, gtf_name)
+    cdna_path = os.path.join(genome_dir, cdna_name)
+    pep_path = os.path.join(genome_dir, pep_name)
 
     # Download each file (if not already present)
     if not os.path.exists(gtf_path):
@@ -75,7 +82,6 @@ def extract_gene(
     ) -> None:
     """
     Extract a specific gene from a .fa.gz file and save the filtered sequences.
-    
     """
     logging.info(f'Extracting {gene_id} from transcriptome.')
     try:
@@ -145,7 +151,7 @@ def build_bowtie_index(
     input_path: str, 
     index_dir: str, 
     index_prefix: str,
-    arguments: str,
+    args: str,
     tsl: bool = False, 
     tsl_list: Optional[list] = None, 
     genome: Optional[Genome] = None, 
@@ -159,7 +165,7 @@ def build_bowtie_index(
         input_path (str): Path to the input FASTA file (Must end with .all.fa.gz).
         index_dir (str): Path to the directory where the Bowtie2 index will be saved.
         index_prefix (str): Prefix for the Bowtie2 index files. (e.g., 'GRCh38_113')
-        arguments (str): Additional command-line arguments for Bowtie2.
+        args (str): Additional command-line arguments for Bowtie2.
         tsl (bool, optional): Whether to filter transcripts by transcript support level.
         tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
         genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
@@ -208,30 +214,41 @@ def build_bowtie_index(
 
     file_exists = any(file.startswith(index_name + ".") for file in files_in_dir)
     if not file_exists:
-        command = f"bowtie2-build {input_path} {index_path} {arguments}"
-        logging.info("Executing command: %s", command)
-        
-        subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
-        logging.info("Bowtie2 index build completed.")
+        command = ["bowtie2-build", input_path, index_path]
+        if args:
+            command.extend(shlex.split(args))
+            
+        logging.info("Executing Bowtie2-build command: %s", " ".join(command))
+        start_time = time.time()
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logging.error("Bowtie2-build execution failed: %s", e.stderr.strip())
+            raise RuntimeError("Bowtie2-build execution failed.") from e
+
+        elapsed = time.time() - start_time
+        logging.info("Bowtie2-build processing time: %.2f seconds", elapsed)
 
     else:
         logging.info("Using existing index: %s", index_name)
 
     return index_path
 
-def run_bowtie(in_file: str,
-               bowtie_index: str,
-               bowtie_args: str,
-               gene_only: bool = False,
-               gene_id: Optional[str] = None,
-               trim: bool = False,
-               multiplicity_layout: Optional[List[int]] = None) -> str:
+def run_bowtie(
+    in_file: str,
+    index_path: str,
+    bowtie_args: str,
+    gene_only: bool = False,
+    gene_id: Optional[str] = None,
+    trim: bool = False,
+    multiplicity_layout: Optional[List[int]] = None,
+    ) -> str:
     """
     Execute Bowtie2 alignment for the k-mers.
 
     Parameters:
         in_file (str): Path to the input file.
-        bowtie_index (str): Path to the Bowtie2 index.
+        index_path (str): Path to the Bowtie2 index.
         bowtie_args (str): Additional command-line arguments for Bowtie2.
         gene_only (bool): If True, aligns only to the target gene region.
         gene_id (Optional[str]): The gene identifier to use for gene_only alignment. Required if gene_only is True.
@@ -249,7 +266,7 @@ def run_bowtie(in_file: str,
             logging.error(msg)
             raise ValueError(msg)
 
-        out_file = f"{os.path.splitext(in_file)[0]}_{gene_id}_only.sam"
+        out_file = f"{os.path.splitext(in_file)[0]}_target_only.sam"
     else:
         logging.info("Running Bowtie2 alignment")
         out_file = f"{os.path.splitext(in_file)[0]}.sam"
@@ -266,7 +283,7 @@ def run_bowtie(in_file: str,
 
 
     # Build the initial command as a list to avoid shell injection issues.
-    command = ["bowtie2", "-x", bowtie_index, "-U", in_file, "-S", out_file]
+    command = ["bowtie2", "-x", index_path, "-U", in_file, "-S", out_file]
     if bowtie_args:
         command.extend(shlex.split(bowtie_args))
     if trim:
@@ -285,8 +302,11 @@ def run_bowtie(in_file: str,
     return out_file
 
     
-def build_RNAcofold_in(cofold_in: str, kmers: List[Tuple[str, str]], 
-                    targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None) -> None:
+def build_RNAcofold_in(
+    cofold_in: str, 
+    kmers: List[Tuple[str, str]], 
+    targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None
+    ) -> None:
     """
     Builds an input file for RNAcofold analysis from filtered k-mers.
     
@@ -323,7 +343,10 @@ def build_RNAcofold_in(cofold_in: str, kmers: List[Tuple[str, str]],
                 filtered_kmer_file.write(f"{seq}&{str(Seq(seq).reverse_complement())}\n")
                 
                 
-def run_RNAcofold(cofold_in_file: str, param_file: str) -> str:
+def run_RNAcofold(
+    cofold_in_file: str, 
+    param_file: str
+    ) -> str:
     """
     Run RNAcofold to calculate RNA secondary structure energies and save the results to a CSV file.
 

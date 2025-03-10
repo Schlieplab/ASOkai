@@ -16,12 +16,12 @@ import os
 
 def setup_logging():
     logging.basicConfig(
-        force=True,
-        level=logging.INFO,
-        stream=sys.stdout,
-        format='### INFO - %(asctime)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    force=True,
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='### %(levelname)s - %(asctime)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 def read_config(args_set: str):
 
@@ -29,18 +29,17 @@ def read_config(args_set: str):
     files_read = config_parser.read('config.ini')
     if not files_read:
         logging.error("Configuration file 'config.ini' not found or could not be read.")
+        logging.info("Exiting.")
         sys.exit(1)
     
     if args_set not in config_parser:
         logging.error("Configuration section '%s' not found in 'config.ini'.", args_set)
+        logging.info("Exiting.")
         sys.exit(1)
     
     config = config_parser[args_set]
 
     return config
-
-
-
     
 def convert_tsl_list(tsl_str):
     # Retrieve and process transcript support levels
@@ -67,43 +66,42 @@ def convert_tsl_list(tsl_str):
 
     return converted_tsls
 
-def set_environment_variables(config):
-    try:
-        os.environ['PYENSEMBL_CACHE_DIR'] = f'{config["PyEnsemblDataDir"]}'
-        os.environ['BOWTIE2_INDEXES'] = f'{config["Bowtie2Dir"]}/bowtie2Home'
-    except KeyError as e:
-        logging.error(f"Missing configuration parameters: {e}")
-        sys.exit(1)
-
-def get_index(config):
+def setup_environment(config):
     
-    try:
-        if config["Species"] == "mouse":
-            bowtie_index = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
-        elif config["Species"] == "human":
-            bowtie_index = f'GRCh{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
-        else:
-            raise ValueError("Only mouse and human species implemented.")
-    except Exception as e:
-        logging.error(f"Error while collecting scaffold: {e}")
+    if config["Species"] == "mouse":
+        bowtie_index_name = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
+    elif config["Species"] == "human":
+        bowtie_index_name = f'GRCh{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
+    else:
+        logging.error("Only mouse and human species implemented. Please set appropriate species in config.ini.")
+        logging.info("Exiting.")
         sys.exit(1)
 
-    return bowtie_index
-
-def create_directories(config, bowtie_index):
     try:
-        os.makedirs(f"{config['OligoDir']}/oligos", exist_ok=True)
-        os.makedirs(f"{config['OligoDir']}/results", exist_ok=True)
+        bowtie_index_dir = os.path.join(config['Bowtie2Dir'], "bowtie2Home", bowtie_index_name)
+        os.makedirs(bowtie_index_dir, exist_ok=True)
+
+        os.makedirs(os.path.join(config['OligoDir'], 'oligos'), exist_ok=True)
+        os.makedirs(os.path.join(config['OligoDir'], 'results'), exist_ok=True)
     except Exception as e:
         logging.error(f"Error creating directories: {e}")
+        logging.info("Exiting.")
+        sys.exit(1)
+
+    try:
+        os.environ['BOWTIE2_INDEXES'] = bowtie_index_dir
+    except KeyError as e:
+        logging.error(f"Error setting Environment Variables: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
     
+    return bowtie_index_name, bowtie_index_dir
 
 def main():
     # Setup logging
     setup_logging()
     logging.info("Pipeline starting up")
-    logging.info("-----------------------------------")
+    logging.info("--------------------")
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -120,11 +118,10 @@ def main():
 
     # Read configuration file
     config = read_config(args_set)
-    set_environment_variables(config)
-    bowtie_index = get_index(config)
-    gtf_path, cdna_path, pep_path, scaffold_gtf_path = download_genome(bowtie_index)
-    create_directories(config, bowtie_index)
-    bowtie_index_dir = os.path.join(config['Bowtie2Dir'], "bowtie2Home", bowtie_index)
+    
+    index_name, index_dir = setup_environment(config)
+    
+    gtf_path, cdna_path, pep_path, scaffold_gtf_path = download_genome(index_name)
 
     logging.info("-----------------------------------")
     
@@ -132,20 +129,21 @@ def main():
         oligo_obj = OligoExtractor(str(config["TargetGene"]), 
                                    int(config["EnsembleRelease"]), 
                                    int(config["GenomeAssembly"]), 
+                                   int(config["OligoLen"]),
+                                   tuple(map(float, config['GCbound'].split(','))),
                                    str(config["Species"]), 
                                    gtf_path,
                                    cdna_path,
                                    pep_path,
-                                   scaffold_gtf_path,
-                                   int(config["OligoLen"]), 
+                                   scaffold_gtf_path, 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
-                                   bowtie_index, 
+                                   index_name, 
                                    str(config['OligoDir']),
-                                   convert_tsl_list(config["transcriptSupportLevels"]),
-                                   None,) 
+                                   ) 
         
     except Exception as e:
         logging.error(f"Error creating OligoExtractor object: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
     logging.info("-----------------------------------")
@@ -159,19 +157,23 @@ def main():
   
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
     logging.info("-----------------------------------")
 
     try: 
-        build_bowtie_index(cdna_path,
-                           bowtie_index, 
-                           tsl=True,
-                           genome=oligo_obj.genome,
-                           tsl_list=convert_tsl_list(config["transcriptSupportLevels"]))
+        index_path = build_bowtie_index(cdna_path,
+                                        index_dir, 
+                                        index_name,
+                                        config["BowtieBuildIndexArgs"],
+                                        tsl=True,
+                                        genome=oligo_obj.genome,
+                                        tsl_list=convert_tsl_list(config["transcriptSupportLevels"]))
     
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
 
     logging.info("-----------------------------------")
@@ -179,10 +181,11 @@ def main():
     # Run Bowtie2 for pre-filtering viable oligos
     try:
         bowtie_out = run_bowtie(bowtie_infile, 
-                                bowtie_index_dir,
+                                index_path,
                                 config["BowtieArgs"])
     except Exception as e:
         logging.error(f"Error running Bowtie2 for oligo pre-filtering: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
     
     logging.info("-----------------------------------")
@@ -195,24 +198,26 @@ def main():
         
     except Exception as e:
         logging.error(f"Error extracting viable kmers: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
     logging.info("-----------------------------------")
 
     try:
         bowtie_out = run_bowtie(bowtie_offtarget_infile, 
-                                bowtie_index_dir,
+                                index_path,
                                 config["BowtieArgs"],
                                 trim=True,
                                 multiplicity_layout=oligo_obj.multiplicity_layout)
     except Exception as e:
         logging.error(f"Error running Bowtie2 for specific off-targets: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
 
     logging.info("-----------------------------------")
 
     try:
-        cofold_in = f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}" + \
+        cofold_in = f"{config['OligoDir']}/oligos/{index_name}_{config['TargetGene']}" + \
                     f"_filtered_{config['OligoLen']}mers.rnacofoldin"
                     
         build_RNAcofold_in(cofold_in, oligo_obj.filtered_kmers)   
@@ -220,25 +225,29 @@ def main():
         
     except Exception as e:
         logging.error(f"Error getting binding affinity: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
     
     logging.info("-----------------------------------")
     
     try:
-        build_bowtie_index(cdna_path,
-                           bowtie_index, 
+        gene_index_path = build_bowtie_index(cdna_path,
+                           index_dir, 
+                           index_name,
+                           config["BowtieBuildIndexArgs"],
                            gene_only=True,
                            gene_id=oligo_obj.gene_id)
         
     except Exception as e:
         logging.error(f"Error building Bowtie2 target gene index: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
     logging.info("-----------------------------------")
         
     try:      
         bowtie_out_gene_only = run_bowtie(bowtie_infile, 
-                                          bowtie_index_dir,
+                                          gene_index_path,
                                           config["BowtieArgs"],
                                           gene_only=True,
                                           gene_id=oligo_obj.gene_id,
@@ -247,6 +256,7 @@ def main():
         
     except Exception as e:
         logging.error(f"Error running Bowtie2 for target gene: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
         
@@ -255,13 +265,14 @@ def main():
         oligo_obj.extract_repeated_sites(bowtie_out_gene_only)
     except Exception as e:
         logging.error(f"Error extracting repeated sites: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
         
         
     try:
         cofold_in_repeated = (
-            f"{config['OligoDir']}/oligos/{bowtie_index}_{config['TargetGene']}_prone_"
+            f"{config['OligoDir']}/oligos/{index_name}_{config['TargetGene']}_prone_"
             f"{int(config['OligoLen'])}mers.rnacofoldin"
         )
         build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
@@ -269,6 +280,7 @@ def main():
         
     except Exception as exc:
         logging.error("Error getting binding affinity for repeated target sites: %s", exc)
+        logging.info("Exiting.")
         sys.exit(1)
     
     
@@ -278,6 +290,7 @@ def main():
                                                  int(config["ConsecutiveMatchesCoreRegion"]))
     except Exception as e:
         logging.error(f"Error extracting non-prone multiplicity: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
     
     
@@ -286,6 +299,7 @@ def main():
         oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
     except Exception as e:
         logging.error(f"Error writing kmer results to file: {e}")
+        logging.info("Exiting.")
         sys.exit(1)
         
     logging.info("Pipeline completed successfully.")

@@ -1,9 +1,6 @@
-import subprocess
-import shlex
-import os
 from typing import List, Set, Tuple, Dict, Optional, Any, Union
 from Bio.SeqUtils import gc_fraction
-from pyensembl import EnsemblRelease, Genome
+from pyensembl import Genome
 from utils.sequence_analysis import (
     get_chromosomal_positions_per_transcript,
     get_seq_by_transcript_position,
@@ -13,11 +10,9 @@ from utils.sequence_analysis import (
 )
 from utils.kmer_searcher import KmerSearcher
 import logging
-import time
 import pandas as pd
 from Bio.Seq import Seq
 import polars as pl
-from gget import ref
 import ast
 
 
@@ -38,7 +33,7 @@ class OligoExtractor:
         species (str): The species of interest, either "mouse" or "human".
         k (int): The length of k-mers to extract.
         bowtie_index (str): The path to the Bowtie2 index file.
-        gc_bounds (tuple, optional): A tuple specifying the lower and upper GC content bounds for filtering k-mers.
+        gc_bounds (tuple): A tuple specifying the lower and upper GC content bounds for filtering k-mers.
         scaffold_path (str, optional): Path to a GTF file for scaffold annotations.
         gene_kmers (list): A list to store all k-mers extracted from the gene.
         filtered_kmers (list): A list to store k-mers that pass all filters.
@@ -51,9 +46,21 @@ class OligoExtractor:
         transcript_gene_lookup (dict): A dictionary mapping transcript IDs to gene IDs.
     """
 
-    def __init__(self, gene_id: str, e_release: int, g_assembly: int, species: str, gtf_path: str, dna_path: str, 
-                 pep_path: str, scaffold_path: Optional[str], k: int, multiplicity_layout: List[int], bowtie_index: str, oligo_dir: str, tsl_list: List[int], 
-                 gc_bounds: Optional[Tuple[float, float]] = None) -> None:
+    def __init__(self, 
+        gene_id: str, 
+        e_release: int, 
+        g_assembly: int, 
+        k: int, 
+        gc_bounds: Tuple[float, float],
+        species: str, 
+        gtf_path: str, 
+        dna_path: str, 
+        pep_path: str, 
+        scaffold_path: Optional[str], 
+        multiplicity_layout: List[int], 
+        bowtie_index: str, 
+        oligo_dir: str, 
+    ) -> None:
         
         logging.info("Creating OligoExtractor object")
         
@@ -64,9 +71,8 @@ class OligoExtractor:
         self.gene_kmers: List[str] = []
         self.filtered_kmers: List[Tuple[str, str]] = []
         self.multiplicity_layout: List[int] = multiplicity_layout
-        self.gc_bounds: Optional[Tuple[float, float]] = gc_bounds
+        self.gc_bounds: Tuple[float, float] = gc_bounds
         self.oligo_dir: str = oligo_dir
-        self.tsl_list: List[int] = tsl_list
         self.bowtie_index: str = bowtie_index
         self.repeated_sites: Dict[str, Any] = {}
         self.non_prone_multiplicity: Dict[str, Union[int, float]] = {}
@@ -125,9 +131,8 @@ class OligoExtractor:
             set: A set of tuples, where each tuple contains a k-mer and its starting position in the sequence.
         """
         kmers_list = [(s[i:i + k], i + 1) for i in range(len(s) - k + 1)]
+        kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
         
-        if self.gc_bounds:
-            kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
         return set(kmers_list)
 
     def get_gene_transcript_mapping(self) -> Dict[str, str]:
@@ -163,10 +168,7 @@ class OligoExtractor:
         transcripts = self.gene.transcripts
         candidate_oligos = set()
         for t in transcripts:
-            # rev_comp_t = Seq(t.sequence).reverse_complement()
             # TODO: make GC content bounds a parameter
-            if t.support_level not in self.tsl_list:
-                continue
             kmers_set = self._kmers(t.sequence, self.k)
             
             kmers_set = {

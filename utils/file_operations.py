@@ -31,11 +31,11 @@ def download_genome(index_name: str) -> Tuple[str, str, str, Optional[str]]:
     cdna_name = os.path.basename(urllib.parse.urlparse(cdna_url).path)
     pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
 
-    genome_data_dir = os.path.join(config.get('GenomeDir', '.'), 'genome', index_name)
+    genome_data_dir = os.path.join(config['DEFAULT'].get('GenomeDir', '.'), 'genome', index_name)
     os.makedirs(genome_data_dir, exist_ok=True)
     
     scaffold_gtf_path = None
-    if config.get('Species', 'human') == 'human':     
+    if config['DEFAULT'].get('Species', 'human') == 'human':     
         scaffold_gtf_url = gtf_url.replace('.gtf.gz', '.chr_patch_hapl_scaff.gtf.gz')
         
         scaffold_gtf_name = os.path.basename(urllib.parse.urlparse(scaffold_gtf_url).path)
@@ -77,6 +77,7 @@ def extract_gene(
     Extract a specific gene from a .fa.gz file and save the filtered sequences.
     
     """
+    logging.info(f'Extracting {gene_id} from transcriptome.')
     try:
         with gzip.open(fasta_gz_in, "rt") as infile, gzip.open(fasta_gz_out, "wt") as outfile:
             sequences = SeqIO.parse(infile, "fasta")
@@ -140,15 +141,25 @@ def filter_transcripts_by_tsl(
     logging.info("Transcript filtering completed.")
 
 
-def build_bowtie_index(input_path: str, index_name: str, 
-                       tsl: bool = False, tsl_list: Optional[list] = None, genome: Optional[Genome] = None, 
-                       gene_only: Optional[bool] = False, gene_id: Optional[str] = None) -> None:
+def build_bowtie_index(
+    input_path: str, 
+    index_dir: str, 
+    index_prefix: str,
+    arguments: str,
+    tsl: bool = False, 
+    tsl_list: Optional[list] = None, 
+    genome: Optional[Genome] = None, 
+    gene_only: Optional[bool] = False, 
+    gene_id: Optional[str] = None,
+    ) -> None:
     """
     Builds a Bowtie2 index for the specified species if not already present.
     
     Parameters:
-        input_path (str): Path to the input FASTA file.
-        index_name (str): Base name for the Bowtie2 index.
+        input_path (str): Path to the input FASTA file (Must end with .all.fa.gz).
+        index_dir (str): Path to the directory where the Bowtie2 index will be saved.
+        index_prefix (str): Prefix for the Bowtie2 index files. (e.g., 'GRCh38_113')
+        arguments (str): Additional command-line arguments for Bowtie2.
         tsl (bool, optional): Whether to filter transcripts by transcript support level.
         tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
         genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
@@ -157,17 +168,17 @@ def build_bowtie_index(input_path: str, index_name: str,
 
     
     Returns:
-        None
+        index_path (str): Path to the Bowtie2 index.
     """
 
     # TODO: change tsl namings for index
-    
+
     # Build dynamic log message based on parameters
-    log_msg = f"building bowtie index for {index_name}"
+    log_msg = f"building bowtie index for {index_prefix}"
     if tsl:
-        log_msg += f" with tsl active, tsl_list={tsl_list}"
+        log_msg += f" with tsl active"
     if gene_only:
-        log_msg += f" and gene_only active, gene_id={gene_id}"
+        log_msg += f" and gene_only active"
     logging.info(log_msg)
 
     if tsl:
@@ -175,9 +186,10 @@ def build_bowtie_index(input_path: str, index_name: str,
         tsl_input_path = input_path.replace('.all.fa.gz', f'.tsl{"_".join(map(str, tsl_list))}.fa.gz')
         filter_transcripts_by_tsl(input_path, tsl_input_path, genome, tsl_list)
         input_path = tsl_input_path
+        index_name = f"{index_prefix}_tsl{'_'.join(map(str, tsl_list))}"
+    else:
+        index_name = index_prefix
         
-    bowtie_dir = os.path.join(config['DEFAULT']['Bowtie2Dir'], "bowtie2Home", index_name)
-    os.makedirs(bowtie_dir, exist_ok=True)
     
     if gene_only:
         gene_input_path = input_path.replace('.all.fa.gz', f'.{gene_id}.fa.gz')
@@ -187,25 +199,25 @@ def build_bowtie_index(input_path: str, index_name: str,
 
 
     try:
-        files_in_dir = os.listdir(bowtie_dir)
+        files_in_dir = os.listdir(index_dir)
     except OSError as e:
-        logging.error("Error reading directory %s: %s", bowtie_dir, e)
-        return 1
+        logging.error("Error reading directory %s: %s", index_dir, e)
+        raise RuntimeError("Error reading directory.") from e
+    
+    index_path = os.path.join(index_dir, index_name)
 
     file_exists = any(file.startswith(index_name + ".") for file in files_in_dir)
     if not file_exists:
-        index_prefix = os.path.join(bowtie_dir, index_name)
-        command = f"bowtie2-build {input_path} {index_prefix} {config['DEFAULT']['BowtieBuildIndexArg']}"
+        command = f"bowtie2-build {input_path} {index_path} {arguments}"
         logging.info("Executing command: %s", command)
         
-        result = subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
+        subprocess.run(shlex.split(command), check=True, capture_output=True, text=True)
         logging.info("Bowtie2 index build completed.")
-        return result.returncode
 
     else:
         logging.info("Using existing index: %s", index_name)
-        return
 
+    return index_path
 
 def run_bowtie(in_file: str,
                bowtie_index: str,
@@ -236,18 +248,11 @@ def run_bowtie(in_file: str,
             msg = "gene_id must be provided when gene_only is True."
             logging.error(msg)
             raise ValueError(msg)
-        # Build updated bowtie_index path for gene-only case.
-        bowtie_index = os.path.join(os.path.dirname(bowtie_index),
-                                    os.path.basename(bowtie_index),
-                                    os.path.basename(bowtie_index) + f"_{gene_id}_only")
+
         out_file = f"{os.path.splitext(in_file)[0]}_{gene_id}_only.sam"
     else:
         logging.info("Running Bowtie2 alignment")
-        bowtie_index = os.path.join(os.path.dirname(bowtie_index),
-                                    os.path.basename(bowtie_index),
-                                    os.path.basename(bowtie_index))
         out_file = f"{os.path.splitext(in_file)[0]}.sam"
-
 
 
     if trim:

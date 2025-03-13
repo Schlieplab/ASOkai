@@ -87,8 +87,9 @@ def setup_environment(config):
         genome_data_dir = os.path.join(config['GenomeDir'], 'genome', bowtie_index_name)
         os.makedirs(genome_data_dir, exist_ok=True)
         
-        os.makedirs(os.path.join(config['OligoDir'], 'oligos'), exist_ok=True)
-        os.makedirs(os.path.join(config['OligoDir'], 'results'), exist_ok=True)
+        os.makedirs(os.path.join(config['DataDir'], 'oligos'), exist_ok=True)
+        os.makedirs(os.path.join(config['DataDir'], 'RNACofold'), exist_ok=True)
+        os.makedirs(os.path.join(config['DataDir'], 'results'), exist_ok=True)
     except Exception as e:
         logging.error(f"Error creating directories: {e}")
         logging.info("Exiting.")
@@ -134,6 +135,7 @@ def main():
         
     
     tsl, tsl_list = convert_tsl_list(config["transcriptSupportLevels"])
+    
     logging.info("-----------------------------------")
     
     try:
@@ -149,7 +151,7 @@ def main():
                                    scaffold_gtf_path, 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    index_name, 
-                                   os.path.join(config['OligoDir'], 'oligos'),
+                                   os.path.join(config['DataDir'], 'oligos'),
                                    ) 
         
     except Exception as e:
@@ -160,7 +162,7 @@ def main():
     logging.info("-----------------------------------")
     
     try:             
-        bowtie_infile = oligo_obj.extract_candidate_oligos_by_gene()
+        candidate_fasta_path = oligo_obj.extract_candidate_oligos()
   
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
@@ -187,7 +189,7 @@ def main():
 
     # Run Bowtie2 for pre-filtering viable oligos
     try:
-        bowtie_out = run_bowtie(bowtie_infile, 
+        bowtie_out = run_bowtie(candidate_fasta_path, 
                                 index_path,
                                 config["BowtieArgs"],
                                 os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),)
@@ -200,9 +202,7 @@ def main():
         
     # filter viable kmers based on Bowtie output
     try:
-        bowtie_offtarget_infile = f"{config['Bowtie2Dir']}/bowtie2Home/" + \
-                f'{config["TargetGene"]}_{config["OligoLen"]}mers_filtered.fa'
-        oligo_obj.filter_viable_kmers(bowtie_out, bowtie_offtarget_infile)
+        filtered_fasta_path = oligo_obj.filter_viable_kmers(bowtie_out)
         
     except Exception as e:
         logging.error(f"Error filtering viable kmers: {e}")
@@ -212,7 +212,7 @@ def main():
     logging.info("-----------------------------------")
     
     try:
-        cofold_in = f"{config['OligoDir']}/oligos/{index_name}_{config['TargetGene']}" + \
+        cofold_in = f"{config['DataDir']}/oligos/{index_name}_{config['TargetGene']}" + \
                     f"_filtered_{config['OligoLen']}mers.rnacofoldin"
                     
         build_RNAcofold_in(cofold_in, oligo_obj.filtered_kmers)   
@@ -255,7 +255,7 @@ def main():
     logging.info("-----------------------------------")
         
     try:      
-        gene_bowtie_out = run_bowtie(bowtie_infile, 
+        gene_bowtie_out = run_bowtie(candidate_fasta_path, 
                                           gene_index_path,
                                           config["BowtieArgs"],
                                           os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
@@ -271,27 +271,27 @@ def main():
         
         
 
-    try:
-        oligo_obj.extract_repeated_sites(gene_bowtie_out)
-    except Exception as e:
-        logging.error(f"Error extracting repeated sites: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    # try:
+    oligo_obj.extract_repeated_sites(gene_bowtie_out)
+    # except Exception as e:
+    #     logging.error(f"Error extracting repeated sites: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
         
         
-    try:
-        cofold_in_repeated = (
-            f"{config['OligoDir']}/oligos/{index_name}_{config['TargetGene']}_prone_"
-            f"{int(config['OligoLen'])}mers.rnacofoldin"
-        )
-        build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
-        cofold_out_repeated = run_RNAcofold(cofold_in_repeated, " -P "+config["CofoldParamFile"])
+    # try:
+    cofold_in_repeated = (
+        f"{config['DataDir']}/oligos/{index_name}_{config['TargetGene']}_prone_"
+        f"{int(config['OligoLen'])}mers.rnacofoldin"
+    )
+    build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
+    cofold_out_repeated = run_RNAcofold(cofold_in_repeated, " -P "+config["CofoldParamFile"])
         
-    except Exception as exc:
-        logging.error("Error getting binding affinity for repeated target sites: %s", exc)
-        logging.info("Exiting.")
-        sys.exit(1)
+    # except Exception as exc:
+    #     logging.error("Error getting binding affinity for repeated target sites: %s", exc)
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
     
     
     

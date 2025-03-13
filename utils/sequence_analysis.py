@@ -1,5 +1,170 @@
 import logging
-from typing import Optional, Tuple, Any, List
+from typing import Optional, Any, List, Dict
+
+
+def build_transcript_to_genomic_map(
+    transcript_obj: Any
+) -> Dict[int, int]:
+    """
+    Build a mapping from transcript positions to genomic positions.
+    
+    Parameters:
+        transcript_obj: A transcript object containing exon_intervals and strand information.
+        
+    Returns:
+        Dict[int, int]: A dictionary mapping transcript positions (1-based) to genomic positions.
+    """
+    transcript_to_genomic = {}
+    
+    # Sort exons by genomic position
+    sorted_exons = sorted(transcript_obj.exon_intervals, key=lambda x: x[0])
+    
+    transcript_pos = 1
+    
+    if transcript_obj.strand == '+':
+        # Forward strand: exons are processed in order
+        for start, end in sorted_exons:
+            exon_length = end - start + 1
+            for i in range(exon_length):
+                transcript_to_genomic[transcript_pos] = start + i
+                transcript_pos += 1
+    else:  # strand == '-'
+        # Reverse strand: exons are processed in reverse order
+        for start, end in reversed(sorted_exons):
+            exon_length = end - start + 1
+            for i in range(exon_length):
+                transcript_to_genomic[transcript_pos] = end - i
+                transcript_pos += 1
+                
+    return transcript_to_genomic
+
+
+def get_transcript_object(
+    transcript: str,
+    genome: Any,
+    genome_scaffolds: Optional[Any] = None
+) -> Optional[Any]:
+    """
+    Get transcript object from genome or scaffold genome.
+    
+    Parameters:
+        transcript (str): The Ensembl transcript ID.
+        genome (Any): The main Genome object for querying transcript data.
+        genome_scaffolds (Optional[Any]): Optional Genome object for scaffold annotations.
+        
+    Returns:
+        Optional[Any]: Transcript object if found, None otherwise.
+    """
+    # Strip version number from transcript ID if present
+    transcript_id = transcript.split(".")[0]
+    
+    # Try to get transcript from main genome
+    try:
+        transcript_obj = genome.transcript_by_id(transcript_id=transcript_id)
+        return transcript_obj
+    except Exception as e:
+        logging.warning(f"Main lookup failed for transcript {transcript_id}: {e}")
+        
+        # If main lookup fails, try scaffold genome if provided
+        if genome_scaffolds:
+            try:
+                transcript_obj = genome_scaffolds.transcript_by_id(transcript_id=transcript_id)
+                return transcript_obj
+            except Exception as e2:
+                logging.warning(f"Scaffold lookup failed for transcript {transcript_id}: {e2}")
+    
+    return None
+
+
+def get_chromosomal_positions_with_mapping(
+    transcript_obj: Any,
+    transcript_to_genomic: Dict[int, int],
+    positions_in_transcript: List[int],
+    k: int,
+    verbose: bool = False,
+) -> List[Optional[str]]:
+    """
+    Retrieve the absolute chromosomal coordinates using a pre-built transcript-to-genomic mapping.
+
+    Parameters:
+        transcript_obj: The transcript object containing contig and strand information.
+        transcript_to_genomic: Dictionary mapping transcript positions to genomic positions.
+        positions_in_transcript (List[int]): List of 1-based positions within the transcript.
+        k (int): The window length for coordinate calculation.
+
+    Returns:
+        List[Optional[str]]: List of string keys in the format 'contig:start_pos-end_pos:strand', 
+                            or None for positions that couldn't be mapped.
+    """
+    results = []
+    for pos in positions_in_transcript:
+        try:
+            start_genomic = transcript_to_genomic.get(pos)
+            end_genomic = transcript_to_genomic.get(pos + k - 1)
+            
+            if start_genomic is None or end_genomic is None:
+                if verbose:
+                    logging.warning(f"Position {pos} or {pos + k - 1} is outside transcript bounds")
+                results.append(None)
+                continue
+                
+            # Ensure start <= end in the output
+            start, end = min(start_genomic, end_genomic), max(start_genomic, end_genomic)
+            key = f'{transcript_obj.contig}:{start}-{end}:{transcript_obj.strand}'
+            results.append(key)
+        except Exception as e:
+            logging.warning(f"Error calculating position {pos}: {e}")
+            results.append(None)
+    
+    return results
+
+
+def get_chromosomal_positions_for_transcript(
+    transcript: str,
+    positions_in_transcript: List[int],
+    genome: Any,
+    k: int,
+    genome_scaffolds: Optional[Any] = None
+) -> List[Optional[str]]:
+    """
+    Retrieve the absolute chromosomal coordinates corresponding to specific positions within a transcript.
+
+    This function calculates the chromosomal coordinates for given positions within a transcript,
+    all using the same window length k. It first attempts to locate the transcript using the main 
+    Ensembl object, and if not found, uses an optional scaffold annotation.
+
+    Parameters:
+        transcript (str): The Ensembl transcript ID.
+        positions_in_transcript (List[int]): List of 1-based positions within the transcript.
+        genome (Any): The main Genome object for querying transcript data.
+        k (int): The window length for coordinate calculation (same for all positions).
+        genome_scaffolds (Optional[Any]): Optional Genome object for scaffold annotations.
+
+    Returns:
+        List[Optional[str]]: List of string keys in the format 'contig:start_pos-end_pos:strand', 
+                            or None for positions that couldn't be mapped.
+    """
+    # Get transcript object
+    transcript_obj = get_transcript_object(transcript, genome, genome_scaffolds)
+    
+    if not transcript_obj:
+        return [None] * len(positions_in_transcript)
+    
+    # Build transcript position to genomic position mapping
+    try:
+        transcript_to_genomic = build_transcript_to_genomic_map(transcript_obj)
+    except Exception as e:
+        logging.error(f"Error building transcript mapping for {transcript}: {e}")
+        return [None] * len(positions_in_transcript)
+    
+    # Use the mapping to get chromosomal positions
+    return get_chromosomal_positions_with_mapping(
+        transcript_obj, 
+        transcript_to_genomic, 
+        positions_in_transcript, 
+        k
+    )
+
 
 def get_chromosomal_positions_per_transcript(
     transcript: str,
@@ -9,13 +174,10 @@ def get_chromosomal_positions_per_transcript(
     genome_scaffolds: Optional[Any] = None
 ) -> Optional[str]:
     """
-    Retrieve the absolute chromosomal coordinates corresponding to a specific relative position within a transcript.
-
-    This function calculates the chromosomal coordinates for a given position within a transcript.
+    Backward-compatible wrapper for the new multi-position function.
     
-    It first attempts to locate the transcript using the main Ensembl object, and if not found, uses an optional
-    scaffold annotation.
-
+    Retrieves the absolute chromosomal coordinates for a single position within a transcript.
+    
     Parameters:
         transcript (str): The Ensembl transcript ID.
         position_in_transcript (int): The 1-based position within the transcript.
@@ -26,56 +188,16 @@ def get_chromosomal_positions_per_transcript(
     Returns:
         Optional[str]: A string key in the format 'contig:start_pos-end_pos:strand', or None if the transcript is not found.
     """
-    def calculate_chromosomal_positions(
-        exon_intervals: List[Tuple[int, int]], pos: int, strand: str, k: int
-    ) -> Tuple[int, int]:
-        def return_pos(p: int) -> int:
-            accumulated = 0
-            if strand == '-':
-                for exon in exon_intervals:
-                    exon_length = exon[1] - exon[0] + 1
-                    if (accumulated + exon_length) > p:
-                        return exon[1] - (p - accumulated) + 1
-                    accumulated += exon_length
-            elif strand == '+':
-                for exon in reversed(exon_intervals):
-                    exon_length = exon[1] - exon[0] + 1
-                    if (accumulated + exon_length) > p:
-                        return exon[0] + (p - accumulated) - 1
-                    accumulated += exon_length
-            return p
-
-        # Sort exons in descending order by start coordinate.
-        exon_intervals = sorted(exon_intervals, key=lambda x: x[0], reverse=True)
-        if strand == '-':
-            return return_pos(pos + k - 1), return_pos(pos)
-        elif strand == '+':
-            return return_pos(pos), return_pos(pos + k - 1)
-        else:
-            return pos, pos
-
-    transcript_id = transcript.split(".")[0]
-    try:
-        transcript_obj = genome.transcript_by_id(transcript_id=transcript_id)
-    except Exception as e:
-        logging.warning(f"Main lookup failed for transcript {transcript_id}: {e}")
-        if genome_scaffolds:
-            try:
-                transcript_obj = genome_scaffolds.transcript_by_id(transcript_id=transcript_id)
-            except Exception as e2:
-                logging.warning(f"Scaffold lookup failed for transcript {transcript_id}: {e2}")
-                return None
-        else:
-            return None
-
-    start_pos, end_pos = calculate_chromosomal_positions(
-        transcript_obj.exon_intervals,
-        position_in_transcript,
-        transcript_obj.strand,
-        k
+    results = get_chromosomal_positions_for_transcript(
+        transcript=transcript,
+        positions_in_transcript=[position_in_transcript],
+        genome=genome,
+        k=k,
+        genome_scaffolds=genome_scaffolds
     )
-    key = f'{transcript_obj.contig}:{start_pos}-{end_pos}:{transcript_obj.strand}'
-    return key
+    return results[0]
+
+
 
 
 def get_seq_by_transcript_position(

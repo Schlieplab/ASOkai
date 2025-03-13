@@ -336,6 +336,7 @@ def build_RNAcofold_in(
             for kmer_id, seq in kmers:
                 if kmer_id in targets:
                     for i, target in enumerate(targets[kmer_id]):
+                        
                         # Write header and sequence lines.
                         filtered_kmer_file.write(f">{kmer_id}_{i}\n")
                         filtered_kmer_file.write(f"{seq}&{str(Seq(target[1]).reverse_complement())}\n")

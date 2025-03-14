@@ -1,4 +1,4 @@
-from typing import List, Set, Tuple, Dict, Optional, Any, Union
+from typing import List, Set, Tuple, Dict, Optional, Any, Union, NamedTuple
 from Bio.SeqUtils import gc_fraction
 from pyensembl import Genome
 from utils.sequence_analysis import (
@@ -13,11 +13,16 @@ from utils.sequence_analysis import (
 )
 from utils.kmer_searcher import KmerSearcher
 import logging
-from Bio.Seq import Seq
 import polars as pl
 import os
 
-
+class OligoData(NamedTuple):
+    sequence: str
+    chromosomal_position: str
+    gene_id: str
+    transcripts: List[str]
+    exons: List[str]
+    
 class OligoExtractor:
     """
     A class to extract and analyze oligonucleotide (k-mer) sequences from a specified gene, 
@@ -43,7 +48,7 @@ class OligoExtractor:
         multiplicity_layout: List[int], 
         bowtie_index: str, 
         data_dir: str, 
-    ) -> None:
+        ) -> None:
         """
         Initialize an OligoExtractor object.
 
@@ -70,7 +75,7 @@ class OligoExtractor:
         self.g_assembly: int = g_assembly
         self.e_release: int = e_release
         self.gene_kmers: List[str] = []
-        self.candidate_oligos: Dict[str, List[Tuple[str, str, List[str], List[str]]]] = {}
+        self.candidate_targets: Dict[str, OligoData] = {}
         self.multiplicity_layout: List[int] = multiplicity_layout
         self.gc_bounds: Tuple[float, float] = gc_bounds
         self.data_dir: str = data_dir
@@ -121,7 +126,10 @@ class OligoExtractor:
 
         logging.info("OligoExtractor object created successfully.")
 
-    def _kmers(self, s: str, k: int) -> Set[Tuple[str, int]]:
+    def _kmers(self, 
+               s: str, 
+               k: int
+               ) -> Set[Tuple[str, int]]:
         """
         Generate k-mers from the input sequence and filter them based on GC bounds if specified.
 
@@ -153,67 +161,77 @@ class OligoExtractor:
         return {t.transcript_id: t.gene_id for t in all_transcripts}
 
 
-    def extract_candidate_oligos(self) -> str:
+    def extract_candidate_targets(self) -> str:
         """
         Extract candidate oligos (k-mers) from the gene and save them to a FASTA file.
         """
         logging.info(f"Extracting {self.k}-mers from gene")
 
         transcripts = self.gene.transcripts
-        candidate_oligos = set()
+        candidate_targets = {}  # Dictionary to store unique oligos
+        
         for t in transcripts:
-            # TODO: make GC content bounds a parameter
+            # Extract k-mers from transcript sequence
             kmers_set = self._kmers(t.sequence, self.k)
             
-            kmers_set = {
-                (
-                    tup[0],
-                    get_chromosomal_positions_per_transcript(
-                        t.transcript_id, 
-                        tup[1], 
-                        self.genome, 
-                        self.k, 
-                        self.genome_scaffolds
-                    ),
-                    t.transcript_id,
-                    get_exon_id(tup[1], t)
+            for kmer_seq, position in kmers_set:
+                # Get chromosomal position
+                chrom_pos = get_chromosomal_positions_per_transcript(
+                    t.transcript_id, 
+                    position, 
+                    self.genome, 
+                    self.k, 
+                    self.genome_scaffolds
                 )
-                for tup in kmers_set
-            }
-            
-            candidate_oligos.update(kmers_set)
-            
-        candidate_df = pl.DataFrame(
-            data=list(candidate_oligos),
-            schema=['seq', 'chromosomal_position', 'transcripts', 'exons']
-        )   
-             
-        candidate_df = candidate_df.group_by(['seq', 'chromosomal_position']).agg([
-            pl.col('exons').alias('exons'),
-            pl.col('transcripts').alias('transcripts')
-        ])
+                
+                if chrom_pos is None:
+                    continue  # Skip if no valid chromosomal position
+                
+                # Use the sequence and chromosomal position as a composite key
+                key = (kmer_seq, chrom_pos)
+                
+                if key not in candidate_targets:
+                    candidate_targets[key] = {
+                        'transcripts': [],
+                        'exons': []
+                    }
+                
+                # Add transcript and exon information
+                candidate_targets[key]['transcripts'].append(t.transcript_id)
+                exon_id = get_exon_id(position, t)
+                candidate_targets[key]['exons'].append(exon_id)
         
-        custom_index = pl.Series("index", [f'S{str(i).zfill(6)}' for i in range(1, len(candidate_df) + 1)])
-        candidate_df = candidate_df.insert_column(0, custom_index)
+        # Create a list of OligoData objects
+        oligo_data_list = []
+        for (seq, chrom_pos), data in candidate_targets.items():
+            oligo_data_list.append(
+                OligoData(
+                    sequence=seq,
+                    chromosomal_position=chrom_pos,
+                    gene_id=self.gene_id,
+                    transcripts=data['transcripts'],
+                    exons=data['exons']
+                )
+            )
         
-        logging.info(f"{len(candidate_df)} candidate {self.k}-mers found")
+
+        for i, oligo_data in enumerate(oligo_data_list, 1):
+            index = f'S{str(i).zfill(6)}'
+            self.candidate_targets[index] = oligo_data
         
-        self.gene_kmers = candidate_df.select('seq').to_series().to_list() 
-                       
-        outfile = os.path.join(self.data_dir, f"{self.gene_id}_{self.k}mers.fa")
+        logging.info(f"{len(self.candidate_targets)} candidate {self.k}-mers found")
+        
+        # Extract sequences for later use
+        self.gene_kmers = [oligo.sequence for oligo in self.candidate_targets.values()]
+        
+        # Write to FASTA file
+        outfile = os.path.join(self.data_dir, 'oligos', f"{self.gene_id}_{self.k}mers.fa")
         with open(outfile, "w") as tmp_bowtie_in:
-            for row in candidate_df.iter_rows(named=True):
-                tmp_bowtie_in.write(f">{row['index']}\n{row['seq']}\n")
-        
-        # Save the candidate oligos as a dictionary with key as the index 
-        # and the value as a list of three values: sequence, chromosomal_position, transcripts.
-        self.candidate_oligos = {
-            row['index']: [row['seq'], row['chromosomal_position'], row['transcripts'], row['exons']]
-            for row in candidate_df.iter_rows(named=True)
-        }
-        
+            for index, oligo in self.candidate_targets.items():
+                tmp_bowtie_in.write(f">{index}\n{oligo.sequence}\n")
         
         return outfile
+
 
 
     def filter_viable_kmers(self, in_file: str) -> None: # TODO: Add option to not filter
@@ -254,22 +272,23 @@ class OligoExtractor:
                )
                .filter(pl.col('genes').list.len() == 0)
                .select([pl.exclude('genes')])
+               .sort('seq_id')
             )
         
         filtered_oligos = res.select(["seq_id", "SEQ"]).to_numpy().tolist()
         logging.info(f"Viable {self.k}-mer candidates after Bowtie: {len(filtered_oligos)}")
         
-        outfile = os.path.join(self.data_dir, f"{self.gene_id}_{self.k}mers_filtered.fa")
+        outfile = os.path.join(self.data_dir, 'oligos', f"{self.gene_id}_{self.k}mers_filtered.fa")
 
         with open(outfile, "w") as tmp_bowtie_in:
             for x in filtered_oligos:
                 tmp_bowtie_in.write(f">{x[0]}\n{x[1]}\n")
         logging.info(f"Filtered kmers written to file: {outfile}")
 
-        # Update candidate_oligos to only include filtered candidates:
+        # Update candidate_targets to only include filtered candidates:
         filtered_keys = {x[0] for x in filtered_oligos}
-        self.candidate_oligos = {key: value 
-                                 for key, value in self.candidate_oligos.items() 
+        self.candidate_targets = {key: value 
+                                 for key, value in self.candidate_targets.items() 
                                  if key in filtered_keys}
 
         return outfile
@@ -372,7 +391,7 @@ class OligoExtractor:
                 })
                 
                 # Filter out None positions and positions to ignore
-                position_to_ignore = self.candidate_oligos.get(qname, [None, None])[1]
+                position_to_ignore = self.candidate_targets[qname].chromosomal_position
                 filtered_df = position_seq_df.filter(
                     (pl.col('positions').is_not_null()) & 
                     (pl.col('positions') != position_to_ignore)
@@ -402,7 +421,7 @@ class OligoExtractor:
                                 core_consecutive_matches, 
                                 f"{self.data_dir}/oligos/{self.gene_id}_{self.k}mer_non_prone_multiplicities.fa")
         
-        self.non_prone_multiplicity = searcher.search(self.candidate_oligos) # TODO: input changed to candidate_oligos
+        self.non_prone_multiplicity = searcher.search(self.candidate_targets) # TODO: input changed to candidate_targets
     
 
     def store_kmer_results(self, cofold_out: str, cofold_out_repeated: str) -> None:
@@ -423,7 +442,7 @@ class OligoExtractor:
         cofold_rep_df = cofold_rep_df.with_columns(pl.col("seq_id").cast(pl.Utf8))
 
 
-        kmer_indices = [x for x in self.candidate_oligos] # TODO: input changed to candidate_oligos
+        kmer_indices = [x for x in self.candidate_targets] # TODO: input changed to candidate_targets
         res_temp = []
 
         # Read configuration
@@ -433,8 +452,8 @@ class OligoExtractor:
         max_ddG = float(config['DEFAULT']['MaxddG'])
 
         for idx in kmer_indices:
-            # Get candidate from candidate_oligos_df
-            can = self.candidate_oligos_df.filter(pl.col("seq_num") == idx).row(0, named=True) # TODO: input changed to candidate_oligos
+            # Get candidate from candidate_targets_df
+            can = self.candidate_targets_df.filter(pl.col("seq_num") == idx).row(0, named=True) # TODO: input changed to candidate_targets
             
             # Get cofold data for this index
             idx_cofold = cofold_df.filter(pl.col("seq_id") == idx)

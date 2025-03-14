@@ -151,7 +151,7 @@ def main():
                                    scaffold_gtf_path, 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    index_name, 
-                                   os.path.join(config['DataDir'], 'oligos'),
+                                   os.path.join(config['DataDir']),
                                    ) 
         
     except Exception as e:
@@ -162,7 +162,7 @@ def main():
     logging.info("-----------------------------------")
     
     try:             
-        candidate_fasta_path = oligo_obj.extract_candidate_oligos()
+        candidate_fasta_path = oligo_obj.extract_candidate_targets()
   
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
@@ -212,107 +212,106 @@ def main():
     logging.info("-----------------------------------")
     
     try:
-        cofold_in = f"{config['DataDir']}/oligos/{index_name}_{config['TargetGene']}" + \
-                    f"_filtered_{config['OligoLen']}mers.rnacofoldin"
+        cofold_in = os.path.join(config['DataDir'], 'RNACofold', os.path.basename(filtered_fasta_path).replace(".fa", ".rnacofoldin"))
                     
-        build_RNAcofold_in(cofold_in, oligo_obj.filtered_kmers)   
-        cofold_out = run_RNAcofold(cofold_in, " -P "+ config["CofoldParamFile"])
+        build_RNAcofold_in(cofold_in, oligo_obj.candidate_targets)   
+        cofold_out = run_RNAcofold(cofold_in, config["CofoldParamFile"])
         
     except Exception as e:
         logging.error(f"Error getting binding affinity: {e}")
         logging.info("Exiting.")
         sys.exit(1)
     
-    logging.info("-----------------------------------")
-
-    try:
-        bowtie_offtarget_out = run_bowtie(bowtie_offtarget_infile, 
-                                index_path,
-                                config["BowtieArgs"],
-                                os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
-                                trim=True,
-                                multiplicity_layout=oligo_obj.multiplicity_layout)
-    except Exception as e:
-        logging.error(f"Error running Bowtie2 for specific off-targets: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-
-    logging.info("-----------------------------------")
-    
-    try:
-        gene_index_path = build_bowtie_index(cdna_path,
-                           index_dir, 
-                           index_name,
-                           config["BowtieBuildIndexArgs"],
-                           gene_only=True,
-                           gene_id=oligo_obj.gene_id)
-        
-    except Exception as e:
-        logging.error(f"Error building Bowtie2 target gene index: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-        
-    logging.info("-----------------------------------")
-        
-    try:      
-        gene_bowtie_out = run_bowtie(candidate_fasta_path, 
-                                          gene_index_path,
-                                          config["BowtieArgs"],
-                                          os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
-                                          gene_only=True,
-                                          gene_id=oligo_obj.gene_id,
-                                          trim=True,
-                                          multiplicity_layout=oligo_obj.multiplicity_layout)
-        
-    except Exception as e:
-        logging.error(f"Error running Bowtie2 for target gene: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-        
-        
+    # logging.info("-----------------------------------")
 
     # try:
-    oligo_obj.extract_repeated_sites(gene_bowtie_out)
+    #     bowtie_offtarget_out = run_bowtie(bowtie_offtarget_infile, 
+    #                             index_path,
+    #                             config["BowtieArgs"],
+    #                             os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
+    #                             trim=True,
+    #                             multiplicity_layout=oligo_obj.multiplicity_layout)
     # except Exception as e:
-    #     logging.error(f"Error extracting repeated sites: {e}")
+    #     logging.error(f"Error running Bowtie2 for specific off-targets: {e}")
     #     logging.info("Exiting.")
     #     sys.exit(1)
-        
-        
-        
+
+    # logging.info("-----------------------------------")
+    
     # try:
-    cofold_in_repeated = (
-        f"{config['DataDir']}/oligos/{index_name}_{config['TargetGene']}_prone_"
-        f"{int(config['OligoLen'])}mers.rnacofoldin"
-    )
-    build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
-    cofold_out_repeated = run_RNAcofold(cofold_in_repeated, " -P "+config["CofoldParamFile"])
+    #     gene_index_path = build_bowtie_index(cdna_path,
+    #                        index_dir, 
+    #                        index_name,
+    #                        config["BowtieBuildIndexArgs"],
+    #                        gene_only=True,
+    #                        gene_id=oligo_obj.gene_id)
         
-    # except Exception as exc:
-    #     logging.error("Error getting binding affinity for repeated target sites: %s", exc)
+    # except Exception as e:
+    #     logging.error(f"Error building Bowtie2 target gene index: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
+        
+    # logging.info("-----------------------------------")
+        
+    # try:      
+    #     gene_bowtie_out = run_bowtie(candidate_fasta_path, 
+    #                                       gene_index_path,
+    #                                       config["BowtieArgs"],
+    #                                       os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
+    #                                       gene_only=True,
+    #                                       gene_id=oligo_obj.gene_id,
+    #                                       trim=True,
+    #                                       multiplicity_layout=oligo_obj.multiplicity_layout)
+        
+    # except Exception as e:
+    #     logging.error(f"Error running Bowtie2 for target gene: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
+        
+        
+
+    # # try:
+    # oligo_obj.extract_repeated_sites(gene_bowtie_out)
+    # # except Exception as e:
+    # #     logging.error(f"Error extracting repeated sites: {e}")
+    # #     logging.info("Exiting.")
+    # #     sys.exit(1)
+        
+        
+        
+    # # try:
+    # cofold_in_repeated = (
+    #     f"{config['DataDir']}/oligos/{index_name}_{config['TargetGene']}_prone_"
+    #     f"{int(config['OligoLen'])}mers.rnacofoldin"
+    # )
+    # build_RNAcofold_in(cofold_in_repeated, oligo_obj.filtered_kmers, oligo_obj.repeated_sites)
+    # cofold_out_repeated = run_RNAcofold(cofold_in_repeated, " -P "+config["CofoldParamFile"])
+        
+    # # except Exception as exc:
+    # #     logging.error("Error getting binding affinity for repeated target sites: %s", exc)
+    # #     logging.info("Exiting.")
+    # #     sys.exit(1)
+    
+    
+    
+    # try:
+    #     oligo_obj.extract_non_prone_multiplicity(int(config["MissmatchCoreRegion"]),
+    #                                              int(config["ConsecutiveMatchesCoreRegion"]))
+    # except Exception as e:
+    #     logging.error(f"Error extracting non-prone multiplicity: {e}")
     #     logging.info("Exiting.")
     #     sys.exit(1)
     
     
     
-    try:
-        oligo_obj.extract_non_prone_multiplicity(int(config["MissmatchCoreRegion"]),
-                                                 int(config["ConsecutiveMatchesCoreRegion"]))
-    except Exception as e:
-        logging.error(f"Error extracting non-prone multiplicity: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-    
-    
-    
-    try:
-        oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
-    except Exception as e:
-        logging.error(f"Error writing kmer results to file: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    # try:
+    #     oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
+    # except Exception as e:
+    #     logging.error(f"Error writing kmer results to file: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
-    logging.info("Pipeline completed successfully.")
+    # logging.info("Pipeline completed successfully.")
 
 if __name__ == '__main__':
     main()

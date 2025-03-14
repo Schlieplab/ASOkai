@@ -7,6 +7,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from src.oligo_extractor import OligoData
 from pyensembl import Genome
 import time
 import gget
@@ -308,8 +309,8 @@ def run_bowtie(
     
 def build_RNAcofold_in(
     cofold_in: str, 
-    kmers: List[Tuple[str, str]], 
-    targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None
+    targets: Dict[str, OligoData], 
+    # targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None
     ) -> None:
     """
     Builds an input file for RNAcofold analysis from filtered k-mers.
@@ -323,61 +324,82 @@ def build_RNAcofold_in(
     Returns:
         None
 
-    Example:
-    >>> kmers = [('S000001', 'ATCG'), ('S000002', 'GCTA')]
-    >>> targets = {'S000001': [(_, 'GGTT'), (_, 'AACC')], 'S000002': [(_, 'TTAA')]}
-    >>> build_RNAcofold_in('/path/to/cofold_input.txt', kmers, targets)
     """
-    directory: str = os.path.dirname(cofold_in)
-    os.makedirs(directory, exist_ok=True)
+    logging.info("Building RNAcofold input file")
 
-    with open(cofold_in, "w") as filtered_kmer_file:
-        if targets:
-            for kmer_id, seq in kmers:
-                if kmer_id in targets:
-                    for i, target in enumerate(targets[kmer_id]):
+    with open(cofold_in, "w") as cofold_file:
+        # if targets:
+        #     for kmer_id, seq in kmers:
+        #         if kmer_id in targets:
+        #             for i, target in enumerate(targets[kmer_id]):
                         
-                        # Write header and sequence lines.
-                        filtered_kmer_file.write(f">{kmer_id}_{i}\n")
-                        filtered_kmer_file.write(f"{seq}&{str(Seq(target[1]).reverse_complement())}\n")
-                else:
-                    logging.warning(f"No target found for k-mer {kmer_id}, skipping targets.")
-        else:
-            for kmer_id, seq in kmers:
-                filtered_kmer_file.write(f">{kmer_id}\n")
-                filtered_kmer_file.write(f"{seq}&{str(Seq(seq).reverse_complement())}\n")
-                
+        #                 # Write header and sequence lines.
+        #                 kmer_file.write(f">{kmer_id}_{i}\n")
+        #                 kmer_file.write(f"{seq}&{str(Seq(target[1]).reverse_complement())}\n")
+        #         else:
+        #             logging.warning(f"No target found for k-mer {kmer_id}, skipping targets.")
+        # else:
+            for key, oligoData in targets.items():
+                cofold_file.write(f">{key}\n")
+                cofold_file.write(f"{oligoData.sequence}&{str(Seq(oligoData.sequence).reverse_complement())}\n")
+    
+    logging.info("RNAcofold input file created successfully.")
                 
 def run_RNAcofold(
     cofold_in_file: str, 
-    param_file: str
-    ) -> str:
+    param_file_path: str
+) -> str:
     """
     Run RNAcofold to calculate RNA secondary structure energies and save the results to a CSV file.
 
     Parameters:
         cofold_in_file (str): Path to the RNA sequences input file for RNAcofold.
-        param_file (str): Parameter file for RNAcofold.
+        param_file_path (str): Parameter file for RNAcofold.
 
     Returns:
         str: The path to the output CSV file containing RNAcofold results.
+        
+    Raises:
+        subprocess.CalledProcessError: If RNAcofold returns a non-zero exit code.
     """
-    outFile = os.path.splitext(cofold_in_file)[0] + "_cofold_out.csv"
+    outFile = os.path.splitext(cofold_in_file)[0] + "_cofoldout.csv"
     logging.info("Running RNAcofold")
-    command = f'RNAcofold -p0 -d1 --output-format=D --jobs=0 --noPS --noconv {cofold_in_file} {param_file}'
-    logging.info(f"Command: {command}")
+    
+    command = [
+        'RNAcofold', 
+        '-p0', 
+        '-d1', 
+        '--output-format=D', 
+        '--jobs=0', 
+        '--noPS', 
+        '--noconv', 
+        cofold_in_file, 
+        '-P', 
+        param_file_path
+    ]
+    
+    logging.info(f"Command: {' '.join(command)}")
 
     with open(outFile, 'w') as rcfOutFile:
         process = subprocess.Popen(
-            shlex.split(command), stdout=rcfOutFile, stderr=subprocess.PIPE, text=True
+            command,  # No need for shlex.split as this is already a list
+            stdout=rcfOutFile, 
+            stderr=subprocess.PIPE, 
+            text=True
         )
+        
         # Read stderr in real time until the process ends
-        while True:
-            output = process.stderr.readline()
-            if output == "" and process.poll() is not None:
-                # No more output and process has finished, so exit loop
-                break
-            if output:
-                logging.info(output.strip())
-        process.wait()
+        try:
+            for line in process.stderr:
+                logging.info(line.strip())
+        finally:
+            # Ensure stderr is closed
+            process.stderr.close()
+            
+        # Wait for process to complete and check return code
+        return_code = process.wait()
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, command)
+            
+    logging.info(f"RNAcofold completed successfully, output saved to {outFile}")
     return outFile

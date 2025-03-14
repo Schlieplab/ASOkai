@@ -248,28 +248,35 @@ def get_exon_id(pos_in_transcript: int, transcript: Any) -> Optional[str]:
     Retrieve the exon ID corresponding to a given position within a transcript.
 
     Parameters:
-        pos_in_transcript (int): The position within the transcript.
+        pos_in_transcript (int): The position within the transcript (1-based).
         transcript (Any): A transcript object containing exon information and strand orientation.
 
     Returns:
         Optional[str]: The exon ID where the position is located, or None if not found.
     """
+    # First sort exons by genomic coordinates
+    exons = sorted(transcript.exons, key=lambda exon: exon.start)
+    
+    # Track position in transcript
     accumulated = 0
-    # Sort exons by start coordinate; process in reverse order for '-' strand.
-    exons = sorted(transcript.exons, key=lambda exon: exon.start, reverse=True)
-    if transcript.strand == '-':
+    
+    if transcript.strand == '+':
+        # For forward strand, process exons in genomic order (3' to 5')
         for exon in exons:
             exon_length = exon.end - exon.start + 1
-            if (accumulated + exon_length) > pos_in_transcript:
+            if accumulated < pos_in_transcript <= accumulated + exon_length:
                 return exon.exon_id
             accumulated += exon_length
-    elif transcript.strand == '+':
+    else:  # transcript.strand == '-'
+        # For reverse strand, process exons in reverse genomic order (5' to 3')
         for exon in reversed(exons):
             exon_length = exon.end - exon.start + 1
-            if (accumulated + exon_length) > pos_in_transcript:
+            if accumulated < pos_in_transcript <= accumulated + exon_length:
                 return exon.exon_id
             accumulated += exon_length
+    
     return None
+
 
 
 

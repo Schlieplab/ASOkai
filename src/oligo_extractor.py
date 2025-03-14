@@ -16,12 +16,12 @@ import logging
 import polars as pl
 import os
 
-class OligoData(NamedTuple):
-    sequence: str
-    chromosomal_position: str
-    gene_id: str
-    transcripts: List[str]
-    exons: List[str]
+class TargetSite(NamedTuple):
+    sequence: str = None
+    chromosomal_position: str = None
+    gene_id: str = None
+    transcripts: List[str] = None
+    exons: List[str] = None
     
 class OligoExtractor:
     """
@@ -75,7 +75,7 @@ class OligoExtractor:
         self.g_assembly: int = g_assembly
         self.e_release: int = e_release
         self.gene_kmers: List[str] = []
-        self.candidate_targets: Dict[str, OligoData] = {}
+        self.candidate_targets: Dict[str, TargetSite] = {}
         self.multiplicity_layout: List[int] = multiplicity_layout
         self.gc_bounds: Tuple[float, float] = gc_bounds
         self.data_dir: str = data_dir
@@ -201,11 +201,11 @@ class OligoExtractor:
                 exon_id = get_exon_id(position, t)
                 candidate_targets[key]['exons'].append(exon_id)
         
-        # Create a list of OligoData objects
+        # Create a list of TargetSite objects
         oligo_data_list = []
         for (seq, chrom_pos), data in candidate_targets.items():
             oligo_data_list.append(
-                OligoData(
+                TargetSite(
                     sequence=seq,
                     chromosomal_position=chrom_pos,
                     gene_id=self.gene_id,
@@ -219,7 +219,7 @@ class OligoExtractor:
             index = f'S{str(i).zfill(6)}'
             self.candidate_targets[index] = oligo_data
         
-        logging.info(f"{len(self.candidate_targets)} candidate {self.k}-mers found")
+        logging.info(f"{len(self.candidate_targets)} {self.k}-mer candidate target sites found.")
         
         # Extract sequences for later use
         self.gene_kmers = [oligo.sequence for oligo in self.candidate_targets.values()]
@@ -234,9 +234,9 @@ class OligoExtractor:
 
 
 
-    def filter_viable_kmers(self, in_file: str) -> None: # TODO: Add option to not filter
+    def filter_candidate_targets(self, in_file: str) -> None: # TODO: Add option to not filter
         """
-        Filter the aligned k-mers based on Bowtie2 alignment results.
+        Filter the aligned k-mer target sites based on Bowtie2 alignment results.
 
         Parameters:
             in_file (str): Path to the input SAM file from Bowtie2 alignment.
@@ -276,7 +276,7 @@ class OligoExtractor:
             )
         
         filtered_oligos = res.select(["seq_id", "SEQ"]).to_numpy().tolist()
-        logging.info(f"Viable {self.k}-mer candidates after Bowtie: {len(filtered_oligos)}")
+        logging.info(f"Viable {self.k}-mer candidate sites after Bowtie: {len(filtered_oligos)}")
         
         outfile = os.path.join(self.data_dir, 'oligos', f"{self.gene_id}_{self.k}mers_filtered.fa")
 
@@ -298,14 +298,11 @@ class OligoExtractor:
     #     Extract off-target
     #     """
         
-        
-
-
-        
+    
 
     def extract_repeated_sites(self, infile: str) -> None:
         """
-        Extract repeated sites for each k-mer from the Bowtie2 alignment results.
+        Extract repeated sites for each target from the Bowtie2 alignment results.
         Uses Polars native functions for efficient processing and minimizes transcript mapping creation.
         
         Parameters:
@@ -328,7 +325,7 @@ class OligoExtractor:
         
         
         # Initialize results dictionary
-        self.repeated_sites: Dict[str, set] = {qname: set() for qname in sam_df['QNAME'].unique()}
+        self.repeated_sites: Dict[str, List[TargetSite]] = {qname: [] for qname in sam_df['QNAME'].unique()}
         
         # Add adjusted position column
         sam_df = sam_df.with_columns(
@@ -397,14 +394,32 @@ class OligoExtractor:
                     (pl.col('positions') != position_to_ignore)
                 )
                 
-                # Remove duplicates
+                
                 if not filtered_df.is_empty():
                     unique_df = filtered_df.unique()
                     
-                    # Add to results
-                    self.repeated_sites[qname].update(
-                        list(zip(unique_df['positions'].to_list(), unique_df['seq'].to_list()))
-                    )
+                    # Add to results as TargetSite objects
+                    for row in unique_df.iter_rows(named=True):
+                        target_site = TargetSite(
+                            sequence=row['seq'],
+                            chromosomal_position=row['positions'],
+                            gene_id=None,
+                            transcripts=None,
+                            exons=None
+                        )
+                        
+                        # Check if this site is already in the list (based on position and sequence)
+                        existing_sites = [
+                            site for site in self.repeated_sites[qname] 
+                            if site.chromosomal_position == row['positions'] and site.sequence == row['seq']
+                        ]
+                        
+                        if not existing_sites:
+                            # Add new site only if it doesn't already exist
+                            self.repeated_sites[qname].append(target_site)
+                            
+                            
+        print(self.repeated_sites)
         
 
 

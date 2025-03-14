@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from src.oligo_extractor import OligoData
+from src.oligo_extractor import TargetSite
 from pyensembl import Genome
 import time
 import gget
@@ -309,7 +309,7 @@ def run_bowtie(
     
 def build_RNAcofold_in(
     cofold_in: str, 
-    targets: Dict[str, OligoData], 
+    targets: Dict[str, TargetSite], 
     # targets: Optional[Dict[str, List[Tuple[Any, str]]]] = None
     ) -> None:
     """
@@ -339,9 +339,9 @@ def build_RNAcofold_in(
         #         else:
         #             logging.warning(f"No target found for k-mer {kmer_id}, skipping targets.")
         # else:
-            for key, oligoData in targets.items():
+            for key, targetSite in targets.items():
                 cofold_file.write(f">{key}\n")
-                cofold_file.write(f"{oligoData.sequence}&{str(Seq(oligoData.sequence).reverse_complement())}\n")
+                cofold_file.write(f"{targetSite.sequence}&{str(Seq(targetSite.sequence).reverse_complement())}\n")
     
     logging.info("RNAcofold input file created successfully.")
                 

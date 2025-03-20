@@ -20,7 +20,7 @@ def download_genome(
     species: str,
     e_release: int,
     genome_dir: str,
-    ) -> Tuple[str, str, str, Optional[str]]:
+    ) -> Tuple[str, str, str, str, Optional[str]]:
     """
     Download the genome files for a specified species.
     
@@ -30,16 +30,17 @@ def download_genome(
         genome_dir (str): Path to the directory where the genome files will be saved.
         
     Returns:
-        Tuple[str, str, str, Optional[str]]: Paths to the GTF, cDNA, and peptide files, and an optional scaffold GTF path.
+        Tuple[str, str, str, str, Optional[str]]: Paths to the GTF, cDNA, peptide, genome FASTA files, and an optional scaffold GTF path.
     """
     # Retrieve the file URLs from gget.ref
-    gtf_url, cdna_url, pep_url = tuple(
-        gget.ref(species, which=["gtf", "cdna", "pep"], release=e_release, ftp=True)
+    gtf_url, cdna_url, pep_url, genome_url = tuple(
+        gget.ref(species, which=["gtf", "cdna", "pep", "dna"], release=e_release, ftp=True)
     )
 
     gtf_name = os.path.basename(urllib.parse.urlparse(gtf_url).path)
     cdna_name = os.path.basename(urllib.parse.urlparse(cdna_url).path)
     pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
+    genome_name = os.path.basename(urllib.parse.urlparse(genome_url).path)
 
     
     scaffold_gtf_path = None
@@ -57,23 +58,36 @@ def download_genome(
     gtf_path = os.path.join(genome_dir, gtf_name)
     cdna_path = os.path.join(genome_dir, cdna_name)
     pep_path = os.path.join(genome_dir, pep_name)
+    genome_path = os.path.join(genome_dir, genome_name)
 
     # Download each file (if not already present)
     if not os.path.exists(gtf_path):
+        logging.info("Downloading GTF file to '%s'", gtf_path)
         urllib.request.urlretrieve(gtf_url, gtf_path)
     else:
         logging.info("GTF file already exists at '%s'", gtf_path)
+        
     if not os.path.exists(cdna_path):
+        logging.info("Downloading cDNA file to '%s'", cdna_path)
         urllib.request.urlretrieve(cdna_url, cdna_path)
     else:
         logging.info("cDNA file already exists at '%s'", cdna_path)
+        
     if not os.path.exists(pep_path):
+        logging.info("Downloading peptide file to '%s'", pep_path)
         urllib.request.urlretrieve(pep_url, pep_path)
     else:
-        logging.info("Pep file already exists at '%s'", pep_path)
+        logging.info("Peptide file already exists at '%s'", pep_path)
+        
+    if not os.path.exists(genome_path):
+        logging.info("Downloading genome FASTA file to '%s'", genome_path)
+        urllib.request.urlretrieve(genome_url, genome_path)
+    else:
+        logging.info("Genome FASTA file already exists at '%s'", genome_path)
 
-    # Optionally return the file paths (including our scaffold_gtf_path)
-    return gtf_path, cdna_path, pep_path, scaffold_gtf_path
+    # Return the file paths (including our scaffold_gtf_path)
+    return gtf_path, cdna_path, pep_path, genome_path, scaffold_gtf_path
+
 
 
 def extract_gene(
@@ -95,7 +109,7 @@ def extract_gene(
         raise
 
 
-def filter_transcripts_by_tsl(
+def _filter_transcripts_by_tsl(
     fasta_gz_in: str,
     fasta_gz_out: str,
     genome: Genome,
@@ -148,22 +162,22 @@ def filter_transcripts_by_tsl(
     logging.info("Transcript filtering completed.")
 
 
-def build_bowtie_index(
+def _build_bowtie_index(
     input_path: str, 
     index_dir: str, 
     index_prefix: str,
-    args: str,
+    args: str = "",
     tsl: bool = False, 
     tsl_list: Optional[list] = None, 
     genome: Optional[Genome] = None, 
     gene_only: Optional[bool] = False, 
     gene_id: Optional[str] = None,
-    ) -> None:
+    ) -> str:
     """
-    Builds a Bowtie2 index for the specified species if not already present.
+    Builds a Bowtie2 index for the specified input file if not already present.
     
     Parameters:
-        input_path (str): Path to the input FASTA file (Must end with .all.fa.gz).
+        input_path (str): Path to the input FASTA file.
         index_dir (str): Path to the directory where the Bowtie2 index will be saved.
         index_prefix (str): Prefix for the Bowtie2 index files. (e.g., 'GRCh38_113')
         args (str): Additional command-line arguments for Bowtie2.
@@ -172,39 +186,53 @@ def build_bowtie_index(
         genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
         gene_only (bool, optional): Whether to index only one gene.
         gene_id (str): Gene identifier to extract if gene_only is True.
-
     
     Returns:
-        index_path (str): Path to the Bowtie2 index.
+        str: Path to the Bowtie2 index.
     """
-
-    # TODO: change tsl namings for index
-
     # Build dynamic log message based on parameters
-    log_msg = f"building bowtie index for {index_prefix}"
+    log_msg = f"Building Bowtie index for {index_prefix}"
     if tsl:
-        log_msg += f" with tsl active"
+        log_msg += f" with TSL filtering"
     if gene_only:
-        log_msg += f" and gene_only active"
+        log_msg += f" for gene {gene_id} only"
     logging.info(log_msg)
 
+    # Determine the final index name based on parameters
+    index_name = index_prefix
     if tsl:
-        # Create a new filename for the filtered FASTA
-        tsl_input_path = input_path.replace('.all.fa.gz', f'.tsl{"_".join(map(str, tsl_list))}.fa.gz')
-        filter_transcripts_by_tsl(input_path, tsl_input_path, genome, tsl_list)
-        input_path = tsl_input_path
-        index_name = f"{index_prefix}_tsl{'_'.join(map(str, tsl_list))}"
-    else:
-        index_name = index_prefix
+        tsl_suffix = f"_tsl{'_'.join(map(str, tsl_list))}"
+        index_name += tsl_suffix
+    if gene_only:
+        index_name += f"_{gene_id}_only"
+
+    # Prepare the input file based on filtering parameters
+    modified_input_path = input_path
+    if tsl:
+        tsl_input_path = input_path.replace('.fa.gz', f'{tsl_suffix}.fa.gz')
         
+        # Check if the TSL-filtered file already exists
+        if os.path.exists(tsl_input_path):
+            logging.info(f"Using existing TSL-filtered file: {tsl_input_path}")
+        else:
+            logging.info(f"Creating TSL-filtered file: {tsl_input_path}")
+            _filter_transcripts_by_tsl(input_path, tsl_input_path, genome, tsl_list)
+            
+        modified_input_path = tsl_input_path
     
     if gene_only:
-        gene_input_path = input_path.replace('.all.fa.gz', f'.{gene_id}.fa.gz')
-        extract_gene(input_path, gene_input_path, gene_id)
-        input_path = gene_input_path
-        index_name = f"{index_name}_{gene_id}_only"
+        gene_input_path = modified_input_path.replace('.fa.gz', f'.{gene_id}.fa.gz')
+        
+        # Check if the gene-specific file already exists
+        if os.path.exists(gene_input_path):
+            logging.info(f"Using existing gene-specific file: {gene_input_path}")
+        else:
+            logging.info(f"Creating gene-specific file: {gene_input_path}")
+            extract_gene(modified_input_path, gene_input_path, gene_id)
+            
+        modified_input_path = gene_input_path
 
-
+    # Check if index already exists
     try:
         files_in_dir = os.listdir(index_dir)
     except OSError as e:
@@ -212,10 +240,15 @@ def build_bowtie_index(
         raise RuntimeError("Error reading directory.") from e
     
     index_path = os.path.join(index_dir, index_name)
-
     file_exists = any(file.startswith(index_name + ".") for file in files_in_dir)
+    
     if not file_exists:
-        command = ["bowtie2-build", input_path, index_path]
+        # Verify that the modified input file exists before proceeding
+        if not os.path.exists(modified_input_path):
+            logging.error(f"Input file does not exist: {modified_input_path}")
+            raise FileNotFoundError(f"Input file not found: {modified_input_path}")
+            
+        command = ["bowtie2-build", modified_input_path, index_path]
         if args:
             command.extend(shlex.split(args))
             
@@ -229,19 +262,96 @@ def build_bowtie_index(
 
         elapsed = time.time() - start_time
         logging.info("Bowtie2-build processing time: %.2f seconds", elapsed)
-
     else:
         logging.info("Using existing index: %s", index_name)
 
     return index_path
 
+
+
+def build_transcriptomic_bowtie_index(
+    input_path: str, 
+    index_dir: str, 
+    index_prefix: str,
+    args: str = "",
+    tsl: bool = False, 
+    tsl_list: Optional[list] = None, 
+    genome: Optional[Genome] = None, 
+    gene_only: Optional[bool] = False, 
+    gene_id: Optional[str] = None,
+    ) -> str:
+    """
+    Builds a Bowtie2 index for transcriptomic data.
+    
+    Parameters:
+        input_path (str): Path to the input transcriptome FASTA file (Must end with .all.fa.gz).
+        index_dir (str): Path to the directory where the Bowtie2 index will be saved.
+        index_prefix (str): Prefix for the Bowtie2 index files. (e.g., 'GRCh38_113')
+        args (str): Additional command-line arguments for Bowtie2.
+        tsl (bool, optional): Whether to filter transcripts by transcript support level.
+        tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
+        genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
+        gene_only (bool, optional): Whether to index only one gene.
+        gene_id (str): Gene identifier to extract if gene_only is True.
+    
+    Returns:
+        str: Path to the Bowtie2 index.
+    """
+    if not input_path.endswith('.all.fa.gz'):
+        logging.warning("Transcriptomic input file should typically end with '.all.fa.gz'")
+    
+    # Add transcriptomic prefix to index name
+    transcriptomic_prefix = f"{index_prefix}_transcriptomic"
+    
+    return _build_bowtie_index(
+        input_path=input_path,
+        index_dir=index_dir,
+        index_prefix=transcriptomic_prefix,
+        args=args,
+        tsl=tsl,
+        tsl_list=tsl_list,
+        genome=genome,
+        gene_only=gene_only,
+        gene_id=gene_id
+    )
+
+
+def build_genomic_bowtie_index(
+    input_path: str, 
+    index_dir: str, 
+    index_prefix: str,
+    args: str = "",
+    ) -> str:
+    """
+    Builds a Bowtie2 index for genomic data.
+    
+    Parameters:
+        input_path (str): Path to the input genome FASTA file.
+        index_dir (str): Path to the directory where the Bowtie2 index will be saved.
+        index_prefix (str): Prefix for the Bowtie2 index files. (e.g., 'GRCh38')
+        args (str): Additional command-line arguments for Bowtie2.
+    
+    Returns:
+        str: Path to the Bowtie2 index.
+    """
+    # Add genomic prefix to index name
+    genomic_prefix = f"{index_prefix}_genomic"
+    
+    return _build_bowtie_index(
+        input_path=input_path,
+        index_dir=index_dir,
+        index_prefix=genomic_prefix,
+        args=args,
+        tsl=False,
+        gene_only=False
+    )
+
+
 def run_bowtie(
-    in_file: str,
+    infile_path: str,
     index_path: str,
     bowtie_args: str,
     bowtie2Home: str,
-    gene_only: bool = False,
-    gene_id: Optional[str] = None,
     trim: bool = False,
     multiplicity_layout: Optional[List[int]] = None,
     ) -> str:
@@ -253,8 +363,6 @@ def run_bowtie(
         index_path (str): Path to the Bowtie2 index.
         bowtie_args (str): Additional command-line arguments for Bowtie2.
         bowtie2Home (str): Path to the Bowtie2 output directory.
-        gene_only (bool): If True, aligns only to the target gene region.
-        gene_id (Optional[str]): The gene identifier to use for gene_only alignment. Required if gene_only is True.
         trim (bool): If True, apply trimming options.
         multiplicity_layout (Optional[List[int]]): A sequence containing at least three integers.
             When trim is True, the first and third elements are used for '--trim5' and '--trim3', respectively.
@@ -262,20 +370,9 @@ def run_bowtie(
     Returns:
         str: The path to the output SAM file.
     """
-    in_file_name = os.path.basename(in_file)
-    if gene_only:
-        logging.info("Running Bowtie2 alignment for target gene")
-        if not gene_id:
-            msg = "gene_id must be provided when gene_only is True."
-            logging.error(msg)
-            raise ValueError(msg)
-
-        out_file_name = f"{os.path.splitext(in_file_name)[0]}_target_only.sam"
-    else:
-        logging.info("Running Bowtie2 alignment")
-        out_file_name = f"{os.path.splitext(in_file_name)[0]}.sam"
-
-
+    infile_name = os.path.splitext(os.path.basename(infile_path))[0]
+    
+    
     if trim:
         if not multiplicity_layout or len(multiplicity_layout) < 3:
             msg = "When trim is True, multiplicity_layout must contain at least three integers."
@@ -283,12 +380,22 @@ def run_bowtie(
             raise ValueError(msg)
         trim5_val = str(multiplicity_layout[0])
         trim3_val = str(multiplicity_layout[2])
-        out_file_name = f"{os.path.splitext(out_file_name)[0]}_trimmed.sam"
+        infile_name = f"{infile_name}_trimmed"
+        
+    index_name = os.path.splitext(os.path.basename(index_path))[0]
+    
+    out_file_name = f"{infile_name}_on_{index_name}.sam"
+
+
 
     out_file_path = os.path.join(bowtie2Home, out_file_name)
 
+    if os.path.exists(out_file_path):
+        logging.info("Using existing bowtie2 output: %s", out_file_path)
+        return out_file_path
+    
     # Build the initial command as a list to avoid shell injection issues.
-    command = ["bowtie2", "-x", index_path, "-U", in_file, "-S", out_file_path]
+    command = ["bowtie2", "-x", index_path, "-U", infile_path, "-S", out_file_path]
     if bowtie_args:
         command.extend(shlex.split(bowtie_args))
     if trim:
@@ -304,6 +411,7 @@ def run_bowtie(
 
     elapsed = time.time() - start_time
     logging.info("Bowtie2 processing time: %.2f seconds", elapsed)
+    
     return out_file_path
 
 

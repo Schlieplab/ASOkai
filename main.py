@@ -485,7 +485,6 @@ def main():
                                    str(config["Species"]), 
                                    gtf_path,
                                    cdna_path,
-                                   pep_path,
                                    scaffold_gtf_path, 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    index_name, 

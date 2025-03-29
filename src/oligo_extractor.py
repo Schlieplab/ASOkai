@@ -1,13 +1,7 @@
 from typing import List, Set, Tuple, Dict, Optional, Any, Union, NamedTuple
 from Bio.SeqUtils import gc_fraction
-from pyensembl import Genome
+from src.utils.genome import Genome, Exon, Gene, Transcript
 from src.utils.sequence_analysis import (
-    get_chromosomal_positions_per_transcript,
-    build_transcript_to_genomic_map,
-    get_chromosomal_positions_with_mapping,
-    get_transcript_object,
-    get_seq_by_transcript_position,
-    get_exon_id,
     longest_at_run,
     longest_t_run
 )
@@ -15,21 +9,30 @@ from src.utils.kmer_searcher import KmerSearcher
 import logging
 import polars as pl
 import os
+from dataclasses import dataclass
+from typing import List, Optional
 
-class Site(NamedTuple):
-    sequence: str = None
-    chromosomal_position: str = None
-    dG: float = None
+@dataclass
+class Site:
+    sequence: Optional[str] = None
+    chromosomal_position: Optional[str] = None
+    dG: Optional[float] = None
     
     def __len__(self):
-        return len(self.sequence)
-    
-class TargetSite(Site):
-    gene_id: str = None
-    transcripts: List[str] = None
-    exons: List[str] = None
+        return len(self.sequence) if self.sequence else 0
 
+@dataclass
+class TargetSite(Site):
+    gene_id: Optional[str] = None
+    transcripts: Optional[List[str]] = None
+    exons: Optional[List[str]] = None
     
+    def __post_init__(self):
+        if self.transcripts is None:
+            self.transcripts = []
+        if self.exons is None:
+            self.exons = []
+
 class OligoExtractor:
     """
     A class to extract and analyze oligonucleotide (k-mer) sequences from a specified gene, 
@@ -49,8 +52,7 @@ class OligoExtractor:
         gc_bounds: Tuple[float, float],
         species: str, 
         gtf_path: str, 
-        dna_path: str, 
-        pep_path: str, 
+        cdna_path: str, 
         scaffold_path: Optional[str], 
         multiplicity_layout: List[int], 
         bowtie_index: str, 
@@ -67,7 +69,7 @@ class OligoExtractor:
             gc_bounds (Tuple[float, float]): A tuple specifying the lower and upper bounds for GC content filtering.
             species (str): The species of interest. Must be either "mus_musculus" or "homo_sapiens".
             gtf_path (str): The file path or URL to the GTF file containing gene annotations.
-            dna_path (str): The file path or URL to the DNA FASTA file for transcript sequences.
+            cdna_path (str): The file path or URL to the cDNA FASTA file for transcript sequences.
             pep_path (str): The file path or URL to the protein FASTA file containing peptide sequences.
             scaffold_path (Optional[str]): The file path or URL to the scaffold GTF file. This is optional.
             multiplicity_layout (List[int]): A list of integers specifying the layout for multiplicity calculation.
@@ -101,12 +103,9 @@ class OligoExtractor:
         
         self.genome: Genome = Genome(
             reference_name=f'GRC{self.species[0]}{self.g_assembly}',
-            annotation_name="ensembl",
             annotation_version=self.e_release,
-            gtf_path_or_url=gtf_path,
-            transcript_fasta_paths_or_urls=dna_path,
-            protein_fasta_paths_or_urls=pep_path,
-            
+            gtf_path=gtf_path,
+            transcript_fasta_paths=cdna_path,            
         )
         
         self.genome.index(overwrite=False)
@@ -115,8 +114,7 @@ class OligoExtractor:
         if scaffold_path:
             self.genome_scaffolds: Optional[Genome] = Genome(
                 reference_name=f'GRCh{g_assembly}',
-                annotation_name='scaffolds',
-                gtf_path_or_url=scaffold_path,
+                gtf_path=scaffold_path,
             )
             self.genome_scaffolds.index()
         else:
@@ -183,13 +181,11 @@ class OligoExtractor:
             kmers_set = self._kmers(t.sequence, self.k)
             
             for kmer_seq, position in kmers_set:
-                # Get chromosomal position
-                chrom_pos = get_chromosomal_positions_per_transcript(
+                # Get chromosomal position using the new class method
+                chrom_pos = self.genome.get_chromosomal_position(
                     t.transcript_id, 
                     position, 
-                    self.genome, 
-                    self.k, 
-                    self.genome_scaffolds
+                    self.k
                 )
                 
                 if chrom_pos is None:
@@ -206,7 +202,10 @@ class OligoExtractor:
                 
                 # Add transcript and exon information
                 candidate_targets[key]['transcripts'].append(t.transcript_id)
-                exon_id = get_exon_id(position, t)
+                
+                # Get exon using the new class method
+                exon = t.get_exon_by_position(position)
+                exon_id = exon.exon_id if exon else None
                 candidate_targets[key]['exons'].append(exon_id)
         
         # Create a list of TargetSite objects
@@ -381,43 +380,42 @@ class OligoExtractor:
         
         sam_df = sam_df.with_columns((pl.col('POS') - self.multiplicity_layout[0]).alias('adjusted_pos'))
         
-        for transcript in sam_df['RNAME'].unique():
-            transcript_obj = get_transcript_object(transcript, self.genome, self.genome_scaffolds)
-            
-            if not transcript_obj:
-                continue
-            
+        for transcript_id in sam_df['RNAME'].unique():
+            # Get transcript object using the class method
             try:
-                transcript_to_genomic = build_transcript_to_genomic_map(transcript_obj)
-            except Exception as e:
-                logging.error(f"Error building transcript mapping for {transcript}: {e}")
-                continue
+                # Try main genome first
+                transcript_obj = self.genome.transcript_by_id(transcript_id.split('.')[0])
+            except ValueError:
+                # Try scaffold genome if available
+                if self.genome_scaffolds:
+                    try:
+                        transcript_obj = self.genome_scaffolds.transcript_by_id(transcript_id.split('.')[0])
+                    except ValueError:
+                        logging.warning(f"Transcript {transcript_id} not found in either genome")
+                        continue
+                else:
+                    continue
             
-            transcript_df = sam_df.filter(pl.col('RNAME') == transcript)
+            transcript_df = sam_df.filter(pl.col('RNAME') == transcript_id)
             
             # Group by QNAME within this transcript
             for qname, qname_df in transcript_df.group_by('QNAME'):
                 # Extract positions for batch processing
                 positions = qname_df['adjusted_pos'].to_list()
                 
-                # Get chromosomal positions using the pre-built mapping
-                chrom_positions = get_chromosomal_positions_with_mapping(
-                    transcript_obj,
-                    transcript_to_genomic,
-                    positions,
-                    self.k
-                )
+                # Get chromosomal positions using the transcript method
+                chrom_positions = transcript_obj.get_chromosomal_positions(positions, self.k)
                 
                 # Get sequences
                 seqs = [
-                    get_seq_by_transcript_position(transcript, pos, self.genome, self.k, self.genome_scaffolds)
+                    self.genome.get_transcript_subsequence(transcript_id, pos, self.k)
                     for pos in positions
                 ]
                 
                 # Optimize: Pre-filter null positions and use a set for uniqueness
                 valid_pairs = set()
                 for i, (pos, seq) in enumerate(zip(chrom_positions, seqs)):
-                    if pos is not None:  # Filter out null positions
+                    if pos is not None and seq is not None:  # Filter out null positions
                         valid_pairs.add((pos, seq))
                 
                 # Create secondary sites from unique pairs

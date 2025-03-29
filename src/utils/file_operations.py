@@ -8,7 +8,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from src.oligo_extractor import TargetSite, Site
-from pyensembl import Genome
+from src.utils.genome import Genome
 import time
 import gget
 import urllib.request, urllib.parse
@@ -183,7 +183,7 @@ def _build_bowtie_index(
         args (str): Additional command-line arguments for Bowtie2.
         tsl (bool, optional): Whether to filter transcripts by transcript support level.
         tsl_list (list, optional): transcript support levels. i.e. [1,2,4,None]. Required if tsl is True.
-        genome (Genome, optional): PyEnsembl genome object. Required if tsl is True.
+        genome (Genome, optional): genome object. Required if tsl is True.
         gene_only (bool, optional): Whether to index only one gene.
         gene_id (str): Gene identifier to extract if gene_only is True.
     

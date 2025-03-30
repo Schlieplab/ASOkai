@@ -97,7 +97,13 @@ def extract_gene(
     ) -> None:
     """
     Extract a specific gene from a .fa.gz file and save the filtered sequences.
+    Skips extraction if the output file already exists.
     """
+    # Check if output file already exists
+    if os.path.exists(fasta_gz_out):
+        logging.info(f'Output file {fasta_gz_out} already exists. Using existing file.')
+        return
+        
     logging.info(f'Extracting {gene_id} from transcriptome.')
     try:
         with gzip.open(fasta_gz_in, "rt") as infile, gzip.open(fasta_gz_out, "wt") as outfile:
@@ -118,6 +124,7 @@ def _filter_transcripts_by_tsl(
     """
     Filter transcripts from a gzipped FASTA file based on transcript support levels using the
     genome object for transcript details. The filtered sequences are written to a gzipped FASTA file.
+    Skips filtering if the output file already exists.
     
     Args:
         fasta_gz_in (str): Path to the input gzipped FASTA file containing transcript records.
@@ -125,6 +132,11 @@ def _filter_transcripts_by_tsl(
         genome (Genome): Genome object that provides transcript details via a transcripts() method.
         tsl_list (List[Optional[int]]): List of allowed transcript support level values (e.g., [1, 2, 3, None]).
     """
+    # Check if output file already exists
+    if os.path.exists(fasta_gz_out):
+        logging.info(f'Output file {fasta_gz_out} already exists. Using existing file.')
+        return
+    
     logging.info("Filtering %s for transcript support levels: %s", genome.reference_name, tsl_list)
 
     tsl_set = set(tsl_list)

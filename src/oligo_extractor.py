@@ -174,18 +174,17 @@ class OligoExtractor:
         logging.info(f"Extracting {self.k}-mers from gene")
 
         transcripts = self.gene.transcripts
-        candidate_targets = {}  # Dictionary to store unique oligos
+        # Dictionary to track unique oligos by their sequence and position
+        # Key: (sequence, chromosomal_position), Value: TargetSite object
+        candidate_targets_dict : Dict[Tuple, TargetSite] = {}
         
         for t in transcripts:
             # Extract k-mers from transcript sequence
             kmers_set = self._kmers(t.sequence, self.k)
             
             for kmer_seq, position in kmers_set:
-                # Get chromosomal position using the new class method
-                chrom_pos = t.get_chromosomal_position(
-                    position, 
-                    self.k
-                )
+                # Get chromosomal position using the class method
+                chrom_pos = t.get_chromosomal_position(position, self.k)
                 
                 if chrom_pos is None:
                     continue  # Skip if no valid chromosomal position
@@ -193,34 +192,27 @@ class OligoExtractor:
                 # Use the sequence and chromosomal position as a composite key
                 key = (kmer_seq, chrom_pos)
                 
-                if key not in candidate_targets:
-                    candidate_targets[key] = {
-                        'transcripts': [],
-                        'exons': []
-                    }
-                
-                # Add transcript and exon information
-                candidate_targets[key]['transcripts'].append(t.transcript_id)
-                
-                # Get exon using the new class method
+                # Get exon information
                 exon = t.get_exon_by_position(position)
                 exon_id = exon.exon_id if exon else None
-                candidate_targets[key]['exons'].append(exon_id)
+                
+                if key not in candidate_targets_dict:
+                    # Create new TargetSite object
+                    candidate_targets_dict[key] = TargetSite(
+                        sequence=kmer_seq,
+                        chromosomal_position=chrom_pos,
+                        gene_id=self.gene_id,
+                        transcripts=[t.transcript_id],
+                        exons=[exon_id]
+                    )
+                else:
+                    # Update existing TargetSite with additional transcript and exon info
+                    candidate_targets_dict[key].transcripts.append(t.transcript_id)
+                    candidate_targets_dict[key].exons.append(exon_id)
         
-        # Create a list of TargetSite objects
-        oligo_data_list = []
-        for (seq, chrom_pos), data in candidate_targets.items():
-            oligo_data_list.append(
-                TargetSite(
-                    sequence=seq,
-                    chromosomal_position=chrom_pos,
-                    gene_id=self.gene_id,
-                    transcripts=data['transcripts'],
-                    exons=data['exons']
-                )
-            )
+        # Create indexed dictionary of TargetSite objects
+        oligo_data_list = list(candidate_targets_dict.values())
         
-
         for i, oligo_data in enumerate(oligo_data_list, 1):
             index = f'S{str(i).zfill(6)}'
             self.candidate_targets[index] = oligo_data
@@ -341,7 +333,7 @@ class OligoExtractor:
                     dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
                     
                     if target_id in self.candidate_targets:
-                        self.candidate_targets[target_id] = self.candidate_targets[target_id]._replace(dG=dg_binding)
+                        self.candidate_targets[target_id].dG = dg_binding
                         targets_updated += 1
                     else:
                         logging.warning(f"Target ID '{target_id}' from RNAcofold output not found in candidate_targets")
@@ -357,6 +349,7 @@ class OligoExtractor:
             
         except Exception as e:
             logging.error(f"Error parsing RNAcofold CSV output: {e}")
+            raise
 
 
     def _extract_secondary_sites(self, infile: str) -> Dict[str, List[Site]]:
@@ -496,10 +489,10 @@ class OligoExtractor:
                     try:
                         dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
                         if dg_binding is not None:
-                            self.repeated_sites[seq_id][site_idx] = self.repeated_sites[seq_id][site_idx]._replace(dG=dg_binding)
+                            self.repeated_sites[seq_id][site_idx].dG = dg_binding
                             
                     except (ValueError, TypeError) as e:
-                        logging.warning(f"Failed to parse dG_binding for {site_id}: {e}")
+                        logging.warning(f"Failed to parse dG_binding for {site_idx}: {e}")
                 
                 # Count sites before filtering
                 total_sites_before = sum(len(sites) for sites in self.repeated_sites.values())

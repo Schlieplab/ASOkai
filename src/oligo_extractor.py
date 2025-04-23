@@ -172,7 +172,6 @@ class OligoExtractor:
                 
                 # Get exon information
                 exon = t.get_exon_by_position(position)
-                exon_id = exon.exon_id if exon else None
                 
                 if key not in candidate_targets_dict:
                     # Create new TargetSite object
@@ -180,13 +179,13 @@ class OligoExtractor:
                         sequence=kmer_seq,
                         chromosomal_position=chrom_pos,
                         gene_id=self.gene_id,
-                        transcripts=[t.transcript_id],
-                        exons=[exon_id]
+                        transcripts=[t],
+                        exons=[exon]
                     )
                 else:
                     # Update existing TargetSite with additional transcript and exon info
-                    candidate_targets_dict[key].transcripts.append(t.transcript_id)
-                    candidate_targets_dict[key].exons.append(exon_id)
+                    candidate_targets_dict[key].transcripts.append(t)
+                    candidate_targets_dict[key].exons.append(exon)
         
         # Create indexed dictionary of TargetSite objects
         oligo_data_list = list(candidate_targets_dict.values())
@@ -199,7 +198,7 @@ class OligoExtractor:
         
 
         # Write to FASTA file
-        outfile = os.path.join(self.data_dir, 'oligos', f"{self.gene_id}_{self.k}mers.fa")
+        outfile = os.path.join(self.data_dir, 'oligos', f"{self.bowtie_index}_{self.gene_id}_{self.k}mers.fa")
         with open(outfile, "w") as tmp_bowtie_in:
             for index, oligo in self.candidate_targets.items():
                 tmp_bowtie_in.write(f">{index}\n{oligo.sequence}\n")
@@ -252,7 +251,7 @@ class OligoExtractor:
         filtered_oligos = res.select(["seq_id", "SEQ"]).to_numpy().tolist()
         logging.info(f"Viable {self.k}-mer candidate sites after Bowtie: {len(filtered_oligos)}")
         
-        outfile = os.path.join(self.data_dir, 'oligos', f"{self.gene_id}_{self.k}mers_filtered.fa")
+        outfile = os.path.join(self.data_dir, 'oligos', f"{self.bowtie_index}_{self.gene_id}_{self.k}mers_filtered.fa")
 
         with open(outfile, "w") as tmp_bowtie_in:
             for x in filtered_oligos:
@@ -309,6 +308,8 @@ class OligoExtractor:
                     dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
                     
                     if target_id in self.candidate_targets:
+                        if self.candidate_targets[target_id].dG is not None:
+                            continue
                         self.candidate_targets[target_id].dG = dg_binding
                         targets_updated += 1
                     else:
@@ -518,55 +519,52 @@ class OligoExtractor:
                 logging.error(f"Error filtering repeated sites: {e}")
                 raise
 
-    # def extract_offtarget_sites(self, infile: str) -> Dict[str, List[Site]]:
-    #     """
-    #     Extract off-target sites for each target from the Bowtie2 alignment results.
-    #     Off-target sites are secondary sites that are not the main target site
-    #     or any of the repeated sites.
+    def extract_offtarget_sites(self, infile: str) -> Dict[str, List[Site]]:
+        """
+        Extract off-target sites for each target from the Bowtie2 alignment results.
+        Off-target sites are secondary sites that are not the main target site
+        or any of the repeated sites.
         
-    #     Parameters:
-    #         infile (str): Path to the input SAM file from Bowtie2 alignment.
+        Parameters:
+            infile (str): Path to the input SAM file from Bowtie2 alignment.
             
-    #     Returns:
-    #         Dict[str, List[Site]]: Dictionary of off-target sites for each QNAME.
-    #     """
-    #     logging.info("Extracting off-target sites")
+        Returns:
+            Dict[str, List[Site]]: Dictionary of off-target sites for each QNAME.
+        """
+        logging.info("Extracting off-target sites")
         
-    #     # Get all secondary sites
-    #     secondary_sites = self._extract_secondary_sites(infile)
+        # Get all secondary sites
+        secondary_sites = self._extract_secondary_sites(infile)
 
         
-    #     for qname, sites in secondary_sites.items():
-    #         # Get positions to ignore (main site and all repeated sites)
-    #         main_position = self.candidate_targets[qname].chromosomal_position
-    #         repeated_positions = [site.chromosomal_position for site in self.repeated_sites[qname]]
-    #         positions_to_ignore = set([main_position] + repeated_positions)
+        for qname, sites in secondary_sites.items():
+            # Get positions to ignore (main site and all repeated sites)
+            seq_id, site_idx = qname.split('_')
+            if site_idx == '0':
+                # Skip if this is the main target site
+                continue
             
-    #         # Filter for off-target sites
-    #         for site in sites:
-    #             if site.chromosomal_position not in positions_to_ignore:
-    #                 # Check if this site is already in the list
-    #                 existing_sites = [
-    #                     s for s in self.off_target_sites[qname] 
-    #                     if s.chromosomal_position == site.chromosomal_position and s.sequence == site.sequence
-    #                 ]
+            main_position = self.candidate_targets[seq_id].chromosomal_position
+            repeated_positions = [site.chromosomal_position for site in self.repeated_sites[seq_id]]
+            positions_to_ignore = set([main_position] + repeated_positions)
+            
+            # Filter for off-target sites
+            for site in sites:
+                if site.chromosomal_position not in positions_to_ignore:
+                    # Check if this site is already in the list
+                    existing_sites = [
+                        s for s in self.off_target_sites.get(seq_id, [])
+                        if s.chromosomal_position == site.chromosomal_position and s.sequence == site.sequence
+                    ]
                     
-    #                 if not existing_sites:
-    #                     self.off_target_sites[qname].append(site)
+                    if not existing_sites:
+                        if seq_id not in self.off_target_sites:
+                            self.off_target_sites[seq_id] = []
+                        self.off_target_sites[seq_id].append(site)
 
-    #     logging.info(f"Extracted {sum(len(sites) for sites in self.off_target_sites.values())} off-target sites")
+        logging.info(f"Extracted {sum(len(sites) for sites in self.off_target_sites.values())} off-target sites")
 
-        
-    def extract_non_prone_multiplicity(self, core_missmatch_count: int, core_consecutive_matches: int) -> None:
-        """
-        Extract non-prone multiplicity for each k-mer using the KmerSearcher class.
-        """
-        searcher = KmerSearcher(self.gene_kmers, 
-                                core_missmatch_count, 
-                                core_consecutive_matches, 
-                                f"{self.data_dir}/oligos/{self.gene_id}_{self.k}mer_non_prone_multiplicities.fa")
-        
-        self.non_prone_multiplicity = searcher.search(self.candidate_targets) # TODO: input changed to candidate_targets
+
     
 
     def store_kmer_results(self, cofold_out: str, cofold_out_repeated: str) -> None:

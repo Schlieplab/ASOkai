@@ -596,8 +596,8 @@ class Site:
 @dataclass
 class TargetSite(Site):
     gene_id: Optional[str] = None
-    transcripts: Optional[List[str]] = None
-    exons: Optional[List[str]] = None
+    transcripts: Optional[List[Transcript]] = None
+    exons: Optional[List[Exon]] = None
     dG: Optional[float] = None
 
     def __post_init__(self):

@@ -242,7 +242,6 @@ def find_potential_secondary_sites(
             pass # Just opening in 'w' mode clears the file
 
     results = {}
-    reference_dgs_binding = {} # Store reference binding energies
     try:
         print(f"Calculating pruned mutations (using dG_binding) for {len(processed_dict)} targets using {num_processes} processes")
         
@@ -262,7 +261,7 @@ def find_potential_secondary_sites(
                      continue
 
                 results[target_id] = valid_mutations
-                reference_dgs_binding[target_id] = ref_binding_dg
+                target_sites[target_id].dG = ref_binding_dg # Store the reference binding energy in the target site object
                 
                 if output_fasta_path:
                     with open(output_fasta_path, 'a') as f:

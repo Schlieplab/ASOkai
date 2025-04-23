@@ -140,13 +140,12 @@ def main():
         int(config["EnsembleRelease"]),
         genome_dir
     )
-        
     
     tsl, tsl_list = convert_tsl_list(config["transcriptSupportLevels"])
     
-
     
     logging.info("-----------------------------------")
+
 
     try:
         oligo_obj = OligoExtractor(str(config["TargetGene"]), 
@@ -162,14 +161,16 @@ def main():
                                    index_name, 
                                    os.path.join(config['DataDir']),
                                    ) 
-        
     except Exception as e:
         logging.error(f"Error creating OligoExtractor object: {e}")
         logging.info("Exiting.")
         sys.exit(1)
         
-        logging.info("-----------------------------------")
+        
+    logging.info("-----------------------------------")
     
+    
+    # Build Bowtie2 index for transcriptome
     try: 
         transcriptome_index_path = build_transcriptomic_bowtie_index(cdna_path,
                                         index_dir, 
@@ -184,8 +185,11 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
 
+
     logging.info("-----------------------------------")
     
+    
+    # Build Bowtie2 index for genome
     try:
         genome_index_path = build_genomic_bowtie_index(genome_path,
                                         index_dir, 
@@ -199,16 +203,16 @@ def main():
         
     logging.info("-----------------------------------")
     
+    
     try:             
         candidate_fasta_path = oligo_obj.extract_candidate_targets()
-  
     except Exception as e:
         logging.error(f"Error during oligo extraction: {e}")
         logging.info("Exiting.")
         sys.exit(1)
         
+        
     logging.info("-----------------------------------")
-
 
 
     # Run Bowtie2 for pre-filtering viable oligos
@@ -222,7 +226,9 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
     
+    
     logging.info("-----------------------------------")
+        
         
     # filter viable kmers based on Bowtie output
     try:
@@ -232,55 +238,12 @@ def main():
         logging.error(f"Error filtering viable kmers: {e}")
         logging.info("Exiting.")
         sys.exit(1)
-        
-    logging.info("-----------------------------------")
-    
-    try:
-        potential_secondary_sites_path = os.path.join(config['DataDir'], 'oligos', 'mutations.fa')
-        find_potential_secondary_sites(
-            oligo_obj.candidate_targets,
-            max_ddg=float(config["MaxddG"]),
-            multiplicity_layout=oligo_obj.multiplicity_layout,
-            ddg_tolerance=float(config["ddGTolerance"]),
-            vienna_params_path=config["CofoldParamFile"],
-            output_fasta_path=potential_secondary_sites_path,
-        )
-
-    except Exception as e:
-        logging.error(f"Error calculating pruned mutations: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
     
         
     logging.info("-----------------------------------")
     
-    try:
-        cofold_in = os.path.join(config['DataDir'], 
-                                 'RNACofold', 
-                                 os.path.basename(filtered_fasta_path)
-                                 .replace(".fa", 
-                                          ".rnacofoldin"))
-                    
-        build_RNAcofold_in(cofold_in, oligo_obj.candidate_targets)   
-        cofold_out = run_RNAcofold(cofold_in, config["CofoldParamFile"])
-        
-    except Exception as e:
-        logging.error(f"Error getting binding affinity: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-        
-    logging.info("-----------------------------------")
     
-    try:
-        oligo_obj.add_dg_to_targets(cofold_out)
-    except Exception as e:
-        logging.error(f"Error adding binding affinity to targets: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-        
-        
-    logging.info("-----------------------------------")
-    
+    # Build Bowtie2 index for target gene
     try:
         gene_index_path = build_transcriptomic_bowtie_index(cdna_path,
                            index_dir, 
@@ -288,14 +251,16 @@ def main():
                            config["BowtieBuildIndexArgs"],
                            gene_only=True,
                            gene_id=oligo_obj.gene_id)
-        
     except Exception as e:
         logging.error(f"Error building Bowtie2 target gene index: {e}")
         logging.info("Exiting.")
         sys.exit(1)
+     
         
     logging.info("-----------------------------------")
-        
+      
+    
+    # Run Bowtie2 to find repeated sites in target gene
     try:      
         bowtie_repeated_out = run_bowtie(filtered_fasta_path, 
                                           gene_index_path,
@@ -309,8 +274,30 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
+        
     logging.info("-----------------------------------")
 
+    
+    # Finding potential secondary sites
+    try:
+        potential_secondary_sites_path = filtered_fasta_path.replace(".fa", "_potential_secondary_sites.fa")
+        find_potential_secondary_sites(
+            oligo_obj.candidate_targets,
+            max_ddg=float(config["MaxddG"]),
+            multiplicity_layout=oligo_obj.multiplicity_layout,
+            ddg_tolerance=float(config["ddGTolerance"]),
+            vienna_params_path=config["CofoldParamFile"],
+            output_fasta_path=potential_secondary_sites_path,
+        )
+    except Exception as e:
+        logging.error(f"Error calculating pruned mutations: {e}")
+        logging.info("Exiting.")
+        sys.exit(1)
+        
+        
+    logging.info("-----------------------------------")
+    
+    
     try:
         oligo_obj.extract_repeated_sites(bowtie_repeated_out)
     except Exception as e:
@@ -318,50 +305,64 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
-        
+    
+    logging.info("-----------------------------------")
+    
+    
     try:
+        cofold_in = os.path.join(config['DataDir'], 
+                            'RNACofold', 
+                            os.path.basename(filtered_fasta_path)
+                            .replace(".fa", 
+                                    ".rnacofoldin"))
         cofold_in_repeated = cofold_in.replace(".rnacofoldin", "_repeated.rnacofoldin")
-
         build_RNAcofold_in(cofold_in_repeated, oligo_obj.repeated_sites, oligo_obj.candidate_targets)
         cofold_out_repeated = run_RNAcofold(cofold_in_repeated, config["CofoldParamFile"])
-        
     except Exception as exc:
         logging.error("Error getting binding affinity for repeated target sites: %s", exc)
         logging.info("Exiting.")
         sys.exit(1)
-    
+        
+        
+    logging.info("-----------------------------------")
+
+
     try:
-        oligo_obj.filter_repeated_sites_by_ddg(cofold_out_repeated)
+        oligo_obj.filter_repeated_sites_by_ddg(cofold_out_repeated, min_ddg_threshold=float(config["MaxddG"]))
     except Exception as e:
         logging.error(f"Error filtering repeated sites by ddG: {e}")
         logging.info("Exiting.")
         sys.exit(1)
         
+        
+    logging.info("-----------------------------------")
+    
+    
+    try:      
+        bowtie_offtarget_out = run_bowtie(potential_secondary_sites_path, 
+                                         transcriptome_index_path,
+                                         config["BowtieArgs"],
+                                         os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),)
+    except Exception as e:
+        logging.error(f"Error running Bowtie2 for secondary sites: {e}")
+        logging.info("Exiting.")
+        sys.exit(1)
+    
+    
+    logging.info("-----------------------------------")
+    
+    
+    try:
+        oligo_obj.extract_offtarget_sites(bowtie_offtarget_out)
+    except Exception as e:
+        logging.error(f"Error extracting off-target sites: {e}")
+        logging.info("Exiting.")
+        sys.exit(1)
+
+    
     logging.info("-----------------------------------")
 
-    # try:
-    #     bowtie_offtarget_out = run_bowtie(filtered_fasta_path, 
-    #                             index_path,
-    #                             config["BowtieArgs"],
-    #                             os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
-    #                             trim=True,
-    #                             multiplicity_layout=oligo_obj.multiplicity_layout)
-    # except Exception as e:
-    #     logging.error(f"Error running Bowtie2 for specific off-targets: {e}")
-    #     logging.info("Exiting.")
-    #     sys.exit(1)
 
-
-    # logging.info("-----------------------------------")
-    
-    # try:
-    #     oligo_obj.extract_offtarget_sites(bowtie_offtarget_out)
-    # except Exception as e:
-    #     logging.error(f"Error extracting off-target sites: {e}")
-    #     logging.info("Exiting.")
-    #     sys.exit(1)
-
-    
     # try:
     #     oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
     # except Exception as e:

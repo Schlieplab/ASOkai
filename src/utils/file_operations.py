@@ -381,7 +381,7 @@ def run_bowtie(
         str: The path to the output SAM file.
     """
     infile_name = os.path.splitext(os.path.basename(infile_path))[0]
-    
+    const_args = ["--no-head", "-t", "-N 0", "-a", "-f", "--norc", "--no-unal"]
     
     if trim:
         if not multiplicity_layout or len(multiplicity_layout) < 3:
@@ -406,6 +406,8 @@ def run_bowtie(
     
     # Build the initial command as a list to avoid shell injection issues.
     command = ["bowtie2", "-x", index_path, "-U", infile_path, "-S", out_file_path]
+    command.extend(const_args)
+    
     if bowtie_args:
         command.extend(shlex.split(bowtie_args))
     if trim:

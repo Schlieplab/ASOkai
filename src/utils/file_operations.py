@@ -399,10 +399,6 @@ def run_bowtie(
 
 
     out_file_path = os.path.join(bowtie2Home, out_file_name)
-
-    if os.path.exists(out_file_path):
-        logging.info("Using existing bowtie2 output: %s", out_file_path)
-        return out_file_path
     
     # Build the initial command as a list to avoid shell injection issues.
     command = ["bowtie2", "-x", index_path, "-U", infile_path, "-S", out_file_path]

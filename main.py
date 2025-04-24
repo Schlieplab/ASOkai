@@ -17,6 +17,7 @@ from src.oligo_extractor import OligoExtractor
 import configparser
 import os
 import multiprocessing as mp
+import RNA
 
 
 def setup_logging():
@@ -107,6 +108,11 @@ def setup_environment(config):
         logging.info("Exiting.")
         sys.exit(1)
     
+    vienna_params_path = config["CofoldParamFile"]
+    
+    if vienna_params_path:
+        RNA.params_load(vienna_params_path)
+
     return bowtie_index_name, bowtie_index_dir, genome_data_dir
 
 
@@ -286,7 +292,6 @@ def main():
             max_ddg=float(config["MaxddG"]),
             multiplicity_layout=oligo_obj.multiplicity_layout,
             ddg_tolerance=float(config["ddGTolerance"]),
-            vienna_params_path=config["CofoldParamFile"],
             output_fasta_path=potential_secondary_sites_path,
         )
     except Exception as e:
@@ -309,33 +314,33 @@ def main():
     logging.info("-----------------------------------")
     
     
-    try:
-        cofold_in = os.path.join(config['DataDir'], 
-                            'RNACofold', 
-                            os.path.basename(filtered_fasta_path)
-                            .replace(".fa", 
-                                    ".rnacofoldin"))
-        cofold_in_repeated = cofold_in.replace(".rnacofoldin", "_repeated.rnacofoldin")
-        build_RNAcofold_in(cofold_in_repeated, oligo_obj.repeated_sites, oligo_obj.candidate_targets)
-        cofold_out_repeated = run_RNAcofold(cofold_in_repeated, config["CofoldParamFile"])
-    except Exception as exc:
-        logging.error("Error getting binding affinity for repeated target sites: %s", exc)
-        logging.info("Exiting.")
-        sys.exit(1)
+    # try:
+    #     cofold_in = os.path.join(config['DataDir'], 
+    #                         'RNACofold', 
+    #                         os.path.basename(filtered_fasta_path)
+    #                         .replace(".fa", 
+    #                                 ".rnacofoldin"))
+    #     cofold_in_repeated = cofold_in.replace(".rnacofoldin", "_repeated.rnacofoldin")
+    #     build_RNAcofold_in(cofold_in_repeated, oligo_obj.repeated_sites, oligo_obj.candidate_targets)
+    #     cofold_out_repeated = run_RNAcofold(cofold_in_repeated, config["CofoldParamFile"])
+    # except Exception as exc:
+    #     logging.error("Error getting binding affinity for repeated target sites: %s", exc)
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
         
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
 
 
-    try:
-        oligo_obj.filter_repeated_sites_by_ddg(cofold_out_repeated, min_ddg_threshold=float(config["MaxddG"]))
-    except Exception as e:
-        logging.error(f"Error filtering repeated sites by ddG: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    # try:
+    #     oligo_obj.filter_repeated_sites_by_ddg(cofold_out_repeated, min_ddg_threshold=float(config["MaxddG"]))
+    # except Exception as e:
+    #     logging.error(f"Error filtering repeated sites by ddG: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
         
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
     
     
     try:      
@@ -364,13 +369,13 @@ def main():
 
 
     # try:
-    #     oligo_obj.store_kmer_results(cofold_out, cofold_out_repeated)
+    oligo_obj.store_kmer_results()
     # except Exception as e:
     #     logging.error(f"Error writing kmer results to file: {e}")
     #     logging.info("Exiting.")
     #     sys.exit(1)
         
-    # logging.info("Pipeline completed successfully.")
+    logging.info("Pipeline completed successfully.")
 
 if __name__ == '__main__':
     main()

@@ -1,6 +1,5 @@
 import logging
 import multiprocessing as mp
-from tqdm import tqdm
 from functools import partial
 import RNA
 import os
@@ -179,10 +178,10 @@ def pruned_mutation_search(target_input, max_ddg=5.0, multiplicity_layout=[4,8,4
         return target_id, reference_binding_dg, valid_mutations 
             
     except ValueError as ve:
-        print(f"Configuration error for target {target_id}: {ve}")
+        logging.error(f"Configuration error for target {target_id}: {ve}")
         return target_id, float('nan'), []
     except Exception as e:
-        print(f"Error processing target {target_id}: {e}")
+        logging.error(f"Error processing target {target_id}: {e}")
         # Return reference_binding_dg as NaN if calculation failed 
         return target_id, float('nan'), []
 
@@ -193,7 +192,6 @@ def find_potential_secondary_sites(
     multiplicity_layout: list = [4, 8, 4],
     ddg_tolerance: float = 0.5,
     num_processes: int = None,
-    vienna_params_path: str = None,
     output_fasta_path: str = None
 ) -> dict:
     """
@@ -205,15 +203,13 @@ def find_potential_secondary_sites(
         multiplicity_layout (list): Layout [left_flank, core, right_flank].
         ddg_tolerance (float): Tolerance for pruning based on dG_binding.
         num_processes (int): Number of processes for parallelization.
-        vienna_params_path (str): Path to Vienna RNA parameters file.
         output_fasta_path (str): Path to save mutations in FASTA format.
     
     Returns:
         dict: Dictionary mapping target ID to list of valid mutations (sequence, ddG_binding).
     """
     
-    if vienna_params_path:
-        RNA.params_load(vienna_params_path)
+
     
     if num_processes is None:
         num_processes = mp.cpu_count()
@@ -243,21 +239,17 @@ def find_potential_secondary_sites(
 
     results = {}
     try:
-        print(f"Calculating pruned mutations (using dG_binding) for {len(processed_dict)} targets using {num_processes} processes")
+        logging.info(f"Calculating pruned mutations (using dG_binding) for {len(processed_dict)} targets using {num_processes} processes")
         
         with mp.Pool(processes=num_processes) as pool:
             # Use imap_unordered for potentially faster consumption of results
-            for result in tqdm(
-                pool.imap_unordered(worker_with_args, processed_dict.items()), 
-                total=len(processed_dict),
-                desc="Calculating pruned mutations (dG_binding)"
-            ):
+            for result in pool.imap_unordered(worker_with_args, processed_dict.items()):
                 # Unpack the results: target_id, reference_binding_dg, valid_mutations
                 target_id, ref_binding_dg, valid_mutations = result
                 
                 # Handle potential NaN from worker errors
                 if target_id is None or math.isnan(ref_binding_dg):
-                     print(f"Skipping target {target_id or 'Unknown'} due to calculation error.")
+                     logging.warning(f"Skipping target {target_id or 'Unknown'} due to calculation error.")
                      continue
 
                 results[target_id] = valid_mutations
@@ -279,16 +271,16 @@ def find_potential_secondary_sites(
                             # Write the mutated oligo sequence (seq)
                             f.write(f">{mutation_id} dG_binding={mutation_binding_dg:.2f} ddG_binding={ddg_binding:.2f}\n{seq}\n")
                 
-        print(f"Completed pruned mutation calculations for {len(results)} targets")
+        logging.info(f"Completed pruned mutation calculations for {len(results)} targets")
         total_mutations = sum(len(muts) for muts in results.values() if muts is not None) # Handle potential None lists
-        print(f"Found a total of {total_mutations} valid mutations based on dG_binding")
+        logging.info(f"Found a total of {total_mutations} valid mutations based on dG_binding")
         
         if output_fasta_path:
-            print(f"Mutations written to {output_fasta_path}")
+            logging.info(f"Mutations written to {output_fasta_path}")
             
         return results
     
     except Exception as e:
-        print(f"Error in parallel processing: {e}")
+        logging.error(f"Error in parallel processing: {e}")
         # Consider more specific error handling or logging
         raise # Re-raise the exception after logging

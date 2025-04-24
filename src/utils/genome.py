@@ -420,7 +420,7 @@ class Genome:
         """Parse transcript FASTA files to extract sequences."""
         for fasta_path in self.transcript_fasta_paths:
             if not os.path.exists(fasta_path):
-                print(f"Warning: FASTA file not found: {fasta_path}")
+                logging.warning(f"Warning: FASTA file not found: {fasta_path}")
                 continue
             
             # Determine if file is gzipped

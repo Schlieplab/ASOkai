@@ -1,16 +1,17 @@
-from typing import List, Set, Tuple, Dict, Optional, Any, Union, NamedTuple
+from typing import List, Set, Tuple, Dict, Optional, Union
 from Bio.SeqUtils import gc_fraction
-from src.utils.genome import Genome, Exon, Gene, Transcript
+from src.utils.genome import Genome
+from Bio.Seq import Seq
 from src.utils.sequence_analysis import (
     longest_at_run,
     longest_t_run
 )
-from src.utils.kmer_searcher import KmerSearcher
 import logging
 import polars as pl
 import os
 from typing import List, Optional
 from src.utils.genome import TargetSite, Site
+import RNA
 
 class OligoExtractor:
     """
@@ -266,67 +267,67 @@ class OligoExtractor:
         return outfile
     
     
-    def add_dg_to_targets(
-        self, 
-        cofold_output: str
-    ) -> None:
-        """
-        Parse RNAcofold output from CSV and add dG values to candidate target TargetSite objects.
+    # def add_dg_to_targets(
+    #     self, 
+    #     cofold_output: str
+    # ) -> None:
+    #     """
+    #     Parse RNAcofold output from CSV and add dG values to candidate target TargetSite objects.
         
-        Parameters:
-            cofold_output (str): Path to the RNAcofold output CSV file with columns:
-                                seq_num, seq_id, seq, mfe_struct, mfe, ensemble_energy, prob_mfe, dG_binding
+    #     Parameters:
+    #         cofold_output (str): Path to the RNAcofold output CSV file with columns:
+    #                             seq_num, seq_id, seq, mfe_struct, mfe, ensemble_energy, prob_mfe, dG_binding
         
-        Returns:
-            None: Updates the TargetSite objects in the self.candidate_targets dictionary with dG values.
-        """
-        logging.info("Adding dG values to candidate targets from RNAcofold CSV")
+    #     Returns:
+    #         None: Updates the TargetSite objects in the self.candidate_targets dictionary with dG values.
+    #     """
+    #     logging.info("Adding dG values to candidate targets from RNAcofold CSV")
         
-        # Track statistics
-        targets_updated = 0
-        targets_missing = 0
+    #     # Track statistics
+    #     targets_updated = 0
+    #     targets_missing = 0
         
-        try:
-            # Using Polars to read the CSV
-            df = pl.read_csv(cofold_output)
+    #     try:
+    #         # Using Polars to read the CSV
+    #         df = pl.read_csv(cofold_output)
             
-            # Verify required columns exist
-            required_columns = ["seq_id", "dG_binding"]
-            missing_columns = [col for col in required_columns if col not in df.columns]
+    #         # Verify required columns exist
+    #         required_columns = ["seq_id", "dG_binding"]
+    #         missing_columns = [col for col in required_columns if col not in df.columns]
             
-            if missing_columns:
-                logging.error(f"Missing required columns in CSV: {missing_columns}")
-                logging.error(f"Available columns: {df.columns}")
-                return
+    #         if missing_columns:
+    #             logging.error(f"Missing required columns in CSV: {missing_columns}")
+    #             logging.error(f"Available columns: {df.columns}")
+    #             return
                 
-            # Process each row
-            for row in df.iter_rows(named=True):
-                target_id = str(row["seq_id"])
+    #         # Process each row
+    #         for row in df.iter_rows(named=True):
+    #             target_id = str(row["seq_id"])
                 
                     
-                try:
-                    dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
+    #             try:
+    #                 dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
                     
-                    if target_id in self.candidate_targets:
-                        if self.candidate_targets[target_id].dG is not None:
-                            continue
-                        self.candidate_targets[target_id].dG = dg_binding
-                        targets_updated += 1
-                    else:
-                        logging.warning(f"Target ID '{target_id}' from RNAcofold output not found in candidate_targets")
-                        targets_missing += 1
-                except (ValueError, TypeError) as e:
-                    logging.error(f"Failed to parse energy values for target {target_id}: {e}")
+    #                 if target_id in self.candidate_targets:
+    #                     if self.candidate_targets[target_id].dG is not None:
+    #                         continue
+    #                     self.candidate_targets[target_id].dG = dg_binding
+    #                     targets_updated += 1
+    #                 else:
+    #                     logging.warning(f"Target ID '{target_id}' from RNAcofold output not found in candidate_targets")
+    #                     targets_missing += 1
+    #             except (ValueError, TypeError) as e:
+    #                 logging.error(f"Failed to parse energy values for target {target_id}: {e}")
             
-            # Log summary
-            if targets_missing == 0:
-                logging.info(f"Updated energy values for {targets_updated} targets.")
-            else:
-                logging.info(f"Updated energy values for {targets_updated} targets. {targets_missing} targets not found.")
+    #         # Log summary
+    #         if targets_missing == 0:
+    #             logging.info(f"Updated energy values for {targets_updated} targets.")
+    #         else:
+    #             logging.info(f"Updated energy values for {targets_updated} targets. {targets_missing} targets not found.")
             
-        except Exception as e:
-            logging.error(f"Error parsing RNAcofold CSV output: {e}")
-            raise
+    #     except Exception as e:
+    #         logging.error(f"Error parsing RNAcofold CSV output: {e}")
+    #         raise
 
 
     def _extract_secondary_sites(self, infile: str) -> Dict[str, List[Site]]:
@@ -395,129 +396,156 @@ class OligoExtractor:
         logging.info(f"Extracted {sum(len(sites) for sites in secondary_sites.values())} secondary sites")
         return secondary_sites
 
-    def extract_repeated_sites(self, infile: str) -> None:
+    def extract_repeated_sites(self, infile: str, min_ddg_threshold: float = 5.0) -> None:
         """
-        Extract repeated sites for each target from the Bowtie2 alignment results.
-        Uses the extract_secondary_sites function internally.
-        
+        Extract repeated sites from the Bowtie2 alignment results and calculate their binding energies.
         Parameters:
             infile (str): Path to the input SAM file from Bowtie2 alignment.
+            min_ddg_threshold (float): Minimum ddG threshold for keeping a site 
+                                        Sites with ddG values above this threshold will be filtered out.
         """
         logging.info("Extracting repeated sites")
         
         secondary_sites = self._extract_secondary_sites(infile)
         
-        self.repeated_sites = {qname: [] for qname in secondary_sites.keys()}
+        self.repeated_sites = {qname: [] for qname in self.candidate_targets.keys()}
+        
+        md = RNA.md()
+        md.temperature = 37.0
         
         for qname, sites in secondary_sites.items():
             position_to_ignore = self.candidate_targets[qname].chromosomal_position
             
+            # Original Oligo (reverse complement of the original target) - remains constant
+            target_obj = Seq(self.candidate_targets[qname].sequence)
+            oligo_seq = str(target_obj.reverse_complement())
+            
+            fc_oligo = RNA.fold_compound(oligo_seq, md)
+            (_, oligo_mfe) = fc_oligo.mfe() # This oligo MFE is constant
+            
             for site in sites:
                 if site.chromosomal_position != position_to_ignore:
-                    existing_sites = [
-                        s for s in self.repeated_sites[qname] 
-                        if s.chromosomal_position == site.chromosomal_position and s.sequence == site.sequence
-                    ]
                     
-                    if not existing_sites:
-                        self.repeated_sites[qname].append(site)
+                    fc_repeated_site = RNA.fold_compound(site.sequence, md)
+                    (_, repeated_site_mfe) = fc_repeated_site.mfe()
+                    
+                    # MFE of the mutated duplex (mutated target & original oligo)
+                    repeated_duplex = site.sequence + "&" + oligo_seq
+                    fc_repeated_duplex = RNA.fold_compound(repeated_duplex, md)
+                    (_, repeated_duplex_mfe) = fc_repeated_duplex.mfe()
+                    
+                    # Mutated Binding Energy (using constant oligo_mfe)
+                    mutated_binding_dg = repeated_duplex_mfe - (repeated_site_mfe + oligo_mfe)
+                    # --- End Mutated Binding Energy Calculation ---
+
+                    # Calculate change in binding energy
+                    ddg_binding = mutated_binding_dg - self.candidate_targets[qname].dG
+                    
+                    if ddg_binding <= min_ddg_threshold:
+                        existing_sites = [
+                            s for s in self.repeated_sites[qname] 
+                            if s.chromosomal_position == site.chromosomal_position and s.sequence == site.sequence
+                        ]
+                        
+                        if not existing_sites:
+                            self.repeated_sites[qname].append(site)
         
         logging.info(f"Extracted {sum(len(sites) for sites in self.repeated_sites.values())} repeated sites")
         
 
-    def filter_repeated_sites_by_ddg(
-            self,
-            cofold_output_path: str,
-            min_ddg_threshold: float = 5.0
-        ) -> None:
-            """
-            Filter repeated sites based on ddG values calculated from RNAcofold CSV output.
+    # def filter_repeated_sites_by_ddg(
+    #         self,
+    #         cofold_output_path: str,
+    #         min_ddg_threshold: float = 5.0
+    #     ) -> None:
+    #         """
+    #         Filter repeated sites based on ddG values calculated from RNAcofold CSV output.
             
-            ddG is calculated as: dG_binding - dG_self_folding
-            where dG_binding is the binding energy between target and repeated site,
-            and dG_self_folding is the self-folding energy of the candidate target.
-            More negative ddG values indicate stronger differential binding.
+    #         ddG is calculated as: dG_binding - dG_self_folding
+    #         where dG_binding is the binding energy between target and repeated site,
+    #         and dG_self_folding is the self-folding energy of the candidate target.
+    #         More negative ddG values indicate stronger differential binding.
             
-            Parameters:
-                cofold_output_path (str): Path to the RNAcofold output CSV file with columns including
-                                        'seq_id' and 'dG_binding'.
-                min_ddg_threshold (float): Minimum ddG threshold for keeping a site (more negative = stronger binding)
-                                        Sites with ddG values above this threshold will be filtered out.
-            """
-            logging.info(f"Filtering repeated sites by ddG threshold {min_ddg_threshold}")
+    #         Parameters:
+    #             cofold_output_path (str): Path to the RNAcofold output CSV file with columns including
+    #                                     'seq_id' and 'dG_binding'.
+    #             min_ddg_threshold (float): Minimum ddG threshold for keeping a site (more negative = stronger binding)
+    #                                     Sites with ddG values above this threshold will be filtered out.
+    #         """
+    #         logging.info(f"Filtering repeated sites by ddG threshold {min_ddg_threshold}")
             
-            # Parse RNAcofold CSV results
-            try:
-                # Read the CSV file using polars
-                df = pl.read_csv(cofold_output_path)
-                df = df.sort("seq_id")
+    #         # Parse RNAcofold CSV results
+    #         try:
+    #             # Read the CSV file using polars
+    #             df = pl.read_csv(cofold_output_path)
+    #             df = df.sort("seq_id")
                 
-                # Verify required columns exist
-                required_columns = ["seq_id", "dG_binding"]
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                if missing_columns:
-                    logging.error(f"Missing required columns in CSV: {missing_columns}")
-                    logging.error(f"Available columns: {df.columns}")
-                    return
+    #             # Verify required columns exist
+    #             required_columns = ["seq_id", "dG_binding"]
+    #             missing_columns = [col for col in required_columns if col not in df.columns]
+    #             if missing_columns:
+    #                 logging.error(f"Missing required columns in CSV: {missing_columns}")
+    #                 logging.error(f"Available columns: {df.columns}")
+    #                 return
 
-                for row in df.iter_rows(named=True):
-                    seq_id, site_idx = str(row["seq_id"]).split('_')
-                    site_idx = int(site_idx)
-                    try:
-                        dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
-                        if dg_binding is not None:
-                            self.repeated_sites[seq_id][site_idx].dG = dg_binding
+    #             for row in df.iter_rows(named=True):
+    #                 seq_id, site_idx = str(row["seq_id"]).split('_')
+    #                 site_idx = int(site_idx)
+    #                 try:
+    #                     dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
+    #                     if dg_binding is not None:
+    #                         self.repeated_sites[seq_id][site_idx].dG = dg_binding
                             
-                    except (ValueError, TypeError) as e:
-                        logging.warning(f"Failed to parse dG_binding for {site_idx}: {e}")
+    #                 except (ValueError, TypeError) as e:
+    #                     logging.warning(f"Failed to parse dG_binding for {site_idx}: {e}")
                 
-                # Count sites before filtering
-                total_sites_before = sum(len(sites) for sites in self.repeated_sites.values())
+    #             # Count sites before filtering
+    #             total_sites_before = sum(len(sites) for sites in self.repeated_sites.values())
                 
-                # Filter sites based on ddG values
-                filtered_sites = {}
-                for target_id, sites in self.repeated_sites.items():
-                    filtered_list = []
+    #             # Filter sites based on ddG values
+    #             filtered_sites = {}
+    #             for target_id, sites in self.repeated_sites.items():
+    #                 filtered_list = []
                     
-                    # Get the self-folding dG of the candidate target
-                    if target_id not in self.candidate_targets:
-                        logging.warning(f"No candidate target found for {target_id}, skipping")
-                        continue
+    #                 # Get the self-folding dG of the candidate target
+    #                 if target_id not in self.candidate_targets:
+    #                     logging.warning(f"No candidate target found for {target_id}, skipping")
+    #                     continue
                         
-                    candidate_target = self.candidate_targets[target_id]
-                    if not hasattr(candidate_target, 'dG') or candidate_target.dG is None:
-                        logging.warning(f"Candidate target {target_id} has no dG value, skipping")
-                        continue
+    #                 candidate_target = self.candidate_targets[target_id]
+    #                 if not hasattr(candidate_target, 'dG') or candidate_target.dG is None:
+    #                     logging.warning(f"Candidate target {target_id} has no dG value, skipping")
+    #                     continue
                         
-                    dg_self_folding = candidate_target.dG
+    #                 dg_self_folding = candidate_target.dG
                     
-                    # Calculate ddG for each site and filter based on threshold
-                    for site in sites:
-                        if hasattr(site, 'dG') and site.dG is not None:
-                            # Calculate ddG as the difference between binding energy and self-folding energy
-                            ddg = site.dG - dg_self_folding
+    #                 # Calculate ddG for each site and filter based on threshold
+    #                 for site in sites:
+    #                     if hasattr(site, 'dG') and site.dG is not None:
+    #                         # Calculate ddG as the difference between binding energy and self-folding energy
+    #                         ddg = site.dG - dg_self_folding
                             
-                            # Keep only sites with ddG below (more negative than) threshold
-                            if ddg <= min_ddg_threshold:
-                                filtered_list.append(site)
+    #                         # Keep only sites with ddG below (more negative than) threshold
+    #                         if ddg <= min_ddg_threshold:
+    #                             filtered_list.append(site)
                                 
-                            # Log the values for debugging
-                            logging.debug(f"Site in {target_id}: dG_binding={site.dG}, dG_self_folding={dg_self_folding}, ddG={ddg}")
-                        else:
-                            logging.warning(f"Site in {target_id} has no dG value, skipping")
+    #                         # Log the values for debugging
+    #                         logging.debug(f"Site in {target_id}: dG_binding={site.dG}, dG_self_folding={dg_self_folding}, ddG={ddg}")
+    #                     else:
+    #                         logging.warning(f"Site in {target_id} has no dG value, skipping")
                     
-                    filtered_sites[target_id] = filtered_list
+    #                 filtered_sites[target_id] = filtered_list
                 
-                # Replace the original dictionary with the filtered one
-                self.repeated_sites = filtered_sites
+    #             # Replace the original dictionary with the filtered one
+    #             self.repeated_sites = filtered_sites
                 
-                # Count sites after filtering
-                total_sites_after = sum(len(sites) for sites in self.repeated_sites.values())
+    #             # Count sites after filtering
+    #             total_sites_after = sum(len(sites) for sites in self.repeated_sites.values())
                 
-                logging.info(f"Filtered repeated sites based on ddG: {total_sites_before} → {total_sites_after} sites")
-            except Exception as e:
-                logging.error(f"Error filtering repeated sites: {e}")
-                raise
+    #             logging.info(f"Filtered repeated sites based on ddG: {total_sites_before} → {total_sites_after} sites")
+    #         except Exception as e:
+    #             logging.error(f"Error filtering repeated sites: {e}")
+    #             raise
 
     def extract_offtarget_sites(self, infile: str) -> Dict[str, List[Site]]:
         """
@@ -567,86 +595,48 @@ class OligoExtractor:
 
     
 
-    def store_kmer_results(self, cofold_out: str, cofold_out_repeated: str) -> None:
+    def store_kmer_results(self) -> None:
         """
         Generate a CSV file with detailed results for each k-mer, including various properties and metrics.   
         Parameters:
-            cofold_out (str): The path to the RNAcofold output file in CSV format.
-            cofold_out_repeated (str): The path to the RNAcofold output file for repeated candidates in CSV format.
+
         """
         logging.info("Completing final results")
 
-        # Read cofold output files with Polars
-        cofold_df = pl.read_csv(cofold_out)
-        cofold_rep_df = pl.read_csv(cofold_out_repeated)
-
-        # Convert seq_id to string type to ensure proper filtering later
-        cofold_df = cofold_df.with_columns(pl.col("seq_id").cast(pl.Utf8))
-        cofold_rep_df = cofold_rep_df.with_columns(pl.col("seq_id").cast(pl.Utf8))
-
-
-        kmer_indices = [x for x in self.candidate_targets] # TODO: input changed to candidate_targets
-        res_temp = []
-
-        # Read configuration
-        from configparser import ConfigParser
-        config = ConfigParser()
-        config.read('config.ini')
-        max_ddG = float(config['DEFAULT']['MaxddG'])
-
-        for idx in kmer_indices:
-            # Get candidate from candidate_targets_df
-            can = self.candidate_targets_df.filter(pl.col("seq_num") == idx).row(0, named=True) # TODO: input changed to candidate_targets
-            
-            # Get cofold data for this index
-            idx_cofold = cofold_df.filter(pl.col("seq_id") == idx)
-            if len(idx_cofold) == 0:
-                logging.warning(f"No cofold data found for {idx}")
-                continue
-                
-            dG_binding = idx_cofold.select("dG_binding").item()
-            
-            # Extract repeated candidates with higher ddG than maxddG
-            repeated_cans = cofold_rep_df.filter(pl.col("seq_id").str.starts_with(idx))
-            
-            # Filter repeated candidates based on ddG threshold
-            repeated_cans = repeated_cans.filter(
-                (pl.col("dG_binding") - dG_binding) > max_ddG
-            )
+        results = []
+        for idx, candidate in self.candidate_targets.items():
             
             # Create Ensembl link
-            chromosomal_position = can['chromosomal_position']
+            chromosomal_position = candidate.chromosomal_position
             position_without_strand = chromosomal_position.rstrip(':+-') if chromosomal_position else ""
             ensembl_link = f"https://www.ensembl.org/{self.species}/Location/View?r={position_without_strand}"
             
-            # Calculate reverse complement
-            from Bio.Seq import Seq
-            oligo_reverse_comp = str(Seq(can['seq']).reverse_complement())
+            oligo_reverse_comp = str(Seq(candidate['seq']).reverse_complement())
             
             # Calculate transcript prevalence ratio
-            transcript_count = len(can['transcripts']) if isinstance(can['transcripts'], list) else 0
+            transcript_count = len(candidate.transcripts) if isinstance(candidate.transcripts, list) else 0
             total_transcripts = len(self.gene.transcripts)
             transcript_prevalence_ratio = round(transcript_count / total_transcripts, 3) if total_transcripts > 0 else 0
             
-            res_temp.append({
+            results.append({
                 'seq_num': idx,
-                'target': can['seq'],
-                'absolute_loc': can['chromosomal_position'],
+                'target': candidate.sequence,
+                'absolute_loc': chromosomal_position,
                 'oligo_reverse_comp': oligo_reverse_comp,
-                'oligo_gc_content': gc_fraction(can['seq']),
-                'oligo_longest_at_run': longest_at_run(can['seq']),
-                'oligo_longest_t_run': longest_t_run(can['seq']),
-                'repeated_target_site_multiplicity': len(repeated_cans),
-                'non_prone_multiplicity': self.non_prone_multiplicity.get(idx, 0),
-                'dG_binding': dG_binding,
+                'oligo_gc_content': gc_fraction(candidate.sequence),
+                'oligo_longest_at_run': longest_at_run(candidate.sequence),
+                'oligo_longest_t_run': longest_t_run(candidate.sequence),
+                'repeated_sites_multiplicity': len(self.repeated_sites.get(idx, [])),
+                'off_targets_multiplicity': len(self.off_target_sites.get(idx, [])),
+                'dG_binding': candidate.dG,
                 'transcript_prevalence_ratio': transcript_prevalence_ratio,
-                'ordered_transcripts': can['transcripts'],
-                'ordered_exons': can['exons'],
+                'ordered_transcripts': [t.transcript_id for t in candidate.transcripts] if isinstance(candidate.transcripts, list) else [],
+                'ordered_exons': [e.exon_id for e in candidate.exons] if isinstance(candidate.exons, list) else [],
                 'ensembl_link': ensembl_link,
             })
             
         # Create results DataFrame
-        kmer_results = pl.DataFrame(res_temp)
+        kmer_results = pl.DataFrame(results)
 
         # Write results to CSV
         output_path = f'{self.data_dir}/results/{self.gene_id}_{self.k}mer_results.csv'

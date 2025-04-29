@@ -33,7 +33,7 @@ def download_genome(
     """
     # Retrieve the file URLs from gget.ref
     gtf_url, cdna_url, pep_url, genome_url = tuple(
-        gget.ref(species, which=["gtf", "cdna", "pep", "dna"], release=e_release, ftp=True)
+        gget.ref(species, which=["gtf", "cdna", "pep", "dna"], release=e_release, ftp=True, verbose=False)
     )
 
     gtf_name = os.path.basename(urllib.parse.urlparse(gtf_url).path)

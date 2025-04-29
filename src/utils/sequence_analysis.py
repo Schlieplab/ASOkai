@@ -243,9 +243,14 @@ def find_potential_secondary_sites(
         
         with mp.Pool(processes=num_processes) as pool:
             # Use imap_unordered for potentially faster consumption of results
+            processed_count = 0
             for result in pool.imap_unordered(worker_with_args, processed_dict.items()):
                 # Unpack the results: target_id, reference_binding_dg, valid_mutations
                 target_id, ref_binding_dg, valid_mutations = result
+                
+                processed_count += 1
+                if processed_count % 1000 == 0:
+                    logging.info(f"Progress: {processed_count}/{len(processed_dict)} targets processed")
                 
                 # Handle potential NaN from worker errors
                 if target_id is None or math.isnan(ref_binding_dg):

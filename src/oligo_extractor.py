@@ -597,9 +597,8 @@ class OligoExtractor:
 
     def store_kmer_results(self) -> None:
         """
-        Generate a CSV file with detailed results for each k-mer, including various properties and metrics.   
-        Parameters:
-
+        Generate a CSV file with detailed results for each k-mer, including various properties and metrics.
+        Converts nested data structures to string representations for CSV compatibility.
         """
         logging.info("Completing final results")
 
@@ -611,12 +610,19 @@ class OligoExtractor:
             position_without_strand = chromosomal_position.rstrip(':+-') if chromosomal_position else ""
             ensembl_link = f"https://www.ensembl.org/{self.species}/Location/View?r={position_without_strand}"
             
-            oligo_reverse_comp = str(Seq(candidate['seq']).reverse_complement())
+            oligo_reverse_comp = str(Seq(candidate.sequence).reverse_complement())
             
             # Calculate transcript prevalence ratio
             transcript_count = len(candidate.transcripts) if isinstance(candidate.transcripts, list) else 0
             total_transcripts = len(self.gene.transcripts)
             transcript_prevalence_ratio = round(transcript_count / total_transcripts, 3) if total_transcripts > 0 else 0
+            
+            # Convert lists to comma-separated strings
+            transcript_ids = [t.transcript_id for t in candidate.transcripts] if isinstance(candidate.transcripts, list) else []
+            ordered_transcripts_str = ','.join(transcript_ids)
+            
+            exon_ids = [e.exon_id for e in candidate.exons] if isinstance(candidate.exons, list) else []
+            ordered_exons_str = ','.join(exon_ids)
             
             results.append({
                 'seq_num': idx,
@@ -630,8 +636,8 @@ class OligoExtractor:
                 'off_targets_multiplicity': len(self.off_target_sites.get(idx, [])),
                 'dG_binding': candidate.dG,
                 'transcript_prevalence_ratio': transcript_prevalence_ratio,
-                'ordered_transcripts': [t.transcript_id for t in candidate.transcripts] if isinstance(candidate.transcripts, list) else [],
-                'ordered_exons': [e.exon_id for e in candidate.exons] if isinstance(candidate.exons, list) else [],
+                'ordered_transcripts': ordered_transcripts_str,
+                'ordered_exons': ordered_exons_str,
                 'ensembl_link': ensembl_link,
             })
             

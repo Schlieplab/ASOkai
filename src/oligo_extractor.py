@@ -4,7 +4,8 @@ from src.utils.genome import Genome
 from Bio.Seq import Seq
 from src.utils.sequence_analysis import (
     longest_at_run,
-    longest_t_run
+    longest_t_run,
+    calculate_homodimer_binding_energy
 )
 import logging
 import polars as pl
@@ -175,13 +176,18 @@ class OligoExtractor:
                 exon = t.get_exon_by_position(position)
                 
                 if key not in candidate_targets_dict:
+                    
+                    # calculate homodimer dG
+                    homodimer_dG = calculate_homodimer_binding_energy(kmer_seq)
+                    
                     # Create new TargetSite object
                     candidate_targets_dict[key] = TargetSite(
                         sequence=kmer_seq,
                         chromosomal_position=chrom_pos,
                         gene_id=self.gene_id,
                         transcripts=[t],
-                        exons=[exon]
+                        exons=[exon],
+                        oligo_dG=homodimer_dG,
                     )
                 else:
                     # Update existing TargetSite with additional transcript and exon info
@@ -266,69 +272,6 @@ class OligoExtractor:
                                  if key in filtered_keys}
         return outfile
     
-    
-    # def add_dg_to_targets(
-    #     self, 
-    #     cofold_output: str
-    # ) -> None:
-    #     """
-    #     Parse RNAcofold output from CSV and add dG values to candidate target TargetSite objects.
-        
-    #     Parameters:
-    #         cofold_output (str): Path to the RNAcofold output CSV file with columns:
-    #                             seq_num, seq_id, seq, mfe_struct, mfe, ensemble_energy, prob_mfe, dG_binding
-        
-    #     Returns:
-    #         None: Updates the TargetSite objects in the self.candidate_targets dictionary with dG values.
-    #     """
-    #     logging.info("Adding dG values to candidate targets from RNAcofold CSV")
-        
-    #     # Track statistics
-    #     targets_updated = 0
-    #     targets_missing = 0
-        
-    #     try:
-    #         # Using Polars to read the CSV
-    #         df = pl.read_csv(cofold_output)
-            
-    #         # Verify required columns exist
-    #         required_columns = ["seq_id", "dG_binding"]
-    #         missing_columns = [col for col in required_columns if col not in df.columns]
-            
-    #         if missing_columns:
-    #             logging.error(f"Missing required columns in CSV: {missing_columns}")
-    #             logging.error(f"Available columns: {df.columns}")
-    #             return
-                
-    #         # Process each row
-    #         for row in df.iter_rows(named=True):
-    #             target_id = str(row["seq_id"])
-                
-                    
-    #             try:
-    #                 dg_binding = float(row["dG_binding"]) if row["dG_binding"] is not None else None
-                    
-    #                 if target_id in self.candidate_targets:
-    #                     if self.candidate_targets[target_id].dG is not None:
-    #                         continue
-    #                     self.candidate_targets[target_id].dG = dg_binding
-    #                     targets_updated += 1
-    #                 else:
-    #                     logging.warning(f"Target ID '{target_id}' from RNAcofold output not found in candidate_targets")
-    #                     targets_missing += 1
-    #             except (ValueError, TypeError) as e:
-    #                 logging.error(f"Failed to parse energy values for target {target_id}: {e}")
-            
-    #         # Log summary
-    #         if targets_missing == 0:
-    #             logging.info(f"Updated energy values for {targets_updated} targets.")
-    #         else:
-    #             logging.info(f"Updated energy values for {targets_updated} targets. {targets_missing} targets not found.")
-            
-    #     except Exception as e:
-    #         logging.error(f"Error parsing RNAcofold CSV output: {e}")
-    #         raise
-
 
     def _extract_secondary_sites(self, infile: str) -> Dict[str, List[Site]]:
         """
@@ -453,7 +396,6 @@ class OligoExtractor:
         logging.info(f"Extracted {sum(len(sites) for sites in self.repeated_sites.values())} repeated sites")
         
 
-
     def extract_offtarget_sites(self, infile: str) -> Dict[str, List[Site]]:
         """
         Extract off-target sites for each target from the Bowtie2 alignment results.
@@ -542,6 +484,7 @@ class OligoExtractor:
                 'repeated_sites_multiplicity': len(self.repeated_sites.get(idx, [])),
                 'off_targets_multiplicity': len(self.off_target_sites.get(idx, [])),
                 'dG_binding': candidate.dG,
+                'oligo_homodimer_dG': candidate.oligo_dG,
                 'transcript_prevalence_ratio': transcript_prevalence_ratio,
                 'ordered_transcripts': ordered_transcripts_str,
                 'ordered_exons': ordered_exons_str,

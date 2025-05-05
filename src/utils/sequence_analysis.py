@@ -58,6 +58,36 @@ def longest_t_run(seq: str) -> float:
     return max_t_run
 
 
+def calculate_homodimer_binding_energy(seq: str) -> float:
+    """
+    Calculate the self-binding energy of a nucleotide sequence.
+
+    Parameters:
+        seq (str): The nucleotide sequence.
+
+    Returns:
+        float: The self-binding energy in kcal/mol.
+    """
+    if not seq:
+        return 0.0
+    md = RNA.md()
+    md.temperature = 37.0
+    
+    fc = RNA.fold_compound(seq, md)
+    (_, mfe) = fc.mfe()
+        
+
+    # MFE of the reference duplex
+    duplex = seq + "&" + seq
+    fc_duplex = RNA.fold_compound(duplex, md)
+    
+    (ss, duplex_mfe) = fc_duplex.mfe()
+
+    # Reference Binding Energy
+    binding_dg = duplex_mfe - (mfe + mfe)
+    
+    return binding_dg
+
 def pruned_mutation_search(target_input, max_ddg=5.0, multiplicity_layout=[4,8,4], ddg_tolerance=0.5, force_core_alignment=True):
     """
     Generate target site mutations using binding energy (dG_binding) with efficient pruning.
@@ -116,7 +146,8 @@ def pruned_mutation_search(target_input, max_ddg=5.0, multiplicity_layout=[4,8,4
         if force_core_alignment and constraint_string:
             fc_duplex.hc_add_from_db(constraint_string)
         
-        (_, duplex_mfe) = fc_duplex.mfe()
+        (ss, duplex_mfe) = fc_duplex.mfe()
+
         
         # Reference Binding Energy
         reference_binding_dg = duplex_mfe - (target_mfe + oligo_mfe)
@@ -172,7 +203,9 @@ def pruned_mutation_search(target_input, max_ddg=5.0, multiplicity_layout=[4,8,4
                     if force_core_alignment and constraint_string:
                         fc_mut_duplex.hc_add_from_db(constraint_string)
                     
-                    (_, mut_duplex_mfe) = fc_mut_duplex.mfe()
+                    (ss_mut, mut_duplex_mfe) = fc_mut_duplex.mfe()
+                    
+
                     
                     # Mutated Binding Energy (using constant oligo_mfe)
                     mutated_binding_dg = mut_duplex_mfe - (mut_target_mfe + oligo_mfe)
@@ -270,7 +303,7 @@ def find_potential_secondary_sites(
                 target_id, ref_binding_dg, valid_mutations = result
                 
                 processed_count += 1
-                if processed_count % 2 == 0:
+                if processed_count % 10 == 0:
                     logging.info(f"Progress: {processed_count}/{len(processed_dict)} targets processed")
                 
                 # Handle potential NaN from worker errors

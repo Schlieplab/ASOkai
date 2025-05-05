@@ -599,7 +599,7 @@ class TargetSite(Site):
     transcripts: Optional[List[Transcript]] = None
     exons: Optional[List[Exon]] = None
     dG: Optional[float] = None
-    
+    oligo_dG: Optional[float] = None # dG of the homodimer of the oligo(reverse complement of the target site)
 
     def __post_init__(self):
         if self.transcripts is None:

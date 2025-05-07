@@ -11,6 +11,7 @@ from src.utils.genome import Genome, TargetSite, Site
 import time
 import gget
 import urllib.request, urllib.parse
+from src.utils.time_utils import timed, format_duration
 
 
 
@@ -31,7 +32,6 @@ def download_genome(
     Returns:
         Tuple[str, str, str, str, Optional[str]]: Paths to the GTF, cDNA, peptide, genome FASTA files, and an optional scaffold GTF path.
     """
-    # Retrieve the file URLs from gget.ref
     gtf_url, cdna_url, pep_url, genome_url = tuple(
         gget.ref(species, which=["gtf", "cdna", "pep", "dna"], release=e_release, ftp=True, verbose=False)
     )
@@ -41,7 +41,6 @@ def download_genome(
     pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
     genome_name = os.path.basename(urllib.parse.urlparse(genome_url).path)
 
-    
     scaffold_gtf_path = None
     if species == 'homo_sapiens':     
         scaffold_gtf_url = gtf_url.replace('.gtf.gz', '.chr_patch_hapl_scaff.gtf.gz')
@@ -53,13 +52,11 @@ def download_genome(
         else:
             logging.info("Scaffold GTF file already exists at '%s'", scaffold_gtf_path)
             
-            
     gtf_path = os.path.join(genome_dir, gtf_name)
     cdna_path = os.path.join(genome_dir, cdna_name)
     pep_path = os.path.join(genome_dir, pep_name)
     genome_path = os.path.join(genome_dir, genome_name)
 
-    # Download each file (if not already present)
     if not os.path.exists(gtf_path):
         logging.info("Downloading GTF file to '%s'", gtf_path)
         urllib.request.urlretrieve(gtf_url, gtf_path)
@@ -84,7 +81,6 @@ def download_genome(
     else:
         logging.info("Genome FASTA file already exists at '%s'", genome_path)
 
-    # Return the file paths (including our scaffold_gtf_path)
     return gtf_path, cdna_path, pep_path, genome_path, scaffold_gtf_path
 
 
@@ -98,7 +94,6 @@ def extract_gene(
     Extract a specific gene from a .fa.gz file and save the filtered sequences.
     Skips extraction if the output file already exists.
     """
-    # Check if output file already exists
     if os.path.exists(fasta_gz_out):
         logging.info(f'Output file {fasta_gz_out} already exists. Using existing file.')
         return
@@ -131,7 +126,6 @@ def _filter_transcripts_by_tsl(
         genome (Genome): Genome object that provides transcript details via a transcripts() method.
         tsl_list (List[Optional[int]]): List of allowed transcript support level values (e.g., [1, 2, 3, None]).
     """
-    # Check if output file already exists
     if os.path.exists(fasta_gz_out):
         logging.info(f'Output file {fasta_gz_out} already exists. Using existing file.')
         return
@@ -145,16 +139,13 @@ def _filter_transcripts_by_tsl(
         if t.support_level in tsl_set:
             transcript_to_gene[t.transcript_id] = t.gene_id
     
-    # Process in batches to reduce the number of write operations
     batch_size = 1000
     
     with gzip.open(fasta_gz_in, "rt") as infile, gzip.open(fasta_gz_out, "wt") as outfile:
         batch = []
-        for seq in SeqIO.parse(infile, "fasta") :
+        for seq in SeqIO.parse(infile, "fasta"):
             transcript_id = seq.id.split('.')[0]
             if transcript_id in transcript_to_gene:
-                # Create a new SeqRecord with just the gene name as the description
-                # This will result in a FASTA header like ">seq.id gene_id"
                 new_record = SeqRecord(
                     seq.seq,
                     id=seq.id,
@@ -166,7 +157,6 @@ def _filter_transcripts_by_tsl(
                     SeqIO.write(batch, outfile, "fasta")
                     batch = []
         
-        # Write any remaining records
         if batch:
             SeqIO.write(batch, outfile, "fasta")
         
@@ -201,7 +191,6 @@ def _build_bowtie_index(
     Returns:
         str: Path to the Bowtie2 index.
     """
-    # Build dynamic log message based on parameters
     log_msg = f"Building Bowtie index for {index_prefix}"
     if tsl:
         log_msg += f" with TSL filtering"
@@ -209,7 +198,6 @@ def _build_bowtie_index(
         log_msg += f" for gene {gene_id} only"
     logging.info(log_msg)
 
-    # Determine the final index name based on parameters
     index_name = index_prefix
     if tsl:
         tsl_suffix = f"_tsl{'_'.join(map(str, tsl_list))}"
@@ -217,12 +205,10 @@ def _build_bowtie_index(
     if gene_only:
         index_name += f"_{gene_id}_only"
 
-    # Prepare the input file based on filtering parameters
     modified_input_path = input_path
     if tsl:
         tsl_input_path = input_path.replace('all.fa.gz', f'{tsl_suffix}.fa.gz')
         
-        # Check if the TSL-filtered file already exists
         if os.path.exists(tsl_input_path):
             logging.info(f"Using existing TSL-filtered file: {tsl_input_path}")
         else:
@@ -234,7 +220,6 @@ def _build_bowtie_index(
     if gene_only:
         gene_input_path = modified_input_path.replace('.fa.gz', f'.{gene_id}.fa.gz')
         
-        # Check if the gene-specific file already exists
         if os.path.exists(gene_input_path):
             logging.info(f"Using existing gene-specific file: {gene_input_path}")
         else:
@@ -243,7 +228,6 @@ def _build_bowtie_index(
             
         modified_input_path = gene_input_path
 
-    # Check if index already exists
     try:
         files_in_dir = os.listdir(index_dir)
     except OSError as e:
@@ -254,7 +238,6 @@ def _build_bowtie_index(
     file_exists = any(file.startswith(index_name + ".") for file in files_in_dir)
     
     if not file_exists:
-        # Verify that the modified input file exists before proceeding
         if not os.path.exists(modified_input_path):
             logging.error(f"Input file does not exist: {modified_input_path}")
             raise FileNotFoundError(f"Input file not found: {modified_input_path}")
@@ -311,8 +294,6 @@ def build_transcriptomic_bowtie_index(
     if not input_path.endswith('.all.fa.gz'):
         logging.warning("Transcriptomic input file should typically end with '.all.fa.gz'")
     
-    # Add transcriptomic prefix to index name
-    
     return _build_bowtie_index(
         input_path=input_path,
         index_dir=index_dir,
@@ -344,7 +325,6 @@ def build_genomic_bowtie_index(
     Returns:
         str: Path to the Bowtie2 index.
     """
-    # Add genomic prefix to index name
     genomic_prefix = f"{index_prefix}_genomic"
     
     return _build_bowtie_index(
@@ -357,28 +337,47 @@ def build_genomic_bowtie_index(
     )
 
 
+def create_job_config_summary(job_dir: str, config: dict) -> None:
+    """
+    Create a summary file containing all configuration parameters used for the job.
+    
+    Parameters:
+        job_dir (str): Path to the job directory
+        config (dict): Dictionary containing all configuration parameters
+    """
+    config_file = os.path.join(job_dir, 'job_config.txt')
+    
+    with open(config_file, 'w') as f:
+        f.write("Job Configuration Summary\n")
+        f.write("=======================\n\n")
+        f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        for key, value in config.items():
+            f.write(f"{key}: {value}\n")
+            
+    logging.info(f"Job configuration summary written to {config_file}")
+
+
+@timed
 def run_bowtie(
     infile_path: str,
     index_path: str,
     bowtie_args: str,
-    bowtie2Home: str,
     trim: bool = False,
     multiplicity_layout: Optional[List[int]] = None,
-    ) -> str:
+) -> str:
     """
-    Execute Bowtie2 alignment for the k-mers.
-
-    Parameters:
-        in_file (str): Path to the input file.
-        index_path (str): Path to the Bowtie2 index.
-        bowtie_args (str): Additional command-line arguments for Bowtie2.
-        bowtie2Home (str): Path to the Bowtie2 output directory.
-        trim (bool): If True, apply trimming options.
-        multiplicity_layout (Optional[List[int]]): A sequence containing at least three integers.
-            When trim is True, the first and third elements are used for '--trim5' and '--trim3', respectively.
-
+    Run Bowtie2 alignment on the input file.
+    
+    Args:
+        infile_path (str): Path to input FASTA file
+        index_path (str): Path to Bowtie2 index
+        bowtie_args (str): Additional Bowtie2 arguments
+        trim (bool): Whether to trim the input sequences
+        multiplicity_layout (List[int]): Layout for multiplicity calculation
+        
     Returns:
-        str: The path to the output SAM file.
+        str: Path to output SAM file
     """
     infile_name = os.path.splitext(os.path.basename(infile_path))[0]
     const_args = ["--no-head", "-t", "-N 0", "-a", "-f", "--norc", "--no-unal"]
@@ -394,13 +393,13 @@ def run_bowtie(
         
     index_name = os.path.splitext(os.path.basename(index_path))[0]
     
-    out_file_name = f"{infile_name}_on_{index_name}.sam"
-
-
-
-    out_file_path = os.path.join(bowtie2Home, out_file_name)
+    job_dir = os.path.dirname(os.path.dirname(infile_path))
+    bowtie_outputs_dir = os.path.join(job_dir, 'bowtie2')
+    os.makedirs(bowtie_outputs_dir, exist_ok=True)
     
-    # Build the initial command as a list to avoid shell injection issues.
+    out_file_name = f"{infile_name}_on_{index_name}.sam"
+    out_file_path = os.path.join(bowtie_outputs_dir, out_file_name)
+    
     command = ["bowtie2", "-x", index_path, "-U", infile_path, "-S", out_file_path]
     command.extend(const_args)
     
@@ -418,7 +417,7 @@ def run_bowtie(
         raise RuntimeError("Bowtie2 execution failed.") from e
 
     elapsed = time.time() - start_time
-    logging.info("Bowtie2 processing time: %.2f seconds", elapsed)
+    logging.info(f"Bowtie2 processing completed in {format_duration(elapsed)}")
     
     return out_file_path
 
@@ -447,10 +446,10 @@ def build_RNAcofold_in(
     logging.info("Building RNAcofold input file")
     entry_count = 0
     
+    os.makedirs(os.path.dirname(cofold_in), exist_ok=True)
+    
     with open(cofold_in, "w") as cofold_file:
-        # Determine which mode we're in by checking the first value's type
         if targets and isinstance(next(iter(targets.values())), list):
-            # Secondary binding analysis mode
             if not reference_targets:
                 raise ValueError("reference_targets must be provided when targets contains lists of TargetSites")
             
@@ -461,16 +460,13 @@ def build_RNAcofold_in(
                     
                 reference_seq = reference_targets[target_id].sequence
                 
-                # Write comparison between reference target and each potential secondary site
                 for i, secondary_site in enumerate(secondary_sites):
-                    # Create a unique identifier for this comparison
                     entry_id = f"{target_id}_{i}"
                     
                     cofold_file.write(f">{entry_id}\n")
                     cofold_file.write(f"{secondary_site.sequence}&{str(Seq(reference_seq).reverse_complement())}\n")
                     entry_count += 1
         else:
-            # Standard self-folding mode
             for key, target_site in targets.items():
                 cofold_file.write(f">{key}\n")
                 cofold_file.write(f"{target_site.sequence}&{str(Seq(target_site.sequence).reverse_complement())}\n")
@@ -500,6 +496,8 @@ def run_RNAcofold(
     outFile = os.path.splitext(cofold_in_file)[0] + "_cofoldout.csv"
     logging.info("Running RNAcofold")
     
+    os.makedirs(os.path.dirname(outFile), exist_ok=True)
+    
     command = [
         'RNAcofold', 
         '-p0', 
@@ -517,21 +515,18 @@ def run_RNAcofold(
 
     with open(outFile, 'w') as rcfOutFile:
         process = subprocess.Popen(
-            command,  # No need for shlex.split as this is already a list
+            command,
             stdout=rcfOutFile, 
             stderr=subprocess.PIPE, 
             text=True
         )
         
-        # Read stderr in real time until the process ends
         try:
             for line in process.stderr:
                 logging.info(line.strip())
         finally:
-            # Ensure stderr is closed
             process.stderr.close()
             
-        # Wait for process to complete and check return code
         return_code = process.wait()
         if return_code != 0:
             raise subprocess.CalledProcessError(return_code, command)

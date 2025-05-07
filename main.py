@@ -4,10 +4,9 @@ import sys
 from src.utils.file_operations import (
     build_genomic_bowtie_index,
     build_transcriptomic_bowtie_index, 
-    build_RNAcofold_in, 
     run_bowtie,
-    run_RNAcofold,
     download_genome,
+    create_job_config_summary,
     )
 from src.utils.sequence_analysis import (
     find_potential_secondary_sites,
@@ -18,19 +17,20 @@ import configparser
 import os
 import multiprocessing as mp
 import RNA
+import time
+from typing import Optional
 
 
 def setup_logging():
     logging.basicConfig(
-    force=True,
-    level=logging.INFO,
-    stream=sys.stdout,
-    format='### %(levelname)s - %(asctime)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+        force=True,
+        level=logging.INFO,
+        stream=sys.stdout,
+        format='### %(levelname)s - %(asctime)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
 def read_config(args_set: str):
-
     config_parser = configparser.ConfigParser()
     files_read = config_parser.read('config.ini')
     if not files_read:
@@ -43,12 +43,9 @@ def read_config(args_set: str):
         logging.info("Exiting.")
         sys.exit(1)
     
-    config = config_parser[args_set]
-
-    return config
+    return config_parser[args_set]
     
 def convert_tsl_list(tsl_str):
-    # Retrieve and process transcript support levels
     tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
     converted_tsls = []
 
@@ -72,11 +69,10 @@ def convert_tsl_list(tsl_str):
 
     all_tsls = [1, 2, 3, 4, 5, None]
     if converted_tsls == all_tsls:
-        return False, None   # No custom filter is needed
+        return False, None
     return True, converted_tsls
 
-def setup_environment(config):
-    
+def setup_environment(config, job_name: Optional[str] = None):
     if config["Species"] == "mus_musculus":
         bowtie_index_name = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
     elif config["Species"] == "homo_sapiens":
@@ -93,9 +89,21 @@ def setup_environment(config):
         genome_data_dir = os.path.join(config['GenomeDir'], 'genome', bowtie_index_name)
         os.makedirs(genome_data_dir, exist_ok=True)
         
-        os.makedirs(os.path.join(config['DataDir'], 'oligos'), exist_ok=True)
-        os.makedirs(os.path.join(config['DataDir'], 'RNACofold'), exist_ok=True)
-        os.makedirs(os.path.join(config['DataDir'], 'results'), exist_ok=True)
+        if not job_name:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            job_name = f"{config['TargetGene']}_{timestamp}"
+            logging.info(f"No job name provided, generated job name: {job_name}")
+        
+        data_dir = os.path.join(config['DataDir'], 'jobs', job_name)
+        logging.info(f"Using job-specific directory: {data_dir}")
+        
+        os.makedirs(os.path.join(data_dir, 'oligos'), exist_ok=True)
+        os.makedirs(os.path.join(data_dir, 'results'), exist_ok=True)
+        os.makedirs(os.path.join(data_dir, 'bowtie2'), exist_ok=True)
+        
+        create_job_config_summary(data_dir, config)
+        config['DataDir'] = data_dir
+        
     except Exception as e:
         logging.error(f"Error creating directories: {e}")
         logging.info("Exiting.")
@@ -109,21 +117,16 @@ def setup_environment(config):
         sys.exit(1)
     
     vienna_params_path = config["CofoldParamFile"]
-    
     if vienna_params_path:
         RNA.params_load(vienna_params_path)
 
     return bowtie_index_name, bowtie_index_dir, genome_data_dir
 
-
-
 def main():
-    # Setup logging
     setup_logging()
     logging.info("Pipeline starting up")
     logging.info("--------------------")
 
-    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Run the ASO Design pipeline to retrieve candidate ASOs for "
                     "selective gene of interest"
@@ -134,12 +137,17 @@ def main():
         default="DEFAULT",
         help="Set of Arguments in config.ini to use (default=DEFAULT)"
     )
-    args_set = parser.parse_args().args
+    parser.add_argument(
+        "--job", "-j",
+        type=str,
+        help="Job name for organizing output files (optional)"
+    )
+    args = parser.parse_args()
+    args_set = args.args
+    job_name = args.job
 
-    # Read configuration file
     config = read_config(args_set)
-    
-    index_name, index_dir, genome_dir = setup_environment(config)
+    index_name, index_dir, genome_dir = setup_environment(config, job_name)
     
     gtf_path, cdna_path, pep_path, genome_path, scaffold_gtf_path = download_genome(
         config["Species"],
@@ -148,10 +156,7 @@ def main():
     )
     
     tsl, tsl_list = convert_tsl_list(config["transcriptSupportLevels"])
-    
-    
     logging.info("-----------------------------------")
-
 
     try:
         oligo_obj = OligoExtractor(str(config["TargetGene"]), 
@@ -172,7 +177,6 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
-        
     logging.info("-----------------------------------")
     
     
@@ -185,12 +189,10 @@ def main():
                                         tsl=tsl,
                                         genome=oligo_obj.genome,
                                         tsl_list=tsl_list)
-    
     except Exception as e:
         logging.error(f"Error building Bowtie2 transcriptome index: {e}")
         logging.info("Exiting.")
         sys.exit(1)
-
 
     logging.info("-----------------------------------")
     
@@ -206,9 +208,7 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
-        
     logging.info("-----------------------------------")
-    
     
     try:             
         candidate_fasta_path = oligo_obj.extract_candidate_targets()
@@ -216,7 +216,6 @@ def main():
         logging.error(f"Error during oligo extraction: {e}")
         logging.info("Exiting.")
         sys.exit(1)
-        
         
     logging.info("-----------------------------------")
 
@@ -226,26 +225,21 @@ def main():
         bowtie_out = run_bowtie(candidate_fasta_path, 
                                 transcriptome_index_path,
                                 config["BowtieArgs"],
-                                os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),)
+                                )
     except Exception as e:
         logging.error(f"Error running Bowtie2 for oligo pre-filtering: {e}")
         logging.info("Exiting.")
         sys.exit(1)
     
-    
     logging.info("-----------------------------------")
         
-        
-    # filter viable kmers based on Bowtie output
     try:
         filtered_fasta_path = oligo_obj.filter_candidate_targets(bowtie_out)
-        
     except Exception as e:
         logging.error(f"Error filtering viable kmers: {e}")
         logging.info("Exiting.")
         sys.exit(1)
     
-        
     logging.info("-----------------------------------")
     
     
@@ -262,7 +256,6 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
      
-        
     logging.info("-----------------------------------")
       
     
@@ -271,20 +264,15 @@ def main():
         bowtie_repeated_out = run_bowtie(filtered_fasta_path, 
                                           gene_index_path,
                                           config["BowtieArgs"],
-                                          os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),
                                           trim=True,
                                           multiplicity_layout=oligo_obj.multiplicity_layout)
-        
     except Exception as e:
         logging.error(f"Error running Bowtie2 for target gene: {e}")
         logging.info("Exiting.")
         sys.exit(1)
         
-        
     logging.info("-----------------------------------")
 
-    
-    # Finding potential secondary sites
     try:
         potential_secondary_sites_path = filtered_fasta_path.replace(".fa", "_potential_secondary_sites.fa")
         find_potential_secondary_sites(
@@ -299,9 +287,7 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
-        
     logging.info("-----------------------------------")
-    
     
     try:
         oligo_obj.extract_repeated_sites(bowtie_repeated_out)
@@ -310,52 +296,19 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
         
-    
     logging.info("-----------------------------------")
-    
-    
-    # try:
-    #     cofold_in = os.path.join(config['DataDir'], 
-    #                         'RNACofold', 
-    #                         os.path.basename(filtered_fasta_path)
-    #                         .replace(".fa", 
-    #                                 ".rnacofoldin"))
-    #     cofold_in_repeated = cofold_in.replace(".rnacofoldin", "_repeated.rnacofoldin")
-    #     build_RNAcofold_in(cofold_in_repeated, oligo_obj.repeated_sites, oligo_obj.candidate_targets)
-    #     cofold_out_repeated = run_RNAcofold(cofold_in_repeated, config["CofoldParamFile"])
-    # except Exception as exc:
-    #     logging.error("Error getting binding affinity for repeated target sites: %s", exc)
-    #     logging.info("Exiting.")
-    #     sys.exit(1)
-        
-        
-    # logging.info("-----------------------------------")
-
-
-    # try:
-    #     oligo_obj.filter_repeated_sites_by_ddg(cofold_out_repeated, min_ddg_threshold=float(config["MaxddG"]))
-    # except Exception as e:
-    #     logging.error(f"Error filtering repeated sites by ddG: {e}")
-    #     logging.info("Exiting.")
-    #     sys.exit(1)
-        
-        
-    # logging.info("-----------------------------------")
-    
     
     try:      
         bowtie_offtarget_out = run_bowtie(potential_secondary_sites_path, 
                                          transcriptome_index_path,
                                          config["BowtieArgs"],
-                                         os.path.join(config['Bowtie2Dir'], 'bowtie2Home'),)
+                                         )
     except Exception as e:
         logging.error(f"Error running Bowtie2 for secondary sites: {e}")
         logging.info("Exiting.")
         sys.exit(1)
     
-    
     logging.info("-----------------------------------")
-    
     
     try:
         oligo_obj.extract_offtarget_sites(bowtie_offtarget_out)
@@ -364,17 +317,9 @@ def main():
         logging.info("Exiting.")
         sys.exit(1)
 
-    
     logging.info("-----------------------------------")
 
-
-    # try:
     oligo_obj.store_kmer_results()
-    # except Exception as e:
-    #     logging.error(f"Error writing kmer results to file: {e}")
-    #     logging.info("Exiting.")
-    #     sys.exit(1)
-        
     logging.info("Pipeline completed successfully.")
 
 if __name__ == '__main__':

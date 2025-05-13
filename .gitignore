@@ -175,3 +175,5 @@ genmap/*
 genmap-index/*
 genmap-build/*
 *.bed
+plot_ddg_analysis.py
+ddg_analysis.png

@@ -274,6 +274,15 @@ def main():
     logging.info("-----------------------------------")
 
     try:
+        oligo_obj.extract_repeated_sites(bowtie_repeated_out)
+    except Exception as e:
+        logging.error(f"Error extracting repeated sites: {e}")
+        logging.info("Exiting.")
+        sys.exit(1)
+        
+    logging.info("-----------------------------------")
+    
+    try:
         potential_secondary_sites_path = filtered_fasta_path.replace(".fa", "_potential_secondary_sites.fa")
         find_potential_secondary_sites(
             oligo_obj.candidate_targets,
@@ -289,14 +298,6 @@ def main():
         
     logging.info("-----------------------------------")
     
-    try:
-        oligo_obj.extract_repeated_sites(bowtie_repeated_out)
-    except Exception as e:
-        logging.error(f"Error extracting repeated sites: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
-        
-    logging.info("-----------------------------------")
     
     try:      
         bowtie_offtarget_out = run_bowtie(potential_secondary_sites_path, 

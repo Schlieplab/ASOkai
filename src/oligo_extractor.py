@@ -140,15 +140,26 @@ class OligoExtractor:
         
         return {t.transcript_id: t.gene_id for t in all_transcripts}
 
-    def extract_candidate_targets(self) -> str:
+    def extract_candidate_targets(self, force_core_alignment: bool = False) -> str:
         """
         Extract candidate oligos (k-mers) from the gene and save them to a FASTA file.
+        Parameters:
+            force_core_alignment (bool): If True, force core alignment of the target and oligo.
         """
         logging.info(f"Extracting {self.k}-mers from gene")
 
         transcripts = self.gene.transcripts
         candidate_targets_dict : Dict[Tuple, TargetSite] = {}
         
+        md = RNA.md()
+        md.temperature = 37.0
+
+        constraint_string = None
+        if force_core_alignment:
+            target_constraint = '.' * self.multiplicity_layout[0] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[2]
+            oligo_constraint = '.' * self.multiplicity_layout[2] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[0]
+            constraint_string = target_constraint + '&' + oligo_constraint
+            
         for t in transcripts:
             kmers_set = self._kmers(t.sequence, self.k)
             
@@ -164,6 +175,23 @@ class OligoExtractor:
                 if key not in candidate_targets_dict:
                     homodimer_dG = calculate_homodimer_binding_energy(kmer_seq)
                     
+                    target_obj = Seq(kmer_seq)
+                    oligo_seq = str(target_obj.reverse_complement())
+                    
+                    fc_target = RNA.fold_compound(kmer_seq, md)
+                    (_, target_mfe) = fc_target.mfe()
+                    
+                    fc_oligo = RNA.fold_compound(oligo_seq, md)
+                    (_, oligo_mfe) = fc_oligo.mfe()
+                    
+                    reference_duplex = kmer_seq + "&" + oligo_seq
+                    fc_duplex = RNA.fold_compound(reference_duplex, md)
+                    if force_core_alignment and constraint_string:
+                        fc_duplex.hc_add_from_db(constraint_string)
+                        
+                    (_, duplex_mfe) = fc_duplex.mfe()
+                    binding_dg = duplex_mfe - (target_mfe + oligo_mfe)
+                    
                     candidate_targets_dict[key] = TargetSite(
                         sequence=kmer_seq,
                         chromosomal_position=chrom_pos,
@@ -171,6 +199,7 @@ class OligoExtractor:
                         transcripts=[t],
                         exons=[exon],
                         oligo_dG=homodimer_dG,
+                        dG=binding_dg,
                     )
                 else:
                     candidate_targets_dict[key].transcripts.append(t)
@@ -303,13 +332,14 @@ class OligoExtractor:
         logging.info(f"Extracted {sum(len(sites) for sites in secondary_sites.values())} secondary sites")
         return secondary_sites
 
-    def extract_repeated_sites(self, infile: str, min_ddg_threshold: float = 5.0) -> None:
+    def extract_repeated_sites(self, infile: str, min_ddg_threshold: float = 5.0, force_core_alignment: bool = False) -> None:
         """
         Extract repeated sites from the Bowtie2 alignment results and calculate their binding energies.
         Parameters:
             infile (str): Path to the input SAM file from Bowtie2 alignment.
             min_ddg_threshold (float): Minimum ddG threshold for keeping a site 
                                         Sites with ddG values above this threshold will be filtered out.
+            force_core_alignment (bool): If True, force core alignment of the target and oligo.
         """
         logging.info("Extracting repeated sites")
         
@@ -320,6 +350,12 @@ class OligoExtractor:
         md = RNA.md()
         md.temperature = 37.0
         
+        constraint_string = None
+        if force_core_alignment:
+            target_constraint = '.' * self.multiplicity_layout[0] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[2]
+            oligo_constraint = '.' * self.multiplicity_layout[2] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[0]
+            constraint_string = target_constraint + '&' + oligo_constraint
+            
         for qname, sites in secondary_sites.items():
             position_to_ignore = self.candidate_targets[qname].chromosomal_position
             
@@ -336,6 +372,9 @@ class OligoExtractor:
                     
                     repeated_duplex = site.sequence + "&" + oligo_seq
                     fc_repeated_duplex = RNA.fold_compound(repeated_duplex, md)
+                    
+                    if force_core_alignment and constraint_string:
+                        fc_repeated_duplex.hc_add_from_db(constraint_string)
                     (_, repeated_duplex_mfe) = fc_repeated_duplex.mfe()
                     
                     mutated_binding_dg = repeated_duplex_mfe - (repeated_site_mfe + oligo_mfe)

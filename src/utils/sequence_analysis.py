@@ -5,10 +5,12 @@ import RNA
 import os
 from Bio.Seq import Seq
 from collections import deque
-from pybloomfilter import BloomFilter
-from src.utils.genome import TargetSite, Site
+from scipy import constants
+from src.utils.genome import TargetSite
 import math
-import time
+import numpy as np
+import sympy as sp
+from typing import Dict, List, Tuple, Optional, Union
 from src.utils.time_utils import ProgressTracker, timed
 
 
@@ -101,16 +103,17 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
     Binding energy is calculated between the mutated target site and the original oligo.
     
     Parameters:
-    - target_input: Tuple of (target_id, target_sequence)
+    - target_input: Tuple of (target_id, (target_sequence, reference_binding_dg))
     - max_ddg: Maximum allowed difference in dG_binding (tau)
     - multiplicity_layout: List defining the layout [left_flank, core, right_flank]
     - ddg_tolerance: Tolerance for pruning mutations based on dG_binding
     - force_core_alignment: If True, use constraints to force core region to form base pairs
     
     Returns:
-    - Tuple of (target_id, reference_binding_dg, list of (mutated_target_sequence, ddg_binding) tuples)
+    - Tuple of (target_id, list of (mutated_target_sequence, ddg_binding) tuples)
     """
-    target_id, target_site = target_input
+    target_id, target_site_and_reference_binding_dg = target_input
+    target_site, reference_binding_dg = target_site_and_reference_binding_dg
     
     try:
         expected_length = sum(multiplicity_layout)
@@ -132,26 +135,16 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
             oligo_constraint = '.' * multiplicity_layout[2] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[0]
             constraint_string = target_constraint + '&' + oligo_constraint
         
-        fc_target = RNA.fold_compound(target_site, md)
-        (_, target_mfe) = fc_target.mfe()
-        
         fc_oligo = RNA.fold_compound(oligo_seq, md)
         (_, oligo_mfe) = fc_oligo.mfe()
         
-        reference_duplex = target_site + "&" + oligo_seq
-        fc_duplex = RNA.fold_compound(reference_duplex, md)
-        if force_core_alignment and constraint_string:
-            fc_duplex.hc_add_from_db(constraint_string)
-        (_, duplex_mfe) = fc_duplex.mfe()
-        reference_binding_dg = duplex_mfe - (target_mfe + oligo_mfe)
-
         nucleotides = ['A', 'C', 'G', 'T']
         mutable_positions = list(range(0, core_start)) + list(range(core_end, len(target_site)))
         
         valid_mutations_set = set()  # Use a set to store unique (sequence, ddg) tuples
 
         # Queue for BFS at current depth
-        current_level_queue = deque([(target_site, target_mfe)])
+        current_level_queue = deque([target_site])
 
         # Process each depth (each mutable position)
         for depth_idx in range(len(mutable_positions)):
@@ -165,7 +158,7 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
 
             # Process all sequences at current depth
             while current_level_queue:
-                current_seq, current_mfe = current_level_queue.popleft()
+                current_seq = current_level_queue.popleft()
                 
                 # Try all possible nucleotides at current position
                 for nt in nucleotides:
@@ -195,13 +188,13 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
                         
                         # Add to next level queue if not already there
                         if mutated_target_seq not in next_level_unique_sequences:
-                            next_level_queue.append((mutated_target_seq, mut_target_mfe))
+                            next_level_queue.append(mutated_target_seq)
                             next_level_unique_sequences.add(mutated_target_seq)
                     
                     # If within tolerance, explore but don't add to valid mutations
                     elif ddg_binding <= max_ddg + ddg_tolerance:
                         if mutated_target_seq not in next_level_unique_sequences:
-                            next_level_queue.append((mutated_target_seq, mut_target_mfe))
+                            next_level_queue.append(mutated_target_seq)
                             next_level_unique_sequences.add(mutated_target_seq)
             
             # Update queue for next depth level
@@ -210,14 +203,14 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
         # Convert set of valid mutations to list
         valid_mutations = list(valid_mutations_set)
         
-        return target_id, reference_binding_dg, valid_mutations
+        return target_id, valid_mutations
             
     except ValueError as ve:
         logging.error(f"Configuration error for target {target_id}: {ve}")
-        return target_id, float('nan'), []
+        return target_id, []
     except Exception as e:
         logging.error(f"Error processing target {target_id}: {e}")
-        return target_id, float('nan'), []
+        return target_id, []
 
 @timed
 def find_potential_secondary_sites(
@@ -249,10 +242,7 @@ def find_potential_secondary_sites(
     
     processed_dict = {}
     for target_id, target in target_sites.items():
-        if isinstance(target, str):
-            processed_dict[target_id] = target
-        else:
-            processed_dict[target_id] = target.sequence
+        processed_dict[target_id] = (target.sequence, target.dG)
     
     worker_with_args = partial(
         pruned_mutation_search, 
@@ -285,27 +275,25 @@ def find_potential_secondary_sites(
             progress = ProgressTracker(len(processed_dict), "Finding secondary sites")
             
             for result in pool.imap_unordered(worker_with_args, processed_dict.items()):
-                # Unpack the results: target_id, reference_binding_dg, valid_mutations
-                target_id, ref_binding_dg, valid_mutations = result
+                # Unpack the results: target_id, valid_mutations
+                target_id, valid_mutations = result
                 
                 processed_count += 1
                 if processed_count % 100 == 0:
                     progress.update(100)
                 
                 # Handle potential NaN from worker errors
-                if target_id is None or math.isnan(ref_binding_dg):
+                if target_id is None:
                     logging.warning(f"Skipping target {target_id or 'Unknown'} due to calculation error.")
                     continue
 
                 results[target_id] = valid_mutations
-                target_sites[target_id].dG = ref_binding_dg
                 
                 if output_fasta_path:
                     with open(output_fasta_path, 'a') as f:
-                        target_seq = processed_dict[target_id]
+                        target_seq, ref_binding_dg = processed_dict[target_id]
                         
                         # Write original target sequence with its reference binding energy
-                        # The energy still refers to the binding with the original oligo
                         f.write(f">{target_id}_0 dG_binding={ref_binding_dg:.2f} (reference)\n{target_seq}\n")
                         
                         # Write mutated oligo sequences with their absolute and relative binding energies
@@ -329,3 +317,213 @@ def find_potential_secondary_sites(
         logging.error(f"Error in parallel processing: {e}")
         # Consider more specific error handling or logging
         raise # Re-raise the exception after logging
+ 
+ 
+ 
+# Pedersen Model Below
+
+def get_target_k_diss(k_diss: float, ddG: float, temp: float = 37.0) -> float:
+    """
+    Calculate the dissociation constant for ASO:Target complex based on ddG from average dG.
+    
+    Args:
+        k_diss: Dissociation constant for ASO:Target complex
+        ddG: Free energy difference in kJ/mol from the average dG
+        temp: Temperature in Celsius (default: 37.0)
+        
+    Returns:
+        Dissociation constant for ASO:Target complex with specified ddG between average ASO dG and Target dG
+    """
+    temp_k = constants.convert_temperature(temp, 'C', 'K')
+    return k_diss * math.exp((ddG * 1000) / (constants.R * temp_k))
+
+def quartic_coeffs(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_OC: float,
+                   k_OTpE: float, k_OTE: float, k_OCE: float, k_cleav: float,
+                   E_ini: float, O_ini: float) -> List[float]:
+    """
+    Calculate coefficients for the quartic equation in the steady state analysis using symbolic computation.
+    
+    Args:
+        vprod: Production rate
+        k_degrad: Degradation rate
+        k_OpT: Rate constant for O + T reaction
+        k_OT: Rate constant for OT formation
+        k_OC: Rate constant for OC formation
+        k_OTpE: Rate constant for OT + E reaction
+        k_OTE: Rate constant for OTE formation
+        k_OCE: Rate constant for OCE formation
+        k_cleav: Cleavage rate
+        E_ini: Initial enzyme concentration
+        O_ini: Initial oligo concentration
+        
+    Returns:
+        List of quartic coefficients [alpha4, alpha3, alpha2, alpha1, alpha0]
+    """
+    OTE = sp.symbols('OTE')  # the single remaining unknown
+
+    # Step 1: express all variables in terms of OTE
+    OCE = (k_cleav / k_OCE) * OTE
+    OC = (k_cleav / k_OC) * OTE
+    E = E_ini - (1 + k_cleav / k_OCE) * OTE
+    OT = (k_degrad + k_OTE + k_cleav) * OTE / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE))
+    T = (vprod - (k_degrad + k_cleav) * OTE - k_degrad * OT) / k_degrad
+    O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * OTE) / (k_OpT * T)
+
+    # Step 2: impose the final balance O + OT + OTE + OCE + OC = O_ini
+    balance = sp.simplify(O + OT + OTE + OCE + OC - O_ini)
+
+    # Step 3: clear denominators → polynomial numerator
+    numer = sp.together(balance).as_numer_denom()[0]
+    poly = sp.Poly(sp.expand(numer), OTE)
+
+    # The quartic may have degree < 4 for special parameter choices,
+    # so left-pad with zeros if needed
+    coeffs = poly.all_coeffs()
+    coeffs = [sp.Integer(0)] * (5 - len(coeffs)) + coeffs  # alpha4 … alpha0
+
+    # Convert to ordinary (numeric) floats so we can feed them to numpy
+    return [float(sp.N(coeff)) for coeff in coeffs]
+
+def admissible_E_roots(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_OC: float,
+                      k_OTpE: float, k_OTE: float, k_OCE: float, k_cleav: float,
+                      E_ini: float, O_ini: float, atol: float = 1e-12, rtol: float = 1e-9,
+                      verbose: bool = False) -> List[float]:
+    """
+    Find admissible real, non-negative quartic roots that keep denominators non-zero.
+    
+    Args:
+        vprod: Production rate
+        k_degrad: Degradation rate
+        k_OpT: Rate constant for O + T reaction
+        k_OT: Rate constant for OT formation
+        k_OC: Rate constant for OC formation
+        k_OTpE: Rate constant for OT + E reaction
+        k_OTE: Rate constant for OTE formation
+        k_OCE: Rate constant for OCE formation
+        k_cleav: Cleavage rate
+        E_ini: Initial enzyme concentration
+        O_ini: Initial oligo concentration
+        atol: Absolute tolerance for numerical comparisons
+        rtol: Relative tolerance for numerical comparisons
+        verbose: Whether to print debug information
+        
+    Returns:
+        List of admissible real, non-negative roots
+    """
+    try:
+        alpha4, alpha3, alpha2, alpha1, alpha0 = quartic_coeffs(
+            vprod, k_degrad, k_OpT, k_OT, k_OC, k_OTpE, k_OTE, k_OCE, k_cleav, E_ini, O_ini
+        )
+        roots = np.roots([alpha4, alpha3, alpha2, alpha1, alpha0])
+        
+        if verbose:
+            logging.info(f"All quartic roots: {roots}")
+
+        good = []
+        for r in roots:
+            # Check if root is real and non-negative
+            if abs(r.imag) < atol and r.real >= -rtol:
+                OTE = r.real
+
+                # Check all denominators in the derived formulas
+                denom_h = abs(k_OCE) > atol
+                denom_e = abs(k_OC) > atol
+                denom_f = abs(k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE)) > atol
+                denom_b = abs(k_degrad) > atol
+                denom_c = abs(k_OpT) > atol
+
+                if all([denom_h, denom_e, denom_f, denom_b, denom_c]):
+                    if (OTE > 0) and (OTE <= E_ini) and (OTE <= O_ini):
+                        good.append(OTE)
+
+        if verbose:
+            logging.info(f"Admissible quartic roots: {good}")
+        return good
+        
+    except Exception as e:
+        logging.error(f"Error in admissible_E_roots: {str(e)}")
+        return []
+
+def get_steady_state_solution_Pedersen(par: Dict[str, float], verbose: bool = False) -> Optional[Dict[str, float]]:
+    """
+    Calculate steady state solution using Pedersen's method.
+    
+    Args:
+        par: Dictionary of parameters containing:
+            - vprod: Production rate
+            - k_degrad: Degradation rate
+            - k_OpT: Rate constant for O + T reaction
+            - k_OT: Rate constant for OT formation
+            - k_C or alpha: Rate constant for OC formation
+            - k_OTpE: Rate constant for OT + E reaction
+            - k_OTE: Rate constant for OTE formation
+            - k_cleav: Cleavage rate
+            - E_ini: Initial enzyme concentration
+            - O_ini: Initial oligo concentration
+        verbose: Whether to print debug information
+        
+    Returns:
+        Dictionary containing steady state concentrations or None if no valid solution found
+    """
+    try:
+        vprod = par['vprod']
+        k_degrad = par['k_degrad']
+        k_OpT = par['k_OpT']
+        k_OT = par['k_OT']
+        k_OC = par['k_OT'] * par['alpha'] if 'alpha' in par else par['k_C']
+        k_OTpE = par['k_OTpE']
+        k_OTE = par['k_OTE']
+        k_OCE = par['k_OTE']
+        k_cleav = par['k_cleav']
+        E_ini = par['E_ini']
+        O_ini = par['O_ini']
+
+        roots = admissible_E_roots(
+            vprod, k_degrad, k_OpT, k_OT, k_OC, k_OTpE, k_OTE, k_OCE, k_cleav, E_ini, O_ini
+        )
+
+        sol = None
+        if not roots:
+            if verbose:
+                logging.info("No admissible (non-negative) root found.")
+        else:
+            for i, E_star in enumerate(roots):
+                if verbose:
+                    logging.info(f"\nSolution {i+1}:")
+                    logging.info(f"  OTE = {E_star:.10g}")
+
+                # Calculate steady state concentrations
+                OCE = (k_cleav / k_OCE) * E_star
+                OC = (k_cleav / k_OC) * E_star
+                E = E_ini - (1 + k_cleav / k_OCE) * E_star
+                OT = (k_degrad + k_OTE + k_cleav) * E_star / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * E_star))
+                T = (vprod - (k_degrad + k_cleav) * E_star - k_degrad * OT) / k_degrad
+                O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * E_star) / (k_OpT * T)
+
+                if verbose:
+                    logging.info(f"  O   = {O:.10g}")
+                    logging.info(f"  T   = {T:.10g}")
+                    logging.info(f"  E   = {E:.10g}")
+                    logging.info(f"  OT  = {OT:.10g}")
+                    logging.info(f"  OTE = {E_star:.10g}")
+                    logging.info(f"  OCE = {OCE:.10g}")
+                    logging.info(f"  OC  = {OC:.10g}")
+
+                # Check physical validity of solution
+                if all(x >= 0 for x in [O, T, E, OT, E_star, OCE, OC]):
+                    if verbose:
+                        logging.info("  --> Physically possible solution")
+                    if sol is not None:
+                        logging.warning("Multiple physically possible solutions found, only the last one will be returned.")
+                    sol = {
+                        'O': O, 'T': T, 'E': E, 'OT': OT, 'OTE': E_star,
+                        'OCE': OCE, 'OC': OC
+                    }
+                elif verbose:
+                    logging.info("  --> Not all variables are non-negative (non-physical)")
+
+        return sol
+        
+    except Exception as e:
+        logging.error(f"Error in get_steady_state_solution_Pedersen: {str(e)}")
+        return None

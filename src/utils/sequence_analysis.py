@@ -10,7 +10,7 @@ from src.utils.genome import TargetSite
 import math
 import numpy as np
 import sympy as sp
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Set, Any, Callable
 from src.utils.time_utils import ProgressTracker, timed
 
 
@@ -80,7 +80,6 @@ def calculate_homodimer_binding_energy(seq: str) -> float:
     fc = RNA.fold_compound(seq, md)
     (_, mfe) = fc.mfe()
         
-
     # MFE of the reference duplex
     duplex = seq + "&" + seq
     fc_duplex = RNA.fold_compound(duplex, md)
@@ -93,24 +92,27 @@ def calculate_homodimer_binding_energy(seq: str) -> float:
     return binding_dg
 
 
-def pruned_mutation_search(target_input, max_ddg=5.0, 
-                           multiplicity_layout=[4,8,4], 
-                           ddg_tolerance=0.5, 
-                           force_core_alignment=True):
+def pruned_mutation_search(
+    target_input: Tuple[str, Tuple[str, float]], 
+    max_ddg: float = 5.0, 
+    multiplicity_layout: List[int] = [4,8,4], 
+    ddg_tolerance: float = 0.5, 
+    force_core_alignment: bool = True
+) -> Tuple[str, List[Tuple[str, float]]]:
     """
     Generate target site mutations using binding energy (dG_binding) with efficient pruning.
     Mutations are introduced in the flanking regions of the target site, one position at a time per depth level.
     Binding energy is calculated between the mutated target site and the original oligo.
     
     Parameters:
-    - target_input: Tuple of (target_id, (target_sequence, reference_binding_dg))
-    - max_ddg: Maximum allowed difference in dG_binding (tau)
-    - multiplicity_layout: List defining the layout [left_flank, core, right_flank]
-    - ddg_tolerance: Tolerance for pruning mutations based on dG_binding
-    - force_core_alignment: If True, use constraints to force core region to form base pairs
+        target_input: Tuple of (target_id, (target_sequence, reference_binding_dg))
+        max_ddg: Maximum allowed difference in dG_binding (tau)
+        multiplicity_layout: List defining the layout [left_flank, core, right_flank]
+        ddg_tolerance: Tolerance for pruning mutations based on dG_binding
+        force_core_alignment: If True, use constraints to force core region to form base pairs
     
     Returns:
-    - Tuple of (target_id, list of (mutated_target_sequence, ddg_binding) tuples)
+        Tuple of (target_id, list of (mutated_target_sequence, ddg_binding) tuples)
     """
     target_id, target_site_and_reference_binding_dg = target_input
     target_site, reference_binding_dg = target_site_and_reference_binding_dg
@@ -141,7 +143,7 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
         nucleotides = ['A', 'C', 'G', 'T']
         mutable_positions = list(range(0, core_start)) + list(range(core_end, len(target_site)))
         
-        valid_mutations_set = set()  # Use a set to store unique (sequence, ddg) tuples
+        valid_mutations_set: Set[Tuple[str, float]] = set()  # Use a set to store unique (sequence, ddg) tuples
 
         # Queue for BFS at current depth
         current_level_queue = deque([target_site])
@@ -154,7 +156,7 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
             pos_to_mutate = mutable_positions[depth_idx]
             next_level_queue = deque()
             # Track unique sequences for next level to avoid duplicates
-            next_level_unique_sequences = set()
+            next_level_unique_sequences: Set[str] = set()
 
             # Process all sequences at current depth
             while current_level_queue:
@@ -214,14 +216,14 @@ def pruned_mutation_search(target_input, max_ddg=5.0,
 
 @timed
 def find_potential_secondary_sites(
-    target_sites: dict[str, str | TargetSite],
+    target_sites: Dict[str, Union[str, TargetSite]],
     max_ddg: float = 5.0,
-    multiplicity_layout: list = [4, 8, 4],
+    multiplicity_layout: List[int] = [4, 8, 4],
     ddg_tolerance: float = 0.5,
-    num_processes: int = None,
-    output_fasta_path: str = None,
+    num_processes: Optional[int] = None,
+    output_fasta_path: Optional[str] = None,
     force_core_alignment: bool = True
-) -> dict:
+) -> Dict[str, List[Tuple[str, float]]]:
     """
     Find potential secondary binding sites for each target site.
     
@@ -240,7 +242,7 @@ def find_potential_secondary_sites(
     if num_processes is None:
         num_processes = mp.cpu_count()
     
-    processed_dict = {}
+    processed_dict: Dict[str, Tuple[str, float]] = {}
     for target_id, target in target_sites.items():
         processed_dict[target_id] = (target.sequence, target.dG)
     
@@ -261,7 +263,7 @@ def find_potential_secondary_sites(
         with open(output_fasta_path, 'w') as f:
             pass # Just opening in 'w' mode clears the file
 
-    results = {}
+    results: Dict[str, List[Tuple[str, float]]] = {}
     try:
         logging.info(
             f"Calculating pruned mutations (using dG_binding) for {len(processed_dict)} "
@@ -528,3 +530,41 @@ def get_steady_state_solution_Pedersen(par: Dict[str, float], verbose: bool = Fa
     except Exception as e:
         logging.error(f"Error in get_steady_state_solution_Pedersen: {str(e)}")
         return None
+
+def convert_tsl_list(tsl_str: str) -> Tuple[bool, Optional[List[Optional[int]]]]:
+    """
+    Convert a string of transcript support levels into a list of integers or None values.
+    
+    Args:
+        tsl_str (str): Comma-separated string of transcript support levels (e.g., "tsl1,tsl2,tslNA")
+        
+    Returns:
+        Tuple[bool, Optional[List[Optional[int]]]]: A tuple containing:
+            - bool: True if specific TSLs were provided, False if all TSLs are included
+            - Optional[List[Optional[int]]]: List of TSL values (1-5 or None for NA)
+    """
+    tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
+    converted_tsls = []
+
+    for token in tsl_tokens:
+        if token.lower().startswith("tsl"):
+            value_part = token[3:]
+            if value_part.lower() == "na":
+                converted_tsls.append(None)
+            else:
+                try:
+                    converted_tsls.append(int(value_part))
+                except ValueError:
+                    logging.warning("Invalid transcript support level '%s'; using None.", token)
+                    converted_tsls.append(None)
+        else:
+            try:
+                converted_tsls.append(int(token))
+            except ValueError:
+                logging.warning("Invalid transcript support level '%s'; using None.", token)
+                converted_tsls.append(None)
+
+    all_tsls = [1, 2, 3, 4, 5, None]
+    if converted_tsls == all_tsls:
+        return False, None
+    return True, converted_tsls

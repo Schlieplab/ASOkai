@@ -9,7 +9,6 @@ from src.utils.sequence_analysis import (
     get_steady_state_solution_Pedersen,
     get_target_k_diss,
 )
-from src.utils.time_utils import ProgressTracker, timed
 import logging
 import polars as pl
 import os
@@ -17,7 +16,6 @@ from typing import List, Optional
 from src.utils.genome import TargetSite, Site
 import RNA
 import multiprocessing as mp
-from functools import partial
 
 class OligoExtractor:
     """
@@ -114,19 +112,16 @@ class OligoExtractor:
         logging.info("OligoExtractor object created successfully.")
 
 
-    def _kmers(self, 
-               s: str, 
-               k: int
-               ) -> Set[Tuple[str, int]]:
+    def _kmers(self, s: str, k: int) -> Set[Tuple[str, int]]:
         """
         Generate k-mers from the input sequence and filter them based on GC bounds if specified.
 
-        Parameters:
-            s (str): The input DNA sequence from which k-mers are generated.
-            k (int): The length of k-mers to generate.
+        Args:
+            s: The input DNA sequence from which k-mers are generated
+            k: The length of k-mers to generate
 
         Returns:
-            set: A set of tuples, where each tuple contains a k-mer and its starting position in the sequence.
+            A set of tuples, where each tuple contains a k-mer and its starting position in the sequence
         """
         kmers_list = [(s[i:i + k], i + 1) for i in range(len(s) - k + 1)]
         kmers_list = [seq for seq in kmers_list if self.gc_bounds[0] <= gc_fraction(seq[0]) <= self.gc_bounds[1]]
@@ -138,7 +133,7 @@ class OligoExtractor:
         Create a mapping of transcript IDs to gene information.
 
         Returns:
-            dict: A dictionary mapping transcript IDs to gene information.
+            A dictionary mapping transcript IDs to gene information
         """
         all_transcripts = self.genome.transcripts()
         if self.genome_scaffolds:
@@ -149,18 +144,22 @@ class OligoExtractor:
     def extract_candidate_targets(self, force_core_alignment: bool = False) -> str:
         """
         Extract candidate oligos (k-mers) from the gene and save them to a FASTA file.
-        Parameters:
-            force_core_alignment (bool): If True, force core alignment of the target and oligo.
+
+        Args:
+            force_core_alignment: If True, force core alignment of the target and oligo
+
+        Returns:
+            Path to the output FASTA file containing candidate targets
         """
         logging.info(f"Extracting {self.k}-mers from gene")
 
         transcripts = self.gene.transcripts
-        candidate_targets_dict : Dict[Tuple, TargetSite] = {}
+        candidate_targets_dict: Dict[Tuple[str, str], TargetSite] = {}
         
         md = RNA.md()
         md.temperature = 37.0
 
-        constraint_string = None
+        constraint_string: Optional[str] = None
         if force_core_alignment:
             target_constraint = '.' * self.multiplicity_layout[0] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[2]
             oligo_constraint = '.' * self.multiplicity_layout[2] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[0]
@@ -229,20 +228,30 @@ class OligoExtractor:
     def _get_average_dG(self) -> float:
         """
         Calculate the average dG of candidate sites.
+
+        Returns:
+            The average dG value across all candidate sites
         """
         self.average_dG = sum(site.dG for site in self.candidate_targets.values()) / len(self.candidate_targets)
         return self.average_dG
     
     @staticmethod
     def _process_pedersen_target(target_data_tuple: Tuple[str, TargetSite, Dict[str, float], float]) -> Tuple[str, float]:
-        """Static worker function to process a single target for Pedersen analysis."""
+        """
+        Static worker function to process a single target for Pedersen analysis.
+
+        Args:
+            target_data_tuple: A tuple containing (target_id, target_site, params, average_dG)
+
+        Returns:
+            A tuple containing (target_id, steady_state_concentration)
+        """
         target_id, target, params, average_dG = target_data_tuple
         try:
             # Calculate ddG from average
             ddG_from_avg = target.dG - average_dG
             
             # Get dissociation constant for this target
-            # Ensure params['k_OT'] is present, or handle its absence appropriately
             k_OT_initial = params.get('k_OT')
             if k_OT_initial is None:
                 logging.error(f"Missing 'k_OT' in params for target {target_id}")
@@ -326,10 +335,13 @@ class OligoExtractor:
 
     def filter_candidate_targets(self, in_file: str) -> None:
         """
-        Filter the aligned k-mer target sites based on Bowtie2 alignment results.
-
-        Parameters:
-            in_file (str): Path to the input SAM file from Bowtie2 alignment.
+        Filter candidate targets based on Bowtie2 alignment results.
+        
+        Args:
+            in_file: Path to Bowtie2 alignment results file
+            
+        Returns:
+            Path to filtered FASTA file
         """
         
         columns = ["QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ"]

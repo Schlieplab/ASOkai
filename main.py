@@ -10,6 +10,7 @@ from src.utils.file_operations import (
     )
 from src.utils.sequence_analysis import (
     find_potential_secondary_sites,
+    convert_tsl_list,
     )
 import logging
 from src.oligo_extractor import OligoExtractor
@@ -18,11 +19,11 @@ import os
 import multiprocessing as mp
 import RNA
 import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple, Any, List
 import json
 
 
-def setup_logging():
+def setup_logging() -> None:
     logging.basicConfig(
         force=True,
         level=logging.INFO,
@@ -46,33 +47,6 @@ def read_config(args_set: str):
     
     return config_parser[args_set]
     
-def convert_tsl_list(tsl_str):
-    tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
-    converted_tsls = []
-
-    for token in tsl_tokens:
-        if token.lower().startswith("tsl"):
-            value_part = token[3:]
-            if value_part.lower() == "na":
-                converted_tsls.append(None)
-            else:
-                try:
-                    converted_tsls.append(int(value_part))
-                except ValueError:
-                    logging.warning("Invalid transcript support level '%s'; using None.", token)
-                    converted_tsls.append(None)
-        else:
-            try:
-                converted_tsls.append(int(token))
-            except ValueError:
-                logging.warning("Invalid transcript support level '%s'; using None.", token)
-                converted_tsls.append(None)
-
-    all_tsls = [1, 2, 3, 4, 5, None]
-    if converted_tsls == all_tsls:
-        return False, None
-    return True, converted_tsls
-
 def setup_environment(config, job_name: Optional[str] = None):
     if config["Species"] == "mus_musculus":
         bowtie_index_name = f'GRCm{int(config["GenomeAssembly"])}_{int(config["EnsembleRelease"])}'
@@ -160,7 +134,7 @@ def get_pedersen_params(config_path: str = 'config.ini') -> Dict[str, float]:
 
     return params
 
-def main():
+def main() -> None:
     setup_logging()
     logging.info("Pipeline starting up")
     logging.info("--------------------")

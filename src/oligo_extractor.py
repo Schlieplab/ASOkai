@@ -1,6 +1,6 @@
 from typing import List, Set, Tuple, Dict, Optional, Union
 from Bio.SeqUtils import gc_fraction
-from genome_utils import Genome, TargetSite, Site
+from genome_utils import TargetSite, Site
 from Bio.Seq import Seq
 from src.utils.sequence_analysis import (
     longest_at_run,
@@ -13,9 +13,9 @@ import logging
 import polars as pl
 import os
 from typing import List, Optional
-from genome_utils.genome import TargetSite, Site
 import RNA
 import multiprocessing as mp
+from genome_utils import Genome
 
 class OligoExtractor:
     """
@@ -137,7 +137,7 @@ class OligoExtractor:
 
     def extract_candidate_targets(self, force_core_alignment: bool = False) -> str:
         """
-        Extract candidate oligos (k-mers) from the gene and save them to a FASTA file.
+        Extract candidate oligos (k-mers) from the gene including their dG values and save them to a FASTA file.
 
         Args:
             force_core_alignment: If True, force core alignment of the target and oligo

@@ -11,12 +11,12 @@
 
 
 # Change to the directory where your script is located
-cd /home/ayat/Repositories/ASODesignPipeline
+cd /home/ayat/Repositories/ASODesignPipeline/data/kmc
 
-ml load bowtie2
+ml load kmc
 
-source /home/ayat/.venv/test/bin/activate
+source /home/ayat/.venv/ASODesignPipeline/bin/activate
 
-pip install -r requirements.txt
+# kmc -k16 -m100 -v -fm /home/ayat/Repositories/ASODesignPipeline/data/genome/GRCh38_113/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz GRCh38_113_k16.res /home/ayat/Repositories/ASODesignPipeline/data/kmc
 
-python main.py
+kmc_tools transform GRCh38_113_k16.res dump GRCh38_113_k16.dump

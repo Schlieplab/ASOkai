@@ -6,7 +6,7 @@ import os
 from Bio.Seq import Seq
 from collections import deque
 from scipy import constants
-from genome_utils.genome import TargetSite
+from genome_utils import TargetSite
 import math
 import numpy as np
 import sympy as sp
@@ -346,15 +346,15 @@ def quartic_coeffs(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_O
     Calculate coefficients for the quartic equation in the steady state analysis using symbolic computation.
     
     Args:
-        vprod: Production rate
-        k_degrad: Degradation rate
-        k_OpT: Rate constant for O + T reaction
-        k_OT: Rate constant for OT formation
-        k_OC: Rate constant for OC formation
-        k_OTpE: Rate constant for OT + E reaction
-        k_OTE: Rate constant for OTE formation
-        k_OCE: Rate constant for OCE formation
-        k_cleav: Cleavage rate
+        vprod: Production rate of target (T → ∅)
+        k_degrad: Degradation rate of target (T → ∅)
+        k_OpT: Association rate of the OT complex (O + T → OT)
+        k_OT: Dissociation rate of the OT complex (OT → O + T)
+        k_OC: Association rate of the OC complex (O + C → OC)
+        k_OTpE: Association rate of the OTE complex (OT + E → OTE)
+        k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
+        k_OCE: Dissociation rate of the OCE complex (OCE → OC + E)
+        k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
         E_ini: Initial enzyme concentration
         O_ini: Initial oligo concentration
         
@@ -367,7 +367,7 @@ def quartic_coeffs(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_O
     OCE = (k_cleav / k_OCE) * OTE
     OC = (k_cleav / k_OC) * OTE
     E = E_ini - (1 + k_cleav / k_OCE) * OTE
-    OT = (k_degrad + k_OTE + k_cleav) * OTE / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE))
+    OT = (vprod - (k_degrad + k_cleav) * OTE - k_degrad * (k_degrad + k_OTE + k_cleav) * OTE / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE))) / k_degrad
     T = (vprod - (k_degrad + k_cleav) * OTE - k_degrad * OT) / k_degrad
     O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * OTE) / (k_OpT * T)
 
@@ -394,17 +394,17 @@ def admissible_E_roots(vprod: float, k_degrad: float, k_OpT: float, k_OT: float,
     Find admissible real, non-negative quartic roots that keep denominators non-zero.
     
     Args:
-        vprod: Production of target (v_prod)
-        k_degrad: Degradation of target (k_T→∅)
-        k_OpT: Association rate of the OT complex (k_O+T→OT)
-        k_OT: Association rate of the OT complex (k_O+T→OT)
-        k_OC: Association rate of the OC complex (derived from α and k_OT)
-        k_OTpE: Association rate of the OTE complex (k_OT+E→OTE)
-        k_OTE: Dissociation constant of the OTE complex (K_dOTE)
-        k_OCE: Association rate of the OCE complex
-        k_cleav: Rate of target cleavage by RNase H (k_OTE→OCE)
-        E_ini: Total RNase H concentration (E_t)
-        O_ini: Total oligonucleotide concentration (O_t)
+        vprod: Production rate of target (T → ∅)
+        k_degrad: Degradation rate of target (T → ∅)
+        k_OpT: Association rate of the OT complex (O + T → OT)
+        k_OT: Dissociation rate of the OT complex (OT → O + T)
+        k_OC: Association rate of the OC complex (O + C → OC)
+        k_OTpE: Association rate of the OTE complex (OT + E → OTE)
+        k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
+        k_OCE: Dissociation rate of the OCE complex (OCE → OC + E)
+        k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
+        E_ini: Initial enzyme concentration
+        O_ini: Initial oligo concentration
         atol: Absolute tolerance for numerical comparisons
         rtol: Relative tolerance for numerical comparisons
         verbose: Whether to print debug information
@@ -452,17 +452,17 @@ def get_steady_state_solution_Pedersen(par: Dict[str, float], verbose: bool = Fa
     
     Args:
         par: Dictionary of parameters containing:
-            - vprod: Production of target (v_prod)
-            - k_degrad: Degradation of target (k_T→∅)
-            - k_OpT: Association rate of the OT complex (k_O+T→OT)
-            - k_OT: Association rate of the OT complex (k_O+T→OT)
-            - k_C: Association rate of the OC complex (k_C = k_OT / alpha)
+            - vprod: Production rate of target (T → ∅)
+            - k_degrad: Degradation rate of target (T → ∅)
+            - k_OpT: Association rate of the OT complex (O + T → OT)
+            - k_OT: Dissociation rate of the OT complex (OT → O + T)
+            - k_C: Association rate of the OC complex (O + C → OC)
             - alpha: Ratio between dissociation rates (α)
-            - k_OTpE: Association rate of the OTE complex (k_OT+E→OTE)
-            - k_OTE: Dissociation constant of the OTE complex (K_dOTE)
-            - k_cleav: Rate of target cleavage by RNase H (k_OTE→OCE)
-            - E_ini: Total RNase H concentration (E_t)
-            - O_ini: Total oligonucleotide concentration (O_t)
+            - k_OTpE: Association rate of the OTE complex (OT + E → OTE)
+            - k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
+            - k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
+            - E_ini: Initial enzyme concentration
+            - O_ini: Initial oligo concentration
         verbose: Whether to print debug information
         
     Returns:
@@ -499,7 +499,7 @@ def get_steady_state_solution_Pedersen(par: Dict[str, float], verbose: bool = Fa
                 OCE = (k_cleav / k_OCE) * E_star
                 OC = (k_cleav / k_OC) * E_star
                 E = E_ini - (1 + k_cleav / k_OCE) * E_star
-                OT = (k_degrad + k_OTE + k_cleav) * E_star / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * E_star))
+                OT = (vprod - (k_degrad + k_cleav) * E_star - k_degrad * (k_degrad + k_OTE + k_cleav) * E_star / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * E_star))) / k_degrad
                 T = (vprod - (k_degrad + k_cleav) * E_star - k_degrad * OT) / k_degrad
                 O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * E_star) / (k_OpT * T)
 

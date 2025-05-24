@@ -94,6 +94,11 @@ class OligoExtractor:
         else:
             self.genome_scaffolds = None
 
+        # Extract pre-mRNA sequences for all genes
+        pre_mrna_fasta_path = os.path.join(self.data_dir, f'{self.species.capitalize()}.GRC{self.species[0]}.pre_mrna.fa')
+        self.genome.extract_premrna_sequences(pre_mrna_fasta_path)
+        logging.info(f"Pre-mRNA sequences extracted to {pre_mrna_fasta_path}")
+
         self.gene = self.genome.gene_by_id(gene_id=gene_id)
         
         logging.info(f"Gene name: {self.gene.gene_name}")

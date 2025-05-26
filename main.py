@@ -291,7 +291,7 @@ def main() -> None:
 
     try:
         repeated_sites_path = filtered_fasta_path.replace(".fa", "_repeated_sites.fa")
-        oligo_obj.extract_repeated_sites(max_ddg_threshold=float(config["MaxddG"]), 
+        oligo_obj.extract_repeated_sites(max_ddg_threshold=float(config["RepeatedMaxddG"]), 
                                          force_core_alignment=True,
                                          output_file=repeated_sites_path)
     except Exception as e:
@@ -305,7 +305,7 @@ def main() -> None:
         potential_secondary_sites_path = filtered_fasta_path.replace(".fa", "_potential_secondary_sites.fa")
         find_potential_secondary_sites(
             oligo_obj.candidate_targets,
-            max_ddg=float(config["MaxddG"]),
+            max_ddg=float(config["OffTargetMaxddG"]),
             multiplicity_layout=oligo_obj.multiplicity_layout,
             ddg_tolerance=float(config["ddGTolerance"]),
             output_fasta_path=potential_secondary_sites_path,

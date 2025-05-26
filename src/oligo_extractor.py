@@ -397,145 +397,202 @@ class OligoExtractor:
         
         logging.info("Completed Pedersen analysis")
   
-    def extract_repeated_sites(self, max_ddg_threshold: float = 5.0, force_core_alignment: bool = False, output_file: Optional[str] = None) -> None:
+    @staticmethod
+    def _process_repeated_sites_target_worker(args: Tuple[str, str, float, str, str, List[int], bool, float, str, int, int, str]) -> Tuple[str, int, List[Site]]:
         """
-        Extract repeated sites by finding occurrences of the core region in the target gene's pre-mRNA sequence.
+        Static worker function to find repeated sites for a single target.
+
+        Args:
+            args: A tuple containing:
+                target_id (str): Identifier for the target.
+                target_sequence (str): The sequence of the target.
+                target_dG (float): The dG binding energy of the target.
+                target_chromosomal_position (str): The chromosomal position of the target.
+                pre_mrna_seq (str): The pre-mRNA sequence of the gene.
+                multiplicity_layout (List[int]): Layout for core and flank regions.
+                force_core_alignment (bool): Whether to force core alignment.
+                max_ddg_threshold (float): Max ddG for filtering repeated sites.
+                gene_strand (str): Strand of the gene ('+' or '-').
+                gene_start (int): Start position of the gene.
+                gene_end (int): End position of the gene.
+                gene_chromosome (str): Chromosome of the gene.
+
+        Returns:
+            A tuple containing (target_id, raw_site_count, list_of_repeated_sites).
+        """
+        target_id, target_sequence, target_dG, target_chromosomal_position, \
+        pre_mrna_seq, multiplicity_layout, force_core_alignment, max_ddg_threshold, \
+        gene_strand, gene_start, gene_end, gene_chromosome = args
+
+        md = RNA.md()
+        md.temperature = 37.0
+        constraint_string: Optional[str] = None
+        if force_core_alignment:
+            target_constraint = '.' * multiplicity_layout[0] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[2]
+            oligo_constraint = '.' * multiplicity_layout[2] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[0]
+            constraint_string = target_constraint + '&' + oligo_constraint
+
+        oligo_seq = str(Seq(target_sequence).reverse_complement())
+        fc_oligo = RNA.fold_compound(oligo_seq, md)
+        (_, oligo_mfe) = fc_oligo.mfe()
+
+        core_start_idx = multiplicity_layout[0]
+        core_end_idx = core_start_idx + multiplicity_layout[1]
+        core_region = target_sequence[core_start_idx:core_end_idx]
+
+        current_target_secondary_sites: List[Site] = []
+        start_pos = 0
+        
+        expected_site_len = multiplicity_layout[0] + multiplicity_layout[1] + multiplicity_layout[2]
+
+        while True:
+            pos = pre_mrna_seq.find(core_region, start_pos)
+            if pos == -1:
+                break
+            
+            # adjusted_pos is the start of the full potential site in pre_mrna_seq
+            adjusted_pos = pos - core_start_idx 
+            
+            full_site_start_in_premrna = adjusted_pos
+            full_site_end_in_premrna = adjusted_pos + expected_site_len
+
+            if full_site_start_in_premrna < 0 or full_site_end_in_premrna > len(pre_mrna_seq):
+                start_pos = pos + 1
+                continue
+            
+            site_sequence = pre_mrna_seq[full_site_start_in_premrna:full_site_end_in_premrna]
+
+            if len(site_sequence) != expected_site_len:
+                start_pos = pos + 1 # Move to next search position in pre_mrna_seq
+                continue
+                
+            # Calculate genomic coordinates
+            # gene_start and gene_end are 1-based from GTF
+            # adjusted_pos is 0-based relative to pre_mrna_seq start
+            # chromosomal positions should be 1-based
+            if gene_strand == '+':
+                # For + strand, pre_mrna_seq coordinates map directly from gene_start
+                genomic_start_coord = gene_start + full_site_start_in_premrna
+                genomic_end_coord = gene_start + full_site_end_in_premrna -1
+            else: # - strand
+                # For - strand, pre_mrna_seq coordinates map inversely from gene_end
+                genomic_end_coord = gene_end - full_site_start_in_premrna
+                genomic_start_coord = gene_end - full_site_end_in_premrna + 1
+            
+            site_chrom_pos = f"{gene_chromosome}:{genomic_start_coord}-{genomic_end_coord}:{gene_strand}"
+            
+            site_obj = Site(sequence=site_sequence, chromosomal_position=site_chrom_pos)
+            logging.debug(f"Potential site found for target {target_id} at {site_obj.chromosomal_position}: {site_obj.sequence}")
+            current_target_secondary_sites.append(site_obj)
+            start_pos = pos + 1
+
+        raw_site_count = len(current_target_secondary_sites)
+        if raw_site_count == 0:
+            return target_id, 0, []
+
+        final_repeated_sites_for_target: List[Site] = []
+        for site in current_target_secondary_sites:
+            if site.chromosomal_position == target_chromosomal_position:
+                continue
+            
+            fc_repeated_site = RNA.fold_compound(site.sequence, md)
+            (_, repeated_site_mfe) = fc_repeated_site.mfe()
+            
+            repeated_duplex = site.sequence + "&" + oligo_seq
+            fc_repeated_duplex = RNA.fold_compound(repeated_duplex, md)
+            
+            if force_core_alignment and constraint_string:
+                fc_repeated_duplex.hc_add_from_db(constraint_string)
+            (_, repeated_duplex_mfe) = fc_repeated_duplex.mfe()
+            
+            mutated_binding_dg = repeated_duplex_mfe - (repeated_site_mfe + oligo_mfe)
+            ddg_binding = mutated_binding_dg - target_dG
+            
+            if ddg_binding <= max_ddg_threshold:
+                final_repeated_sites_for_target.append(site)
+        
+        return target_id, raw_site_count, final_repeated_sites_for_target
+
+    def extract_repeated_sites(self, max_ddg_threshold: float = 5.0, force_core_alignment: bool = False, output_file: Optional[str] = None, num_processes: Optional[int] = None) -> None:
+        """
+        Extract repeated sites by finding occurrences of the core region in the target gene's pre-mRNA sequence, using multiprocessing.
         Parameters:
-            max_ddg_threshold (float): Maximum ddG threshold for keeping a site 
+            max_ddg_threshold (float): Maximum ddG threshold for keeping a site.
                                         Sites with ddG values above this threshold will be filtered out.
             force_core_alignment (bool): If True, force core alignment of the target and oligo.
             output_file (Optional[str]): If provided, path to save repeated sites in FASTA format.
+            num_processes (Optional[int]): Number of processes to use. If None, uses CPU count.
         """
-        logging.info("Extracting repeated sites")
+        logging.info("Extracting repeated sites using multiprocessing")
         
-        # Get the target gene's pre-mRNA sequence
         if not self.gene.pre_mrna_sequence:
+            logging.error(f"No pre-mRNA sequence available for target gene {self.gene_id}")
             raise ValueError(f"No pre-mRNA sequence available for target gene {self.gene_id}")
             
         pre_mrna_seq = self.gene.pre_mrna_sequence
         
-        md = RNA.md()
-        md.temperature = 37.0
+        self.repeated_sites: Dict[str, List[Site]] = {} # Initialize
+
+        tasks = []
+        if not self.candidate_targets:
+            logging.info("No candidate targets to process for repeated sites.")
+        else:
+            for target_id, target in self.candidate_targets.items():
+                tasks.append((
+                    target_id,
+                    target.sequence,
+                    target.dG,
+                    target.chromosomal_position,
+                    pre_mrna_seq,
+                    self.multiplicity_layout,
+                    force_core_alignment,
+                    max_ddg_threshold,
+                    self.gene.strand,
+                    self.gene.start, # gene.start, gene.end are 1-based
+                    self.gene.end,
+                    self.gene.chromosome
+                ))
+
+        if not tasks:
+            # This case is already handled by the candidate_targets check above,
+            # but as a safeguard if tasks end up empty for other reasons.
+            logging.info("No tasks to run for repeated sites extraction.")
+            total_sites = sum(len(sites) for sites in self.repeated_sites.values()) # Will be 0
+            logging.info(f"Extracted {total_sites} repeated sites across all targets") # Logs 0 sites
+            if output_file:
+                 # Write empty or header-only file if that's desired, or just log
+                logging.info(f"Writing repeated sites to FASTA file: {output_file} (0 sites found).")
+                with open(output_file, 'w') as f:
+                    pass # Creates an empty file
+            return
+
+        if num_processes is None:
+            num_processes = mp.cpu_count()
         
-        constraint_string = None
-        if force_core_alignment:
-            target_constraint = '.' * self.multiplicity_layout[0] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[2]
-            oligo_constraint = '.' * self.multiplicity_layout[2] + '|' * self.multiplicity_layout[1] + '.' * self.multiplicity_layout[0]
-            constraint_string = target_constraint + '&' + oligo_constraint
+        logging.info(f"Starting repeated sites extraction using {num_processes} processes for {len(tasks)} targets.")
+        
+        with mp.Pool(processes=num_processes) as pool:
+            # Using map to preserve order, though order of accumulation into self.repeated_sites doesn't strictly matter
+            results = pool.map(OligoExtractor._process_repeated_sites_target_worker, tasks)
             
-        # Initialize secondary_sites dictionary to store all found sites
-        secondary_sites: Dict[str, List[Site]] = {}
-            
-        # Process each target
-        for target_id, target in self.candidate_targets.items():
-            logging.info(f"Processing target {target_id}")
-            
-            # Calculate oligo MFE once per target
-            oligo_seq = str(Seq(target.sequence).reverse_complement())
-            fc_oligo = RNA.fold_compound(oligo_seq, md)
-            (_, oligo_mfe) = fc_oligo.mfe()
-            
-            start_pos = 0
-            
-            # Extract core region from target sequence based on multiplicity layout
-            core_start = self.multiplicity_layout[0]
-            core_end = core_start + self.multiplicity_layout[1]
-            core_region = target.sequence[core_start:core_end]
-            
-            while True:
-                # Find next occurrence of core region
-                pos = pre_mrna_seq.find(core_region, start_pos)
-                if pos == -1:  # No more occurrences
-                    break
-                    
-                # Get the full sequence including flanks based on multiplicity_layout
-                left_flank_size = self.multiplicity_layout[0]  # Left flank size
-                right_flank_size = self.multiplicity_layout[2]  # Right flank size
-                
-                # Adjust position to account for core region offset
-                adjusted_pos = pos - core_start
-                
-                # Get flanking sequences
-                left_flank = pre_mrna_seq[max(0, adjusted_pos):adjusted_pos + left_flank_size]
-                right_flank = pre_mrna_seq[adjusted_pos + left_flank_size + len(core_region):adjusted_pos + left_flank_size + len(core_region) + right_flank_size]
-                
-                # Skip if we don't have enough flanking sequence
-                if len(left_flank) < left_flank_size or len(right_flank) < right_flank_size:
-                    start_pos = pos + 1
-                    continue
-                    
-                # Calculate genomic coordinates
-                if self.gene.strand == '+':
-                    genomic_start = self.gene.start + adjusted_pos
-                    genomic_end = genomic_start + (left_flank_size + len(core_region) + right_flank_size - 1)
-                else:
-                    genomic_end = self.gene.end - adjusted_pos
-                    genomic_start = genomic_end - (left_flank_size + len(core_region) + right_flank_size - 1)
-                    
-                # Create site identifier
-                site_id = f"{self.gene.chromosome}:{genomic_start}-{genomic_end}:{self.gene.strand}"
-                
-                # Create Site object with the full sequence including flanks
-                site = Site(
-                    sequence=left_flank + core_region + right_flank,
-                    chromosomal_position=site_id
-                )
-                print(site)
-                # Initialize list for this site_id if it doesn't exist
-                if target_id not in secondary_sites:
-                    secondary_sites[target_id] = []
-                secondary_sites[target_id].append(site)
-                
-                start_pos = pos + 1
-                
-            if not secondary_sites[target_id]:
-                logging.warning(f"No secondary sites found for target {target_id} in gene {self.gene_id}")
-                continue
-                
-            logging.info(f"Found {len(secondary_sites[target_id])} secondary sites for target {target_id}")
-            
-            self.repeated_sites[target_id] = []
-            
-            for site_id, sites in secondary_sites.items():
-                position_to_ignore = target.chromosomal_position
-                
-                for site in sites:
-                    # Skip if this is the main target position
-                    if site.chromosomal_position == position_to_ignore:
-                        logging.info(f"Skipping main target position {site.chromosomal_position} for target {target_id}")
-                        continue
-                        
-                    fc_repeated_site = RNA.fold_compound(site.sequence, md)
-                    (_, repeated_site_mfe) = fc_repeated_site.mfe()
-                    
-                    repeated_duplex = site.sequence + "&" + oligo_seq
-                    fc_repeated_duplex = RNA.fold_compound(repeated_duplex, md)
-                    
-                    if force_core_alignment and constraint_string:
-                        fc_repeated_duplex.hc_add_from_db(constraint_string)
-                    (_, repeated_duplex_mfe) = fc_repeated_duplex.mfe()
-                    
-                    mutated_binding_dg = repeated_duplex_mfe - (repeated_site_mfe + oligo_mfe)
-                    ddg_binding = mutated_binding_dg - target.dG
-                    
-                    if ddg_binding <= max_ddg_threshold:
-                        self.repeated_sites[target_id].append(site)
+            for target_id_from_pool, raw_site_count, filtered_sites_list in results:
 
-            logging.info(f"Found {len(self.repeated_sites[target_id])} repeated sites for target {target_id}")
+                if filtered_sites_list:
+                    self.repeated_sites[target_id_from_pool] = filtered_sites_list
+                elif raw_site_count > 0: # Raw sites found, but none passed filtering (empty filtered_sites_list)
+                    pass # Explicitly pass if no action other than logging was here previously and logging is removed
             
-        total_sites = sum(len(sites) for sites in self.repeated_sites.values())
-        logging.info(f"Extracted {total_sites} repeated sites across all targets")
+        total_passed_sites = sum(len(sites) for sites in self.repeated_sites.values())
+        logging.info(f"Extracted {total_passed_sites} repeated sites across all targets.")
 
-        # Write repeated sites to FASTA file if output_file is provided
         if output_file:
-            logging.info(f"Writing repeated sites to FASTA file: {output_file}")
             with open(output_file, 'w') as f:
-                for target_id, sites in self.repeated_sites.items():
-                    for i, site in enumerate(sites):
-                        # Create a descriptive header with target ID, site number, and chromosomal position
-                        header = f">{target_id}_repeated_{i+1} {site.chromosomal_position}"
-                        f.write(f"{header}\n{site.sequence}\n")
-            logging.info(f"Successfully wrote {total_sites} repeated sites to {output_file}")
+                for target_id_from_self, sites_list in self.repeated_sites.items():
+                    if sites_list: # Should always be true if target_id_from_self is in self.repeated_sites keys
+                        for i, site_obj in enumerate(sites_list):
+                            header = f">{target_id_from_self}_repeated_{i+1} {site_obj.chromosomal_position}"
+                            f.write(f"{header}\n{site_obj.sequence}\n")
+            logging.info(f"Successfully wrote {total_passed_sites} repeated sites to {output_file}.")
   
     def _extract_secondary_sites(self, infile: str) -> Dict[str, List[Site]]:
         """

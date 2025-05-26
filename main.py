@@ -260,37 +260,40 @@ def main() -> None:
     logging.info("-----------------------------------")
     
     # Build Bowtie2 index for target gene
-    try:
-        gene_index_path = build_transcriptomic_bowtie_index(cdna_path,
-                           index_dir, 
-                           index_name,
-                           config["BowtieBuildIndexArgs"],
-                           gene_only=True,
-                           gene_id=oligo_obj.gene_id)
-    except Exception as e:
-        logging.error(f"Error building Bowtie2 target gene index: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    # try:
+    #     gene_index_path = build_transcriptomic_bowtie_index(cdna_path,
+    #                        index_dir, 
+    #                        index_name,
+    #                        config["BowtieBuildIndexArgs"],
+    #                        gene_only=True,
+    #                        gene_id=oligo_obj.gene_id)
+    # except Exception as e:
+    #     logging.error(f"Error building Bowtie2 target gene index: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
      
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
       
     
-    # Run Bowtie2 to find repeated sites in target gene
-    try:      
-        bowtie_repeated_out = run_bowtie(filtered_fasta_path, 
-                                          gene_index_path,
-                                          config["BowtieArgs"],
-                                          trim=True,
-                                          multiplicity_layout=oligo_obj.multiplicity_layout)
-    except Exception as e:
-        logging.error(f"Error running Bowtie2 for target gene: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    # # Run Bowtie2 to find repeated sites in target gene
+    # try:      
+    #     bowtie_repeated_out = run_bowtie(filtered_fasta_path, 
+    #                                       gene_index_path,
+    #                                       config["BowtieArgs"],
+    #                                       trim=True,
+    #                                       multiplicity_layout=oligo_obj.multiplicity_layout)
+    # except Exception as e:
+    #     logging.error(f"Error running Bowtie2 for target gene: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
 
     try:
-        oligo_obj.extract_repeated_sites(bowtie_repeated_out)
+        repeated_sites_path = filtered_fasta_path.replace(".fa", "_repeated_sites.fa")
+        oligo_obj.extract_repeated_sites(max_ddg_threshold=float(config["MaxddG"]), 
+                                         force_core_alignment=True,
+                                         output_file=repeated_sites_path)
     except Exception as e:
         logging.error(f"Error extracting repeated sites: {e}")
         logging.info("Exiting.")

@@ -673,7 +673,7 @@ class OligoExtractor:
                 continue
             
             main_position = self.candidate_targets[seq_id].chromosomal_position
-            repeated_positions = [site.chromosomal_position for site in self.repeated_sites[seq_id]]
+            repeated_positions = [site.chromosomal_position for site in self.repeated_sites.get(seq_id, [])]
             positions_to_ignore = set([main_position] + repeated_positions)
             
             for site in sites:

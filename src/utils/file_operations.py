@@ -38,7 +38,6 @@ def download_genome(
 
     gtf_name = os.path.basename(urllib.parse.urlparse(gtf_url).path)
     cdna_name = os.path.basename(urllib.parse.urlparse(cdna_url).path)
-    pep_name = os.path.basename(urllib.parse.urlparse(pep_url).path)
     genome_name = os.path.basename(urllib.parse.urlparse(genome_url).path)
 
     scaffold_gtf_path = None
@@ -54,7 +53,6 @@ def download_genome(
             
     gtf_path = os.path.join(genome_dir, gtf_name)
     cdna_path = os.path.join(genome_dir, cdna_name)
-    pep_path = os.path.join(genome_dir, pep_name)
     genome_path = os.path.join(genome_dir, genome_name)
 
     if not os.path.exists(gtf_path):
@@ -69,19 +67,13 @@ def download_genome(
     else:
         logging.info("cDNA file already exists at '%s'", cdna_path)
         
-    if not os.path.exists(pep_path):
-        logging.info("Downloading peptide file to '%s'", pep_path)
-        urllib.request.urlretrieve(pep_url, pep_path)
-    else:
-        logging.info("Peptide file already exists at '%s'", pep_path)
-        
     if not os.path.exists(genome_path):
         logging.info("Downloading genome FASTA file to '%s'", genome_path)
         urllib.request.urlretrieve(genome_url, genome_path)
     else:
         logging.info("Genome FASTA file already exists at '%s'", genome_path)
 
-    return gtf_path, cdna_path, pep_path, genome_path, scaffold_gtf_path
+    return gtf_path, cdna_path, genome_path, scaffold_gtf_path
 
 
 
@@ -420,6 +412,126 @@ def run_bowtie(
     logging.info(f"Bowtie2 processing completed in {format_duration(elapsed)}")
     
     return out_file_path
+
+
+def _build_kmc_index(
+    input_path: str,
+    index_dir: str,
+    index_prefix: str,
+    args: str = "",
+    k: Optional[int] = None,
+    count_min: Optional[int] = None
+) -> str:
+    """
+    Builds a kmc index for the specified input file if not already present.
+
+    Parameters:
+        input_path (str): Path to the input FASTA file.
+        index_dir (str): Path to the directory where the kmc index will be saved.
+        index_prefix (str): Prefix for the kmc index files.
+        args (str): Additional command-line arguments for kmc (e.g., "-t4 -m12" to set threads and memory).
+        k (Optional[int]): K-mer size. If None, kmc default might be used or it might require it.
+        count_min (Optional[int]): Minimum k-mer count threshold (kmc's -ci option). If None, kmc default (usually 1).
+
+    Returns:
+        str: Path to the kmc index prefix.
+    """
+    logging.info(f"Building kmc index for {index_prefix} with k={k}, count_min={count_min}")
+
+    # Modify index_prefix to include k and count_min if they are set
+    current_index_prefix = index_prefix
+    if k is not None:
+        current_index_prefix += f"_k{k}"
+    if count_min is not None:
+        current_index_prefix += f"_ci{count_min}"
+
+    os.makedirs(index_dir, exist_ok=True)
+    index_path_prefix = os.path.join(index_dir, current_index_prefix)
+
+    # kmc creates two files: index_prefix.kmc_pre and index_prefix.kmc_suf
+    kmc_pre_file = f"{index_path_prefix}.kmc_pre"
+    kmc_suf_file = f"{index_path_prefix}.kmc_suf"
+
+    if not (os.path.exists(kmc_pre_file) and os.path.exists(kmc_suf_file)):
+        if not os.path.exists(input_path):
+            logging.error(f"Input file does not exist: {input_path}")
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+
+        # Basic kmc command structure: kmc [options] <input_file_name> <output_file_name> <working_directory>
+        # We will use the @file_list option for input if needed, but for a single file, it's direct.
+        # Output_file_name is the prefix.
+        command = [
+            "kmc",
+            # Threads and memory should be passed via 'args' if needed, e.g., args="-t4 -m12"
+        ]
+        if k is not None:
+            command.append(f"-k{k}")
+        if count_min is not None:
+            command.append(f"-ci{count_min}")
+
+        if args:
+            command.extend(shlex.split(args)) # Ensure args are correctly parsed
+
+        command.extend([input_path, index_path_prefix, index_dir])
+
+        logging.info("Executing kmc command: %s", " ".join(command))
+        start_time = time.time()
+        try:
+            process = subprocess.run(command, check=True, capture_output=True, text=True)
+            if process.stdout:
+                logging.info("kmc STDOUT: %s", process.stdout.strip())
+            if process.stderr: # kmc often uses stderr for progress/info
+                logging.info("kmc STDERR: %s", process.stderr.strip())
+        except subprocess.CalledProcessError as e:
+            logging.error("kmc execution failed. RC: %s", e.returncode)
+            if e.stdout:
+                logging.error("kmc STDOUT: %s", e.stdout.strip())
+            if e.stderr:
+                logging.error("kmc STDERR: %s", e.stderr.strip())
+            raise RuntimeError("kmc execution failed.") from e
+
+        elapsed = time.time() - start_time
+        logging.info("kmc index building time: %.2f seconds", elapsed)
+    else:
+        logging.info("Using existing kmc index: %s", current_index_prefix)
+
+    return index_path_prefix
+
+
+def build_genomic_kmc_index(
+    input_path: str,
+    index_dir: str,
+    index_prefix: str,
+    args: str = "",
+    k: Optional[int] = None,
+    count_min: Optional[int] = None
+) -> str:
+    """
+    Builds a kmc index for genomic data.
+
+    Parameters:
+        input_path (str): Path to the input genome FASTA file.
+        index_dir (str): Path to the directory where the kmc index will be saved.
+        index_prefix (str): Prefix for the kmc index files (e.g., 'GRCh38_genomic').
+        args (str): Additional command-line arguments for kmc (e.g., "-cs1000 -t4 -m12").
+                    It's crucial to pass k-mer size (-k) and count-min (-ci) or other relevant kmc params here if not using dedicated params.
+                    Threads and memory can also be specified here (e.g. -t<threads> -m<memory_in_GB>).
+        k (Optional[int]): K-mer size. If None, it's recommended to set it explicitly.
+        count_min (Optional[int]): Minimum k-mer count threshold. If None, kmc default (usually 1).
+
+    Returns:
+        str: Path to the kmc index prefix.
+    """
+    genomic_kmc_prefix = f"{index_prefix}_kmc"
+
+    return _build_kmc_index(
+        input_path=input_path,
+        index_dir=index_dir,
+        index_prefix=genomic_kmc_prefix,
+        args=args,
+        k=k,
+        count_min=count_min
+    )
 
 
 def build_RNAcofold_in(

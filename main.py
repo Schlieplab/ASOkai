@@ -58,10 +58,13 @@ def setup_environment(config, job_name: Optional[str] = None):
         sys.exit(1)
 
     try:
-        bowtie_index_dir = os.path.join(config['Bowtie2Dir'], "bowtie2Home", bowtie_index_name)
+        bowtie_index_dir = os.path.join(config['Bowtie2Dir'], bowtie_index_name)
         os.makedirs(bowtie_index_dir, exist_ok=True)
 
-        genome_data_dir = os.path.join(config['GenomeDir'], 'genome', bowtie_index_name)
+        kmc_index_dir = os.path.join(config['KMCDir'], bowtie_index_name)
+        os.makedirs(kmc_index_dir, exist_ok=True)
+
+        genome_data_dir = os.path.join(config['GenomeDir'], bowtie_index_name)
         os.makedirs(genome_data_dir, exist_ok=True)
         
         if not job_name:
@@ -70,14 +73,17 @@ def setup_environment(config, job_name: Optional[str] = None):
             logging.info(f"No job name provided, generated job name: {job_name}")
         
         data_dir = os.path.join(config['DataDir'], 'jobs', job_name)
+
         logging.info(f"Using job-specific directory: {data_dir}")
         
         os.makedirs(os.path.join(data_dir, 'oligos'), exist_ok=True)
         os.makedirs(os.path.join(data_dir, 'results'), exist_ok=True)
-        os.makedirs(os.path.join(data_dir, 'bowtie2'), exist_ok=True)
+        
+        
+        os.makedirs(bowtie_index_dir, exist_ok=True)
+        os.makedirs(kmc_index_dir, exist_ok=True)
         
         create_job_config_summary(data_dir, config)
-        config['DataDir'] = data_dir
         
     except Exception as e:
         logging.error(f"Error creating directories: {e}")
@@ -95,7 +101,7 @@ def setup_environment(config, job_name: Optional[str] = None):
     if vienna_params_path:
         RNA.params_load(vienna_params_path)
 
-    return bowtie_index_name, bowtie_index_dir, genome_data_dir
+    return bowtie_index_name, bowtie_index_dir, genome_data_dir, kmc_index_dir, data_dir
 
 def get_pedersen_params(config_path: str = 'config.ini') -> Dict[str, float]:
 
@@ -151,9 +157,9 @@ def main() -> None:
     job_name = args.job
 
     config = read_config(args_set)
-    index_name, index_dir, genome_dir = setup_environment(config, job_name)
-    
-    gtf_path, cdna_path, pep_path, genome_path, scaffold_gtf_path = download_genome(
+    index_name, index_dir, genome_dir, kmc_dir, data_dir = setup_environment(config, job_name)
+    gtf_path, cdna_path, genome_path, scaffold_gtf_path = download_genome(
+        
         config["Species"],
         int(config["EnsembleRelease"]),
         genome_dir
@@ -205,18 +211,20 @@ def main() -> None:
     logging.info("-----------------------------------")
     
     
-    # Build Bowtie2 index for genome
-    try:
-        genome_index_path = build_genomic_bowtie_index(genome_path,
-                                        index_dir, 
-                                        index_name,
-                                        config["BowtieBuildIndexArgs"])
-    except Exception as e:
-        logging.error(f"Error building Bowtie2 genome index: {e}")
-        logging.info("Exiting.")
-        sys.exit(1)
+    
+    
+    # # Build Bowtie2 index for genome
+    # try:
+    #     genome_index_path = build_genomic_bowtie_index(genome_path,
+    #                                     index_dir, 
+    #                                     index_name,
+    #                                     config["BowtieBuildIndexArgs"])
+    # except Exception as e:
+    #     logging.error(f"Error building Bowtie2 genome index: {e}")
+    #     logging.info("Exiting.")
+    #     sys.exit(1)
         
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
     
     try:             
         candidate_fasta_path = oligo_obj.extract_candidate_targets()

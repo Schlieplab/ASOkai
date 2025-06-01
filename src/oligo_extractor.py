@@ -100,7 +100,8 @@ class OligoExtractor:
         # Extract pre-mRNA sequences for all genes
         # Derive pre-mRNA filename from primary assembly filename
         pre_mrna_fasta_path = genome_path.replace('.dna.primary_assembly.fa.gz', '.premrna.fa.gz')
-        self.genome.extract_genome_premrna_sequences(output_path=pre_mrna_fasta_path, exclude_genes=self.gene_id)
+        
+        self.pre_mrna_fasta_path = self.genome.extract_genome_premrna_sequences(output_path=pre_mrna_fasta_path, exclude_genes=self.gene_id)
 
         self.gene = self.genome.gene_by_id(gene_id=gene_id)
 
@@ -162,7 +163,6 @@ class OligoExtractor:
 
         transcripts = self.gene.transcripts
         candidate_targets_dict: Dict[Tuple[str, str], TargetSite] = {}
-        
         md = RNA.md()
         md.temperature = 37.0
 
@@ -174,7 +174,6 @@ class OligoExtractor:
             
         for t in transcripts:
             kmers_set = self._kmers(t.sequence, self.k)
-            
             for kmer_seq, position in kmers_set:
                 chrom_pos = t.get_chromosomal_position(position, self.k)
                 

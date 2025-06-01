@@ -281,8 +281,7 @@ def find_potential_secondary_sites(
                 target_id, valid_mutations = result
                 
                 processed_count += 1
-                if processed_count % 100 == 0:
-                    progress.update(100)
+                progress.update(1)
                 
                 # Handle potential NaN from worker errors
                 if target_id is None:

@@ -49,11 +49,15 @@ class ProgressTracker:
     """
     Class to track progress of long-running operations with detailed metrics.
     """
-    def __init__(self, total_items: int, description: str = "Processing"):
+    def __init__(self, 
+                 total_items: int, 
+                 description: str = "Processing", 
+                 update_interval: int = 500):
         self.total_items = total_items
         self.description = description
         self.start_time = time.time()
         self.processed_items = 0
+        self.update_interval = update_interval
         
     def update(self, items_processed: int = 1) -> None:
         """
@@ -70,7 +74,8 @@ class ProgressTracker:
         rate = self.processed_items / elapsed if elapsed > 0 else 0
         time_remaining = items_remaining / rate if rate > 0 else 0
         
-        logging.info(
-            f"{self.description}: {progress:.1f}% ({self.processed_items}/{self.total_items}) | "
-            f"{rate:.1f} items/s | ETA: {format_duration(time_remaining)}"
-        ) 
+        if self.processed_items % self.update_interval == 0:
+            logging.info(
+                f"{self.description}: {progress:.1f}% ({self.processed_items}/{self.total_items}) | "
+                f"{rate:.1f} items/s | ETA: {format_duration(time_remaining)}"
+            ) 

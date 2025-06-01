@@ -12,6 +12,7 @@ from src.utils.sequence_analysis import (
     find_potential_secondary_sites,
     convert_tsl_list,
     )
+from src.kmer_counter import KmerCounter
 import logging
 from src.oligo_extractor import OligoExtractor
 import configparser
@@ -61,7 +62,7 @@ def setup_environment(config, job_name: Optional[str] = None):
         bowtie_index_dir = os.path.join(config['Bowtie2Dir'], bowtie_index_name)
         os.makedirs(bowtie_index_dir, exist_ok=True)
 
-        kmc_index_dir = os.path.join(config['KMCDir'], bowtie_index_name)
+        kmc_index_dir = config['KMCDir']
         os.makedirs(kmc_index_dir, exist_ok=True)
 
         genome_data_dir = os.path.join(config['GenomeDir'], bowtie_index_name)
@@ -183,7 +184,7 @@ def main() -> None:
                                    scaffold_gtf_path, 
                                    [int(x) for x in config["MultiplicityLayout"].split(',')],
                                    index_name, 
-                                   os.path.join(config['DataDir']),
+                                   data_dir,
                                    genome_path
                                    ) 
     except Exception as e:
@@ -311,7 +312,7 @@ def main() -> None:
     
     try:
         potential_secondary_sites_path = filtered_fasta_path.replace(".fa", "_potential_secondary_sites.fa")
-        find_potential_secondary_sites(
+        potential_secondary_sites = find_potential_secondary_sites(
             oligo_obj.candidate_targets,
             max_ddg=float(config["OffTargetMaxddG"]),
             multiplicity_layout=oligo_obj.multiplicity_layout,
@@ -323,6 +324,91 @@ def main() -> None:
         logging.info("Exiting.")
         sys.exit(1)
         
+    logging.info("-----------------------------------")
+    
+    logging.info("Starting KmerCounter analysis...")
+
+    
+    pre_mrna_fasta_path = oligo_obj.pre_mrna_fasta_path
+
+    if not os.path.exists(pre_mrna_fasta_path):
+        logging.error(f"KmerCounter pre-mRNA FASTA file not found: {pre_mrna_fasta_path}")
+        logging.error("Please ensure this file exists and the path construction is correct.")
+        # Decide if to exit or continue without KmerCounter
+        # For now, let's log an error and skip KmerCounter if file not found.
+        kmer_counter_instance = None
+    else:
+        try:
+            kmer_counter_init_start_time = time.time()
+            kmer_counter_instance = KmerCounter(
+                pre_mrna_fasta_path=pre_mrna_fasta_path,
+                potential_secondary_sites=potential_secondary_sites,
+                k=oligo_obj.k, # k from OligoExtractor
+                # Optional: pull KMC paths and params from config if needed
+                # kmc_path=config.get("KMCPath", "kmc"),
+                # kmc_tools_path=config.get("KMCToolsPath", "kmc_tools"),
+                kmc_db_threads=config.getint("KMCDbThreads", 64),
+                kmc_db_memory_gb=config.getint("KMCDbMemoryGB", 128),
+                gene_processing_workers=config.getint("KMCGeneProcessingWorkers", 64),
+                temp_dir_base=kmc_dir, # Use the KMC directory configured earlier for temp files
+                total_genes_for_matrix=len(oligo_obj.genome.genes)
+            )
+            kmer_counter_init_end_time = time.time()
+            logging.info(f"KmerCounter initialized in {kmer_counter_init_end_time - kmer_counter_init_start_time:.2f} seconds.")
+
+        except Exception as e:
+            logging.error(f"Error initializing KmerCounter: {e}")
+            kmer_counter_instance = None # Ensure it's None if init fails
+
+    if kmer_counter_instance:
+        try:
+            logging.info("Calculating aggregate k-mer counts...")
+            agg_counts_start_time = time.time()
+            aggregate_aso_counts = kmer_counter_instance.calculate_aggregate_counts()
+            agg_counts_end_time = time.time()
+            logging.info(f"Calculated aggregate counts for {len(aggregate_aso_counts)} ASOs in {agg_counts_end_time - agg_counts_start_time:.2f} seconds.")
+            # logging.info(f"Aggregate ASO counts: {aggregate_aso_counts}")
+            # Optionally, save to a file in data_dir/results
+            agg_counts_path = os.path.join(data_dir, 'results', f"{job_name or oligo_obj.gene_id}_aggregate_kmer_counts.json")
+            with open(agg_counts_path, 'w') as f_agg:
+                json.dump(aggregate_aso_counts, f_agg, indent=4)
+            logging.info(f"Aggregate k-mer counts saved to {agg_counts_path}")
+
+        except Exception as e:
+            logging.error(f"Error during KmerCounter aggregate counts: {e}")
+
+    #     # 2. Calculate and time per-gene counts matrix
+    #     try:
+    #         logging.info("Calculating per-gene k-mer counts matrix...")
+    #         matrix_start_time = time.time()
+    #         aso_gene_matrix = kmer_counter_instance.calculate_per_gene_counts_matrix()
+    #         matrix_end_time = time.time()
+            
+    #         if aso_gene_matrix is not None:
+    #             logging.info(f"Calculated ASO x Gene matrix with shape {aso_gene_matrix.shape} in {matrix_end_time - matrix_start_time:.2f} seconds.")
+    #             # logging.info(f"ASO x Gene matrix:\n{aso_gene_matrix}")
+    #             # Optionally, save to a file in data_dir/results
+    #             matrix_path = os.path.join(data_dir, 'results', f"{job_name or oligo_obj.gene_id}_aso_gene_kmer_matrix.parquet") # Or .csv
+    #             try:
+    #                 aso_gene_matrix.write_parquet(matrix_path)
+    #                 logging.info(f"ASO x Gene k-mer matrix saved to {matrix_path}")
+    #             except Exception as e_save:
+    #                 logging.error(f"Error saving ASO x Gene matrix to Parquet: {e_save}")
+    #                 # Fallback to CSV if Parquet fails or if preferred
+    #                 matrix_csv_path = os.path.join(data_dir, 'results', f"{job_name or oligo_obj.gene_id}_aso_gene_kmer_matrix.csv")
+    #                 try:
+    #                     aso_gene_matrix.write_csv(matrix_csv_path)
+    #                     logging.info(f"ASO x Gene k-mer matrix saved to {matrix_csv_path}")
+    #                 except Exception as e_csv_save:
+    #                     logging.error(f"Error saving ASO x Gene matrix to CSV: {e_csv_save}")
+    #         else:
+    #             logging.warning(f"ASO x Gene matrix calculation did not return a DataFrame. Elapsed time: {matrix_end_time - matrix_start_time:.2f} seconds.")
+
+    #     except Exception as e:
+    #         logging.error(f"Error during KmerCounter per-gene counts matrix: {e}")
+    # else:
+    #     logging.warning("KmerCounter instance not available. Skipping k-mer counting steps.")
+
     logging.info("-----------------------------------")
     
     

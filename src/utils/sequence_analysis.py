@@ -1,7 +1,6 @@
 import logging
 import multiprocessing as mp
 from functools import partial
-import RNA
 import os
 from Bio.Seq import Seq
 from collections import deque
@@ -13,6 +12,7 @@ import sympy as sp
 from typing import Dict, List, Tuple, Optional, Union, Set, Any, Callable
 from src.utils.time_utils import ProgressTracker, timed
 import json
+from src.utils.rna_cofold import RNACofold
 
 # Default Pedersen parameters if no file is provided
 DEFAULT_PEDERSEN_PARAMS = {
@@ -77,36 +77,6 @@ def longest_t_run(seq: str) -> float:
         else:
             current_t_run = 0
     return max_t_run
-
-
-def calculate_homodimer_binding_energy(seq: str) -> float:
-    """
-    Calculate the self-binding energy of a nucleotide sequence.
-
-    Parameters:
-        seq (str): The nucleotide sequence.
-
-    Returns:
-        float: The self-binding energy in kcal/mol.
-    """
-    if not seq:
-        return 0.0
-    md = RNA.md()
-    md.temperature = 37.0
-    
-    fc = RNA.fold_compound(seq, md)
-    (_, mfe) = fc.mfe()
-        
-    # MFE of the reference duplex
-    duplex = seq + "&" + seq
-    fc_duplex = RNA.fold_compound(duplex, md)
-    
-    (ss, duplex_mfe) = fc_duplex.mfe()
-
-    # Reference Binding Energy
-    binding_dg = duplex_mfe - (mfe + mfe)
-    
-    return binding_dg
 
 
 def convert_tsl_list(tsl_str: str) -> Tuple[bool, Optional[List[Optional[int]]]]:
@@ -211,17 +181,13 @@ class SecondarySiteFinder:
             target_obj = Seq(target_site)
             oligo_seq = str(target_obj.reverse_complement())
             
-            md = RNA.md()
-            md.temperature = 37.0
+            rna_cofold = RNACofold()
             
             constraint_string = None
             if force_core_alignment:
                 target_constraint = '.' * multiplicity_layout[0] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[2]
                 oligo_constraint = '.' * multiplicity_layout[2] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[0]
                 constraint_string = target_constraint + '&' + oligo_constraint
-            
-            fc_oligo = RNA.fold_compound(oligo_seq, md)
-            (_, oligo_mfe) = fc_oligo.mfe()
             
             nucleotides = ['A', 'C', 'G', 'T']
             mutable_positions = list(range(0, core_start)) + list(range(core_end, len(target_site)))
@@ -252,17 +218,10 @@ class SecondarySiteFinder:
                         mutated_seq_list[pos_to_mutate] = nt
                         mutated_target_seq = "".join(mutated_seq_list)
                         
-                        # Calculate binding energy for mutated sequence
-                        fc_mut_target = RNA.fold_compound(mutated_target_seq, md)
-                        (_, mut_target_mfe) = fc_mut_target.mfe()
+                        mutated_binding_dg = rna_cofold.calculate_binding_dg(mutated_target_seq, 
+                                                                             oligo_seq, 
+                                                                             constraint_string)
                         
-                        mutated_duplex = mutated_target_seq + "&" + oligo_seq
-                        fc_mut_duplex = RNA.fold_compound(mutated_duplex, md)
-                        if force_core_alignment and constraint_string:
-                            fc_mut_duplex.hc_add_from_db(constraint_string)
-                        (_, mut_duplex_mfe) = fc_mut_duplex.mfe()
-                        
-                        mutated_binding_dg = mut_duplex_mfe - (mut_target_mfe + oligo_mfe)
                         ddg_binding = mutated_binding_dg - reference_binding_dg
                         
                         # Check if this mutation is valid and should be explored further
@@ -323,13 +282,10 @@ class SecondarySiteFinder:
                 # If TargetSite objects are always expected, this branch might not be needed
                 # or should raise an error.
                 # Let's assume we need to calculate its MFE if it's a plain sequence
-                md_temp = RNA.md()
-                md_temp.temperature = 37.0
-                fc_temp = RNA.fold_compound(target, md_temp)
-                (_, mfe_temp) = fc_temp.mfe() # This mfe isn't directly dG_binding, but a placeholder if needed
-                                            # The original code uses target.dG which is dG_binding from upstream
+                rna_cofold = RNACofold()
+                
                 logging.warning(f"Target {target_id} is a string. Using MFE as a placeholder for dG. This might not be the intended dG_binding.")
-                processed_dict[target_id] = (target, mfe_temp) # Placeholder dG
+                processed_dict[target_id] = (target, rna_cofold.get_mfe(target)) # Placeholder dG
             else:
                 logging.error(f"Unsupported target type for {target_id}: {type(target)}")
                 continue # Skip this target or handle error as appropriate

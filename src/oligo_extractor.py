@@ -2,16 +2,15 @@ from typing import List, Set, Tuple, Dict, Optional, Union
 from Bio.SeqUtils import gc_fraction
 from genome_utils import TargetSite, Site
 from Bio.Seq import Seq
+from src.utils.rna_cofold import RNACofold
 from src.utils.sequence_analysis import (
     longest_at_run,
     longest_t_run,
-    calculate_homodimer_binding_energy,
 )
 import logging
 import polars as pl
 import os
 from typing import List, Optional
-import RNA
 import multiprocessing as mp
 from genome_utils import Genome
 
@@ -161,8 +160,7 @@ class OligoExtractor:
 
         transcripts = self.gene.transcripts
         candidate_targets_dict: Dict[Tuple[str, str], TargetSite] = {}
-        md = RNA.md()
-        md.temperature = 37.0
+        rna_cofold = RNACofold()
 
         constraint_string: Optional[str] = None
         if force_core_alignment:
@@ -182,24 +180,12 @@ class OligoExtractor:
                 exon = t.get_exon_by_position(position)
                 
                 if key not in candidate_targets_dict:
-                    homodimer_dG = calculate_homodimer_binding_energy(kmer_seq)
+                    homodimer_dG = rna_cofold.calculate_homodimer_binding_dg(kmer_seq)
                     
                     target_obj = Seq(kmer_seq)
                     oligo_seq = str(target_obj.reverse_complement())
                     
-                    fc_target = RNA.fold_compound(kmer_seq, md)
-                    (_, target_mfe) = fc_target.mfe()
-                    
-                    fc_oligo = RNA.fold_compound(oligo_seq, md)
-                    (_, oligo_mfe) = fc_oligo.mfe()
-                    
-                    reference_duplex = kmer_seq + "&" + oligo_seq
-                    fc_duplex = RNA.fold_compound(reference_duplex, md)
-                    if force_core_alignment and constraint_string:
-                        fc_duplex.hc_add_from_db(constraint_string)
-                        
-                    (_, duplex_mfe) = fc_duplex.mfe()
-                    binding_dg = duplex_mfe - (target_mfe + oligo_mfe)
+                    binding_dg = rna_cofold.calculate_binding_dg(kmer_seq, oligo_seq, constraint_string)
                     
                     candidate_targets_dict[key] = TargetSite(
                         sequence=kmer_seq,
@@ -321,8 +307,7 @@ class OligoExtractor:
         pre_mrna_seq, multiplicity_layout, force_core_alignment, max_ddg_threshold, \
         gene_strand, gene_start, gene_end, gene_chromosome = args
 
-        md = RNA.md()
-        md.temperature = 37.0
+        rna_cofold = RNACofold()
         constraint_string: Optional[str] = None
         if force_core_alignment:
             target_constraint = '.' * multiplicity_layout[0] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[2]
@@ -330,8 +315,6 @@ class OligoExtractor:
             constraint_string = target_constraint + '&' + oligo_constraint
 
         oligo_seq = str(Seq(target_sequence).reverse_complement())
-        fc_oligo = RNA.fold_compound(oligo_seq, md)
-        (_, oligo_mfe) = fc_oligo.mfe()
 
         core_start_idx = multiplicity_layout[0]
         core_end_idx = core_start_idx + multiplicity_layout[1]
@@ -392,17 +375,7 @@ class OligoExtractor:
             if site.chromosomal_position == target_chromosomal_position:
                 continue
             
-            fc_repeated_site = RNA.fold_compound(site.sequence, md)
-            (_, repeated_site_mfe) = fc_repeated_site.mfe()
-            
-            repeated_duplex = site.sequence + "&" + oligo_seq
-            fc_repeated_duplex = RNA.fold_compound(repeated_duplex, md)
-            
-            if force_core_alignment and constraint_string:
-                fc_repeated_duplex.hc_add_from_db(constraint_string)
-            (_, repeated_duplex_mfe) = fc_repeated_duplex.mfe()
-            
-            mutated_binding_dg = repeated_duplex_mfe - (repeated_site_mfe + oligo_mfe)
+            mutated_binding_dg = rna_cofold.calculate_binding_dg(site.sequence, oligo_seq, constraint_string)
             ddg_binding = mutated_binding_dg - target_dG
             
             if ddg_binding <= max_ddg_threshold:

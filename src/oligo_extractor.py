@@ -6,8 +6,6 @@ from src.utils.sequence_analysis import (
     longest_at_run,
     longest_t_run,
     calculate_homodimer_binding_energy,
-    get_steady_state_solution_Pedersen,
-    get_target_k_diss,
 )
 import logging
 import polars as pl
@@ -296,106 +294,6 @@ class OligoExtractor:
         self.average_dG = sum(site.dG for site in self.candidate_targets.values()) / len(self.candidate_targets)
         return self.average_dG
     
-    @staticmethod
-    def _process_pedersen_target(target_data_tuple: Tuple[str, TargetSite, Dict[str, float], float]) -> Tuple[str, float]:
-        """
-        Static worker function to process a single target for Pedersen analysis.
-
-        Args:
-            target_data_tuple: A tuple containing (target_id, target_site, params, average_dG)
-
-        Returns:
-            A tuple containing (target_id, steady_state_concentration)
-        """
-        target_id, target, params, average_dG = target_data_tuple
-        try:
-            # Calculate ddG from average
-            ddG_from_avg = target.dG - average_dG
-            
-            # Get dissociation constant for this target
-            k_OT_initial = params.get('k_OT')
-            if k_OT_initial is None:
-                logging.error(f"Missing 'k_OT' in params for target {target_id}")
-                return target_id, 0.0
-                
-            k_diss = get_target_k_diss(k_OT_initial, ddG_from_avg, 37.0)
-            
-            # Create target-specific parameters
-            par_target = params.copy()
-            par_target['k_OT'] = k_diss
-            
-            # Calculate steady state solution
-            steady_state = get_steady_state_solution_Pedersen(par_target)
-            if steady_state is None:
-                logging.warning(f"No steady state solution found for target {target_id}")
-                return target_id, 0.0
-            
-            steady_state_concentration = steady_state['T'] + steady_state['OT'] + steady_state['OTE']
-            logging.debug(f"Target {target_id}: ddG={ddG_from_avg:.2f}, k_diss={k_diss:.2e}, T_steady_state={steady_state_concentration:.2e}")
-            return target_id, steady_state_concentration
-        except KeyError as ke:
-            logging.error(f"Missing key in params for target {target_id}: {str(ke)}")
-            return target_id, 0.0
-        except Exception as e:
-            logging.error(f"Error processing target {target_id} in _process_pedersen_target: {str(e)}")
-            return target_id, 0.0
-        
-    def pedersen_analysis(self, params: Dict[str, float], num_processes: Optional[int] = None) -> None:
-        """
-        Perform Pedersen model analysis on the target sites.
-        
-        Parameters:
-            params (Dict[str, float]): Dictionary containing Pedersen model parameters
-            num_processes (Optional[int]): Number of processes to use. If None, uses CPU count.
-        """
-        
-        logging.info(f"Performing Pedersen analysis")
-        
-        
-        if not self.candidate_targets:
-            logging.warning("No candidate targets available for Pedersen analysis")
-            return
-        
-        # Calculate average dG if not already calculated
-        if self.average_dG == 0.0:
-            self._get_average_dG()
-        
-        par_no_oligo = params.copy()
-        par_no_oligo['O_ini'] = 1e-10  # Use a small positive value instead of 0.0
-        
-        steady_state_no_oligo = get_steady_state_solution_Pedersen(par_no_oligo)
-        
-        logging.info(f"Average dG of candidate sites: {self.average_dG:.2f}")
-        logging.info(f"Steady state concentration of candidate sites without oligo: {steady_state_no_oligo['T']:.2e}")
-        # Prepare data for multiprocessing
-        # Each item in tasks will be a tuple: (target_id, target_object, params_dict, average_dG_float)
-        tasks = [
-            (target_id, target_site, params, self.average_dG) 
-            for target_id, target_site in self.candidate_targets.items()
-        ]
-
-        # Set up multiprocessing
-        if num_processes is None:
-            num_processes = mp.cpu_count()
-        
-        logging.info(f"Starting Pedersen analysis using")
-        
-        # Process targets in parallel using the static method
-        with mp.Pool(processes=num_processes) as pool:
-            
-            # Use imap_unordered for potentially faster consumption of results
-            # The worker function is now OligoExtractor._process_pedersen_target
-            results = pool.imap_unordered(OligoExtractor._process_pedersen_target, tasks)
-            
-            for target_id, steady_state_value in results:
-                if target_id in self.candidate_targets: # Ensure target_id is valid
-                    self.candidate_targets[target_id].pedersen_steady_state = steady_state_value/steady_state_no_oligo['T']
-                else:
-                    logging.warning(f"Received result for unknown target_id: {target_id}")
-
-        
-        logging.info("Completed Pedersen analysis")
-  
     @staticmethod
     def _process_repeated_sites_target_worker(args: Tuple[str, str, float, str, str, List[int], bool, float, str, int, int, str]) -> Tuple[str, int, List[Site]]:
         """

@@ -5,12 +5,13 @@ from src.utils.file_operations import (
     build_genomic_bowtie_index,
     build_transcriptomic_bowtie_index, 
     run_bowtie,
-    download_genome,
+    GenomeDownloader,
     create_job_config_summary,
     )
 from src.utils.sequence_analysis import (
     find_potential_secondary_sites,
     convert_tsl_list,
+    PedersenAnalysis,
     )
 from src.kmer_counter import KmerCounter
 import logging
@@ -104,35 +105,6 @@ def setup_environment(config, job_name: Optional[str] = None):
 
     return bowtie_index_name, bowtie_index_dir, genome_data_dir, kmc_index_dir, data_dir
 
-def get_pedersen_params(config_path: str = 'config.ini') -> Dict[str, float]:
-
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-        
-    config = configparser.ConfigParser()
-    config.read(config_path)
-    
-    if 'PedersenParamFile' not in config['DEFAULT']:
-        raise KeyError("PedersenParamFile not found in config file")
-        
-    params_file = config['DEFAULT']['PedersenParamFile']
-    if not os.path.exists(params_file):
-        raise FileNotFoundError(f"Pedersen parameters file not found at {params_file}")
-        
-    with open(params_file, 'r') as f:
-        params = json.load(f)
-        
-    # Convert all values to float to ensure consistency
-    params = {k: float(v) for k, v in params.items()}
-
-    # Add k_C as k_C = k_OT / alpha
-    if 'k_OT' in params and 'alpha' in params and params['alpha'] != 0:
-        params['k_C'] = params['k_OT'] / params['alpha']
-    else:
-        params['k_C'] = None  # or raise an error if preferred
-
-    return params
-
 def main() -> None:
     setup_logging()
     logging.info("Pipeline starting up")
@@ -159,16 +131,16 @@ def main() -> None:
 
     config = read_config(args_set)
     index_name, index_dir, genome_dir, kmc_dir, data_dir = setup_environment(config, job_name)
-    gtf_path, cdna_path, genome_path, scaffold_gtf_path = download_genome(
-        
-        config["Species"],
-        int(config["EnsembleRelease"]),
-        genome_dir
+
+    # Instantiate and call GenomeDownloader
+    genome_downloader = GenomeDownloader(
+        species=config["Species"],
+        e_release=int(config["EnsembleRelease"]),
+        genome_dir=genome_dir
     )
-    
-    # Get Pedersen model parameters
-    pedersen_params = get_pedersen_params()
-    
+    gtf_path, cdna_path, genome_path, scaffold_gtf_path = genome_downloader.download()
+
+
     tsl, tsl_list = convert_tsl_list(config["transcriptSupportLevels"])
     logging.info("-----------------------------------")
 
@@ -260,7 +232,15 @@ def main() -> None:
     logging.info("-----------------------------------")
     
     try:
-        oligo_obj.pedersen_analysis(pedersen_params, 32)
+        pedersen_params_file = config.get('PedersenParamFile', None)
+        
+        pedersen_analyzer = PedersenAnalysis(
+            candidate_targets=oligo_obj.candidate_targets,
+            num_processes=config.getint("NumProcesses", mp.cpu_count()),
+            params_file_path=pedersen_params_file
+        )
+        
+        oligo_obj.candidate_targets = pedersen_analyzer.run_analysis()
     except Exception as e:
         logging.error(f"Error during Pedersen analysis: {e}")
         logging.info("Exiting.")

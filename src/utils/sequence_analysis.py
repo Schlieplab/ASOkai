@@ -12,7 +12,24 @@ import numpy as np
 import sympy as sp
 from typing import Dict, List, Tuple, Optional, Union, Set, Any, Callable
 from src.utils.time_utils import ProgressTracker, timed
+import json
 
+# Default Pedersen parameters if no file is provided
+DEFAULT_PEDERSEN_PARAMS = {
+    "vprod": 34.0,
+    "k_degrad": 0.034,
+    "k_OpT": 3.32e-5,
+    "k_OT": 0.06,
+    "k_OTpE": 0.00277,
+    "k_OTE": 350.0,
+    "k_cleav": 83.8,
+    "O_ini": 1000.0,
+    "E_ini": 1800.0,
+    "alpha": 1.2,
+    "k_C": None # Will be calculated
+} 
+if DEFAULT_PEDERSEN_PARAMS['alpha'] != 0:
+    DEFAULT_PEDERSEN_PARAMS['k_C'] = DEFAULT_PEDERSEN_PARAMS['k_OT'] / DEFAULT_PEDERSEN_PARAMS['alpha']
 
 def longest_at_run(seq: str) -> float:
     """
@@ -318,217 +335,6 @@ def find_potential_secondary_sites(
         logging.error(f"Error in parallel processing: {e}")
         # Consider more specific error handling or logging
         raise # Re-raise the exception after logging
- 
- 
- 
-# Pedersen Model Below
-
-def get_target_k_diss(k_diss: float, ddG: float, temp: float = 37.0) -> float:
-    """
-    Calculate the dissociation constant for ASO:Target complex based on ddG from average dG.
-    
-    Args:
-        k_diss: Dissociation constant for ASO:Target complex
-        ddG: Free energy difference in kJ/mol from the average dG
-        temp: Temperature in Celsius (default: 37.0)
-        
-    Returns:
-        Dissociation constant for ASO:Target complex with specified ddG between average ASO dG and Target dG
-    """
-    temp_k = constants.convert_temperature(temp, 'C', 'K')
-    return k_diss * math.exp((ddG * 1000) / (constants.R * temp_k))
-
-def quartic_coeffs(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_OC: float,
-                   k_OTpE: float, k_OTE: float, k_OCE: float, k_cleav: float,
-                   E_ini: float, O_ini: float) -> List[float]:
-    """
-    Calculate coefficients for the quartic equation in the steady state analysis using symbolic computation.
-    
-    Args:
-        vprod: Production rate of target (T → ∅)
-        k_degrad: Degradation rate of target (T → ∅)
-        k_OpT: Association rate of the OT complex (O + T → OT)
-        k_OT: Dissociation rate of the OT complex (OT → O + T)
-        k_OC: Association rate of the OC complex (O + C → OC)
-        k_OTpE: Association rate of the OTE complex (OT + E → OTE)
-        k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
-        k_OCE: Dissociation rate of the OCE complex (OCE → OC + E)
-        k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
-        E_ini: Initial enzyme concentration
-        O_ini: Initial oligo concentration
-        
-    Returns:
-        List of quartic coefficients [alpha4, alpha3, alpha2, alpha1, alpha0]
-    """
-    OTE = sp.symbols('OTE')  # the single remaining unknown
-
-    # Step 1: express all variables in terms of OTE
-    OCE = (k_cleav / k_OCE) * OTE
-    OC = (k_cleav / k_OC) * OTE
-    E = E_ini - (1 + k_cleav / k_OCE) * OTE
-    OT = (k_degrad + k_OTE + k_cleav) * OTE / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE))
-    T = (vprod - (k_degrad + k_cleav) * OTE - k_degrad * OT) / k_degrad
-    O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * OTE) / (k_OpT * T)
-
-    # Step 2: impose the final balance O + OT + OTE + OCE + OC = O_ini
-    balance = sp.simplify(O + OT + OTE + OCE + OC - O_ini)
-
-    # Step 3: clear denominators → polynomial numerator
-    numer = sp.together(balance).as_numer_denom()[0]
-    poly = sp.Poly(sp.expand(numer), OTE)
-
-    # The quartic may have degree < 4 for special parameter choices,
-    # so left-pad with zeros if needed
-    coeffs = poly.all_coeffs()
-    coeffs = [sp.Integer(0)] * (5 - len(coeffs)) + coeffs  # alpha4 … alpha0
-
-    # Convert to ordinary (numeric) floats so we can feed them to numpy
-    return [float(sp.N(coeff)) for coeff in coeffs]
-
-def admissible_E_roots(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_OC: float,
-                      k_OTpE: float, k_OTE: float, k_OCE: float, k_cleav: float,
-                      E_ini: float, O_ini: float, atol: float = 1e-12, rtol: float = 1e-9,
-                      verbose: bool = False) -> List[float]:
-    """
-    Find admissible real, non-negative quartic roots that keep denominators non-zero.
-    
-    Args:
-        vprod: Production rate of target (T → ∅)
-        k_degrad: Degradation rate of target (T → ∅)
-        k_OpT: Association rate of the OT complex (O + T → OT)
-        k_OT: Dissociation rate of the OT complex (OT → O + T)
-        k_OC: Association rate of the OC complex (O + C → OC)
-        k_OTpE: Association rate of the OTE complex (OT + E → OTE)
-        k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
-        k_OCE: Dissociation rate of the OCE complex (OCE → OC + E)
-        k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
-        E_ini: Initial enzyme concentration
-        O_ini: Initial oligo concentration
-        atol: Absolute tolerance for numerical comparisons
-        rtol: Relative tolerance for numerical comparisons
-        verbose: Whether to print debug information
-        
-    Returns:
-        List of admissible real, non-negative roots
-    """
-    try:
-        alpha4, alpha3, alpha2, alpha1, alpha0 = quartic_coeffs(
-            vprod, k_degrad, k_OpT, k_OT, k_OC, k_OTpE, k_OTE, k_OCE, k_cleav, E_ini, O_ini
-        )
-        roots = np.roots([alpha4, alpha3, alpha2, alpha1, alpha0])
-        
-        if verbose:
-            logging.info(f"All quartic roots: {roots}")
-
-        good = []
-        for r in roots:
-            # Check if root is real and non-negative
-            if abs(r.imag) < atol and r.real >= -rtol:
-                OTE = r.real
-
-                # Check all denominators in the derived formulas
-                denom_h = abs(k_OCE) > atol
-                denom_e = abs(k_OC) > atol
-                denom_f = abs(k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE)) > atol
-                denom_b = abs(k_degrad) > atol
-                denom_c = abs(k_OpT) > atol
-
-                if all([denom_h, denom_e, denom_f, denom_b, denom_c]):
-                    if (OTE > 0) and (OTE <= E_ini) and (OTE <= O_ini):
-                        good.append(OTE)
-
-        if verbose:
-            logging.info(f"Admissible quartic roots: {good}")
-        return good
-        
-    except Exception as e:
-        logging.error(f"Error in admissible_E_roots: {str(e)}")
-        return []
-
-def get_steady_state_solution_Pedersen(par: Dict[str, float], verbose: bool = False) -> Optional[Dict[str, float]]:
-    """
-    Calculate steady state solution using Pedersen's method.
-    
-    Args:
-        par: Dictionary of parameters containing:
-            - vprod: Production rate of target (T → ∅)
-            - k_degrad: Degradation rate of target (T → ∅)
-            - k_OpT: Association rate of the OT complex (O + T → OT)
-            - k_OT: Dissociation rate of the OT complex (OT → O + T)
-            - k_C: Association rate of the OC complex (O + C → OC)
-            - alpha: Ratio between dissociation rates (α)
-            - k_OTpE: Association rate of the OTE complex (OT + E → OTE)
-            - k_OTE: Dissociation rate of the OTE complex (OTE → OT + E)
-            - k_cleav: Cleavage rate of target by RNase H (OTE → OCE)
-            - E_ini: Initial enzyme concentration
-            - O_ini: Initial oligo concentration
-        verbose: Whether to print debug information
-        
-    Returns:
-        Dictionary containing steady state concentrations or None if no valid solution found
-    """
-    try:
-        vprod = par['vprod']
-        k_degrad = par['k_degrad']
-        k_OpT = par['k_OpT']
-        k_OT = par['k_OT']
-        k_OC = par['k_OT'] * par['alpha'] if 'alpha' in par else par['k_C']
-        k_OTpE = par['k_OTpE']
-        k_OTE = par['k_OTE']
-        k_OCE = par['k_OTE']
-        k_cleav = par['k_cleav']
-        E_ini = par['E_ini']
-        O_ini = par['O_ini']
-
-        roots = admissible_E_roots(
-            vprod, k_degrad, k_OpT, k_OT, k_OC, k_OTpE, k_OTE, k_OCE, k_cleav, E_ini, O_ini
-        )
-
-        sol = None
-        if not roots:
-            if verbose:
-                logging.info("No admissible (non-negative) root found.")
-        else:
-            for i, E_star in enumerate(roots):
-                if verbose:
-                    logging.info(f"\nSolution {i+1}:")
-                    logging.info(f"  OTE = {E_star:.10g}")
-
-                # Calculate steady state concentrations
-                OCE = (k_cleav / k_OCE) * E_star
-                OC = (k_cleav / k_OC) * E_star
-                E = E_ini - (1 + k_cleav / k_OCE) * E_star
-                OT = (k_degrad + k_OTE + k_cleav) * E_star / (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * E_star))
-                T = (vprod - (k_degrad + k_cleav) * E_star - k_degrad * OT) / k_degrad
-                O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * E_star) / (k_OpT * T)
-
-                if verbose:
-                    logging.info(f"  O   = {O:.10g}")
-                    logging.info(f"  T   = {T:.10g}")
-                    logging.info(f"  E   = {E:.10g}")
-                    logging.info(f"  OT  = {OT:.10g}")
-                    logging.info(f"  OTE = {E_star:.10g}")
-                    logging.info(f"  OCE = {OCE:.10g}")
-                    logging.info(f"  OC  = {OC:.10g}")
-
-                # Check physical validity of solution
-                if all(x >= 0 for x in [O, T, E, OT, E_star, OCE, OC]):
-                    if verbose:
-                        logging.info("  --> Physically possible solution")
-                    if sol is not None:
-                        logging.warning("Multiple physically possible solutions found, only the last one will be returned.")
-                    sol = {
-                        'O': O, 'T': T, 'E': E, 'OT': OT, 'OTE': E_star,
-                        'OCE': OCE, 'OC': OC
-                    }
-                elif verbose:
-                    logging.info("  --> Not all variables are non-negative (non-physical)")
-
-        return sol
-        
-    except Exception as e:
-        logging.error(f"Error in get_steady_state_solution_Pedersen: {str(e)}")
-        return None
 
 def convert_tsl_list(tsl_str: str) -> Tuple[bool, Optional[List[Optional[int]]]]:
     """
@@ -567,3 +373,224 @@ def convert_tsl_list(tsl_str: str) -> Tuple[bool, Optional[List[Optional[int]]]]
     if converted_tsls == all_tsls:
         return False, None
     return True, converted_tsls
+ 
+class PedersenAnalysis:
+    """
+    Performs Pedersen model-based kinetic analysis for ASO-target interactions.
+
+    This class encapsulates the logic for:
+    - Loading Pedersen model parameters from a JSON file or using defaults.
+    - Calculating average dG for candidate targets.
+    - Running the Pedersen steady-state calculations in parallel for multiple targets.
+    - Updating target site objects with their normalized steady-state concentrations.
+
+    The main public methods are `__init__` for setup and `run_analysis` to execute the calculations.
+    Internal calculations include solving quartic equations derived from the kinetic model.
+    """
+    def __init__(self, 
+                 candidate_targets: Dict[str, TargetSite], 
+                 num_processes: Optional[int] = None,
+                 params_file_path: Optional[str] = None):
+        self.candidate_targets = candidate_targets
+        self.num_processes = num_processes if num_processes is not None else mp.cpu_count()
+        
+        if params_file_path:
+            logging.info(f"Loading Pedersen parameters from specified file: {params_file_path}")
+            try:
+                self.params = PedersenAnalysis._get_params_from_file(params_file_path)
+            except Exception as e:
+                logging.error(f"Failed to load Pedersen parameters from {params_file_path}: {e}")
+                raise ValueError(f"Could not initialize PedersenAnalysis: {e}")
+        else:
+            logging.info("No Pedersen parameters file provided. Using default parameters.")
+            self.params = DEFAULT_PEDERSEN_PARAMS.copy()
+
+        if self.candidate_targets:
+            self.average_dG = sum(site.dG for site in self.candidate_targets.values()) / len(self.candidate_targets)
+            if self.average_dG == 0.0:
+                logging.warning("Calculated average_dG is 0.0.")
+        else:
+            self.average_dG = 0.0
+            logging.warning("No candidate targets provided; average_dG set to 0.")
+
+    @staticmethod
+    def _get_params_from_file(params_file_path: str) -> Dict[str, float]:
+        if not os.path.exists(params_file_path):
+            raise FileNotFoundError(f"Pedersen parameters file not found: {params_file_path}")
+        with open(params_file_path, 'r') as f:
+            params = json.load(f)
+        params = {k: float(v) for k, v in params.items()}
+        if 'k_C' not in params and 'k_OT' in params and 'alpha' in params and params.get('alpha') != 0:
+            params['k_C'] = params['k_OT'] / params['alpha']
+        elif 'k_C' not in params:
+            params['k_C'] = None
+        return params
+
+    @staticmethod
+    def _get_target_k_diss(k_diss_initial: float, ddG: float, temp: float = 37.0) -> float:
+        temp_k = constants.convert_temperature(temp, 'C', 'K')
+        return k_diss_initial * math.exp((ddG * 1000) / (constants.R * temp_k))
+
+    @staticmethod
+    def _quartic_coeffs(vprod: float, k_degrad: float, k_OpT: float, k_OT: float, k_OC: float,
+                       k_OTpE: float, k_OTE: float, k_OCE: float, k_cleav: float,
+                       E_ini: float, O_ini: float) -> List[float]:
+        OTE = sp.symbols('OTE')
+        OCE = (k_cleav / k_OCE) * OTE
+        OC = (k_cleav / k_OC) * OTE
+        E = E_ini - (1 + k_cleav / k_OCE) * OTE
+        
+        denom_f_expr = (k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE))
+        # Potential for division by zero if denom_f_expr is symbolically zero with specific params.
+        # sympy handles symbolic division; numerical issues would arise at evaluation if not careful.
+        OT = (k_degrad + k_OTE + k_cleav) * OTE / denom_f_expr 
+        T = (vprod - (k_degrad + k_cleav) * OTE - k_degrad * OT) / k_degrad
+        O = ((k_OT + k_degrad) * OT + (k_degrad + k_cleav) * OTE) / (k_OpT * T)
+        
+        balance = sp.simplify(O + OT + OTE + OCE + OC - O_ini)
+        numer = sp.together(balance).as_numer_denom()[0]
+        poly = sp.Poly(sp.expand(numer), OTE)
+        coeffs = poly.all_coeffs()
+        coeffs = [sp.Integer(0)] * (5 - len(coeffs)) + coeffs
+        return [float(sp.N(coeff)) for coeff in coeffs]
+
+    @staticmethod
+    def _admissible_E_roots(params: Dict[str, float], verbose: bool = False, atol: float = 1e-12, rtol: float = 1e-9) -> List[float]:
+        vprod = params['vprod']; k_degrad = params['k_degrad']; k_OpT = params['k_OpT']
+        k_OT = params['k_OT']; k_OC = params['k_C']; k_OTpE = params['k_OTpE']
+        k_OTE = params['k_OTE']; k_OCE = params['k_OTE'] # k_OCE = k_OTE in this model
+        k_cleav = params['k_cleav']; E_ini = params['E_ini']; O_ini = params['O_ini']
+        
+        try:
+            alpha_coeffs = PedersenAnalysis._quartic_coeffs(
+                vprod, k_degrad, k_OpT, k_OT, k_OC, k_OTpE, k_OTE, k_OCE, k_cleav, E_ini, O_ini
+            )
+            roots = np.roots(alpha_coeffs)
+            if verbose: logging.info(f"All quartic roots: {roots}")
+            good_roots = []
+            for r_val in roots:
+                if abs(r_val.imag) < atol and r_val.real >= -rtol:
+                    OTE_root = r_val.real
+                    # Denominator checks (simplified, direct check from expressions)
+                    denom_h_ok = abs(k_OCE) > atol
+                    denom_e_ok = abs(k_OC) > atol if k_OC is not None else True # k_OC can be None
+                    denom_f_val_at_root = k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * OTE_root) if denom_h_ok else 0
+                    denom_f_ok = abs(denom_f_val_at_root) > atol
+                    denom_b_ok = abs(k_degrad) > atol
+
+                    if all([denom_h_ok, denom_e_ok, denom_f_ok, denom_b_ok]):
+                        if (OTE_root >= 0) and (OTE_root <= E_ini) and (OTE_root <= O_ini):
+                            good_roots.append(OTE_root)
+            if verbose: logging.info(f"Admissible quartic roots: {good_roots}")
+            return good_roots
+        except Exception as e:
+            logging.error(f"Error in _admissible_E_roots: {str(e)}")
+            return []
+
+    @staticmethod
+    def _get_steady_state_solution(par: Dict[str, float], verbose: bool = False) -> Optional[Dict[str, float]]:
+        try:
+            vprod = par['vprod']; k_degrad = par['k_degrad']; k_OpT = par['k_OpT']
+            k_OT = par['k_OT']; k_C = par['k_C'] 
+            k_OTpE = par['k_OTpE']; k_OTE = par['k_OTE']; k_OCE = par['k_OTE'] 
+            k_cleav = par['k_cleav']; E_ini = par['E_ini']; O_ini = par['O_ini']
+
+            roots = PedersenAnalysis._admissible_E_roots(par, verbose)
+            sol = None
+            if not roots:
+                if verbose: logging.info("No admissible (non-negative) root found for OTE.")
+            else:
+                for i, E_star in enumerate(roots):
+                    if verbose: logging.info(f"\nSolution {i+1}: OTE = {E_star:.10g}")
+                    OCE_val = (k_cleav / k_OCE) * E_star if k_OCE != 0 else float('inf')
+                    OC_val = (k_cleav / k_C) * E_star if k_C is not None and k_C != 0 else float('inf')
+                    E_val = E_ini - (1 + k_cleav / k_OCE) * E_star if k_OCE !=0 else E_ini - E_star 
+                    
+                    denom_f_val = k_OTpE * (E_ini - (1 + k_cleav / k_OCE) * E_star) if k_OCE !=0 else 0
+                    OT_val = (k_degrad + k_OTE + k_cleav) * E_star / denom_f_val if denom_f_val != 0 else float('inf')
+                    T_val = (vprod - (k_degrad + k_cleav) * E_star - k_degrad * OT_val) / k_degrad if k_degrad != 0 else float('inf')
+                    O_val = ((k_OT + k_degrad) * OT_val + (k_degrad + k_cleav) * E_star) / (k_OpT * T_val) if (k_OpT * T_val) != 0 else float('inf')
+
+                    if verbose:
+                        logging.info(f"  O={O_val:.10g}, T={T_val:.10g}, E={E_val:.10g}, OT={OT_val:.10g}, OTE={E_star:.10g}, OCE={OCE_val:.10g}, OC={OC_val:.10g}")
+                    
+                    # Check for physical validity (non-negative and finite concentrations)
+                    if all(x_val >= 0 and not math.isinf(x_val) for x_val in [O_val, T_val, E_val, OT_val, E_star, OCE_val, OC_val]):
+                        if verbose: logging.info("  --> Physically possible solution found")
+                        if sol is not None: logging.warning("Multiple physically possible solutions found; last one is used.")
+                        sol = {'O': O_val, 'T': T_val, 'E': E_val, 'OT': OT_val, 'OTE': E_star, 'OCE': OCE_val, 'OC': OC_val}
+                    elif verbose: logging.info("  --> Non-physical solution (negative or infinite concentration detected)")
+            return sol
+        except KeyError as ke:
+            logging.error(f"Missing parameter for steady state solution: {ke}")
+            return None
+        except Exception as e:
+            logging.error(f"Error in _get_steady_state_solution: {str(e)}")
+            return None
+
+    @staticmethod
+    def _process_pedersen_target(target_data_tuple: Tuple[str, TargetSite, Dict[str, float], float]) -> Tuple[str, float]:
+        target_id, target, params, average_dG = target_data_tuple
+        try:
+            ddG_from_avg = target.dG - average_dG
+            k_OT_initial = params.get('k_OT')
+            if k_OT_initial is None: 
+                logging.error(f"Missing 'k_OT' in params for target {target_id}"); return target_id, 0.0
+            
+            k_diss = PedersenAnalysis._get_target_k_diss(k_OT_initial, ddG_from_avg, 37.0)
+            
+            par_target = params.copy()
+            par_target['k_OT'] = k_diss
+            # Recalculate k_C for the specific target if alpha is defined
+            if 'alpha' in par_target and par_target['alpha'] != 0:
+                 par_target['k_C'] = k_diss / par_target['alpha'] 
+            # If alpha is not defined or zero, k_C from initial params (or default) is used as is.
+
+            steady_state = PedersenAnalysis._get_steady_state_solution(par_target)
+            if steady_state is None: 
+                logging.warning(f"No steady state solution found for target {target_id}"); return target_id, 0.0
+            
+            steady_state_concentration = steady_state['T'] + steady_state['OT'] + steady_state['OTE']
+            logging.debug(f"Target {target_id}: ddG={ddG_from_avg:.2f}, k_diss={k_diss:.2e}, T_steady_state={steady_state_concentration:.2e}")
+            return target_id, steady_state_concentration
+        except KeyError as ke: logging.error(f"Missing key in params for target {target_id}: {str(ke)}"); return target_id, 0.0
+        except Exception as e: logging.error(f"Error processing target {target_id}: {str(e)}"); return target_id, 0.0
+
+    def run_analysis(self) -> Dict[str, TargetSite]:
+        logging.info(f"Performing Pedersen analysis")
+        if not self.candidate_targets: 
+            logging.warning("No candidate targets for Pedersen analysis"); return self.candidate_targets
+        if self.average_dG == 0.0 and any(site.dG != 0 for site in self.candidate_targets.values()):
+            logging.error("average_dG is zero despite non-zero dG values or all target dGs are zero.")
+            return self.candidate_targets # Should not proceed if dG values are inconsistent
+        elif self.average_dG == 0.0: 
+            logging.warning("No targets or all dG values are zero. average_dG = 0.")
+
+        par_no_oligo = self.params.copy()
+        par_no_oligo['O_ini'] = 1e-10 # Effectively no oligo for baseline calculation
+        
+        steady_state_no_oligo_calc = PedersenAnalysis._get_steady_state_solution(par_no_oligo)
+        if steady_state_no_oligo_calc is None or steady_state_no_oligo_calc.get('T') == 0:
+            logging.error("Could not calculate valid baseline steady state target concentration (T). Aborting.")
+            return self.candidate_targets
+        steady_state_no_oligo_T = steady_state_no_oligo_calc['T']
+
+        logging.info(f"Average dG: {self.average_dG:.2f}. Baseline steady state T (no oligo): {steady_state_no_oligo_T:.2e}")
+        
+        tasks = [(tid, ts, self.params, self.average_dG) for tid, ts in self.candidate_targets.items()]
+        logging.info(f"Starting Pedersen analysis for {len(tasks)} targets using {self.num_processes} processes.")
+        
+        updated_targets = self.candidate_targets.copy()
+        with mp.Pool(processes=self.num_processes) as pool:
+            results = pool.imap_unordered(PedersenAnalysis._process_pedersen_target, tasks)
+            for target_id, steady_state_value in results:
+                if target_id in updated_targets:
+                    if steady_state_no_oligo_T != 0: # Avoid division by zero
+                        updated_targets[target_id].pedersen_steady_state = steady_state_value / steady_state_no_oligo_T
+                    else:
+                        updated_targets[target_id].pedersen_steady_state = float('inf') # Or some other indicator
+                        logging.warning(f"Baseline T concentration is zero for target {target_id}, cannot normalize.") 
+                else:
+                    logging.warning(f"Received result for unknown target_id: {target_id}")
+        logging.info("Completed Pedersen analysis")
+        return updated_targets

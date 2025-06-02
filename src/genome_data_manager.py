@@ -6,7 +6,7 @@ import gzip # Import gzip
 # Assuming Gene and Transcript are part of genome_utils or a similar accessible module
 # Adjust the import based on your actual structure for Gene and Transcript classes
 try:
-    from genome_utils import Genome, Gene
+    from src.utils.genome_utils import Genome, Gene
 except ImportError:
     logging.warning("genome_utils.Gene or not found, using placeholder. Functionality might be limited.")
     # Placeholder if Gene class is not directly importable for type hinting

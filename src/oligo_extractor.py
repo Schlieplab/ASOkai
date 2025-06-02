@@ -1,6 +1,6 @@
 from typing import List, Set, Tuple, Dict, Optional, Union
 from Bio.SeqUtils import gc_fraction
-from genome_utils import TargetSite, Site
+from src.utils.genome_utils import TargetSite, Site
 from Bio.Seq import Seq
 from src.utils.rna_cofold import RNACofold
 from src.utils.sequence_analysis import (
@@ -12,7 +12,7 @@ import polars as pl
 import os
 from typing import List, Optional
 import multiprocessing as mp
-from genome_utils import Genome
+from src.utils.genome_utils import Genome
 
 class OligoExtractor:
     """

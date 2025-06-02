@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 import argparse
 import sys
-from src.utils.file_operations import (
-    create_job_config_summary,
-    )
+
 from src.utils.sequence_analysis import (
     PedersenAnalysis,
     SecondarySiteFinder,
     )
-from src.genome_data_manager import GenomeDataManager
+from src.utils.file_operations import GenomeDataManager
 from src.kmer_counter import KmerCounter
 import logging
 from src.oligo_extractor import OligoExtractor
@@ -20,6 +18,28 @@ import time
 from typing import Optional, Dict, Tuple, Any, List
 
 
+
+def create_job_config_summary(job_dir: str, config: dict) -> None:
+    """
+    Create a summary file containing all configuration parameters used for the job.
+    
+    Parameters:
+        job_dir (str): Path to the job directory
+        config (dict): Dictionary containing all configuration parameters
+    """
+    config_file = os.path.join(job_dir, 'job_config.txt')
+    
+    with open(config_file, 'w') as f:
+        f.write("Job Configuration Summary\n")
+        f.write("=======================\n\n")
+        f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        for key, value in config.items():
+            f.write(f"{key}: {value}\n")
+            
+    logging.info(f"Job configuration summary written to {config_file}")
+    
+    
 def setup_logging() -> None:
     logging.basicConfig(
         force=True,

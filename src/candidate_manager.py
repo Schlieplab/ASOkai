@@ -122,13 +122,12 @@ class CandidateTargetsManager:
             kmers_set = self._kmers(transcript.sequence)
 
             for kmer_seq, pos_in_transcript in kmers_set:
-                # position_in_transcript is 1-based, get_chromosomal_position expects 0-based start
-                chrom_pos_str = transcript.get_chromosomal_position(pos_in_transcript - 1, self.k)
+                chrom_pos_str = transcript.get_chromosomal_window(pos_in_transcript, self.k)
                 if chrom_pos_str is None:
                     logging.debug(f"Could not map k-mer {kmer_seq} in transcript {transcript.transcript_id} to genomic coordinates.")
                     continue
                 
-                exon = transcript.get_exon_by_position(pos_in_transcript - 1) # Expects 0-based
+                exon = transcript.get_exon_by_position(pos_in_transcript)
                 site_key = (kmer_seq, chrom_pos_str)
 
                 if site_key not in unique_raw_sites:
@@ -253,7 +252,7 @@ class CandidateTargetsManager:
         """Filters repeated sites for all candidates based on a ddG threshold."""
         logging.info(f"Filtering repeated sites for all candidates with ddG threshold <= {ddg_threshold}.")
         for candidate in self.candidates.values():
-            candidate.filter_repeated_sites(ddg_threshold)
+            candidate.filter_repeated_sites_by_ddg(ddg_threshold)
 
     def filter_candidates(self, filter_function: Callable[[CandidateTarget], bool]):
         """

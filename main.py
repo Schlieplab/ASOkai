@@ -21,11 +21,11 @@ from src.candidate_manager import CandidateTargetsManager
 
 def create_job_config_summary(job_dir: str, config: dict) -> None:
     """
-    Create a summary file containing all configuration parameters used for the job.
+    Create a summary file containing all configuration Parameters: used for the job.
     
     Parameters:
         job_dir (str): Path to the job directory
-        config (dict): Dictionary containing all configuration parameters
+        config (dict): Dictionary containing all configuration Parameters:
     """
     config_file = os.path.join(job_dir, 'job_config.txt')
     
@@ -38,7 +38,45 @@ def create_job_config_summary(job_dir: str, config: dict) -> None:
             f.write(f"{key}: {value}\n")
             
     logging.info(f"Job configuration summary written to {config_file}")
-    
+
+def convert_tsl_list(tsl_str: str) -> Optional[List[Optional[int]]]:
+        """
+        Convert a string of transcript support levels into a list of integers or None values.
+        
+        Parameters:
+            tsl_str (str): Comma-separated string of transcript support levels (e.g., "tsl1,tsl2,tslNA")
+            
+        Returns:
+            Optional[List[Optional[int]]]: List of TSL values (1-5 or None for NA), or None if all TSLs are included
+        """
+        if tsl_str == "all" or tsl_str == "":
+            return None
+        
+        tsl_tokens = [token.strip() for token in tsl_str.split(',') if token.strip()]
+        converted_tsls = []
+
+        for token in tsl_tokens:
+            if token.lower().startswith("tsl"):
+                value_part = token[3:]
+                if value_part.lower() == "na":
+                    converted_tsls.append(None)
+                else:
+                    try:
+                        converted_tsls.append(int(value_part))
+                    except ValueError:
+                        logging.warning("Invalid transcript support level '%s'; using None.", token)
+                        converted_tsls.append(None)
+            else:
+                try:
+                    converted_tsls.append(int(token))
+                except ValueError:
+                    logging.warning("Invalid transcript support level '%s'; using None.", token)
+                    converted_tsls.append(None)
+
+        all_tsls = [1, 2, 3, 4, 5, None]
+        if converted_tsls == all_tsls:
+            return None
+        return converted_tsls 
     
 def setup_logging() -> None:
     logging.basicConfig(
@@ -142,17 +180,20 @@ def main() -> None:
         e_release=int(config["EnsembleRelease"]),
         genome_assembly=int(config["GenomeAssembly"]),
         genome_dir=genome_dir,
-        tsl_config_str=config["transcriptSupportLevels"]
+        data_dir=data_dir,
+        tsl_list_to_keep=convert_tsl_list(config["transcriptSupportLevels"]),
+        protein_coding_only=config.getboolean("ProteinCodingOnly", False),
+        verbose=config.getboolean("Verbose", False)
     )
 
-    candidate_targets_manager = CandidateTargetsManager(
-        target_gene=genome_data_manager.get_target_gene_object(),
-        k=int(config["OligoLen"]),
-        gc_bounds=tuple(map(float, config['GCbound'].split(','))),
-        rna_cofold_temperature=float(config["RNACofoldTemperature"]),
-        rna_cofold_params_file=config["RNACofoldParamFile"],
-        multiplicity_layout=list(map(int, config["MultiplicityLayout"].split(',')))
-    )
+    # candidate_targets_manager = CandidateTargetsManager(
+    #     target_gene=genome_data_manager.get_target_gene_object(),
+    #     k=int(config["OligoLen"]),
+    #     gc_bounds=tuple(map(float, config['GCbound'].split(','))),
+    #     rna_cofold_temperature=float(config["RNACofoldTemperature"]),
+    #     rna_cofold_params_file=config["RNACofoldParamFile"],
+    #     multiplicity_layout=list(map(int, config["MultiplicityLayout"].split(',')))
+    # )
 
 
     logging.info("-----------------------------------")

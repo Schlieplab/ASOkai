@@ -74,7 +74,11 @@ class ProgressTracker:
         rate = self.processed_items / elapsed if elapsed > 0 else 0
         time_remaining = items_remaining / rate if rate > 0 else 0
         
-        if self.processed_items % self.update_interval == 0:
+        # Log on interval or on the very last item
+        is_update_time = (self.processed_items % self.update_interval == 0)
+        is_finished = (self.processed_items == self.total_items)
+
+        if (is_update_time or is_finished) and self.total_items > 0:
             logging.info(
                 f"{self.description}: {progress:.1f}% ({self.processed_items}/{self.total_items}) | "
                 f"{rate:.1f} items/s | ETA: {format_duration(time_remaining)}"

@@ -153,14 +153,14 @@ class KMCTools:
             raise FileNotFoundError(f"KMC_Tools executable not found at: {kmc_tools_path}")
         self.kmc_tools_path = kmc_tools_path
         self.runner = CommandRunner()
-
+        
     def simple_operation(self,
                          left_db: KMCDatabase,
                          right_db: KMCDatabase,
                          operation: str,
                          output_db_prefix: str,
                          work_dir: Optional[str] = None,
-                         additional_args: Optional[List[str]] = None) -> KMCDatabase:
+                         additional_args: Optional[List[str]] = None,) -> KMCDatabase:
         """
         Performs a simple operation (like intersect, union) between two KMC databases.
         Args:
@@ -343,7 +343,7 @@ class KmerCounter:
 
         os.makedirs(self.temp_dir_base, exist_ok=True)
 
-        self.kmc = KMC(self.kmc_path, self.kmc_db_threads, self.kmc_db_memory_gb, self.verbose)
+        self.kmc = KMC(self.kmc_path, self.kmc_db_threads, self.kmc_db_memory_gb, False)
         self.kmc_tools = KMCTools(self.kmc_tools_path)
         self.runner = CommandRunner()
         self.db_querier = KmerDbQuerier(self.kmc, self.kmc_tools, self.k)
@@ -549,8 +549,8 @@ class KmerCounter:
         Processes a single gene: builds KMC DB, queries k-mers, and returns counts per ASO for this gene.
         """
         gene_temp_dir = tempfile.mkdtemp(dir=self.temp_dir_base, prefix=f"kmercounter_gene_{gene_id.replace(':','_')}_")
-        if self.verbose:
-            logging.info(f"[Gene: {gene_id}] Processing in temp dir: {gene_temp_dir}")
+        
+        logging.debug(f"[Gene: {gene_id}] Processing in temp dir: {gene_temp_dir}")
 
         gene_kmc_db = None
         try:
@@ -600,12 +600,7 @@ class KmerCounter:
         Calculates per-gene off-target counts, producing an ASO x Gene matrix.
         Returns:
             A polars.DataFrame with ASOs as rows, Genes as columns, and k-mer counts as values.
-            Returns None if polars is not available.
         """
-        if pl is None:
-            logging.error("Polars library is not installed. Cannot create per-gene counts matrix.")
-            return None
-        
         if not os.path.exists(pre_mrna_fasta_path):
             raise FileNotFoundError(f"Pre-mRNA FASTA file not found: {pre_mrna_fasta_path}")
 
@@ -658,12 +653,11 @@ class KmerCounter:
 
             for future in concurrent.futures.as_completed(futures):
                 try:
+                    progress_tracker.update() 
                     gene_id_processed, aso_counts_for_gene = future.result()
                     results_per_gene[gene_id_processed] = aso_counts_for_gene
                 except Exception as e:
                     logging.error(f"Error processing a gene future: {e}")
-                finally:
-                    progress_tracker.update(1) 
         
         if self.verbose:
             logging.info(f"Finished parallel gene processing. Successfully obtained results for {len(results_per_gene)} genes.")

@@ -10,12 +10,13 @@ from src.data_manager import GenomeDataManager
 import logging
 import configparser
 import os
+import polars as pl
 import time
 from typing import Optional, Dict, Tuple, Any, List
 from src.candidate_manager import CandidateTargetsManager
 from src.kmer_counter import KmerCounter
 import multiprocessing as mp
-
+from src.results_generator import ResultsGenerator
 
 def create_job_config_summary(job_dir: str, config: dict) -> None:
     """
@@ -203,9 +204,10 @@ def main() -> None:
         kmc_path=config.get("KMCPath", "kmc"),
         kmc_tools_path=config.get("KMCToolsPath", "kmc_tools"),
         kmc_db_threads=config.getint("NumProcesses", mp.cpu_count()),
-        kmc_db_memory_gb=config.getint("MaxMemory", 128),
+        gene_processing_workers=config.getint("NumProcesses", mp.cpu_count())//3,
+        kmc_db_memory_gb=config.getint("MaxMemory", 64),
         temp_dir_base=os.path.join(data_dir, 'temp'),
-        verbose=config.getboolean("Verbose", False)
+        verbose=False
     )
     
     candidates_present_in_cdna = kmer_counter.find_present_targets(
@@ -217,10 +219,10 @@ def main() -> None:
     
     logging.info("-----------------------------------")
     
-    candidate_targets_manager.find_repeated_sites(force_core_alignment_dG=True, 
-                                                  max_ddg_threshold=float(config.get("RepeatedMaxddG", 5.0)))
+    # candidate_targets_manager.find_repeated_sites(force_core_alignment_dG=True, 
+    #                                               max_ddg_threshold=float(config.get("RepeatedMaxddG", 5.0)))
     
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
     
     secondary_site_finder = SecondarySiteFinder(
         max_ddg=float(config.get("OffTargetMaxddG", 5.0)),
@@ -233,26 +235,39 @@ def main() -> None:
         target_sites=candidate_targets_manager.get_all_candidate_targets(),
     )
     
-    secondary_sites_counts = kmer_counter.calculate_aggregate_counts(
+
+    gene_matrix = kmer_counter.calculate_per_gene_counts_matrix(
         pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
-        potential_kmers_by_aso=potential_secondary_sites
+        potential_kmers_by_aso=potential_secondary_sites,
+        total_genes_for_matrix=len(genome_data_manager.get_main_genome_object().genes)
     )
-    
+    gene_matrix.write_csv(os.path.join(data_dir, 'results', f"{job_name or genome_data_manager.get_target_gene_object().gene_id}_gene_matrix.csv")) 
+    # secondary_sites_counts = kmer_counter.calculate_aggregate_counts(
+    #     pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
+    #     potential_kmers_by_aso=potential_secondary_sites
+    # )
     logging.info("-----------------------------------")
 
-    pedersen_analyzer = PedersenAnalysis(
-        candidate_targets=candidate_targets_manager.get_all_candidate_targets(),
-        num_processes=config.getint("NumProcesses", mp.cpu_count()),
-        params_file_path=config.get("PedersenParamFile", None),
-        verbose=config.getboolean("Verbose", False)
-    )
+
+    # pedersen_analyzer = PedersenAnalysis(
+    #     candidate_targets=candidate_targets_manager.get_all_candidate_targets(),
+    #     num_processes=config.getint("NumProcesses", mp.cpu_count()),
+    #     params_file_path=config.get("PedersenParamFile", None),
+    #     verbose=config.getboolean("Verbose", False)
+    # )
     
-    candidate_targets_manager.update_pedersen_steady_state(pedersen_results=pedersen_analyzer.run_analysis())
+    # candidate_targets_manager.update_pedersen_steady_state(pedersen_results=pedersen_analyzer.run_analysis())
     
-    logging.info("-----------------------------------")
+    # logging.info("-----------------------------------")
     
+    # results_generator = ResultsGenerator(
+    #     candidate_manager=candidate_targets_manager,
+    #     target_gene_species=config["Species"],
+    #     base_output_dir=data_dir
+    # )
     
-    
+    # results_generator.generate_csv_report(off_target_multiplicities=secondary_sites_counts)
+            
 #     try:
 #         pedersen_params_file = config.get('PedersenParamFile', None)
         

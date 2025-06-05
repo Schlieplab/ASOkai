@@ -241,7 +241,7 @@ class GenomeDataManager:
         """Path to cDNA FASTA excluding target gene's transcripts."""
         return self.processed_cdna_excluding_target_path
 
-    def get_genes_pre_mrna_fasta_excluding_target_path(self) -> Optional[str]:
+    def get_genes_pre_mrna_fasta_excludint_target_path(self) -> Optional[str]:
         """Path to pre-mRNA FASTA for all genes excluding the target."""
         return self.genes_pre_mrna_fasta_excludint_target_path
     

@@ -4,10 +4,11 @@ from typing import Dict, Optional, Tuple
 
 class RNACofold:
     """
-    Handles RNA MFE (Minimum Free Energy) and binding energy calculations
-    with caching for single sequence MFEs to improve efficiency.
+    Handles RNA MFE (Minimum Free Energy) and binding energy calculations.
     """
-    def __init__(self, temperature: float = 37.0, params_file_path: Optional[str] = None):
+    def __init__(self, temperature: float = 37.0, 
+                 params_file_path: Optional[str] = None,
+                 verbose: bool = False):
         """
         Initializes the RNACofold calculator.
 
@@ -20,22 +21,20 @@ class RNACofold:
         self.md.temperature = temperature
         if params_file_path:
             try:
-                RNA.params_load(params_file_path) # This loads params globally for ViennaRNA
-                logging.info(f"Loaded ViennaRNA parameters from: {params_file_path}")
+                RNA.params_load(params_file_path) 
+                if verbose:
+                    logging.info(f"Loaded ViennaRNA parameters from: {params_file_path}")
             except RuntimeError as e:
                 logging.error(f"Failed to load ViennaRNA parameters from {params_file_path}: {e}. Using defaults.")
         
-        # Cache for two most recent distinct sequences and their MFEs
+        
         self.cache_slot1: Optional[Tuple[str, float]] = None
         self.cache_slot2: Optional[Tuple[str, float]] = None
         logging.debug(f"RNACofold initialized with temperature {temperature}°C. Caching MFEs for two recent sequences.")
 
     def get_mfe(self, sequence: str) -> float:
         """
-        Calculates or retrieves from cache the MFE of a single RNA sequence.
-        Caches MFEs for the two most recently used unique sequences.
-        If a sequence matches either slot, its MFE is returned.
-        A new MFE calculation replaces slot1, and slot1's old content moves to slot2.
+        Calculates or retrieves from cache the MFE of a single RNA sequence.        
 
         Args:
             sequence (str): The RNA sequence.
@@ -44,21 +43,20 @@ class RNACofold:
             float: The MFE of the sequence in kcal/mol.
         """
         if not sequence:
+            logging.warning("Sequence is empty for MFE calculation. Returning 0.0.")
             return 0.0
         
-        # Check cache slot 1
+        
         if self.cache_slot1 and self.cache_slot1[0] == sequence:
             return self.cache_slot1[1]
         
-        # Check cache slot 2
+        
         if self.cache_slot2 and self.cache_slot2[0] == sequence:
             return self.cache_slot2[1]
             
-        # If not cached, calculate MFE
         fc = RNA.fold_compound(sequence, self.md)
         (_ss, mfe) = fc.mfe()
         
-        # Update cache: new item (sequence, mfe) goes to slot1, old slot1 content moves to slot2.
         self.cache_slot2 = self.cache_slot1 
         self.cache_slot1 = (sequence, mfe)
         
@@ -107,6 +105,5 @@ class RNACofold:
         Returns:
             float: The homodimer binding free energy in kcal/mol.
         """
-        # For homodimer, the constraint would typically be for seq&seq
-        # Example: if sequence is "AAAA", constraint might be "((..))&((..))"
+        
         return self.calculate_binding_dg(sequence, sequence, constraint=constraint) 

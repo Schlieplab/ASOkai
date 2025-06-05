@@ -139,9 +139,6 @@ def setup_environment(config, job_name: Optional[str] = None):
         logging.info("Exiting.")
         sys.exit(1)
 
-    vienna_params_path = config["CofoldParamFile"]
-    if vienna_params_path:
-        RNA.params_load(vienna_params_path)
 
     return reference_name, genome_data_dir, data_dir
 
@@ -181,19 +178,24 @@ def main() -> None:
         genome_assembly=int(config["GenomeAssembly"]),
         genome_dir=genome_dir,
         data_dir=data_dir,
-        tsl_list_to_keep=convert_tsl_list(config["transcriptSupportLevels"]),
+        tsl_list_to_keep=convert_tsl_list(config.get("transcriptSupportLevels", "")),
         protein_coding_only=config.getboolean("ProteinCodingOnly", False),
         verbose=config.getboolean("Verbose", False)
     )
+    
+    logging.info("-----------------------------------")
 
-    # candidate_targets_manager = CandidateTargetsManager(
-    #     target_gene=genome_data_manager.get_target_gene_object(),
-    #     k=int(config["OligoLen"]),
-    #     gc_bounds=tuple(map(float, config['GCbound'].split(','))),
-    #     rna_cofold_temperature=float(config["RNACofoldTemperature"]),
-    #     rna_cofold_params_file=config["RNACofoldParamFile"],
-    #     multiplicity_layout=list(map(int, config["MultiplicityLayout"].split(',')))
-    # )
+    candidate_targets_manager = CandidateTargetsManager(
+        target_gene=genome_data_manager.get_target_gene_object(),
+        k=int(config["OligoLen"]),
+        gc_bounds=tuple(map(float, config.get("GCbound", ("0.0,1.0")).split(','))),
+        rna_cofold_temperature=float(config.get("RNACofoldTemperature", 37.0)),
+        rna_cofold_params_file=config.get("RNACofoldParamFile", None),
+        multiplicity_layout=list(map(int, config.get("MultiplicityLayout", "").split(','))),
+        verbose=config.getboolean("Verbose", False)
+    )
+
+    candidate_targets_manager.extract_candidate_targets()
 
 
     logging.info("-----------------------------------")

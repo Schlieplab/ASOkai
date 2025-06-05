@@ -7,8 +7,6 @@ from Bio.Seq import Seq
 from src.utils.rna_cofold import RNACofold
 from src.utils.genome_utils import Gene, Transcript, Exon, CandidateTarget, RepeatedSite
 
-# Configure basic logging if not already configured globally
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class CandidateTargetsManager:
     """
@@ -22,7 +20,8 @@ class CandidateTargetsManager:
                  gc_bounds: Tuple[float, float],
                  rna_cofold_temperature: float,
                  rna_cofold_params_file: Optional[str],
-                 multiplicity_layout: List[int]):
+                 multiplicity_layout: List[int],
+                 verbose: bool = False):
         """
         Initializes the CandidateManager.
 
@@ -40,19 +39,23 @@ class CandidateTargetsManager:
         self.k = k
         self.gc_bounds = gc_bounds
         self.multiplicity_layout = multiplicity_layout
+        self.verbose = verbose
         
-        self.rna_cofold = RNACofold(temperature=rna_cofold_temperature, params_file_path=rna_cofold_params_file)
+        self.rna_cofold = RNACofold(temperature=rna_cofold_temperature, 
+                                   params_file_path=rna_cofold_params_file, 
+                                   verbose=verbose)
         
         self.candidates: Dict[str, CandidateTarget] = {}
         self._next_candidate_s_index: int = 1
         
         if not (len(self.multiplicity_layout) == 3 and sum(self.multiplicity_layout) == self.k):
-            logging.warning(
-                f"Multiplicity layout {self.multiplicity_layout} sum ({sum(self.multiplicity_layout)}) "
-                f"does not match k-mer length ({self.k}). This might lead to issues in constraint "
-                f"generation or repeated site analysis."
-            )
-        logging.info(f"CandidateManager initialized for gene {self.target_gene.gene_id} with k={self.k}.")
+            logging.error(f"Invalid multiplicity layout: {self.multiplicity_layout} for k={self.k}.")
+            raise ValueError("Invalid multiplicity layout. Expected [left_flank_len, core_len, right_flank_len] "
+                             "where sum(multiplicity_layout) == k.")
+
+        if verbose:
+            logging.info(f"CandidateManager initialized for gene {self.target_gene.gene_id} with k={self.k}.")
+
 
     def _generate_candidate_id(self) -> str:
         """Generates a unique sequential ID for candidates (e.g., S000001)."""
@@ -74,9 +77,9 @@ class CandidateTargetsManager:
         kmers_list = []
         for i in range(len(sequence) - self.k + 1):
             kmer = sequence[i:i + self.k]
-            # Ensure gc_fraction input is uppercase for BioPython > 1.79 consistency
-            if self.gc_bounds[0] <= gc_fraction(kmer.upper())*100 <= self.gc_bounds[1]:
+            if self.gc_bounds[0] <= gc_fraction(kmer.upper()) <= self.gc_bounds[1]:
                 kmers_list.append((kmer, i + 1))
+        
         return set(kmers_list)
 
     def _get_constraint_string(self, force_core_alignment: bool) -> Optional[str]:
@@ -93,21 +96,20 @@ class CandidateTargetsManager:
             logging.warning("Cannot force core alignment: multiplicity_layout is not of length 3.")
         return None
 
-    def extract_candidate_targets(self, force_core_alignment_dG: bool = False):
+    def extract_candidate_targets(self, force_core_alignment: bool = False):
         """
         Extracts candidate targets from the target gene's transcripts.
         Populates self.candidates.
         Args:
-            force_core_alignment_dG: If True, use constraints for dG_binding calculation.
+            force_core_alignment: If True, use constraints for dG_binding calculation.
         """
         self.candidates.clear()
         self._next_candidate_s_index = 1
-        logging.info(f"Starting candidate extraction for gene {self.target_gene.gene_id}, k={self.k}.")
+        if self.verbose:
+            logging.info(f"Starting candidate extraction for gene {self.target_gene.gene_id}, k={self.k}, GC bounds: {self.gc_bounds}")
 
-        constraint_string = self._get_constraint_string(force_core_alignment_dG)
+        constraint_string = self._get_constraint_string(force_core_alignment)
         
-        # Key: (kmer_sequence, chromosomal_position_str)
-        # Value: Temp CandidateTarget object (to collect transcripts/exons)
         unique_raw_sites: Dict[Tuple[str, str], CandidateTarget] = {}
 
         if not self.target_gene.transcripts:
@@ -116,11 +118,14 @@ class CandidateTargetsManager:
 
         for transcript in self.target_gene.transcripts:
             if not transcript.sequence:
-                logging.debug(f"Transcript {transcript.transcript_id} has no sequence. Skipping.")
+                if self.verbose:
+                    logging.warning(f"Transcript {transcript.transcript_id} has no sequence. Skipping.")
+                else:
+                    logging.debug(f"Transcript {transcript.transcript_id} has no sequence. Skipping.")
                 continue
 
             kmers_set = self._kmers(transcript.sequence)
-
+            
             for kmer_seq, pos_in_transcript in kmers_set:
                 chrom_pos_str = transcript.get_chromosomal_window(pos_in_transcript, self.k)
                 if chrom_pos_str is None:
@@ -131,10 +136,10 @@ class CandidateTargetsManager:
                 site_key = (kmer_seq, chrom_pos_str)
 
                 if site_key not in unique_raw_sites:
-                    homodimer_dG = self.rna_cofold.calculate_homodimer_binding_dg(kmer_seq)
                     oligo_seq_rc = str(Seq(kmer_seq).reverse_complement())
                     binding_dg = self.rna_cofold.calculate_binding_dg(kmer_seq, oligo_seq_rc, constraint_string)
-                    
+                    oligo_homodimer_dG = self.rna_cofold.calculate_homodimer_binding_dg(oligo_seq_rc)
+
                     raw_candidate = CandidateTarget(
                         sequence=kmer_seq,
                         chromosomal_position=chrom_pos_str,
@@ -142,12 +147,12 @@ class CandidateTargetsManager:
                         transcripts=[transcript],
                         exons=[exon] if exon else [],
                         dG_binding=binding_dg,
-                        oligo_homodimer_dG=homodimer_dG
+                        oligo_homodimer_dG=oligo_homodimer_dG
                     )
                     unique_raw_sites[site_key] = raw_candidate
                 else:
                     unique_raw_sites[site_key].transcripts.append(transcript)
-                    if exon and exon not in unique_raw_sites[site_key].exons: # Avoid duplicate exons
+                    if exon and exon not in unique_raw_sites[site_key].exons: 
                         unique_raw_sites[site_key].exons.append(exon)
         
         for raw_site_obj in unique_raw_sites.values():
@@ -156,6 +161,68 @@ class CandidateTargetsManager:
             self.candidates[candidate_id] = raw_site_obj
             
         logging.info(f"Extracted {len(self.candidates)} unique candidate targets for gene {self.target_gene.gene_id}.")
+
+    def filter_candidates(self, filter_function: Callable[[CandidateTarget], bool]):
+        """
+        Filters self.candidates in-place based on a custom filter function.
+        The filter_function should take a CandidateTarget object and return True to keep it.
+        """
+        initial_count = len(self.candidates)
+        self.candidates = {
+            cid: c for cid, c in self.candidates.items() if filter_function(c)
+        }
+        logging.info(f"Filtered candidates. Kept {len(self.candidates)} out of {initial_count}.")
+
+    def filter_candidates_by_id_list(self, 
+                                     ids_to_keep: Optional[List[str]] = None, 
+                                     ids_to_remove: Optional[List[str]] = None):
+        """Filters candidates based on lists of IDs to keep or remove."""
+        ids_to_keep_set = set(ids_to_keep) if ids_to_keep else set()
+        ids_to_remove_set = set(ids_to_remove) if ids_to_remove else set()
+
+        if not ids_to_keep_set and not ids_to_remove_set:
+            logging.info("No ID lists provided for filtering, no changes made to candidates.")
+            return
+
+        def id_filter_func(candidate: CandidateTarget) -> bool:
+            
+            keep = True
+            
+            if ids_to_keep_set:
+                keep = candidate.id in ids_to_keep_set
+
+            if keep and ids_to_remove_set:
+                keep = candidate.id not in ids_to_remove_set
+            return keep
+        
+        self.filter_candidates(id_filter_func)
+
+    def filter_candidates_by_sequence_list(self, 
+                                           sequences_to_keep: Optional[List[str]] = None, 
+                                           sequences_to_remove: Optional[List[str]] = None):
+        """Filters candidates based on lists of their sequences to keep or remove."""
+        sequences_to_keep_set = set(sequences_to_keep) if sequences_to_keep else set()
+        sequences_to_remove_set = set(sequences_to_remove) if sequences_to_remove else set()
+
+        if not sequences_to_keep_set and not sequences_to_remove_set:
+            if self.verbose:
+                logging.info("No sequence lists provided for filtering, no changes made to candidates.")
+            return
+
+        def sequence_filter_func(candidate: CandidateTarget) -> bool:
+            if candidate.sequence is None:
+                return False
+                
+            keep = True
+            
+            if sequences_to_keep_set:
+                keep = candidate.sequence in sequences_to_keep_set
+            
+            if keep and sequences_to_remove_set:
+                keep = candidate.sequence not in sequences_to_remove_set
+            return keep
+
+        self.filter_candidates(sequence_filter_func)
 
     def find_repeated_sites(self, 
                             pre_mrna_sequence: str, 
@@ -188,7 +255,7 @@ class CandidateTargetsManager:
         expected_full_site_len = sum(self.multiplicity_layout)
 
         for cand_id, candidate in self.candidates.items():
-            candidate.repeated_sites.clear() # Clear previous findings
+            candidate.repeated_sites.clear() 
             
             if len(candidate.sequence) != expected_full_site_len:
                 logging.warning(f"Candidate {cand_id} sequence length {len(candidate.sequence)} "
@@ -204,19 +271,17 @@ class CandidateTargetsManager:
                 if pos_core_in_premrna == -1:
                     break
                 
-                start_search_pos = pos_core_in_premrna + 1 # Next search starts after this match's core
+                start_search_pos = pos_core_in_premrna + 1 
 
-                # Calculate start of the full potential repeated site in pre-mRNA coordinates (0-based)
                 potential_site_start_in_premrna = pos_core_in_premrna - core_offset
                 
                 if potential_site_start_in_premrna < 0 or \
                    (potential_site_start_in_premrna + expected_full_site_len) > len(pre_mrna_sequence):
-                    continue # Site out of bounds
+                    continue 
 
                 repeated_site_seq = pre_mrna_sequence[potential_site_start_in_premrna : 
                                                       potential_site_start_in_premrna + expected_full_site_len]
 
-                # Map to genomic coordinates
                 g_start, g_end = -1, -1
                 if self.target_gene.strand == '+':
                     g_start = self.target_gene.start + potential_site_start_in_premrna
@@ -248,78 +313,13 @@ class CandidateTargetsManager:
                     candidate.add_repeated_site(rep_site)
         logging.info("Finished finding repeated sites.")
 
-    def filter_all_candidate_repeated_sites(self, ddg_threshold: float):
+    def filter_candidate_repeated_sites_by_ddg(self, ddg_threshold: float):
         """Filters repeated sites for all candidates based on a ddG threshold."""
         logging.info(f"Filtering repeated sites for all candidates with ddG threshold <= {ddg_threshold}.")
         for candidate in self.candidates.values():
             candidate.filter_repeated_sites_by_ddg(ddg_threshold)
-
-    def filter_candidates(self, filter_function: Callable[[CandidateTarget], bool]):
-        """
-        Filters self.candidates in-place based on a custom filter function.
-        The filter_function should take a CandidateTarget object and return True to keep it.
-        """
-        initial_count = len(self.candidates)
-        self.candidates = {
-            cid: c for cid, c in self.candidates.items() if filter_function(c)
-        }
-        logging.info(f"Filtered candidates. Kept {len(self.candidates)} out of {initial_count}.")
-
-    def filter_candidates_by_id_list(self, 
-                                     ids_to_keep: Optional[List[str]] = None, 
-                                     ids_to_remove: Optional[List[str]] = None):
-        """Filters candidates based on lists of IDs to keep or remove."""
-        ids_to_keep_set = set(ids_to_keep) if ids_to_keep else set()
-        ids_to_remove_set = set(ids_to_remove) if ids_to_remove else set()
-
-        if not ids_to_keep_set and not ids_to_remove_set:
-            logging.info("No ID lists provided for filtering, no changes made to candidates.")
-            return
-
-        def id_filter_func(candidate: CandidateTarget) -> bool:
-            # Start by assuming we keep the candidate
-            keep = True
-            # If ids_to_keep is specified, candidate must be in this set to be kept.
-            if ids_to_keep_set:
-                keep = candidate.id in ids_to_keep_set
             
-            # If candidate is currently marked to be kept AND ids_to_remove is specified,
-            # it must NOT be in ids_to_remove_set.
-            if keep and ids_to_remove_set:
-                keep = candidate.id not in ids_to_remove_set
-            return keep
-        
-        self.filter_candidates(id_filter_func)
-
-    def filter_candidates_by_sequence_list(self, 
-                                           sequences_to_keep: Optional[List[str]] = None, 
-                                           sequences_to_remove: Optional[List[str]] = None):
-        """Filters candidates based on lists of their sequences to keep or remove."""
-        sequences_to_keep_set = set(sequences_to_keep) if sequences_to_keep else set()
-        sequences_to_remove_set = set(sequences_to_remove) if sequences_to_remove else set()
-
-        if not sequences_to_keep_set and not sequences_to_remove_set:
-            logging.info("No sequence lists provided for filtering, no changes made to candidates.")
-            return
-
-        def sequence_filter_func(candidate: CandidateTarget) -> bool:
-            if candidate.sequence is None: # Should not happen for valid candidates
-                return False
-                
-            # Start by assuming we keep the candidate
-            keep = True
-            # If sequences_to_keep is specified, candidate's sequence must be in this set to be kept.
-            if sequences_to_keep_set:
-                keep = candidate.sequence in sequences_to_keep_set
             
-            # If candidate is currently marked to be kept AND sequences_to_remove is specified,
-            # its sequence must NOT be in sequences_to_remove_set.
-            if keep and sequences_to_remove_set:
-                keep = candidate.sequence not in sequences_to_remove_set
-            return keep
-
-        self.filter_candidates(sequence_filter_func)
-
     def get_candidate(self, candidate_id: str) -> Optional[CandidateTarget]:
         return self.candidates.get(candidate_id)
 

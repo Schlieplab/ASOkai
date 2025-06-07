@@ -204,7 +204,7 @@ def main() -> None:
         kmc_path=config.get("KMCPath", "kmc"),
         kmc_tools_path=config.get("KMCToolsPath", "kmc_tools"),
         kmc_db_threads=config.getint("NumProcesses", mp.cpu_count()),
-        gene_processing_workers=config.getint("NumProcesses", mp.cpu_count())//3,
+        gene_processing_workers=config.getint("NumProcesses", mp.cpu_count()),
         kmc_db_memory_gb=config.getint("MaxMemory", 64),
         temp_dir_base=os.path.join(data_dir, 'temp'),
         verbose=False
@@ -228,7 +228,8 @@ def main() -> None:
         max_ddg=float(config.get("OffTargetMaxddG", 5.0)),
         multiplicity_layout=list(map(int, config.get("MultiplicityLayout", "4,8,4").split(','))),
         ddg_tolerance=float(config.get("ddGTolerance", 0.5)),
-        num_processes=config.getint("NumProcesses", mp.cpu_count())
+        num_processes=config.getint("NumProcesses", mp.cpu_count()),
+        verbose=config.getboolean("Verbose", False)
     )
     
     potential_secondary_sites = secondary_site_finder.find_sites(

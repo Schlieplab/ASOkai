@@ -307,11 +307,10 @@ class SecondarySiteFinder:
                     elif output_fasta_path and target_id not in processed_dict:
                         logging.warning(f"Could not write FASTA for {target_id} as it's not in processed_dict.")
 
+            total_mutations = sum(len(muts) for muts in results.values() if muts is not None)
             if self.verbose:
                 logging.info(f"Found a total of {total_mutations} valid mutations based on dG_binding")
 
-            total_mutations = sum(len(muts) for muts in results.values() if muts is not None)
-            
             if output_fasta_path and self.verbose:
                 logging.info(f"Mutations written to {output_fasta_path}")
                 

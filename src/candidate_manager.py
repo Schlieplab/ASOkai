@@ -378,9 +378,9 @@ class CandidateTargetsManager:
         
         logging.info(f"Wrote {written_records} records to GTF file: {output_path}")
 
-    def generate_candidate_fasta(self, output_path: str):
-        """Generates a FASTA file for the current candidate target sequences."""
-        logging.info(f"Generating FASTA file for candidates at {output_path}")
+    def export_candidate_targets(self, output_path: str):
+        """Exports candidate targets to a FASTA file."""
+        logging.info(f"Exporting candidate targets to {output_path}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         written_records = 0

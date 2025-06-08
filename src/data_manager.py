@@ -5,7 +5,7 @@ from typing import Optional, List, Tuple, Dict, Any, Union
 from Bio import SeqIO
 import gget
 import urllib.request, urllib.parse
-from src.utils.genome_utils import Genome, Gene
+from .utils import GenomeUtils
 
 
 
@@ -163,7 +163,7 @@ class GenomeDataManager:
         main_reference_name = f'{reference_prefix}{self.genome_assembly}'
         self.genome_file_prefix = f'{self.species}.{main_reference_name}'
         
-        self.genome = Genome(
+        self.genome = GenomeUtils.Genome(
             reference_name=main_reference_name,
             e_release=str(self.e_release),
             gtf_path=self.raw_gtf_path,
@@ -177,11 +177,11 @@ class GenomeDataManager:
         self.genome.index()
         logging.info(f"Main genome ('{main_reference_name}') indexed. Found {len(self.genome.genes)} genes.")
 
-        self.genome_scaffolds: Optional[Genome] = None
+        self.genome_scaffolds: Optional[GenomeUtils.Genome] = None
         if self.raw_scaffold_gtf_path:
             # Assuming scaffold reference name might be different or need a suffix
             scaffold_reference_name = f'{main_reference_name}_scaffolds' 
-            self.genome_scaffolds = Genome(
+            self.genome_scaffolds = GenomeUtils.Genome(
                 reference_name=scaffold_reference_name,
                 gtf_path=self.raw_scaffold_gtf_path,
             )
@@ -189,7 +189,7 @@ class GenomeDataManager:
             if self.verbose:
                 logging.info(f"Scaffold genome ('{scaffold_reference_name}') indexed.")
 
-        self.target_gene: Gene = self.genome.gene_by_id(self.gene_id)
+        self.target_gene: GenomeUtils.Gene = self.genome.gene_by_id(self.gene_id)
         if not self.target_gene:
             # Try scaffolds if not in primary assembly, though typically genes are on primary
             if self.genome_scaffolds:
@@ -224,13 +224,13 @@ class GenomeDataManager:
 
 
     # --- Getter methods ---
-    def get_target_gene_object(self) -> Gene:
+    def get_target_gene_object(self) -> GenomeUtils.Gene:
         return self.target_gene
 
-    def get_main_genome_object(self) -> Genome:
+    def get_main_genome_object(self) -> GenomeUtils.Genome:
         return self.genome
 
-    def get_scaffold_genome_object(self) -> Optional[Genome]:
+    def get_scaffold_genome_object(self) -> Optional[GenomeUtils.Genome]:
         return self.genome_scaffolds
 
     def get_processed_cdna_path(self) -> str:

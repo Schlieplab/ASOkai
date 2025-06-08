@@ -9,10 +9,8 @@ import math
 import numpy as np
 import sympy as sp
 from typing import Dict, List, Tuple, Optional, Union, Set, Any, Callable
-from src.utils.time_utils import ProgressTracker, timed
+from .utils import ProgressTracker, timed, RNACofold, GenomeUtils
 import json
-from src.utils.rna_cofold import RNACofold
-from src.utils.genome_utils import CandidateTarget
 
 # Default Pedersen parameters if no file is provided
 DEFAULT_PEDERSEN_PARAMS = {
@@ -224,7 +222,7 @@ class SecondarySiteFinder:
     @timed
     def find_sites(
         self,
-        target_sites: Dict[str, CandidateTarget],
+        target_sites: Dict[str, GenomeUtils.CandidateTarget],
         output_fasta_path: Optional[str] = None
     ) -> Dict[str, List[Tuple[str, float]]]:
         """
@@ -335,7 +333,7 @@ class PedersenAnalysis:
     Internal calculations include solving quartic equations derived from the kinetic model.
     """
     def __init__(self, 
-                 candidate_targets: Dict[str, CandidateTarget],
+                 candidate_targets: Dict[str, GenomeUtils.CandidateTarget],
                  num_processes: Optional[int] = None,
                  params_file_path: Optional[str] = None,
                  verbose: bool = False):
@@ -483,7 +481,7 @@ class PedersenAnalysis:
             return None
 
     @staticmethod
-    def _process_pedersen_target(target_data_tuple: Tuple[str, CandidateTarget, Dict[str, float], float]) -> Tuple[str, float]:
+    def _process_pedersen_target(target_data_tuple: Tuple[str, GenomeUtils.CandidateTarget, Dict[str, float], float]) -> Tuple[str, float]:
         target_id, candidate, params, average_dG = target_data_tuple
         try:
             target_dG = candidate.dG_binding

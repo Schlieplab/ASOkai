@@ -8,7 +8,7 @@ from typing import Dict, List, Set, Tuple, Optional, Iterable, Any
 import concurrent.futures
 import threading
 
-from src.utils.time_utils import ProgressTracker
+from .utils import ProgressTracker
 import polars as pl
 import ahocorasick
 

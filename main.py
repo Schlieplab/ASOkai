@@ -2,21 +2,18 @@
 import argparse
 import sys
 
-from src.sequence_analysis import (
+from src import (
     PedersenAnalysis,
     SecondarySiteFinder,
     )
-from src.data_manager import GenomeDataManager
 import logging
 import configparser
 import os
 import polars as pl
 import time
 from typing import Optional, Dict, Tuple, Any, List
-from src.candidate_manager import CandidateTargetsManager
-from src.kmer_counter import KmerCounter
+from src import CandidateTargetsManager, KmerCounter, ResultsGenerator, GenomeDataManager
 import multiprocessing as mp
-from src.results_generator import ResultsGenerator
 
 def create_job_config_summary(job_dir: str, config: dict) -> None:
     """

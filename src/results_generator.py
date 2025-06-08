@@ -6,9 +6,9 @@ import polars as pl
 from Bio.Seq import Seq
 from Bio.SeqUtils import gc_fraction # For GC content if needed directly, though CandidateManager handles it mostly
 
-from src.candidate_manager import CandidateTargetsManager
-from src.utils.genome_utils import CandidateTarget # For type hinting
-from src.sequence_analysis import longest_at_run, longest_t_run
+from . import CandidateTargetsManager
+from .utils import GenomeUtils
+from .sequence_analysis import longest_at_run, longest_t_run
 
 class ResultsGenerator:
     """

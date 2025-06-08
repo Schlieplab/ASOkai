@@ -4,8 +4,7 @@ from typing import List, Set, Tuple, Dict, Optional, Callable
 from Bio.SeqUtils import gc_fraction
 from Bio.Seq import Seq
 
-from src.utils.rna_cofold import RNACofold
-from src.utils.genome_utils import Gene, Transcript, Exon, CandidateTarget, RepeatedSite
+from .utils import RNACofold, GenomeUtils
 
 
 class CandidateTargetsManager:
@@ -15,7 +14,7 @@ class CandidateTargetsManager:
     """
 
     def __init__(self,
-                 target_gene: Gene,
+                 target_gene: GenomeUtils.Gene,
                  k: int,
                  gc_bounds: Tuple[float, float],
                  rna_cofold_temperature: float,
@@ -45,7 +44,7 @@ class CandidateTargetsManager:
                                    params_file_path=rna_cofold_params_file, 
                                    verbose=verbose)
         
-        self.candidates: Dict[str, CandidateTarget] = {}
+        self.candidates: Dict[str, GenomeUtils.CandidateTarget] = {}
         self._next_candidate_s_index: int = 1
         
         if not (len(self.multiplicity_layout) == 3 and sum(self.multiplicity_layout) == self.k):
@@ -110,7 +109,7 @@ class CandidateTargetsManager:
 
         constraint_string = self._get_constraint_string(force_core_alignment)
         
-        unique_raw_sites: Dict[Tuple[str, str], CandidateTarget] = {}
+        unique_raw_sites: Dict[Tuple[str, str], GenomeUtils.CandidateTarget] = {}
 
         if not self.target_gene.transcripts:
             logging.warning(f"Gene {self.target_gene.gene_id} has no transcripts. No candidates will be extracted.")
@@ -140,7 +139,7 @@ class CandidateTargetsManager:
                     binding_dg = self.rna_cofold.calculate_binding_dg(kmer_seq, oligo_seq_rc, constraint_string)
                     oligo_homodimer_dG = self.rna_cofold.calculate_homodimer_binding_dg(oligo_seq_rc)
 
-                    raw_candidate = CandidateTarget(
+                    raw_candidate = GenomeUtils.CandidateTarget(
                         sequence=kmer_seq,
                         chromosomal_position=chrom_pos_str,
                         gene_id=self.target_gene.gene_id,
@@ -162,7 +161,7 @@ class CandidateTargetsManager:
             
         logging.info(f"Extracted {len(self.candidates)} unique candidate targets for gene {self.target_gene.gene_id}.")
 
-    def filter_candidates(self, filter_function: Callable[[CandidateTarget], bool]):
+    def filter_candidates(self, filter_function: Callable[[GenomeUtils.CandidateTarget], bool]):
         """
         Filters self.candidates in-place based on a custom filter function.
         The filter_function should take a CandidateTarget object and return True to keep it.
@@ -184,7 +183,7 @@ class CandidateTargetsManager:
             logging.info("No ID lists provided for filtering, no changes made to candidates.")
             return
 
-        def id_filter_func(candidate: CandidateTarget) -> bool:
+        def id_filter_func(candidate: GenomeUtils.CandidateTarget) -> bool:
             
             keep = True
             
@@ -209,7 +208,7 @@ class CandidateTargetsManager:
                 logging.info("No sequence lists provided for filtering, no changes made to candidates.")
             return
 
-        def sequence_filter_func(candidate: CandidateTarget) -> bool:
+        def sequence_filter_func(candidate: GenomeUtils.CandidateTarget) -> bool:
             if candidate.sequence is None:
                 return False
                 
@@ -305,7 +304,7 @@ class CandidateTargetsManager:
                 
                 ddg = binding_dg_repeated - candidate.dG_binding
 
-                rep_site = RepeatedSite(
+                rep_site = GenomeUtils.RepeatedSite(
                     sequence=repeated_site_seq,
                     chromosomal_position=repeated_site_chrom_pos,
                     parent_target_id=cand_id,
@@ -333,10 +332,10 @@ class CandidateTargetsManager:
             
         logging.info(f"Kept {filtered_candidates_count} repeated sites for {len(self.candidates)} candidates.")
             
-    def get_candidate(self, candidate_id: str) -> Optional[CandidateTarget]:
+    def get_candidate(self, candidate_id: str) -> Optional[GenomeUtils.CandidateTarget]:
         return self.candidates.get(candidate_id)
 
-    def get_all_candidate_targets(self) -> Dict[str, CandidateTarget]:
+    def get_all_candidate_targets(self) -> Dict[str, GenomeUtils.CandidateTarget]:
         return self.candidates
 
     def get_candidates_as_dict(self) -> Dict[str, str]:
@@ -406,4 +405,10 @@ class CandidateTargetsManager:
                 updated_count +=1
             else:
                 logging.warning(f"Candidate ID {cand_id} from Pedersen results not found in current candidates.")
-        logging.info(f"Updated Pedersen steady state for {updated_count} candidates.") 
+        logging.info(f"Updated Pedersen steady state for {updated_count} candidates.")
+
+    def update_dG_binding(self, dG_binding_results: Dict[str, float]):
+        """Updates the dG_binding attribute for each candidate."""
+        for cand_id, dG_value in dG_binding_results.items():
+            if cand_id in self.candidates:
+                self.candidates[cand_id].dG_binding = dG_value 

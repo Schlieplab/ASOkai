@@ -240,10 +240,10 @@ def main() -> None:
         total_genes_for_matrix=len(genome_data_manager.get_main_genome_object().genes)
     )
     gene_matrix.write_csv(os.path.join(data_dir, 'results', f"{job_name or genome_data_manager.get_target_gene_object().gene_id}_gene_matrix.csv")) 
-    # secondary_sites_counts = kmer_counter.calculate_aggregate_counts(
-    #     pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
-    #     potential_kmers_by_aso=potential_secondary_sites
-    # )
+    secondary_sites_counts = kmer_counter.calculate_aggregate_counts(
+        pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
+        potential_kmers_by_aso=potential_secondary_sites
+    )
     logging.info("-----------------------------------")
 
 

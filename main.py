@@ -168,6 +168,8 @@ def main() -> None:
 
     logging.info("-----------------------------------")
 
+    rna_cofold = RNACofold(params_file_path=config.get("RNACofoldParamFile", None))
+
     genome_data_manager = GenomeDataManager(
         gene_id=config["TargetGene"],
         species=config["Species"],
@@ -186,8 +188,7 @@ def main() -> None:
         target_gene=genome_data_manager.get_target_gene_object(),
         k=int(config["OligoLen"]),
         gc_bounds=tuple(map(float, config.get("GCbound", ("0.0,1.0")).split(','))),
-        rna_cofold_temperature=float(config.get("RNACofoldTemperature", 37.0)),
-        rna_cofold_params_file=config.get("RNACofoldParamFile", None),
+        rna_cofold=rna_cofold,
         multiplicity_layout=list(map(int, config.get("MultiplicityLayout", "").split(','))),
         verbose=config.getboolean("Verbose", False)
     )
@@ -222,7 +223,6 @@ def main() -> None:
     
     # logging.info("-----------------------------------")
     
-    rna_cofold = RNACofold(params_file_path=config.get("RNACofoldParamFile", None))
     
     secondary_site_finder = SecondarySiteFinder(
         max_ddg=float(config.get("OffTargetMaxddG", 5.0)),

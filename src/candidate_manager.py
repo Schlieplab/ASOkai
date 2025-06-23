@@ -17,8 +17,7 @@ class CandidateTargetsManager:
                  target_gene: GenomeUtils.Gene,
                  k: int,
                  gc_bounds: Tuple[float, float],
-                 rna_cofold_temperature: float,
-                 rna_cofold_params_file: Optional[str],
+                 rna_cofold: RNACofold,
                  multiplicity_layout: List[int],
                  verbose: bool = False):
         """
@@ -28,8 +27,7 @@ class CandidateTargetsManager:
             target_gene: The Gene object (or TargetGene instance) for which to find candidates.
             k: The length of k-mers (oligonucleotides) to extract.
             gc_bounds: Tuple specifying the lower and upper bounds for GC content.
-            rna_cofold_temperature: Temperature for RNACofold calculations.
-            rna_cofold_params_file: Path to parameters file for RNACofold.
+            rna_cofold: RNACofold object for calculating binding energies.
             multiplicity_layout: List of integers specifying the layout for core/flank regions,
                                  used for constraint generation and repeated site definition.
                                  Expected format: [left_flank_len, core_len, right_flank_len]
@@ -40,9 +38,7 @@ class CandidateTargetsManager:
         self.multiplicity_layout = multiplicity_layout
         self.verbose = verbose
         
-        self.rna_cofold = RNACofold(temperature=rna_cofold_temperature, 
-                                   params_file_path=rna_cofold_params_file, 
-                                   verbose=verbose)
+        self.rna_cofold = rna_cofold
         
         self.candidates: Dict[str, GenomeUtils.CandidateTarget] = {}
         self._next_candidate_s_index: int = 1

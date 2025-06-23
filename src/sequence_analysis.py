@@ -91,6 +91,7 @@ class SecondarySiteFinder:
                  ddg_tolerance: float = 0.5,
                  num_processes: Optional[int] = None,
                  force_core_alignment: bool = True,
+                 rna_cofold: RNACofold = None,
                  verbose: bool = False):
         """
         Initialize the SecondarySiteFinder.
@@ -108,9 +109,11 @@ class SecondarySiteFinder:
         self.num_processes = num_processes if num_processes is not None else mp.cpu_count()
         self.force_core_alignment = force_core_alignment
         self.verbose = verbose
-        
-    @staticmethod
+        self.rna_cofold = rna_cofold
+    
+    
     def _pruned_mutation_search(
+        self,
         target_input: Tuple[str, Tuple[str, float]],
         max_ddg: float = 5.0,
         multiplicity_layout: List[int] = [4,8,4],
@@ -145,8 +148,6 @@ class SecondarySiteFinder:
             
             target_obj = Seq(target_site)
             oligo_seq = str(target_obj.reverse_complement())
-            
-            rna_cofold = RNACofold()
             
             constraint_string = None
             if force_core_alignment:
@@ -183,7 +184,7 @@ class SecondarySiteFinder:
                         mutated_seq_list[pos_to_mutate] = nt
                         mutated_target_seq = "".join(mutated_seq_list)
                         
-                        mutated_binding_dg = rna_cofold.calculate_binding_dg(mutated_target_seq, 
+                        mutated_binding_dg = self.rna_cofold.calculate_binding_dg(mutated_target_seq, 
                                                                              oligo_seq, 
                                                                              constraint_string)
                         
@@ -258,7 +259,7 @@ class SecondarySiteFinder:
             processed_dict[target_id] = (sequence, binding_energy)
         
         worker_with_args = partial(
-            SecondarySiteFinder._pruned_mutation_search,
+            self._pruned_mutation_search,
             max_ddg=self.max_ddg,
             multiplicity_layout=self.multiplicity_layout,
             ddg_tolerance=self.ddg_tolerance,

@@ -5,6 +5,7 @@ import sys
 from src import (
     PedersenAnalysis,
     SecondarySiteFinder,
+    RNACofold,
     )
 import logging
 import configparser
@@ -221,11 +222,14 @@ def main() -> None:
     
     # logging.info("-----------------------------------")
     
+    rna_cofold = RNACofold(params_file_path=config.get("RNACofoldParamFile", None))
+    
     secondary_site_finder = SecondarySiteFinder(
         max_ddg=float(config.get("OffTargetMaxddG", 5.0)),
         multiplicity_layout=list(map(int, config.get("MultiplicityLayout", "4,8,4").split(','))),
         ddg_tolerance=float(config.get("ddGTolerance", 0.5)),
         num_processes=config.getint("NumProcesses", mp.cpu_count()),
+        rna_cofold=rna_cofold,
         verbose=config.getboolean("Verbose", False)
     )
     
@@ -233,13 +237,6 @@ def main() -> None:
         target_sites=candidate_targets_manager.get_all_candidate_targets(),
     )
     
-
-    gene_matrix = kmer_counter.calculate_per_gene_counts_matrix(
-        pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
-        potential_kmers_by_aso=potential_secondary_sites,
-        total_genes_for_matrix=len(genome_data_manager.get_main_genome_object().genes)
-    )
-    gene_matrix.write_csv(os.path.join(data_dir, 'results', f"{job_name or genome_data_manager.get_target_gene_object().gene_id}_gene_matrix.csv")) 
     secondary_sites_counts = kmer_counter.calculate_aggregate_counts(
         pre_mrna_fasta_path=genome_data_manager.get_genes_pre_mrna_fasta_excludint_target_path(),
         potential_kmers_by_aso=potential_secondary_sites

@@ -218,10 +218,10 @@ def main() -> None:
     
     logging.info("-----------------------------------")
     
-    # candidate_targets_manager.find_repeated_sites(force_core_alignment_dG=True, 
-    #                                               max_ddg_threshold=float(config.get("RepeatedMaxddG", 5.0)))
+    candidate_targets_manager.find_repeated_sites(force_core_alignment_dG=True, 
+                                                  max_ddg_threshold=float(config.get("RepeatedMaxddG", 5.0)))
     
-    # logging.info("-----------------------------------")
+    logging.info("-----------------------------------")
     
     
     secondary_site_finder = SecondarySiteFinder(
@@ -244,24 +244,24 @@ def main() -> None:
     logging.info("-----------------------------------")
 
 
-    # pedersen_analyzer = PedersenAnalysis(
-    #     candidate_targets=candidate_targets_manager.get_all_candidate_targets(),
-    #     num_processes=config.getint("NumProcesses", mp.cpu_count()),
-    #     params_file_path=config.get("PedersenParamFile", None),
-    #     verbose=config.getboolean("Verbose", False)
-    # )
+    pedersen_analyzer = PedersenAnalysis(
+        candidate_targets=candidate_targets_manager.get_all_candidate_targets(),
+        num_processes=config.getint("NumProcesses", mp.cpu_count()),
+        params_file_path=config.get("PedersenParamFile", None),
+        verbose=config.getboolean("Verbose", False)
+    )
     
-    # candidate_targets_manager.update_pedersen_steady_state(pedersen_results=pedersen_analyzer.run_analysis())
+    candidate_targets_manager.update_pedersen_steady_state(pedersen_results=pedersen_analyzer.run_analysis())
     
-    # logging.info("-----------------------------------")
+    logging.info("-----------------------------------")
     
-    # results_generator = ResultsGenerator(
-    #     candidate_manager=candidate_targets_manager,
-    #     target_gene_species=config["Species"],
-    #     base_output_dir=data_dir
-    # )
+    results_generator = ResultsGenerator(
+        candidate_manager=candidate_targets_manager,
+        target_gene_species=config["Species"],
+        base_output_dir=data_dir
+    )
     
-    # results_generator.generate_csv_report(off_target_multiplicities=secondary_sites_counts)
+    results_generator.generate_csv_report(off_target_multiplicities=secondary_sites_counts)
             
 #     try:
 #         pedersen_params_file = config.get('PedersenParamFile', None)

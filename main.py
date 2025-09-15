@@ -205,7 +205,7 @@ def main() -> None:
         kmc_db_threads=config.getint("NumProcesses", mp.cpu_count()),
         gene_processing_workers=config.getint("NumProcesses", mp.cpu_count()),
         kmc_db_memory_gb=config.getint("MaxMemory", 64),
-        temp_dir_base=os.path.join(data_dir, 'temp'),
+        data_dir=data_dir,
         verbose=False
     )
     

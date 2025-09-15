@@ -17,8 +17,12 @@ class RNACofold:
             params_file_path (Optional[str]): Path to a ViennaRNA parameter file.
                                          If None, default parameters are used.
         """
+        # Keep simple, pickle-safe attributes for configuration
+        self.temperature: float = float(temperature)
+        self.params_file_path: Optional[str] = params_file_path
+
         self.md = RNA.md()
-        self.md.temperature = temperature
+        self.md.temperature = self.temperature
         if params_file_path:
             try:
                 RNA.params_load(params_file_path) 

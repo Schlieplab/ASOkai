@@ -77,7 +77,6 @@ class CandidateTargetsManager:
         
         return set(kmers_list)
 
-    @property
     def _get_constraint_string(self, force_core_alignment: bool) -> Optional[str]:
         """Generates ViennaRNA constraint string based on multiplicity_layout."""
         if force_core_alignment and len(self.multiplicity_layout) == 3:

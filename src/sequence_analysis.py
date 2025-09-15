@@ -81,6 +81,97 @@ def longest_t_run(seq: str) -> float:
 
 
 
+_GLOBAL_RNA_COFOLD: Optional[RNACofold] = None
+
+
+def _init_secondary_site_pool(temperature: float, params_file_path: Optional[str], verbose: bool) -> None:
+    global _GLOBAL_RNA_COFOLD
+    _GLOBAL_RNA_COFOLD = RNACofold(temperature=temperature, params_file_path=params_file_path, verbose=verbose)
+
+
+def _pruned_mutation_search_worker(
+    target_input: Tuple[str, Tuple[str, float]],
+    max_ddg: float,
+    multiplicity_layout: List[int],
+    ddg_tolerance: float,
+    force_core_alignment: bool
+) -> Tuple[str, List[Tuple[str, float]]]:
+    # This is a top-level function so it can be pickled by multiprocessing
+    # It uses the module-level _GLOBAL_RNA_COFOLD which is initialized in each process
+    target_id, target_site_and_reference_binding_dg = target_input
+    target_site, reference_binding_dg = target_site_and_reference_binding_dg
+    try:
+        expected_length = sum(multiplicity_layout)
+        if len(target_site) != expected_length:
+            raise ValueError(f"Sequence length ({len(target_site)}) does not match layout sum ({expected_length})")
+
+        core_start = multiplicity_layout[0]
+        core_end = core_start + multiplicity_layout[1]
+
+        target_obj = Seq(target_site)
+        oligo_seq = str(target_obj.reverse_complement())
+
+        constraint_string = None
+        if force_core_alignment:
+            target_constraint = '.' * multiplicity_layout[0] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[2]
+            oligo_constraint = '.' * multiplicity_layout[2] + '|' * multiplicity_layout[1] + '.' * multiplicity_layout[0]
+            constraint_string = target_constraint + '&' + oligo_constraint
+
+        nucleotides = ['A', 'C', 'G', 'T']
+        mutable_positions = list(range(0, core_start)) + list(range(core_end, len(target_site)))
+
+        valid_mutations_set: Set[Tuple[str, float]] = set()
+
+        current_level_queue = deque([target_site])
+
+        for depth_idx in range(len(mutable_positions)):
+            if not current_level_queue:
+                break
+
+            pos_to_mutate = mutable_positions[depth_idx]
+            next_level_queue = deque()
+            next_level_unique_sequences: Set[str] = set()
+
+            while current_level_queue:
+                current_seq = current_level_queue.popleft()
+
+                for nt in nucleotides:
+                    mutated_seq_list = list(current_seq)
+                    mutated_seq_list[pos_to_mutate] = nt
+                    mutated_target_seq = "".join(mutated_seq_list)
+
+                    mutated_binding_dg = _GLOBAL_RNA_COFOLD.calculate_binding_dg(
+                        mutated_target_seq,
+                        oligo_seq,
+                        constraint_string
+                    )
+
+                    ddg_binding = mutated_binding_dg - reference_binding_dg
+
+                    if ddg_binding <= max_ddg:
+                        if mutated_target_seq != target_site:
+                            valid_mutations_set.add((mutated_target_seq, ddg_binding))
+
+                        if mutated_target_seq not in next_level_unique_sequences:
+                            next_level_queue.append(mutated_target_seq)
+                            next_level_unique_sequences.add(mutated_target_seq)
+                    elif ddg_binding <= max_ddg + ddg_tolerance:
+                        if mutated_target_seq not in next_level_unique_sequences:
+                            next_level_queue.append(mutated_target_seq)
+                            next_level_unique_sequences.add(mutated_target_seq)
+
+            current_level_queue = next_level_queue
+
+        valid_mutations = list(valid_mutations_set)
+        return target_id, valid_mutations
+    except ValueError as ve:
+        logging.error(f"Configuration error for target {target_id}: {ve}")
+        return target_id, []
+    except Exception as e:
+        logging.error(f"Error processing target {target_id}: {e}")
+        return target_id, []
+
+
 class SecondarySiteFinder:
     """
     Finds potential secondary binding sites for a given set of target sequences.
@@ -110,6 +201,14 @@ class SecondarySiteFinder:
         self.force_core_alignment = force_core_alignment
         self.verbose = verbose
         self.rna_cofold = rna_cofold
+        # Save RNACofold init params for worker-side initialization to avoid pickling SWIG objects
+        if rna_cofold is not None:
+            # RNACofold stores temperature and params_file_path as plain attrs
+            self._rna_temperature = getattr(rna_cofold, 'temperature', 37.0)
+            self._rna_params_file_path = getattr(rna_cofold, 'params_file_path', None)
+        else:
+            self._rna_temperature = 37.0
+            self._rna_params_file_path = None
     
     
     def _pruned_mutation_search(
@@ -259,7 +358,7 @@ class SecondarySiteFinder:
             processed_dict[target_id] = (sequence, binding_energy)
         
         worker_with_args = partial(
-            self._pruned_mutation_search,
+            _pruned_mutation_search_worker,
             max_ddg=self.max_ddg,
             multiplicity_layout=self.multiplicity_layout,
             ddg_tolerance=self.ddg_tolerance,
@@ -282,7 +381,11 @@ class SecondarySiteFinder:
                     f"kcal/mol, tolerance: {self.ddg_tolerance:.2f} kcal/mol"
                 )
             
-            with mp.Pool(processes=self.num_processes) as pool:
+            with mp.Pool(
+                processes=self.num_processes,
+                initializer=_init_secondary_site_pool,
+                initargs=(self._rna_temperature, self._rna_params_file_path, self.verbose)
+            ) as pool:
                 processed_count = 0
                 progress = ProgressTracker(len(processed_dict), "Finding secondary sites")
                 

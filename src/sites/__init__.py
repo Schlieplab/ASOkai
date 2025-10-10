@@ -1,7 +1,11 @@
-from .target_site import TargetSite
+from .site import Site
+from .genomic_site import GenomicSite
+from .transcript_site import TranscriptSite
 
 __all__ = [
-    "TargetSite",
+    "Site",
+    "GenomicSite",
+    "TranscriptSite",
 ]
 
 

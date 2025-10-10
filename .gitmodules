@@ -1,3 +1,0 @@
-[submodule "src/utils/genome_utils"]
-	path = genome_utils
-	url = schliep@gitea.schlieplab.org:Research/genome_utils.git

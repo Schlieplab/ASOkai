@@ -1,5 +1,5 @@
-from antisense.antisense_construct import AntisenseConstruct
-from antisense.aso import ASO
+from .antisense import AntisenseConstruct
+from .antisense import ASO
 
 __all__ = [
     "AntisenseConstruct",

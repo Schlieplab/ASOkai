@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from Sites import Site
 from typing import Dict, List
+from Utils import Serializable
 
-class Target(ABC):
+
+class Target(Serializable, ABC):
     """
     Abstract base class for candidate target.
     """
@@ -45,3 +47,8 @@ class Target(ABC):
         Get all target sites.
         """
         return list(self._target_sites.values())
+        
+    @classmethod
+    def _get_init_arg_name_map(cls) -> Dict[str, str]:
+        return {"_target_sites": "target_sites"}
+        

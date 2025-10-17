@@ -1,9 +1,9 @@
 from GenomeUtils.Genome import Gene, Genome, Chromosome
 from .target import Target
-from typing import Literal
+from typing import Literal, Any
 from Bio.Seq import Seq
 from typing import Dict
-from Sites import Site
+from ..sites import Site
 
 class TargetGene(Target, Gene):
     """
@@ -52,4 +52,25 @@ class TargetGene(Target, Gene):
     @property
     def sequence(self) -> Seq:
         return self._sequence
+    
+    def _serialize_value(self, value: Any) -> Any:
+        if isinstance(value, Seq):
+            return {
+                '__type__': 'Bio.Seq.Seq',
+                'sequence': str(value)
+            }
+        return super()._serialize_value(value)
+
+    @classmethod
+    def _deserialize_value(cls, value_data: Any) -> Any:
+        if isinstance(value_data, dict) and value_data.get('__type__') == 'Bio.Seq.Seq':
+            return Seq(value_data['sequence'])
+        return super()._deserialize_value(value_data)
+
+    @classmethod
+    def _get_init_arg_name_map(cls) -> Dict[str, str]:
+        # Get the map from the parent class and add our own
+        name_map = super()._get_init_arg_name_map()
+        name_map.update({"_sequence": "sequence"})
+        return name_map
 

@@ -14,8 +14,8 @@ class TranscriptSite(Site):
 
     def __init__(self,
                  transcript_id: str,
-                 cdna_start: int,
-                 cdna_end: int,
+                 t_start: int,
+                 t_end: int,
                  sequence: Seq,
                  id: str = None,
                  **kwargs):
@@ -24,8 +24,8 @@ class TranscriptSite(Site):
 
         Args:
             transcript_id: Identifier of the transcript this site belongs to.
-            cdna_start: 0-based inclusive start position on the transcript.
-            cdna_end: 0-based exclusive end position on the transcript.
+            t_start: 0-based inclusive start position on the transcript.
+            t_end: 0-based exclusive end position on the transcript.
             sequence: Spliced sequence of the site.
             id: The ID of the site.
             kwargs: Additional keyword arguments.
@@ -33,11 +33,11 @@ class TranscriptSite(Site):
         self.transcript_id = transcript_id
         
         if id is None:
-            id = f"{transcript_id}:{cdna_start}-{cdna_end}"
+            id = f"{transcript_id}:{t_start}-{t_end}"
         self.id = id
         
-        self.start = cdna_start
-        self.end = cdna_end
+        self.t_start = t_start
+        self.t_end = t_end
         
         Site.__init__(self, sequence=sequence, id=id, **kwargs)
 

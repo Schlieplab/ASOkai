@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from Bio.Seq import Seq
 from typing import Dict, Any
-from Utils import Serializable
+from ..utils import Serializable
 
 
 class Site(Serializable, ABC):

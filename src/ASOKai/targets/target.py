@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from Sites import Site
+from ..sites import Site
 from typing import Dict, List
-from Utils import Serializable
+from ..utils import Serializable
 
 
 class Target(Serializable, ABC):
@@ -27,7 +27,7 @@ class Target(Serializable, ABC):
             setattr(self, key, value)
         
         self._target_sites: Dict[str, Site] = target_sites
-       
+    
         
     def site_by_id(self, id: str) -> Site:
         """

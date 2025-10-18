@@ -1,0 +1,2 @@
+class ASO:
+    pass

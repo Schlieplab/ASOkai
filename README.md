@@ -1,64 +1,136 @@
-# ASO-design-pipeline
+# ASOkai
 
-This will be a software package that helps the ASO design process to find optimal target sites based on a gene, it's sequence properties, thermodynamic and kinetic parameters.
+ASOkai is designed to provide analytical features from different aspects around ASO drug design, commonly used attributes like GC content as well as attributes usually requiring human experts. In particular, our focus is on extensive analysis of specific and unspecific off-targets and their impact on potential target knockdown evaluated through kinetic simulations.
+While the pipeline can be utilised as a ready-to-use workflow, its modularity enables the user to use any individual analytical step individually and integrate them in already existing user-defined drug design workflows. The frame work is open-source.
 
-## Packages & tools
+![image](docs/images/ASOkai_overview.png)
 
-* pyensembl: python library to connect to ENSEMBL (https://pyensembl.readthedocs.io/en/latest/pyensembl.html)
-* Bowtie2: Used for read alignment against genome
-* RNAcofold (ViennaRNA): Calculating dG (affinity)
+Intrinsic Attributes:
+* GC content
+* Longest T-run
+* Longest AT-run
 
+Genome-wide attributes:
+* Specific off-targets
+* Unspecific off-targets
+* Location 
 
-## Status Quo
+Kinetic Attribute:
+* Target-level after ASO administration 
+* Kinetic models excluding/including off-target presence
 
-`main.py` takes a gene id from ENsembl and a k-mer length as input. Genome and annotation release are configurable. Paths to bowtie and pyensemble are hard coded as of right now. Output is a csv file containing a list of distinct oligo candidates (reverse complement of target sites) targeting the input gene.
+Target attributes:
+* Secondary target sites
+* Target accessibility
 
-e.g.: KRAS 16 mers should result in 7402 candidate oligos.
+## ASOkai CLI
 
+### Configuration
+The `ASOkai` CLI is primarily driven by the configuration file (`config.yaml`). This file contains all the necessary parameters for the different pipeline stages and groups. Commands allow you to override specific configuration settings directly via command-line arguments.
 
-## Overview of ASO features
+### Reporting
+Most commands support an optional `--report` flag, which generates a summary report for that specific step.
 
-The aim of this software is to give an overview of thermodynamic and kinetic calculations and prediction on which ASO candidates can be evaluated. The user, possibly working on experiments in ASO drug design, can select and filter based on these parameters the ASO candidates.
+### CLI Structure
 
-### Intrinsic features:
-* GC content (proportion 0.0-1.0)
-* Longest AT-run: defined as the longest subsequence only consisting of As and Ts (#nts, or %, or proportion 0.0-1.0)
-* Longest T-run: defined as the longest subsequence only consisting of Ts (#nts, or %, or proportion 0.0-1.0)
-
-
-### Extrinsic features:
-* Delta_G of oligo-target (OT) complex [kcal per mol]
-* OT binding multiplicity: How often can the target site be found in pre-mRNA
-    * What is the equivalent of the pre-mRNA in the pyensemble objects?
-    * Does this feature sum up the binding sites over all available transcripts? Dow we only take the most prominent transcript per protein?
-* Multiplicities of inexactly matching sites prone for RNase H1 activity:
-    * a large enough substring in the middle in common (RNASE H1 activity starts at 5 consecutive matches, best activity 8-10, Review Crooke 2021)
-    * mismatches only in the flanks
-* Multiplicities of inexactly matching sites unlikely for RNase H1 activity:
-    * mismatches in the center of oligos
-* secondary target sites of oligo candidate:
-    * an oligo candidate has a reasonable (e.g. ddG=5) binding affinity to some other location on the target gene plus a large enough substring in the middle in common (RNASE H1 activity starts at 5 consecutive matches, best activity 8-10, Review Crooke 2021)
-* Multiple Binding sites within one mRNA: Pedersen 2020
-* Histogram of binned delta_delta_G for inexactly matching binding sites in target pre-mRNA
-
-
-## Pre-requisites
-
-* Working installation of Bowtie2 (path for bowtie index needs to be stated in config)
-* pyensemble, biopython
-* RNAcofold (command line tool from ViennaRNA)
-
-### Bowtie index
-
-The Bowtie index of the genome needs to be build prior to using the tool and should be build on the same data that Ensembl provides over the pyensembl interface.
+The CLI is organized around a central `run` command that can execute the entire pipeline or specific parts of it.
 
 ```
-bowtie2-build <path to cache>/pyensembl/GRCh38/ensembl111/Homo_sapiens.GRCh38.cdna.all.fa <bowtie index name>
+ASOkai
+├── all
+|
+├── groups
+|   ├── instantiate-target-gene
+|   ├── repeated-sites
+|   ├── site-accessibility
+|   ├── site-quality
+|   ├── kinetic-model
+|   ├── specific-off-targets
+|   ├── unspecific-off-targets
+|   ├── intrinsic-features
+|   └── gather-results
+|
+└── stages
+    ├── download-genome
+    ├── build-genome
+    ├── create-target-gene-object
+    ├── load-target-gene-object
+    ├── generate-results-file
+    └── ...
 ```
 
-The resulting index only contains coding DNA, the transcriptome. For genome, the chromosomes for the specific release should be downloaded from Ensemble, combined in a file and then used in Bowtie2
+---
 
-```
-cat Homo_sapiens.GRCh38.dna.chromosome.*.fa > Homo_sapiens.GRCh38.dna.all.fa
-bowtie2-build --threads <i> <path to file>/Homo_sapiens.GRCh38.dna.all.fa <bowtie index name>
-```
+### 1. `run`
+
+This is the main, high-level command intended for most users.
+
+#### `asokai run --all`
+- **Description:** Runs the entire pipeline from start to finish.
+
+#### `asokai run --groups <group_name_1>,<group_name_2>,...`
+- **Description:** Runs one or more specified analysis groups.
+- **Example:** `asokai run --groups repeated-sites,site-accessibility`
+
+#### `asokai run --stages <stage_name_1>,<stage_name_2>,...`
+- **Description:** Runs one or more specific low-level stages.
+- **Example:** `asokai run --stages download-genome`
+
+---
+
+### 2. Groups
+
+Groups are logical collections of stages that perform a specific, complex analysis. They manage the inputs and outputs between stages automatically.
+
+**Dependency Handling:** When a group is executed, it automatically checks for its dependencies (e.g., a target gene object). If a dependency already exists, it will be loaded. If not, the group will automatically run the necessary preceding stages to create the dependency.
+
+To run specific groups, use the `run` command with the `--groups` flag, providing a comma-separated list of group names.
+
+`asokai run --groups <group_name_1>,<group_name_2>`
+
+#### `instantiate-target-gene`
+- **Description:** Creates and initializes a target gene object, which is a prerequisite for most analysis groups.
+- **Dependencies:** `stages.download-genome`, `stages.build-genome`, `stages.create-target-gene-object`.
+
+#### Site-wide Analysis Groups
+- **`intrinsic-features`**: Analyzes intrinsic features like GC content, AT/T-runs.
+- **Dependencies:** Depends on `groups.instantiate-target-gene`.
+
+#### Target-wide Analysis Groups
+- **`repeated-sites`**: Analyzes for repeated sites within the target.
+- **`site-accessibility`**: Assesses the accessibility of sites in the target.
+- **`site-quality`**: Evaluates the quality of potential ASO binding sites.
+- **`kinetic-model`**: Runs the kinetic model for the target.
+- **Dependencies:** All depend on `groups.instantiate-target-gene`.
+
+#### Genome-wide Analysis Groups
+- **`specific-off-targets`**: Identifies specific off-target sites.
+- **`unspecific-off-targets`**: Identifies unspecific off-target sites.
+- **Dependencies:** All depend on `groups.instantiate-target-gene`.
+
+#### Results
+- **`gather-results`**: Gather results of different stages into a single file.
+---
+
+### 3. Stages
+
+Stages are the individual, low-level building blocks of the pipeline. They are generally not intended for direct use by end-users, as managing their inputs and outputs can be complex. However, they can be used for manual pipeline execution or debugging.
+
+To run specific stages, use the `run` command with the `--stages` flag, providing a comma-separated list of stage names.
+
+`asokai run --stages <stage_name_1>,<stage_name_2>`
+
+#### `download-genome`
+- **Description:** Downloads a genome using GenomeUtils.
+
+#### `build-genome`
+- **Description:** Builds Genome using GenomeUtils.
+- **Dependencies:** `stages.download-genome`.
+
+#### `create-target-gene-object`
+- **Description:** Creates a data object for the target gene from Genome, and extracts necessary sites.
+- **Dependencies:** `stages.build-genome`.
+
+#### `load-target-gene-object`
+- **Description:** Loads an existing target gene object from disk.
+- **Dependencies:** `stages.create-target-gene-object`.

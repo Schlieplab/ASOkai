@@ -1,4 +1,4 @@
-from GenomeUtils.Genome import Gene, Genome, Chromosome
+from GenomeUtils.Genome import Gene, Genome, Chromosome, Locus
 from .target import Target
 from typing import Literal, Any
 from Bio.Seq import Seq
@@ -53,6 +53,16 @@ class TargetGene(Target, Gene):
     def sequence(self) -> Seq:
         return self._sequence
     
+    def _serialize_attribute(self, key: str, value: Any) -> Dict[str, Any]:
+        if key == 'locus' and isinstance(value, Locus):
+            return {
+                'chr': value.chr,
+                'start': value.start,
+                'end': value.end,
+                'strand': value.strand
+            }
+        return super()._serialize_attribute(key, value)
+    
     def _serialize_value(self, value: Any) -> Any:
         if isinstance(value, Seq):
             return {
@@ -71,6 +81,7 @@ class TargetGene(Target, Gene):
     def _get_init_arg_name_map(cls) -> Dict[str, str]:
         # Get the map from the parent class and add our own
         name_map = super()._get_init_arg_name_map()
-        name_map.update({"_sequence": "sequence"})
+        name_map.update({"_sequence": "sequence"
+                         ,"_target_sites": "target_sites"})
         return name_map
 

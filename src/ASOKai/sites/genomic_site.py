@@ -1,6 +1,6 @@
 from GenomeUtils.Genome import Locus
 from GenomeUtils.Genome import GenomeElement
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Dict, Any
 from Bio.Seq import Seq
 from .site import Site
 
@@ -42,4 +42,14 @@ class GenomicSite(Site, GenomeElement):
         
     def __repr__(self):
         return f"{self.__class__.__name__}(id='{self.id}', locus={self.locus!r}), sequence={self.sequence!r})"
+
+    def _serialize_attribute(self, key: str, value: Any) -> Dict[str, Any]:
+        if key == 'locus' and isinstance(value, Locus):
+            return {
+                'chr': value.chr,
+                'start': value.start,
+                'end': value.end,
+                'strand': value.strand
+            }
+        return super()._serialize_attribute(key, value)
     

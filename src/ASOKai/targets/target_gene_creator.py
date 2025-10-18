@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/targets/target_gene_creator.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the TargetGeneCreator for creating TargetGene objects.
+License: LGPL-3.0-or-later
+"""
 from .target_creator import TargetCreator
 from .target_gene import TargetGene
 from GenomeUtils.Genome import Genome, Gene, Exon, Locus

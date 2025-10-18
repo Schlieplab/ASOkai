@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/sites/transcript_site.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the TranscriptSite class for representing transcript-anchored sites.
+License: LGPL-3.0-or-later
+"""
 from typing import TYPE_CHECKING, List
 from Bio.Seq import Seq
 from .site import Site

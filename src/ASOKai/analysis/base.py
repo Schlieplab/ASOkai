@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/analysis/base.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the base classes for different analysis types.
+License: LGPL-3.0-or-later
+"""
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 

@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/sites/genomic_site.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the GenomicSite class for representing genomic sites.
+License: LGPL-3.0-or-later
+"""
 from GenomeUtils.Genome import Locus
 from GenomeUtils.Genome import GenomeElement
 from typing import TYPE_CHECKING, Literal, Dict, Any

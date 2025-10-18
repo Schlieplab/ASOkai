@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/analysis/intrinsic_features.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the IntrinsicFeaturesAnalysis class for analyzing intrinsic features of target sites.
+License: LGPL-3.0-or-later
+"""
 from typing import Dict, Any, List
 
 from .base import SiteWideAnalysis

@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOKai/targets/target.py
+Author: Arash Ayat
+Copyright: 2025, Alexander Schliep
+Version: 0.1.0
+Description: This file defines the base Target class.
+License: LGPL-3.0-or-later
+"""
 from abc import ABC, abstractmethod
 from ..sites import Site
 from typing import Dict, List

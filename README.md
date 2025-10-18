@@ -134,3 +134,9 @@ To run specific stages, use the `run` command with the `--stages` flag, providin
 #### `load-target-gene-object`
 - **Description:** Loads an existing target gene object from disk.
 - **Dependencies:** `stages.create-target-gene-object`.
+
+## License
+
+This software is under L-GPL-3.0-later.
+
+Copyright 2025 Alexander Schliep

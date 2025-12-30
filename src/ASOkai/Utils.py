@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOKai/Utils.py
+Filename: src/ASOkai/Utils.py
 Author: Arash Ayat
 Copyright: 2025, Alexander Schliep
 Version: 0.1.0

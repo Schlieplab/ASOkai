@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOKai/targets/__init__.py
+Filename: src/ASOkai/targets/__init__.py
 Author: Arash Ayat
 Copyright: 2025, Alexander Schliep
 Version: 0.1.0

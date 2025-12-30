@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOKai/__init__.py
+Filename: src/ASOkai/__init__.py
 Author: Arash Ayat
 Copyright: 2025, Alexander Schliep
 Version: 0.1.0
-Description: This file is the main entry point for the ASOKai package.
+Description: This file is the main entry point for the ASOkai package.
 License: LGPL-3.0-or-later
 """
 from . import Sites

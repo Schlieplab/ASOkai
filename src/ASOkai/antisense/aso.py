@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOKai/antisense/aso.py
+Filename: src/ASOkai/antisense/aso.py
 Author: Arash Ayat
 Copyright: 2025, Alexander Schliep
 Version: 0.1.0

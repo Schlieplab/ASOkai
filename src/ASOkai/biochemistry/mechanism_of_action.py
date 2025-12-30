@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOKai/biochemistry/mechanism_of_action.py
+Filename: src/ASOkai/biochemistry/mechanism_of_action.py
 Author: Arash Ayat
 Copyright: 2025, Alexander Schliep
 Version: 0.1.0

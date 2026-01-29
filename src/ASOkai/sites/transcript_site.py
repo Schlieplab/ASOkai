@@ -55,6 +55,16 @@ class TranscriptSite(Site):
 
     def to_genomic(self, transcript: "Transcript") -> List[GenomicSite]:
         pass
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TranscriptSite):
+            return NotImplemented
+        return (
+            self.id == other.id
+            and self.transcript_id == other.transcript_id
+            and self.t_start == other.t_start
+            and self.t_end == other.t_end
+        )
 
 
 

@@ -3,7 +3,75 @@
 Functional tests for TargetGeneCreator class.
 """
 import pytest
+from unittest.mock import MagicMock
+from Bio.Seq import Seq
+
 from ASOkai.targets.target_gene_creator import TargetGeneCreator
+
+
+@pytest.fixture
+def mock_genome_and_gene(sample_sequence):
+    """Mock genome and gene for from_genome tests."""
+    gene = MagicMock()
+    gene.id = "ENSG00000133703"
+    gene.name = "KRAS"
+    gene.chr = "12"
+    gene.start = 100
+    gene.end = 500
+    gene.strand = "+"
+    gene.sequence = sample_sequence
+    gene.transcripts = []
+    gene.get_chromosome.return_value = None
+
+    genome = MagicMock()
+    genome.gene_by_id.return_value = gene
+    genome.gene_by_name.return_value = gene
+    genome.get_sequence_by_locus.return_value = sample_sequence
+
+    return genome, gene
+
+
+@pytest.mark.unit
+class TestTargetGeneCreatorFromGenome:
+    """Test from_genome with target_id and target_name."""
+
+    def test_from_genome_raises_when_neither_target_id_nor_target_name(self, mock_genome_and_gene):
+        """Test that ValueError is raised when neither target_id nor target_name provided."""
+        genome, _ = mock_genome_and_gene
+
+        with pytest.raises(ValueError, match="exactly one of target_id or target_name"):
+            TargetGeneCreator.from_genome(genome, target_id=None, target_name=None, k=16)
+
+    def test_from_genome_raises_when_both_target_id_and_target_name(self, mock_genome_and_gene):
+        """Test that ValueError is raised when both target_id and target_name provided."""
+        genome, _ = mock_genome_and_gene
+
+        with pytest.raises(ValueError, match="exactly one of target_id or target_name"):
+            TargetGeneCreator.from_genome(
+                genome, target_id="ENSG00000133703", target_name="KRAS", k=16
+            )
+
+    def test_from_genome_by_target_id_calls_gene_by_id(self, mock_genome_and_gene):
+        """Test that from_genome with target_id uses genome.gene_by_id."""
+        genome, gene = mock_genome_and_gene
+
+        result = TargetGeneCreator.from_genome(genome, target_id="ENSG00000133703", k=16)
+
+        genome.gene_by_id.assert_called_once_with("ENSG00000133703")
+        genome.gene_by_name.assert_not_called()
+        assert result.id == gene.id
+        assert result.name == gene.name
+
+    def test_from_genome_by_target_name_calls_gene_by_name(self, mock_genome_and_gene):
+        """Test that from_genome with target_name uses genome.gene_by_name."""
+        genome, gene = mock_genome_and_gene
+
+        result = TargetGeneCreator.from_genome(genome, target_name="KRAS", k=16)
+
+        genome.gene_by_name.assert_called_once_with("KRAS")
+        genome.gene_by_id.assert_not_called()
+        assert result.id == gene.id
+        assert result.name == gene.name
 
 
 @pytest.mark.unit

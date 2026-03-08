@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 from .target_creator import TargetCreator
 from .target_gene import TargetGene
 from GenomeUtils.Genome import Genome, Gene, Exon, Locus
-from typing import Literal, Dict, Set, List, Iterator
+from typing import Literal, Dict, Set, List, Iterator, Optional
 from Bio.Seq import Seq
 from ..sites import Site
 from ..sites import GenomicSite
@@ -115,25 +115,40 @@ class TargetGeneCreator(TargetCreator):
     """
 
     @classmethod
-    def from_genome(cls, genome: Genome, target_id: str, k: int, region: str = "exonic_only") -> TargetGene:
+    def from_genome(
+        cls,
+        genome: Genome,
+        target_id: Optional[str] = None,
+        target_name: Optional[str] = None,
+        *,
+        k: int,
+        region: str = "exonic_only",
+    ) -> TargetGene:
         """
-        Creates a `TargetGene` object from a gene ID within a `Genome` object.
+        Creates a `TargetGene` object from a gene ID or name within a `Genome` object.
+
         Args:
             genome: The Genome object to create the TargetGene from.
-            target_id: The ID of the gene to create the TargetGene from.
-            k: length of the target sites.
+            target_id: The ID of the gene to create the TargetGene from. Provide this or target_name.
+            target_name: The gene symbol/name (e.g. KRAS). Provide this or target_id.
+            k: Length of the target sites.
             region: The region to create the TargetGene from. Can be one of:
             - "exonic_only": Creates the TargetGene from the exons of the gene.
             - "pre-mrna": Creates the TargetGene from the entire gene sequence, including introns and exons.
             - "transcriptomic": Creates the TargetGene from the spliced transcripts of the gene.
-        
+
         Returns:
             A `TargetGene` object.
         """
-        gene_to_target = genome.gene_by_id(target_id)
+        if (target_id is None) == (target_name is None):
+            raise ValueError("Provide exactly one of target_id or target_name")
+
+        if target_id is not None:
+            gene_to_target = genome.gene_by_id(target_id)
+        else:
+            gene_to_target = genome.gene_by_name(target_name)
+            
         gene_sequence = gene_to_target.sequence
-        
-        # Create ID generator with appropriate prefix
         gene_name_clean = gene_to_target.name.replace(" ", "_")
         
         if region == "exonic_only":

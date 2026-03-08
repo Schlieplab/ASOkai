@@ -123,9 +123,9 @@ class TargetGeneCreator(TargetCreator):
             target_id: The ID of the gene to create the TargetGene from.
             k: length of the target sites.
             region: The region to create the TargetGene from. Can be one of:
-                - "exonic_only": Creates the TargetGene from the exons of the gene.
-                - "pre-mrna": Creates the TargetGene from the entire gene sequence, including introns and exons.
-                - "transcriptomic": Creates the TargetGene from the spliced transcripts of the gene.
+            - "exonic_only": Creates the TargetGene from the exons of the gene.
+            - "pre-mrna": Creates the TargetGene from the entire gene sequence, including introns and exons.
+            - "transcriptomic": Creates the TargetGene from the spliced transcripts of the gene.
         
         Returns:
             A `TargetGene` object.
@@ -156,7 +156,7 @@ class TargetGeneCreator(TargetCreator):
             end=gene_to_target.end,
             strand=gene_to_target.strand,
             sequence=gene_sequence,
-            target_sites=sites,
+            sites=sites,
             genome=genome,
             chromosome=gene_to_target.get_chromosome(),
         )

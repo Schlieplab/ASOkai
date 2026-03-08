@@ -30,7 +30,7 @@ class TargetGene(Target, Gene):
                  end: int,
                  strand: Literal["+", "-"],
                  sequence: Seq,
-                 target_sites: Dict[str, Site],
+                 sites: Dict[str, Site],
                  genome: Genome = None,
                  chromosome: "Chromosome" = None, 
                  **kwargs):
@@ -45,7 +45,7 @@ class TargetGene(Target, Gene):
             end: The end position of the candidate target gene.
             strand: The strand of the candidate target gene.
             sequence: The pre-mRNA sequence of the candidate target gene.
-            target_sites: The target sites of the candidate target gene.
+            sites: The target sites of the candidate target gene.
             genome: The genome of the candidate target gene, Optional.
             chromosome: The chromosome of the candidate target gene, Optional.
             **kwargs: Additional keyword arguments.
@@ -53,7 +53,7 @@ class TargetGene(Target, Gene):
         self._sequence = sequence
         
         Target.__init__(self, id, 
-                        target_sites, **kwargs)
+                        sites, **kwargs)
         
         Gene.__init__(self, id, name, 
                       chr, start, end, 

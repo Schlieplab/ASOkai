@@ -36,7 +36,7 @@ def complex_target_gene():
         end=25250936,
         strand="-",
         sequence=gene_sequence,
-        target_sites=sites
+        sites=sites
     )
 
 
@@ -62,9 +62,9 @@ class TestCompleteWorkflow:
         assert str(reconstructed.sequence) == str(complex_target_gene.sequence)
         
         # Verify all sites
-        assert len(reconstructed.target_sites) == len(complex_target_gene.target_sites)
-        orig_by_id = {site.id: site for site in complex_target_gene.target_sites}
-        recon_by_id = {site.id: site for site in reconstructed.target_sites}
+        assert len(reconstructed.sites) == len(complex_target_gene.sites)
+        orig_by_id = {site.id: site for site in complex_target_gene.sites}
+        recon_by_id = {site.id: site for site in reconstructed.sites}
         assert set(recon_by_id.keys()) == set(orig_by_id.keys())
         for site_id, orig in orig_by_id.items():
             recon = recon_by_id[site_id]
@@ -90,7 +90,7 @@ class TestCompleteWorkflow:
         
         # Verify
         assert reconstructed.id == complex_target_gene.id
-        assert len(reconstructed.target_sites) == len(complex_target_gene.target_sites)
+        assert len(reconstructed.sites) == len(complex_target_gene.sites)
     
     def test_json_format_structure(self, complex_target_gene, temp_json_file):
         """Test that JSON has expected flattened structure."""
@@ -107,7 +107,7 @@ class TestCompleteWorkflow:
         assert 'locus' not in data
         
         # Each site should also have flattened locus
-        for site_id, site_data in data['target_sites'].items():
+        for site_id, site_data in data['sites'].items():
             assert 'chr' in site_data
             assert 'start' in site_data
             assert 'end' in site_data
@@ -125,7 +125,7 @@ class TestCompleteWorkflow:
         
         # After 5 cycles, data should still be intact
         assert original.id == complex_target_gene.id
-        assert len(original.target_sites) == len(complex_target_gene.target_sites)
+        assert len(original.sites) == len(complex_target_gene.sites)
     
     def test_data_integrity_with_special_characters(self):
         """Test serialization with special characters in strings."""
@@ -147,7 +147,7 @@ class TestCompleteWorkflow:
             end=1000,
             strand="+",
             sequence=gene_sequence,
-            target_sites={site.id: site}
+            sites={site.id: site}
         )
         
         # Roundtrip
@@ -156,7 +156,7 @@ class TestCompleteWorkflow:
         
         assert reconstructed.id == gene.id
         assert reconstructed.name == gene.name
-        assert site.id in {s.id for s in reconstructed.target_sites}
+        assert site.id in {s.id for s in reconstructed.sites}
 
 
 @pytest.mark.integration
@@ -176,15 +176,15 @@ class TestBackwardCompatibility:
             'end': 1000,
             'strand': '+',
             'sequence': 'ATCGATCG',
-            'target_sites': {}
+            'sites': {}
             # Note: genome and chromosome are missing
         }
         
         obj = TargetGene.from_dict(data)
         assert obj.id == 'ENSG00000001'
     
-    def test_empty_target_sites(self):
-        """Test gene with no target sites."""
+    def test_empty_sites(self):
+        """Test gene with no sites."""
         gene_sequence = Seq("ATCGATCG")
         gene = TargetGene(
             id='ENSG00000001',
@@ -194,13 +194,13 @@ class TestBackwardCompatibility:
             end=1000,
             strand="+",
             sequence=gene_sequence,
-            target_sites={}
+            sites={}
         )
         
         data = gene.to_dict()
         reconstructed = TargetGene.from_dict(data)
         
-        assert len(reconstructed.target_sites) == 0
+        assert len(reconstructed.sites) == 0
 
 
 @pytest.mark.integration
@@ -233,14 +233,14 @@ class TestPerformance:
             end=100000,
             strand="+",
             sequence=gene_sequence,
-            target_sites=sites
+            sites=sites
         )
         
         # Should complete without error
         data = gene.to_dict()
         reconstructed = TargetGene.from_dict(data)
         
-        assert len(reconstructed.target_sites) == 1000
+        assert len(reconstructed.sites) == 1000
     
     def test_file_size_reasonable(self, complex_target_gene, temp_json_file):
         """Test that file size is reasonable (JSON is human-readable)."""

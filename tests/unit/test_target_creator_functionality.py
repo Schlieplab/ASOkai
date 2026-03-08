@@ -18,9 +18,9 @@ class TestTargetCreatorSiteIDGenerator:
         second_id = next(generator)
         third_id = next(generator)
         
-        assert first_id == "ASOkai-S000001"
-        assert second_id == "ASOkai-S000002"
-        assert third_id == "ASOkai-S000003"
+        assert first_id == "ASOkai-S00001"
+        assert second_id == "ASOkai-S00002"
+        assert third_id == "ASOkai-S00003"
     
     def test_site_id_with_extra_prefix(self):
         """Test site ID generation with extra prefix parts."""
@@ -30,7 +30,7 @@ class TestTargetCreatorSiteIDGenerator:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-KRAS-Exon2-S000001"
+        assert first_id == "ASOkai-KRAS-Exon2-S00001"
     
     def test_site_id_with_custom_start(self):
         """Test site ID generation starting from custom number."""
@@ -38,7 +38,7 @@ class TestTargetCreatorSiteIDGenerator:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-S000100"
+        assert first_id == "ASOkai-S00100"
     
     def test_site_id_multiple_extra_parts(self):
         """Test site ID with multiple extra prefix parts."""
@@ -48,7 +48,7 @@ class TestTargetCreatorSiteIDGenerator:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-GENE1-Transcript1-Region1-S000001"
+        assert first_id == "ASOkai-GENE1-Transcript1-Region1-S00001"
     
     def test_site_id_incrementation(self):
         """Test that site IDs increment correctly."""
@@ -57,8 +57,8 @@ class TestTargetCreatorSiteIDGenerator:
         ids = [next(generator) for _ in range(10)]
         
         assert len(ids) == 10
-        assert ids[0] == "ASOkai-S000001"
-        assert ids[9] == "ASOkai-S000010"
+        assert ids[0] == "ASOkai-S00001"
+        assert ids[9] == "ASOkai-S00010"
     
     def test_site_id_zero_padding(self):
         """Test that site IDs have correct zero padding."""
@@ -68,12 +68,12 @@ class TestTargetCreatorSiteIDGenerator:
         id_100 = next(generator)
         id_1000 = next(generator)
         
-        assert id_99 == "ASOkai-S000099"
-        assert id_100 == "ASOkai-S000100"
+        assert id_99 == "ASOkai-S00099"
+        assert id_100 == "ASOkai-S00100"
         for _ in range(898):
             next(generator)
         id_1000 = next(generator)
-        assert id_1000 == "ASOkai-S001000"
+        assert id_1000 == "ASOkai-S01000"
     
     def test_site_id_generator_is_iterator(self):
         """Test that site_id_generator returns an iterator."""
@@ -87,10 +87,10 @@ class TestTargetCreatorSiteIDGenerator:
         gen1 = TargetCreator.site_id_generator()
         gen2 = TargetCreator.site_id_generator(start=100)
         
-        assert next(gen1) == "ASOkai-S000001"
-        assert next(gen2) == "ASOkai-S000100"
-        assert next(gen1) == "ASOkai-S000002"
-        assert next(gen2) == "ASOkai-S000101"
+        assert next(gen1) == "ASOkai-S00001"
+        assert next(gen2) == "ASOkai-S00100"
+        assert next(gen1) == "ASOkai-S00002"
+        assert next(gen2) == "ASOkai-S00101"
 
 
 @pytest.mark.unit
@@ -125,7 +125,7 @@ class TestSiteIDFormatting:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-Gene Name-Region Name-S000001"
+        assert first_id == "ASOkai-Gene Name-Region Name-S00001"
     
     def test_site_id_with_empty_extra_parts(self):
         """Test site ID generation with empty extra parts list."""
@@ -135,7 +135,7 @@ class TestSiteIDFormatting:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-S000001"
+        assert first_id == "ASOkai-S00001"
     
     def test_site_id_with_none_extra_parts(self):
         """Test site ID generation with None extra parts."""
@@ -145,7 +145,7 @@ class TestSiteIDFormatting:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-S000001"
+        assert first_id == "ASOkai-S00001"
     
     def test_site_id_large_numbers(self):
         """Test site ID with very large numbers."""
@@ -203,4 +203,4 @@ class TestTargetCreatorClassAttributes:
         generator = CustomTargetCreator.site_id_generator()
         first_id = next(generator)
         
-        assert first_id == "ASOkai-Custom-S000001"
+        assert first_id == "ASOkai-Custom-S00001"

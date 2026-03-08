@@ -40,37 +40,37 @@ class TestTargetBase:
         """Test Target initialization."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         assert target.id == "target_001"
-        assert len(target.target_sites) == 3
+        assert len(target.sites) == 3
     
-    def test_target_sites_property(self, sample_sites_dict):
-        """Test target_sites property returns a list of sites."""
+    def test_sites_property(self, sample_sites_dict):
+        """Test sites property returns a list of sites."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
-        assert isinstance(target.target_sites, list)
-        assert {s.id for s in target.target_sites} == set(sample_sites_dict.keys())
+        assert isinstance(target.sites, list)
+        assert {s.id for s in target.sites} == set(sample_sites_dict.keys())
     
-    def test_target_sites_as_list(self, sample_sites_dict):
-        """Test target_sites list contents."""
+    def test_sites_as_list(self, sample_sites_dict):
+        """Test sites list contents."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
-        assert len(target.target_sites) == 3
-        assert all(isinstance(s, GenomicSite) for s in target.target_sites)
+        assert len(target.sites) == 3
+        assert all(isinstance(s, GenomicSite) for s in target.sites)
     
     def test_site_by_id(self, sample_sites_dict):
         """Test retrieving site by ID."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         site = target.site_by_id("site_1")
@@ -82,27 +82,27 @@ class TestTargetBase:
         """Test that ValueError is raised for non-existent site ID."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         with pytest.raises(ValueError, match="not found"):
             target.site_by_id("nonexistent_site")
     
-    def test_empty_target_sites(self):
+    def test_empty_sites(self):
         """Test target with no sites."""
         target = ConcreteTarget(
             id="target_001",
-            target_sites={}
+            sites={}
         )
         
-        assert len(target.target_sites) == 0
-        assert target.target_sites == []
+        assert len(target.sites) == 0
+        assert target.sites == []
     
     def test_target_name_mapping(self):
         """Target uses attribute adapters for serialization (no name-map helper)."""
-        target = ConcreteTarget(id="t", target_sites={})
+        target = ConcreteTarget(id="t", sites={})
         data = target.to_dict()
-        assert "target_sites" in data
+        assert "sites" in data
 
 
 @pytest.mark.unit
@@ -119,7 +119,7 @@ class TestTargetGeneInitialization:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         assert gene.id == "ENSG00000001"
@@ -129,7 +129,7 @@ class TestTargetGeneInitialization:
         assert gene.end == 1000
         assert gene.strand == "+"
         assert gene.sequence == sample_sequence
-        assert len(gene.target_sites) == 3
+        assert len(gene.sites) == 3
     
     def test_target_gene_sequence_property(self, sample_sequence, sample_sites_dict):
         """Test that sequence property works correctly."""
@@ -141,7 +141,7 @@ class TestTargetGeneInitialization:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         # sequence property should return _sequence
@@ -158,7 +158,7 @@ class TestTargetGeneInitialization:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict,
+            sites=sample_sites_dict,
             genome=None
         )
         
@@ -174,11 +174,11 @@ class TestTargetGeneInitialization:
             end=1000,
             strand="+",
             sequence=Seq("ATCG"),
-            target_sites={},
+            sites={},
         )
         data = gene.to_dict()
         assert "sequence" in data
-        assert "target_sites" in data
+        assert "sites" in data
 
 
 @pytest.mark.unit
@@ -195,7 +195,7 @@ class TestTargetGeneFunctionality:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         # Access site by ID
@@ -203,7 +203,7 @@ class TestTargetGeneFunctionality:
         assert site.id == "site_0"
         
         # Access all sites as a list
-        sites_list = gene.target_sites
+        sites_list = gene.sites
         assert len(sites_list) == 3
         assert any(s.id == "site_0" for s in sites_list)
     
@@ -229,10 +229,10 @@ class TestTargetGeneFunctionality:
             end=10000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sites
+            sites=sites
         )
         
-        assert len(gene.target_sites) == 100
+        assert len(gene.sites) == 100
     
     def test_target_gene_empty_sites(self, sample_sequence):
         """Test TargetGene with no sites."""
@@ -244,11 +244,11 @@ class TestTargetGeneFunctionality:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={}
+            sites={}
         )
         
-        assert len(gene.target_sites) == 0
-        assert gene.target_sites == []
+        assert len(gene.sites) == 0
+        assert gene.sites == []
     
     def test_target_gene_different_strands(self, sample_sequence, sample_sites_dict):
         """Test genes on different strands."""
@@ -260,7 +260,7 @@ class TestTargetGeneFunctionality:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         gene_minus = TargetGene(
             id="ENSG00000002",
@@ -270,7 +270,7 @@ class TestTargetGeneFunctionality:
             end=1000,
             strand="-",
             sequence=sample_sequence,
-            target_sites=sample_sites_dict
+            sites=sample_sites_dict
         )
         
         assert gene_plus.strand == "+"
@@ -291,7 +291,7 @@ class TestTargetGeneEdgeCases:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={}
+            sites={}
         )
         
         assert gene.name == "TEST-GENE_v2.1"
@@ -306,7 +306,7 @@ class TestTargetGeneEdgeCases:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={}
+            sites={}
         )
         
         assert gene.id == "ENSG00000001.2"
@@ -321,7 +321,7 @@ class TestTargetGeneEdgeCases:
             end=100,
             strand="+",
             sequence=sample_sequence,
-            target_sites={}
+            sites={}
         )
         
         assert gene.chr == "MT"
@@ -337,7 +337,7 @@ class TestTargetGeneEdgeCases:
             end=large_coord + 1000000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={}
+            sites={}
         )
         
         assert gene.start == large_coord
@@ -354,7 +354,7 @@ class TestTargetGeneEdgeCases:
             end=1000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={},
+            sites={},
             custom_attribute="custom_value"
         )
         

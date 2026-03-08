@@ -23,7 +23,7 @@ class TestTargetGeneCreatorSiteIDPrefix:
         
         first_id = next(generator)
         
-        assert first_id == "ASOkai-KRAS-Premrna-S000001"
+        assert first_id == "ASOkai-KRAS-Premrna-S00001"
     
     def test_gene_name_in_prefix(self):
         """Test that gene name can be included in prefix."""
@@ -38,7 +38,7 @@ class TestTargetGeneCreatorSiteIDPrefix:
         
         assert gene_name in site_id
         assert region in site_id
-        assert site_id == "ASOkai-TP53-Exon-S000001"
+        assert site_id == "ASOkai-TP53-Exon-S00001"
 
 
 @pytest.mark.unit

@@ -32,8 +32,8 @@ def register_attributes() -> None:
     # Target: register attribute mapping for cleaner serialization.
     # Import lazily to avoid circular imports.
     Target.register_attribute(
-        '_target_sites',
-        'target_sites',
+        '_sites',
+        'sites',
         serialize=lambda sites: {k: (v.to_dict() if isinstance(v, Serializable) else v) for k, v in sites.items()},
     )
     # Register GenomeUtils.Locus with flatten=True

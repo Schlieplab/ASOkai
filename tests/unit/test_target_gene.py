@@ -10,8 +10,8 @@ from ASOkai.sites.genomic_site import GenomicSite
 
 
 @pytest.fixture
-def sample_target_sites(sample_sequence):
-    """Create sample target sites for testing."""
+def sample_sites(sample_sequence):
+    """Create sample sites for testing."""
     site1 = GenomicSite(
         chr="12", start=100, end=115, strand="+",
         sequence=sample_sequence, id="site1"
@@ -24,7 +24,7 @@ def sample_target_sites(sample_sequence):
 
 
 @pytest.fixture
-def sample_target_gene(sample_sequence, sample_target_sites):
+def sample_target_gene(sample_sequence, sample_sites):
     """Create a sample TargetGene for testing."""
     return TargetGene(
         id="ENSG00000001",
@@ -34,7 +34,7 @@ def sample_target_gene(sample_sequence, sample_target_sites):
         end=1000,
         strand="+",
         sequence=sample_sequence,
-        target_sites=sample_target_sites
+        sites=sample_sites
     )
 
 
@@ -80,20 +80,20 @@ class TestTargetGeneSerialization:
         assert data['sequence'] == str(sample_sequence)
         assert '_sequence' not in data
         
-    def test_target_sites_serialized(self, sample_target_gene):
+    def test_sites_serialized(self, sample_target_gene):
         """Test that target sites dictionary is serialized."""
         data = sample_target_gene.to_dict()
         
-        assert 'target_sites' in data
-        assert isinstance(data['target_sites'], dict)
-        assert 'site1' in data['target_sites']
-        assert 'site2' in data['target_sites']
+        assert 'sites' in data
+        assert isinstance(data['sites'], dict)
+        assert 'site1' in data['sites']
+        assert 'site2' in data['sites']
         
-    def test_target_sites_have_flattened_locus(self, sample_target_gene):
+    def test_sites_have_flattened_locus(self, sample_target_gene):
         """Test that nested sites also have flattened locus."""
         data = sample_target_gene.to_dict()
         
-        site1_data = data['target_sites']['site1']
+        site1_data = data['sites']['site1']
         
         # Each site should have flattened locus
         assert 'chr' in site1_data
@@ -140,7 +140,7 @@ class TestTargetGeneDeserialization:
             'end': 1000,
             'strand': '+',
             'sequence': str(sample_sequence),
-            'target_sites': {}
+            'sites': {}
         }
         
         obj = TargetGene.from_dict(data)
@@ -165,7 +165,7 @@ class TestTargetGeneDeserialization:
             'end': 1000,
             'strand': '+',
             'sequence': str(sample_sequence),
-            'target_sites': {}
+            'sites': {}
         }
         
         obj = TargetGene.from_dict(data)
@@ -185,7 +185,7 @@ class TestTargetGeneDeserialization:
             'end': 1000,
             'strand': '+',
             'sequence': str(sample_sequence),
-            'target_sites': {}
+            'sites': {}
         }
         
         obj = TargetGene.from_dict(data)
@@ -193,7 +193,7 @@ class TestTargetGeneDeserialization:
         assert isinstance(obj.sequence, Seq)
         assert str(obj.sequence) == str(sample_sequence)
         
-    def test_target_sites_reconstructed(self, sample_sequence):
+    def test_sites_reconstructed(self, sample_sequence):
         """Test that target sites are reconstructed as GenomicSite objects."""
         data = {
             '__class__': 'TargetGene',
@@ -205,7 +205,7 @@ class TestTargetGeneDeserialization:
             'end': 1000,
             'strand': '+',
             'sequence': str(sample_sequence),
-            'target_sites': {
+            'sites': {
                 'site1': {
                     '__class__': 'GenomicSite',
                     '__module__': 'ASOkai.sites.genomic_site',
@@ -221,7 +221,7 @@ class TestTargetGeneDeserialization:
         
         obj = TargetGene.from_dict(data)
         
-        assert any(site.id == 'site1' for site in obj.target_sites)
+        assert any(site.id == 'site1' for site in obj.sites)
         site1 = obj.site_by_id('site1')
         assert isinstance(site1, GenomicSite)
         assert site1.id == 'site1'
@@ -245,15 +245,15 @@ class TestTargetGeneRoundtrip:
         assert reconstructed.strand == sample_target_gene.strand
         assert str(reconstructed.sequence) == str(sample_target_gene.sequence)
         
-    def test_roundtrip_preserves_target_sites(self, sample_target_gene):
+    def test_roundtrip_preserves_sites(self, sample_target_gene):
         """Test that target sites are preserved through roundtrip."""
         data = sample_target_gene.to_dict()
         reconstructed = TargetGene.from_dict(data)
         
-        assert len(reconstructed.target_sites) == len(sample_target_gene.target_sites)
+        assert len(reconstructed.sites) == len(sample_target_gene.sites)
         
-        orig_by_id = {site.id: site for site in sample_target_gene.target_sites}
-        recon_by_id = {site.id: site for site in reconstructed.target_sites}
+        orig_by_id = {site.id: site for site in sample_target_gene.sites}
+        recon_by_id = {site.id: site for site in reconstructed.sites}
         assert set(recon_by_id.keys()) == set(orig_by_id.keys())
         
         for site_id, orig_site in orig_by_id.items():
@@ -272,7 +272,7 @@ class TestTargetGeneRoundtrip:
         
         assert reconstructed.id == sample_target_gene.id
         assert reconstructed.name == sample_target_gene.name
-        assert len(reconstructed.target_sites) == len(sample_target_gene.target_sites)
+        assert len(reconstructed.sites) == len(sample_target_gene.sites)
         
     def test_large_number_of_sites(self, sample_sequence):
         """Test serialization with many target sites."""
@@ -297,15 +297,15 @@ class TestTargetGeneRoundtrip:
             end=10000,
             strand="+",
             sequence=sample_sequence,
-            target_sites=sites
+            sites=sites
         )
         
         # Roundtrip
         data = gene.to_dict()
         reconstructed = TargetGene.from_dict(data)
         
-        assert len(reconstructed.target_sites) == 100
-        recon_ids = {site.id for site in reconstructed.target_sites}
+        assert len(reconstructed.sites) == 100
+        recon_ids = {site.id for site in reconstructed.sites}
         assert all(f"site_{i}" in recon_ids for i in range(100))
     
     def test_roundtrip_with_kwargs(self, sample_sequence, locus_components):
@@ -327,7 +327,7 @@ class TestTargetGeneRoundtrip:
             end=10000,
             strand="+",
             sequence=sample_sequence,
-            target_sites={"test_site": site},
+            sites={"test_site": site},
             custom_attr="custom_value",
             expression_level=123.45,
             annotations={"disease": "cancer", "pathway": "MAPK"}

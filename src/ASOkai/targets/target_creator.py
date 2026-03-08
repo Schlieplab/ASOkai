@@ -63,5 +63,5 @@ class TargetCreator(ABC):
         prefix = "-".join(all_prefix_parts)
         i = start
         while True:
-            yield f"{prefix}-S{i:06d}"
+            yield f"{prefix}-S{i:05d}"
             i += 1 

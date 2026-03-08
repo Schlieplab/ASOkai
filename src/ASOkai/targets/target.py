@@ -20,21 +20,21 @@ class Target(Serializable, ABC):
     """
     def __init__(self, 
                  id: str, 
-                 target_sites: Dict[str, Site], 
+                 sites: Dict[str, Site], 
                  **kwargs):
         """
         Initializes a `CandidateTarget` object.
         
         Args:
             id: The ID of the target.
-            target_sites: The target sites of the target.
+            sites: The target sites of the target.
             **kwargs: Additional keyword arguments.
         """
         self.id = id
         
         Serializable.__init__(self, **kwargs)
         
-        self._target_sites: Dict[str, Site] = target_sites
+        self._sites: Dict[str, Site] = sites
     
         
     def site_by_id(self, id: str) -> Site:
@@ -44,17 +44,17 @@ class Target(Serializable, ABC):
         Args:
             id: The ID of the target site.
         """
-        if id not in self._target_sites:
+        if id not in self._sites:
             raise ValueError(f"Target site with ID '{id}' not found.")
         
-        return self._target_sites[id]
+        return self._sites[id]
     
     
     
     @property
-    def target_sites(self) -> List[Site]:
+    def sites(self) -> List[Site]:
         """
-        Get all target sites as a dictionary.
+        Get all target sites as a list.
         """
-        return list(self._target_sites.values())
+        return list(self._sites.values())
         

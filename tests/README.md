@@ -120,8 +120,8 @@ The test suite covers:
 
 5. **TargetGene Serialization** (`test_target_gene.py`)
    - Gene attribute serialization
-   - Nested target sites preservation
-   - Name mapping for _sequence and _target_sites
+   - Nested sites preservation
+   - Name mapping for _sequence and _sites -> sites
    - Large numbers of sites
    - Complete roundtrip
 
@@ -150,7 +150,7 @@ The test suite covers:
 
 9. **Target and TargetGene Functionality** (`test_target_functionality.py`)
    - Target base class initialization
-   - Site management (site_by_id, sites property, target_sites property)
+   - Site management (site_by_id, sites property)
    - TargetGene initialization with gene attributes
    - Accessing sites from TargetGene
    - Many sites handling
@@ -181,7 +181,7 @@ The test suite covers:
 
 2. **Backward Compatibility**
    - Missing optional attributes
-   - Empty target sites
+   - Empty sites
 
 3. **Performance**
    - Large gene serialization (1000 sites)

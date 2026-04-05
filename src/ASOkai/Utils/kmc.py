@@ -9,8 +9,8 @@ KMC is GPLv3-only third-party software (https://github.com/refresh-bio/KMC). See
 """
 from __future__ import annotations
 
+import logging
 import os
-import sys
 import shlex
 import shutil
 import subprocess
@@ -21,6 +21,8 @@ from typing import Any, Literal, Sequence
 
 InputFormat = Literal["fa", "fq", "fm", "fbam", "fkmc"]
 OutputKind = Literal["kmc", "kff"]
+
+logger = logging.getLogger(__name__)
 
 
 class KMCExecutionError(RuntimeError):
@@ -79,67 +81,68 @@ class KMCDatabase:
         k = int(kwargs.get("k", 25))
         ci = int(kwargs.get("min_count", 2))
         cs = int(kwargs.get("counter_max", 255))
-        hc = int(bool(kwargs.get("homopolymer_compressed", False)))
-        cx = int(kwargs.get("max_count", 1_000_000_000))
+        hc = bool(kwargs.get("homopolymer_compressed", False))
 
-        return (directory / f"{stem}.k{k}.ci{ci}.cs{cs}.hc{hc}.cx{cx}").resolve()
+        return (directory / f"{stem}.k{k}.ci{ci}.cs{cs}{'.hc' if hc else ''}").resolve()
 
     @classmethod
     def build(
         cls,
-        kmc: "KMC",
         input_path: str | Path,
+        kmc: "KMC | None" = None,
         working_dir: str | Path | None = None,
         output_dir: str | Path | None = None,
         force: bool = False,
         **kwargs: Any,
-    ) -> KMCDatabase | None:
+    ) -> "KMCDatabase | None":
         """
-            Builds the KMC database if it doesn't already exist or if `force` is True.
+        Builds the KMC database if it doesn't already exist or if `force` is True.
 
-            Args:
-                kmc (KMC): The KMC executable wrapper instance.
-                input_path (str | Path): Path to the input sequence file or `@<list_file>`.
-                working_dir (str | Path | None, optional): Scratch directory for KMC. If None, a temporary directory is used.
-                output_dir (str | Path | None, optional): Explicit directory for the output database. Defaults to the input file's directory.
-                force (bool, optional): If True, forces a rebuild even if the database shards already exist. Defaults to False.
+        Args:
+            input_path (str | Path): Path to the input sequence file or `@<list_file>`.
+            kmc (KMC | None, optional): The KMC executable wrapper instance. Defaults to a new KMC() instance.
+            working_dir (str | Path | None, optional): Scratch directory for KMC. If None, a temporary directory is created in the current working directory and deleted after.
+            output_dir (str | Path | None, optional): Explicit directory for the output database. Defaults to the input file's directory.
+            force (bool, optional): If True, forces a rebuild even if the database shards already exist. Defaults to False.
 
-            Keyword Args (KMC Parameters):
-                k (int): K-mer length, 1-256. Defaults to 25.
-                memory_gb (int): Max RAM limit in GB, 1-1024. Defaults to 12.
-                input_format (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
-                threads (int | None): Number of threads. Defaults to all CPU cores.
-                strict_memory (bool): Enforce strict RAM limit. Defaults to False.
-                homopolymer_compressed (bool): Compress homopolymer runs. Defaults to False.
-                signature_length (int | None): Signature length, 5-11. Defaults to 9.
-                min_count (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
-                counter_max (int | None): Maximum counter value. Defaults to 255.
-                max_count (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
-                canonical (bool): Use canonical k-mers. Defaults to True.
-                ram_only (bool): Keep all data in RAM. Defaults to False.
-                n_bins (int | None): Number of bins.
-                sf (int | None): FASTQ reading threads.
-                sp (int | None): Splitting threads.
-                sr (int | None): 2nd-stage threads.
-                json_summary (str | Path | None): Write JSON summary to this file.
-                without_output (bool): Skip writing database shards (`-w`). Defaults to False.
-                output_kind (OutputKind | None): Output format ('kmc' or 'kff').
-                hide_progress (bool): Suppress progress percentage output. Defaults to False.
-                estimate_histogram_only (bool): Estimate histogram without counting (`-e`). Defaults to False.
-                optimize_output_size (bool): Reduce output file size. Defaults to False.
-                verbose (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
-                debug (bool): Print paths and stream subprocess output to the terminal. Defaults to True.
-                check (bool): Raise `KMCExecutionError` if `kmc` exits non-zero. Defaults to True.
-                additional_args (Sequence[str] | None): Extra command-line arguments passed verbatim to `kmc`.
+        Keyword Args (KMC Parameters):
+            k (int): K-mer length, 1-256. Defaults to 25.
+            memory_gb (int): Max RAM limit in GB, 1-1024. Defaults to 12.
+            input_format (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
+            threads (int | None): Number of threads. Defaults to all CPU cores.
+            strict_memory (bool): Enforce strict RAM limit. Defaults to False.
+            homopolymer_compressed (bool): Compress homopolymer runs. Defaults to False.
+            signature_length (int | None): Signature length, 5-11. Defaults to 9.
+            min_count (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
+            counter_max (int | None): Maximum counter value. Defaults to 255.
+            max_count (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
+            canonical (bool): Use canonical k-mers. Defaults to True.
+            ram_only (bool): Keep all data in RAM. Defaults to False.
+            n_bins (int | None): Number of bins.
+            sf (int | None): FASTQ reading threads.
+            sp (int | None): Splitting threads.
+            sr (int | None): 2nd-stage threads.
+            json_summary (str | Path | None): Write JSON summary to this file.
+            without_output (bool): Skip writing database shards (`-w`). Defaults to False.
+            output_kind (OutputKind | None): Output format ('kmc' or 'kff').
+            hide_progress (bool): Suppress progress percentage output. Defaults to False.
+            estimate_histogram_only (bool): Estimate histogram without counting (`-e`). Defaults to False.
+            optimize_output_size (bool): Reduce output file size. Defaults to False.
+            verbose (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
+            debug (bool): Log cwd and full command at DEBUG; stream subprocess stdout/stderr to the terminal. Defaults to True.
+            check (bool): Raise `KMCExecutionError` if `kmc` exits non-zero. Defaults to True.
+            additional_args (Sequence[str] | None): Extra command-line arguments passed verbatim to `kmc`.
 
-            Returns:
-                KMCDatabase | None: The database handle if successful, or None if `without_output` or 
-                `estimate_histogram_only` is used and no prior shards exist.
+        Returns:
+            KMCDatabase | None: The database handle if successful, or None if `without_output` or 
+            `estimate_histogram_only` is used and no prior shards exist.
 
-            Raises:
-                KMCExecutionError: If `kmc` exits non-zero (when `check=True`), or if `kmc` succeeds 
-                but the expected shard files (`.kmc_pre`, `.kmc_suf`) are missing.
-            """
+        Raises:
+            KMCExecutionError: If `kmc` exits non-zero (when `check=True`), or if `kmc` succeeds 
+            but the expected shard files (`.kmc_pre`, `.kmc_suf`) are missing.
+        """
+        if kmc is None:
+            kmc = KMC()
         prefix = cls.resolve_prefix(input_path, output_dir, **kwargs)
         db = cls(prefix, int(kwargs.get("k", 25)))
 
@@ -147,11 +150,10 @@ class KMCDatabase:
         
         # Skip build if database already exists and force is off
         if db.exists and not force and not skip_output:
-            if kwargs.get("debug"):
-                print(f"[kmc] Database exists, skipping build: {prefix}")
+            logger.info("KMC database already exists, skipping build: %s", prefix)
             return db
 
-        def _execute(work: Path) -> KMCDatabase | None:
+        def _execute(work: Path) -> "KMCDatabase | None":
             proc = kmc.run(input_path, prefix, work, **kwargs)
             
             if skip_output:
@@ -170,9 +172,10 @@ class KMCDatabase:
         if working_dir:
             return _execute(Path(working_dir))
         
-        with tempfile.TemporaryDirectory() as td:
+        # Create a temporary directory inside the current working directory
+        # The 'with' context manager ensures it gets deleted after _execute completes.
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
             return _execute(Path(td))
-
 
 class KMC:
     """
@@ -292,10 +295,10 @@ class KMC:
         argv.extend([self._resolve_input(input_path), str(out_prefix), str(work)])
 
         if debug:
-            print(f"[kmc] cwd: {work}")
-            print(f"[kmc] cmd: {' '.join(shlex.quote(str(a)) for a in argv)}", flush=True)
+            logger.debug("kmc cwd: %s", work)
+            logger.debug("kmc cmd: %s", " ".join(shlex.quote(str(a)) for a in argv))
         else:
-            print(f"[kmc] building k={k} → {out_prefix.name}", flush=True)
+            logger.info("kmc building k=%s → %s", k, out_prefix.name)
 
         # Execute
         proc = subprocess.run(
@@ -307,7 +310,7 @@ class KMC:
         )
 
         if not debug and proc.returncode == 0:
-            print(f"[kmc] done: {out_prefix}", flush=True)
+            logger.info("kmc done: %s", out_prefix)
 
         if check and proc.returncode != 0:
             err_msg = proc.stderr or proc.stdout or ""

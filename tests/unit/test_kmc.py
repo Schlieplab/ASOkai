@@ -205,7 +205,7 @@ def test_kmcdatabase_paths(tmp_path: Path) -> None:
 def test_resolve_prefix_defaults(tmp_path: Path) -> None:
     inp = tmp_path / "reads.fa"
     p = KMCDatabase.resolve_prefix(inp)
-    assert p.name == "reads.k25.ci2.cs255.hc0.cx1000000000"
+    assert p.name == "reads.k25.ci2.cs255"
     assert p.parent == inp.parent.resolve()
 
 
@@ -215,7 +215,7 @@ def test_resolve_prefix_custom_dir(tmp_path: Path) -> None:
     p = KMCDatabase.resolve_prefix(inp, output_dir=alt, k=21, min_count=1)
     
     assert p.parent == alt.resolve()
-    assert p.name == "reads.k21.ci1.cs255.hc0.cx1000000000"
+    assert p.name == "reads.k21.ci1.cs255"
 
 
 def test_build_without_output_returns_none_when_no_shards(kmc: KMC, tmp_path: Path) -> None:
@@ -223,7 +223,7 @@ def test_build_without_output_returns_none_when_no_shards(kmc: KMC, tmp_path: Pa
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     
     with patch.object(kmc, "run", return_value=completed):
-        result = KMCDatabase.build(kmc, inp, without_output=True)
+        result = KMCDatabase.build(inp, kmc, without_output=True)
     assert result is None
 
 
@@ -235,7 +235,7 @@ def test_build_without_output_returns_existing_handle(kmc: KMC, tmp_path: Path) 
     
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     with patch.object(kmc, "run", return_value=completed):
-        db = KMCDatabase.build(kmc, inp, without_output=True)
+        db = KMCDatabase.build(inp, kmc, without_output=True)
     
     assert isinstance(db, KMCDatabase)
     assert db.exists
@@ -243,7 +243,7 @@ def test_build_without_output_returns_existing_handle(kmc: KMC, tmp_path: Path) 
 
 def test_build_success_returns_handle(kmc: KMC, tmp_path: Path) -> None:
     inp = tmp_path / "in.fa"
-    expected_prefix = tmp_path / "in.k12.ci2.cs255.hc0.cx1000000000"
+    expected_prefix = tmp_path / "in.k12.ci2.cs255"
     scratch_seen: list[Path] = []
 
     def fake_run(ip: Path, op: Path, wd: Path, **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -258,7 +258,7 @@ def test_build_success_returns_handle(kmc: KMC, tmp_path: Path) -> None:
         return subprocess.CompletedProcess(args=["kmc"], returncode=0, stdout="", stderr="")
 
     with patch.object(kmc, "run", side_effect=fake_run):
-        db = KMCDatabase.build(kmc, inp, k=12)
+        db = KMCDatabase.build(inp, kmc, k=12)
         
     assert not scratch_seen[0].exists()  # Temp dir should be cleaned up
     assert isinstance(db, KMCDatabase)
@@ -272,7 +272,7 @@ def test_build_missing_files_after_success_raises(kmc: KMC, tmp_path: Path) -> N
     
     with patch.object(kmc, "run", return_value=completed):
         with pytest.raises(KMCExecutionError, match="missing"):
-            KMCDatabase.build(kmc, inp, k=12)
+            KMCDatabase.build(inp, kmc, k=12)
 
 
 def test_build_keeps_explicit_working_directory(kmc: KMC, tmp_path: Path) -> None:
@@ -289,7 +289,7 @@ def test_build_keeps_explicit_working_directory(kmc: KMC, tmp_path: Path) -> Non
         return completed
 
     with patch.object(kmc, "run", side_effect=fake_run):
-        db = KMCDatabase.build(kmc, inp, working_dir=work, k=12)
+        db = KMCDatabase.build(inp, kmc, working_dir=work, k=12)
         
     assert db is not None
     assert work.is_dir()
@@ -302,7 +302,7 @@ def test_build_skips_when_exists(kmc: KMC, tmp_path: Path) -> None:
     Path(f"{prefix}.kmc_suf").write_text("s")
     
     with patch.object(kmc, "run") as mock_run:
-        db = KMCDatabase.build(kmc, inp)
+        db = KMCDatabase.build(inp, kmc)
         
     mock_run.assert_not_called()
     assert db is not None
@@ -323,6 +323,6 @@ def test_build_force_rebuilds(kmc: KMC, tmp_path: Path) -> None:
         return completed
 
     with patch.object(kmc, "run", side_effect=fake_run):
-        KMCDatabase.build(kmc, inp, force=True)
+        KMCDatabase.build(inp, kmc, force=True)
         
     assert Path(f"{prefix}.kmc_pre").read_text() == "p2"

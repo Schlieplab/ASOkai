@@ -163,3 +163,5 @@ cython_debug/
 #.idea/
 submit_job.sh
 *.ipynb
+
+.vscode/*

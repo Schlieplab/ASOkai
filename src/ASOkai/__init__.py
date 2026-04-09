@@ -13,7 +13,7 @@ from . import Targets
 from . import Biochemistry
 from . import Analysis
 from . import Utils
-from .Utils import attribute_registrations  # Auto-registers external types on import
+from .Utils import _attribute_registrations  # noqa: F401
 
 __all__ = [
     "Sites",

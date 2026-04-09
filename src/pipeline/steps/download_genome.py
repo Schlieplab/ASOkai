@@ -26,7 +26,7 @@ class DownloadGenomeStep:
 
     @property
     def cwl_path(self) -> str:
-        return str(files("ASOkai.cwl.steps").joinpath("download-genome.cwl"))
+        return str(files("cwl.steps").joinpath("download-genome.cwl"))
 
     def _genome_dir(self, config: dict) -> Path:
         return (

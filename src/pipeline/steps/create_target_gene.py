@@ -28,7 +28,7 @@ class CreateTargetGeneStep:
 
     @property
     def cwl_path(self) -> str:
-        return str(files("ASOkai.cwl.steps").joinpath("create-target-gene.cwl"))
+        return str(files("cwl.steps").joinpath("create-target-gene.cwl"))
 
     def _effective_target_id(self, config: dict) -> str:
         """Return target_id if present, fall back to target_name."""

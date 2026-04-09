@@ -1,7 +1,7 @@
 """Tests for pipeline config loading and resolution."""
 import pytest
 from pathlib import Path
-from ASOkai.pipeline import config as cfg
+from pipeline import config as cfg
 
 
 @pytest.fixture

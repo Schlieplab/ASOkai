@@ -12,9 +12,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ASOkai.pipeline import config as cfg
-from ASOkai.pipeline.base import Step
-from ASOkai.pipeline.registry import get_steps, get_tasks, get_workflows
+from pipeline import config as cfg
+from pipeline.base import Step
+from pipeline.registry import get_steps, get_tasks, get_workflows
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ class StandardWorkflow:
 
     @property
     def cwl_path(self) -> str:
-        return str(files("ASOkai.cwl.workflows").joinpath("standard.cwl"))
+        return str(files("cwl.workflows").joinpath("standard.cwl"))
 
     def outdir(self, config: dict) -> Path:
         return Path(config["datadir"]).resolve()

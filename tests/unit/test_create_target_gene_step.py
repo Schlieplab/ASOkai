@@ -1,8 +1,8 @@
 """Tests for CreateTargetGeneStep."""
 import pytest
 from pathlib import Path
-from ASOkai.pipeline.steps.create_target_gene import CreateTargetGeneStep
-from ASOkai.pipeline.base import Step
+from pipeline.steps.create_target_gene import CreateTargetGeneStep
+from pipeline.base import Step
 
 
 @pytest.fixture

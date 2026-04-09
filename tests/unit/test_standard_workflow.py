@@ -1,7 +1,7 @@
 """Tests for StandardWorkflow."""
 import pytest
 from pathlib import Path
-from ASOkai.pipeline.workflows.standard import StandardWorkflow
+from pipeline.workflows.standard import StandardWorkflow
 
 
 @pytest.fixture

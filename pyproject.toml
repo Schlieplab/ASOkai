@@ -30,15 +30,21 @@ dependencies = [
     "GenomeUtils>=0.1.1,<2",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.setuptools.package-data]
-"ASOkai.cwl.steps"     = ["*.cwl"]
-"ASOkai.cwl.tasks"     = ["*.cwl"]
-"ASOkai.cwl.workflows" = ["*.cwl"]
+"cwl.steps"     = ["*.cwl"]
+"cwl.tasks"     = ["*.cwl"]
+"cwl.workflows" = ["*.cwl"]
 
 [project.scripts]
-ASOkai              = "ASOkai.cli.main:main"
-download-genome     = "ASOkai.pipeline.steps.download_genome:main"
-create-target-gene  = "ASOkai.pipeline.steps.create_target_gene:main"
-intrinsic-features  = "ASOkai.pipeline.steps.intrinsic_features:main"
+ASOkai              = "cli.main:main"
+download-genome     = "pipeline.steps.download_genome:main"
+create-target-gene  = "pipeline.steps.create_target_gene:main"
+intrinsic-features  = "pipeline.steps.intrinsic_features:main"
 
 

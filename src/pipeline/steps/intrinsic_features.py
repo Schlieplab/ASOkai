@@ -25,7 +25,7 @@ class IntrinsicFeaturesStep:
 
     @property
     def cwl_path(self) -> str:
-        return str(files("ASOkai.cwl.steps").joinpath("intrinsic-features.cwl"))
+        return str(files("cwl.steps").joinpath("intrinsic-features.cwl"))
 
     def _effective_target_id(self, config: dict) -> str:
         return config["target"].get("target_id") or config["target"].get("target_name")

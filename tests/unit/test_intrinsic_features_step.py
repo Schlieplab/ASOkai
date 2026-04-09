@@ -1,8 +1,8 @@
 """Tests for IntrinsicFeaturesStep."""
 import pytest
 from pathlib import Path
-from ASOkai.pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
-from ASOkai.pipeline.base import Step
+from pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
+from pipeline.base import Step
 
 
 @pytest.fixture

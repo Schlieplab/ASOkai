@@ -12,9 +12,9 @@ from pathlib import Path
 import click
 import yaml
 
-from ASOkai.pipeline import config as cfg
-from ASOkai.pipeline import runner
-from ASOkai.pipeline.registry import get_steps, get_tasks, get_workflows
+from pipeline import config as cfg
+from pipeline import runner
+from pipeline.registry import get_steps, get_tasks, get_workflows
 
 DEFAULT_CONFIG = Path("config.yaml")
 

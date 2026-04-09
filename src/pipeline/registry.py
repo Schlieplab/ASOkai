@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from importlib.metadata import entry_points
 
-from ASOkai.pipeline.base import Step
-from ASOkai.pipeline.steps.download_genome import DownloadGenomeStep
-from ASOkai.pipeline.steps.create_target_gene import CreateTargetGeneStep
-from ASOkai.pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
-from ASOkai.pipeline.workflows.standard import StandardWorkflow
+from pipeline.base import Step
+from pipeline.steps.download_genome import DownloadGenomeStep
+from pipeline.steps.create_target_gene import CreateTargetGeneStep
+from pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
+from pipeline.workflows.standard import StandardWorkflow
 
 _BUILTIN_STEPS: list[Step] = [
     DownloadGenomeStep(),

@@ -2,7 +2,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from ASOkai.pipeline import runner
+from pipeline import runner
 
 
 @pytest.fixture
@@ -23,14 +23,14 @@ def test_run_step_unknown_step(config):
 
 
 def test_run_step_skips_when_outputs_exist(config, tmp_path):
-    from ASOkai.pipeline.steps.download_genome import DownloadGenomeStep
+    from pipeline.steps.download_genome import DownloadGenomeStep
     step = DownloadGenomeStep()
     base = tmp_path / "genomes" / "ensembl" / "GRCh38" / "114"
     base.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai.pipeline.runner._toil_run") as mock_toil:
+    with patch("pipeline.runner._toil_run") as mock_toil:
         result = runner.run_step("download-genome", config)
         mock_toil.assert_not_called()
     assert result is not None
@@ -45,27 +45,27 @@ def test_run_step_dry_run_returns_outputs(config):
 
 
 def test_run_step_dry_run_does_not_call_toil(config):
-    with patch("ASOkai.pipeline.runner._toil_run") as mock_toil:
+    with patch("pipeline.runner._toil_run") as mock_toil:
         runner.run_step("download-genome", config, dry_run=True, force=True)
         mock_toil.assert_not_called()
 
 
 def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
-    from ASOkai.pipeline.steps.download_genome import DownloadGenomeStep
+    from pipeline.steps.download_genome import DownloadGenomeStep
     step = DownloadGenomeStep()
     base = tmp_path / "genomes" / "ensembl" / "GRCh38" / "114"
     base.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai.pipeline.runner._toil_run"):
+    with patch("pipeline.runner._toil_run"):
         runner.run_step("download-genome", config, force=True, dry_run=True)
 
     assert step.outputs_exist(config) is True
 
 
 def test_run_step_missing_dependency_raises(config):
-    from ASOkai.pipeline.steps.download_genome import DownloadGenomeStep
+    from pipeline.steps.download_genome import DownloadGenomeStep
 
     step = DownloadGenomeStep()
     step.dependencies = ["build-genome"]
@@ -82,7 +82,7 @@ def test_run_step_missing_dependency_raises(config):
     mock_build.outputs_exist = lambda c: False
     mock_build.cleanup = lambda c: None
 
-    with patch("ASOkai.pipeline.runner.get_steps") as mock_registry:
+    with patch("pipeline.runner.get_steps") as mock_registry:
         mock_registry.return_value = {
             "download-genome": step,
             "build-genome": mock_build,

@@ -1,8 +1,8 @@
 """Tests for DownloadGenomeStep."""
 import pytest
 from pathlib import Path
-from ASOkai.pipeline.steps.download_genome import DownloadGenomeStep
-from ASOkai.pipeline.base import Step
+from pipeline.steps.download_genome import DownloadGenomeStep
+from pipeline.base import Step
 
 
 @pytest.fixture

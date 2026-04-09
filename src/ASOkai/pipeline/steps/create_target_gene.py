@@ -84,7 +84,7 @@ def main() -> int:
         parser.error("Either --target-id or --target-name is required.")
 
     from GenomeUtils.Genome import GenomeBuilder
-    from ASOkai.Targets.target_gene_creator import TargetGeneCreator
+    from ASOkai.Targets import TargetGeneCreator
 
     genome, _ = (
         GenomeBuilder(

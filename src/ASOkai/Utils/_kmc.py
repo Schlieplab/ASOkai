@@ -44,7 +44,7 @@ class KMCExecutionError(RuntimeError):
         self.stderr = stderr
 
 
-@dataclass(frozen=True)
+@dataclass
 class KMCDatabase:
     """Handle for a KMC database, managing paths and build execution."""
 
@@ -52,7 +52,7 @@ class KMCDatabase:
     k: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "prefix_path", self.prefix_path.resolve())
+        self.prefix_path = self.prefix_path.resolve()
 
     @property
     def pre_path(self) -> Path:

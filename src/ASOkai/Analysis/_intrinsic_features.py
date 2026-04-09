@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from typing import Dict, Any, List
 
-from .base import SiteWideAnalysis
+from ._base import SiteWideAnalysis
 from ..Targets import Target
 
 

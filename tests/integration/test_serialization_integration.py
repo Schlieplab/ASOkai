@@ -5,8 +5,8 @@ Integration tests for complete serialization workflows.
 import pytest
 import json
 from Bio.Seq import Seq
-from ASOkai.Targets.target_gene import TargetGene
-from ASOkai.Sites.genomic_site import GenomicSite
+from ASOkai.Targets import TargetGene
+from ASOkai.Sites import GenomicSite
 
 
 @pytest.fixture
@@ -168,7 +168,7 @@ class TestBackwardCompatibility:
         """Test that missing optional attributes don't break deserialization."""
         data = {
             '__class__': 'TargetGene',
-            '__module__': 'ASOkai.Targets.target_gene',
+            '__module__': 'ASOkai.Targets._target_gene',
             'id': 'ENSG00000001',
             'name': 'TEST',
             'chr': '12',
@@ -262,7 +262,7 @@ class TestDataValidation:
         """Test that reconstructed Locus objects are functional."""
         data = {
             '__class__': 'GenomicSite',
-            '__module__': 'ASOkai.Sites.genomic_site',
+            '__module__': 'ASOkai.Sites._genomic_site',
             'id': 'test',
             'chr': '12',
             'start': 100,
@@ -281,7 +281,7 @@ class TestDataValidation:
         """Test that reconstructed Seq objects are functional."""
         data = {
             '__class__': 'GenomicSite',
-            '__module__': 'ASOkai.Sites.genomic_site',
+            '__module__': 'ASOkai.Sites._genomic_site',
             'id': 'test',
             'chr': '12',
             'start': 100,

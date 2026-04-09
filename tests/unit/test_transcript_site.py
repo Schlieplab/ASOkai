@@ -4,7 +4,7 @@ Unit tests for TranscriptSite serialization/deserialization.
 """
 import pytest
 from Bio.Seq import Seq
-from ASOkai.Sites.transcript_site import TranscriptSite
+from ASOkai.Sites import TranscriptSite
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ class TestTranscriptSiteSerialization:
         data = sample_transcript_site.to_dict()
         
         assert data['__class__'] == 'TranscriptSite'
-        assert data['__module__'] == 'ASOkai.Sites.transcript_site'
+        assert data['__module__'] == 'ASOkai.Sites._transcript_site'
         
     def test_auto_generated_id_serialized(self, sample_sequence):
         """Test serialization with auto-generated ID."""
@@ -84,7 +84,7 @@ class TestTranscriptSiteDeserialization:
         """Test basic deserialization from dict."""
         data = {
             '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites.transcript_site',
+            '__module__': 'ASOkai.Sites._transcript_site',
             'id': 'test_site',
             'transcript_id': 'ENST00000001',
             't_start': 10,
@@ -104,7 +104,7 @@ class TestTranscriptSiteDeserialization:
         """Test that Seq object is reconstructed correctly."""
         data = {
             '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites.transcript_site',
+            '__module__': 'ASOkai.Sites._transcript_site',
             'id': 'test_site',
             'transcript_id': 'ENST00000001',
             't_start': 10,
@@ -121,7 +121,7 @@ class TestTranscriptSiteDeserialization:
         """Test that coordinates are reconstructed correctly."""
         data = {
             '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites.transcript_site',
+            '__module__': 'ASOkai.Sites._transcript_site',
             'id': 'test_site',
             'transcript_id': 'ENST00000001',
             't_start': 0,
@@ -247,7 +247,7 @@ class TestTranscriptSiteEquality:
         
         sites_dict = {"site1": site1, "site2": site2}
         
-        from ASOkai.Utils.serializer import Serializable
+        from ASOkai.Utils import Serializable
         serialized = Serializable()._serialize_value(sites_dict)
         deserialized = Serializable._deserialize_value(serialized)
         

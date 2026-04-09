@@ -3,7 +3,7 @@
 Unit tests for attribute adapters registered on Serializable.
 """
 import pytest
-from ASOkai.Utils.serializer import Serializable
+from ASOkai.Utils import Serializable
 
 
 @pytest.mark.unit

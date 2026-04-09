@@ -5,7 +5,7 @@ Functional tests for GenomicSite class.
 import pytest
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
-from ASOkai.Sites.genomic_site import GenomicSite
+from ASOkai.Sites import GenomicSite
 
 
 @pytest.mark.unit

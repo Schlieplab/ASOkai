@@ -9,8 +9,8 @@ License: LGPL-3.0-or-later
 """
 from typing import TYPE_CHECKING, List
 from Bio.Seq import Seq
-from .site import Site
-from .genomic_site import GenomicSite
+from ._site import Site
+from ._genomic_site import GenomicSite
 
 if TYPE_CHECKING:
     from GenomeUtils.Genome import Transcript  # type: ignore

@@ -7,9 +7,9 @@ Version: 0.1.0
 Description: This file initializes the sites module.
 License: LGPL-3.0-or-later
 """
-from .site import Site
-from .genomic_site import GenomicSite
-from .transcript_site import TranscriptSite
+from ._site import Site
+from ._genomic_site import GenomicSite
+from ._transcript_site import TranscriptSite
 
 __all__ = [
     "Site",

@@ -4,7 +4,7 @@ Functional tests for TranscriptSite class.
 """
 import pytest
 from Bio.Seq import Seq
-from ASOkai.Sites.transcript_site import TranscriptSite
+from ASOkai.Sites import TranscriptSite
 
 
 @pytest.mark.unit

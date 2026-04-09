@@ -8,7 +8,7 @@ Description: This file defines the TargetGene class for representing target gene
 License: LGPL-3.0-or-later
 """
 from GenomeUtils.Genome import Gene, Genome, Chromosome
-from .target import Target
+from ._target import Target
 from typing import Literal, Dict
 from Bio.Seq import Seq
 from ..Sites import Site

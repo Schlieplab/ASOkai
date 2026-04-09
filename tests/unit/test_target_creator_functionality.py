@@ -3,7 +3,7 @@
 Functional tests for TargetCreator base class.
 """
 import pytest
-from ASOkai.Targets.target_creator import TargetCreator
+from ASOkai.Targets import TargetCreator
 
 
 @pytest.mark.unit

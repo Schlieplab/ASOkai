@@ -5,7 +5,7 @@ Unit tests for GenomicSite serialization/deserialization.
 import pytest
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
-from ASOkai.Sites.genomic_site import GenomicSite
+from ASOkai.Sites import GenomicSite
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ class TestGenomicSiteSerialization:
         data = sample_genomic_site.to_dict()
         
         assert data['__class__'] == 'GenomicSite'
-        assert data['__module__'] == 'ASOkai.Sites.genomic_site'
+        assert data['__module__'] == 'ASOkai.Sites._genomic_site'
         
     def test_non_serializable_attrs_excluded(self, sample_genomic_site):
         """Test that _genome, _parent, _children are excluded."""
@@ -92,7 +92,7 @@ class TestGenomicSiteDeserialization:
         """Test deserialization from flattened locus components."""
         data = {
             '__class__': 'GenomicSite',
-            '__module__': 'ASOkai.Sites.genomic_site',
+            '__module__': 'ASOkai.Sites._genomic_site',
             'id': 'test_site',
             'chr': '12',
             'start': 100,
@@ -114,7 +114,7 @@ class TestGenomicSiteDeserialization:
         """Test that Locus object is reconstructed from components."""
         data = {
             '__class__': 'GenomicSite',
-            '__module__': 'ASOkai.Sites.genomic_site',
+            '__module__': 'ASOkai.Sites._genomic_site',
             'id': 'test_site',
             'chr': '12',
             'start': 100,
@@ -132,7 +132,7 @@ class TestGenomicSiteDeserialization:
         """Test that Seq object is reconstructed correctly."""
         data = {
             '__class__': 'GenomicSite',
-            '__module__': 'ASOkai.Sites.genomic_site',
+            '__module__': 'ASOkai.Sites._genomic_site',
             'id': 'test_site',
             'chr': '12',
             'start': 100,
@@ -206,7 +206,7 @@ class TestGenomicSiteRoundtrip:
         sites_dict = {"site1": site1, "site2": site2}
         
         # Simulate what happens in TargetGene
-        from ASOkai.Utils.serializer import Serializable
+        from ASOkai.Utils import Serializable
         serialized = Serializable()._serialize_value(sites_dict)
         deserialized = Serializable._deserialize_value(serialized)
         

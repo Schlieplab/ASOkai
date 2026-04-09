@@ -12,7 +12,7 @@ License: LGPL-3.0-or-later
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
 
-from .serializer import Serializable
+from ._serializer import Serializable
 from ..Targets import Target
 
 

@@ -4,7 +4,7 @@ Functional tests for Site base class.
 """
 import pytest
 from Bio.Seq import Seq
-from ASOkai.Sites.site import Site
+from ASOkai.Sites import Site
 
 
 class ConcreteSite(Site):

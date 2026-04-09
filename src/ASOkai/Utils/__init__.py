@@ -7,17 +7,14 @@ Version: 0.1.0
 Description: Public exports for the Utils subpackage.
 License: LGPL-3.0-or-later
 """
-from .kmc import KMC
-from .kmc import KMCDatabase
-from .serializer import Serializable
-from .kmc_tools import KMCTransform, KMCComplex, KMCSimple, KMCFilter
+from . import _kmc_tools as KMCTools
+from ._kmc import KMC, KMCDatabase, KMCExecutionError
+from ._serializer import Serializable
 
 __all__ = [
+    "KMCTools",
     "KMC",
     "KMCDatabase",
+    "KMCExecutionError",
     "Serializable",
-    "KMCTransform",
-    "KMCComplex",
-    "KMCSimple",
-    "KMCFilter"
 ]

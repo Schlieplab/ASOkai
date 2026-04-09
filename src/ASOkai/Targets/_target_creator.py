@@ -8,7 +8,7 @@ Description: This file defines the base TargetCreator class.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
-from .target import Target
+from ._target import Target
 from GenomeUtils.Genome import Genome
 from typing import Dict, Iterator, List, Optional
 from ..Sites import Site

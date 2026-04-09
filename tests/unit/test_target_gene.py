@@ -5,8 +5,8 @@ Unit tests for TargetGene serialization/deserialization.
 import pytest
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
-from ASOkai.Targets.target_gene import TargetGene
-from ASOkai.Sites.genomic_site import GenomicSite
+from ASOkai.Targets import TargetGene
+from ASOkai.Sites import GenomicSite
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ class TestTargetGeneSerialization:
         data = sample_target_gene.to_dict()
         
         assert data['__class__'] == 'TargetGene'
-        assert data['__module__'] == 'ASOkai.Targets.target_gene'
+        assert data['__module__'] == 'ASOkai.Targets._target_gene'
 
 
 @pytest.mark.unit
@@ -132,7 +132,7 @@ class TestTargetGeneDeserialization:
         """Test deserialization from flattened locus components."""
         data = {
             '__class__': 'TargetGene',
-            '__module__': 'ASOkai.Targets.target_gene',
+            '__module__': 'ASOkai.Targets._target_gene',
             'id': 'ENSG00000001',
             'name': 'TEST_GENE',
             'chr': '12',
@@ -157,7 +157,7 @@ class TestTargetGeneDeserialization:
         """Test that Locus object is reconstructed from components."""
         data = {
             '__class__': 'TargetGene',
-            '__module__': 'ASOkai.Targets.target_gene',
+            '__module__': 'ASOkai.Targets._target_gene',
             'id': 'ENSG00000001',
             'name': 'TEST_GENE',
             'chr': '12',
@@ -177,7 +177,7 @@ class TestTargetGeneDeserialization:
         """Test that Seq object is reconstructed correctly."""
         data = {
             '__class__': 'TargetGene',
-            '__module__': 'ASOkai.Targets.target_gene',
+            '__module__': 'ASOkai.Targets._target_gene',
             'id': 'ENSG00000001',
             'name': 'TEST_GENE',
             'chr': '12',
@@ -197,7 +197,7 @@ class TestTargetGeneDeserialization:
         """Test that target sites are reconstructed as GenomicSite objects."""
         data = {
             '__class__': 'TargetGene',
-            '__module__': 'ASOkai.Targets.target_gene',
+            '__module__': 'ASOkai.Targets._target_gene',
             'id': 'ENSG00000001',
             'name': 'TEST_GENE',
             'chr': '12',
@@ -208,7 +208,7 @@ class TestTargetGeneDeserialization:
             'sites': {
                 'site1': {
                     '__class__': 'GenomicSite',
-                    '__module__': 'ASOkai.Sites.genomic_site',
+                    '__module__': 'ASOkai.Sites._genomic_site',
                     'id': 'site1',
                     'chr': '12',
                     'start': 100,

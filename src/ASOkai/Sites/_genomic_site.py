@@ -11,7 +11,7 @@ from GenomeUtils.Genome import Locus
 from GenomeUtils.Genome import GenomeElement
 from typing import TYPE_CHECKING, Literal
 from Bio.Seq import Seq
-from .site import Site
+from ._site import Site
 
 if TYPE_CHECKING:
     from GenomeUtils.Genome import Genome

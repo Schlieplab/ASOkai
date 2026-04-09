@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import MagicMock
 from Bio.Seq import Seq
 
-from ASOkai.Targets.target_gene_creator import TargetGeneCreator
+from ASOkai.Targets import TargetGeneCreator
 
 
 @pytest.fixture

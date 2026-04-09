@@ -10,13 +10,14 @@ License: LGPL-3.0-or-later
 from .kmc import KMC
 from .kmc import KMCDatabase
 from .serializer import Serializable
-from . import kmc_tools as _kmc_tools
-from .kmc_tools import *
+from .kmc_tools import KMCTransform, KMCComplex, KMCSimple, KMCFilter
 
 __all__ = [
     "KMC",
     "KMCDatabase",
     "Serializable",
-    "KMCTools",
-    *_kmc_tools.__all__,
+    "KMCTransform",
+    "KMCComplex",
+    "KMCSimple",
+    "KMCFilter"
 ]

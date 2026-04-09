@@ -79,11 +79,12 @@ class KMCDatabase:
         directory = Path(output_dir) if output_dir else inp.parent
 
         k = int(kwargs.get("k", 25))
-        ci = int(kwargs.get("min_count", 2))
-        cs = int(kwargs.get("counter_max", 255))
+        ci = int(kwargs.get("ci", 2))
+        cs = int(kwargs.get("cs", 255))
+        cx = int(kwargs.get("cx", 1e9))
         hc = bool(kwargs.get("homopolymer_compressed", False))
 
-        return (directory / f"{stem}.k{k}.ci{ci}.cs{cs}{'.hc' if hc else ''}").resolve()
+        return (directory / f"{stem}.k{k}.ci{ci}.cs{cs}.cx{format(cx, ".0e").replace("e+", "e").replace("e0", "e")}{'.hc' if hc else ''}").resolve()
 
     @classmethod
     def build(
@@ -107,35 +108,35 @@ class KMCDatabase:
 
         Keyword Args (KMC Parameters):
             k (int): K-mer length, 1-256. Defaults to 25.
-            memory_gb (int): Max RAM limit in GB, 1-1024. Defaults to 12.
-            input_format (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
-            threads (int | None): Number of threads. Defaults to all CPU cores.
-            strict_memory (bool): Enforce strict RAM limit. Defaults to False.
-            homopolymer_compressed (bool): Compress homopolymer runs. Defaults to False.
-            signature_length (int | None): Signature length, 5-11. Defaults to 9.
-            min_count (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
-            counter_max (int | None): Maximum counter value. Defaults to 255.
-            max_count (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
-            canonical (bool): Use canonical k-mers. Defaults to True.
-            ram_only (bool): Keep all data in RAM. Defaults to False.
-            n_bins (int | None): Number of bins.
+            m (int): Max RAM limit in GB, 1-1024. Defaults to 12.
+            f (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
+            t (int | None): Number of threads. Defaults to all CPU cores.
+            sm (bool): Enforce strict RAM limit. Defaults to False.
+            hc (bool): Compress homopolymer runs. Defaults to False.
+            p (int | None): Signature length, 5-11. Defaults to 9.
+            ci (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
+            cs (int | None): Maximum counter value. Defaults to 255.
+            cx (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
+            b (bool): Use canonical k-mers. Defaults to True.
+            r (bool): Keep all data in RAM. Defaults to False.
+            n (int | None): Number of bins.
             sf (int | None): FASTQ reading threads.
             sp (int | None): Splitting threads.
             sr (int | None): 2nd-stage threads.
-            json_summary (str | Path | None): Write JSON summary to this file.
-            without_output (bool): Skip writing database shards (`-w`). Defaults to False.
-            output_kind (OutputKind | None): Output format ('kmc' or 'kff').
-            hide_progress (bool): Suppress progress percentage output. Defaults to False.
-            estimate_histogram_only (bool): Estimate histogram without counting (`-e`). Defaults to False.
-            optimize_output_size (bool): Reduce output file size. Defaults to False.
-            verbose (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
+            j (str | Path | None): Write JSON summary to this file.
+            w (bool): Skip writing database shards (`-w`). Defaults to False.
+            o (OutputKind | None): Output format ('kmc' or 'kff').
+            hp (bool): Suppress progress percentage output. Defaults to False.
+            e (bool): Estimate histogram without counting (`-e`). Defaults to False.
+            opt_out_size (bool): Reduce output file size. Defaults to False.
+            v (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
             debug (bool): Log cwd and full command at DEBUG; stream subprocess stdout/stderr to the terminal. Defaults to True.
             check (bool): Raise `KMCExecutionError` if `kmc` exits non-zero. Defaults to True.
             additional_args (Sequence[str] | None): Extra command-line arguments passed verbatim to `kmc`.
 
         Returns:
-            KMCDatabase | None: The database handle if successful, or None if `without_output` or 
-            `estimate_histogram_only` is used and no prior shards exist.
+            KMCDatabase | None: The database handle if successful, or None if `w` or 
+            `e` is used and no prior shards exist.
 
         Raises:
             KMCExecutionError: If `kmc` exits non-zero (when `check=True`), or if `kmc` succeeds 
@@ -146,7 +147,7 @@ class KMCDatabase:
         prefix = cls.resolve_prefix(input_path, output_dir, **kwargs)
         db = cls(prefix, int(kwargs.get("k", 25)))
 
-        skip_output = kwargs.get("without_output") or kwargs.get("estimate_histogram_only")
+        skip_output = kwargs.get("w") or kwargs.get("e")
         
         # Skip build if database already exists and force is off
         if db.exists and not force and not skip_output:
@@ -206,6 +207,18 @@ class KMC:
             return f"@{Path(s[1:]).resolve()}"
         return str(Path(s).resolve())
 
+    @staticmethod
+    def _build_cli_args(param_map: dict[str, Any]) -> list[str]:
+        flags = []
+        for prefix, value in param_map.items():
+            if value is None or value is False:
+                continue
+            if value is True:
+                flags.append(prefix)  # Flag, example: "-v"
+            else:
+                flags.append(f"{prefix}{value}")  # Flag + value, example: "-ci5"
+        return flags
+
     def run(
         self,
         input_path: str | Path,
@@ -213,28 +226,28 @@ class KMC:
         working_directory: str | Path,
         *,
         k: int = 25,
-        memory_gb: int = 12,
-        input_format: InputFormat = "fm",
-        threads: int | None = None,
-        strict_memory: bool = False,
-        homopolymer_compressed: bool = False,
-        signature_length: int | None = None,
-        min_count: int | None = None,
-        counter_max: int | None = None,
-        max_count: int | None = None,
-        canonical: bool = True,
-        ram_only: bool = False,
-        n_bins: int | None = None,
+        m: int = 12,
+        f: InputFormat = "fm",
+        t: int | None = None,
+        sm: bool = False,
+        hc: bool = False,
+        p: int | None = None,
+        ci: int | None = None,
+        cs: int | None = None,
+        cx: int | None = None,
+        b: bool = True,
+        r: bool = False,
+        n: int | None = None,
         sf: int | None = None,
         sp: int | None = None,
         sr: int | None = None,
-        json_summary: str | Path | None = None,
-        without_output: bool = False,
-        output_kind: OutputKind | None = None,
-        hide_progress: bool = False,
-        estimate_histogram_only: bool = False,
-        optimize_output_size: bool = False,
-        verbose: bool = False,
+        j: str | Path | None = None,
+        w: bool = False,
+        o: OutputKind | None = None,
+        hp: bool = False,
+        e: bool = False,
+        opt_out_size: bool = False,
+        v: bool = False,
         debug: bool = True,
         check: bool = True,
         additional_args: Sequence[str] | None = None,
@@ -243,13 +256,13 @@ class KMC:
         
         if not 1 <= k <= 256:
             raise ValueError(f"k must be between 1 and 256, got {k}")
-        if not 1 <= memory_gb <= 1024:
-            raise ValueError(f"memory_gb must be between 1 and 1024, got {memory_gb}")
-        if signature_length is not None:
-            if not 5 <= signature_length <= 11:
-                raise ValueError(f"signature_length must be between 5 and 11, got {signature_length}")
-            if signature_length > k:
-                raise ValueError(f"signature_length ({signature_length}) cannot be greater than k ({k})")
+        if not 1 <= m <= 1024:
+            raise ValueError(f"memory_gb must be between 1 and 1024, got {m}")
+        if p is not None:
+            if not 5 <= p <= 11:
+                raise ValueError(f"signature_length must be between 5 and 11, got {p}")
+            if p > k:
+                raise ValueError(f"signature_length ({p}) cannot be greater than k ({k})")
 
         work = Path(working_directory).resolve()
         work.mkdir(parents=True, exist_ok=True)
@@ -257,37 +270,34 @@ class KMC:
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
 
         # Build Arguments
-        argv = [self._kmc, f"-k{k}", f"-m{memory_gb}", f"-{input_format}"]
+        argv = [self._kmc, f"-k{k}", f"-m{m}", f"-{f}"]
         
-        flag_map = {
-            "-sm": strict_memory,
-            "-hc": homopolymer_compressed,
-            "-b": not canonical,
-            "-r": ram_only,
-            "-w": without_output,
-            "-hp": hide_progress,
-            "-e": estimate_histogram_only,
-            "--opt-out-size": optimize_output_size,
-            "-v": verbose,
-        }
-        argv.extend(flag for flag, active in flag_map.items() if active)
-
         param_map = {
-            "-t": threads,
-            "-p": signature_length,
-            "-ci": min_count,
-            "-cs": counter_max,
-            "-cx": max_count,
-            "-n": n_bins,
+            "-sm": sm,
+            "-hc": hc,
+            "-b": b,
+            "-r": r,
+            "-w": w,
+            "-hp": hp,
+            "-e": e,
+            "--opt-out-size": opt_out_size,
+            "-v": v,
+            "-t": t,
+            "-p": p,
+            "-ci": ci,
+            "-cs": cs,
+            "-cx": cx,
+            "-n": n,
             "-sf": sf,
             "-sp": sp,
             "-sr": sr,
-            "-o": output_kind,
+            "-o": o,
         }
-        argv.extend(f"{prefix}{val}" for prefix, val in param_map.items() if val is not None)
 
-        if json_summary:
-            argv.append(f"-j{Path(json_summary).resolve()}")
+        argv.extend(self._build_cli_args(param_map))
+
+        if j:
+            argv.append(f"-j{Path(j).resolve()}")
         if additional_args:
             argv.extend(additional_args)
 

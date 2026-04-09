@@ -1,45 +1,18 @@
 #!/usr/bin/env python
-"""
-Filename: src/ASOkai/Utils/kmc_tools.py
-Description: Subprocess wrapper for the KMC Tools CLI.
-License: LGPL-3.0-or-later (this file only)
-
-KMC Tools is GPLv3-only third-party software distributed with KMC:
-https://github.com/refresh-bio/KMC
-
-This wrapper invokes ``kmc_tools`` on PATH or via an explicit path.
-"""
-
 from __future__ import annotations
 
-import logging
 import os
 import shlex
 import shutil
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Sequence
-
-
-logger = logging.getLogger(__name__)
-
-
-TransformOperationName = Literal[
-    "sort",
-    "reduce",
-    "compact",
-    "histogram",
-    "dump",
-    "set_counts",
-]
+from typing import Any, Literal
 
 OutputKind = Literal["kmc", "kff"]
-
+ReadInputKind = Literal["a", "q"]
+CalculationMode = Literal["min", "max", "sum", "diff", "left", "right"]
 
 class KMCToolsExecutionError(RuntimeError):
-    """Raised when ``kmc_tools`` exits with a non-zero status (when ``check`` is True)."""
-
     def __init__(
         self,
         message: str,
@@ -55,182 +28,10 @@ class KMCToolsExecutionError(RuntimeError):
         self.stdout = stdout
         self.stderr = stderr
 
-
-@dataclass(frozen=True)
-class TransformInputParams:
-    """Optional filters applied to the transform"""
-
-    min_count: int | None = None
-    max_count: int | None = None
-
-    def validate(self) -> None:
-        if self.min_count is not None and self.min_count < 1:
-            raise ValueError(f"min_count must be >= 1, got {self.min_count}")
-        if self.max_count is not None and self.max_count < 1:
-            raise ValueError(f"max_count must be >= 1, got {self.max_count}")
-        if (
-            self.min_count is not None
-            and self.max_count is not None
-            and self.min_count > self.max_count
-        ):
-            raise ValueError(
-                f"min_count ({self.min_count}) cannot be greater than max_count ({self.max_count})"
-            )
-
-    def to_argv(self) -> list[str]:
-        self.validate()
-        argv: list[str] = []
-        if self.min_count is not None:
-            argv.append(f"-ci{self.min_count}")
-        if self.max_count is not None:
-            argv.append(f"-cx{self.max_count}")
-        return argv
-
-
-@dataclass(frozen=True)
-class TransformStep:
-    """
-    One transform step in:
-
-        kmc_tools transform <input> [input_params]
-            <oper1 [oper_params1] output1 [output_params1]>
-            [<oper2 [oper_params2] output2 [output_params2]>...]
-
-    Supported operations:
-      - sort
-      - reduce
-      - compact
-      - histogram
-      - dump
-      - set_counts
-    """
-
-    operation: TransformOperationName
-    output: str | Path
-
-    # Shared optional params, only for certain operations.
-    min_count: int | None = None
-    max_count: int | None = None
-    counter_max: int | None = None
-    output_kind: OutputKind | None = None
-
-    # dump-specific
-    sorted_output: bool = False
-
-    # set_counts-specific
-    set_count_value: int | None = None
-
-    additional_args: Sequence[str] | None = field(default=None)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "output", Path(self.output).resolve())
-
-    def validate(self) -> None:
-        allowed_by_operation: dict[str, set[str]] = {
-            "sort": {"min_count", "max_count", "counter_max", "output_kind"},
-            "reduce": {"min_count", "max_count", "counter_max", "output_kind"},
-            "compact": {"output_kind"},
-            "histogram": {"min_count", "max_count"},
-            "dump": {"sorted_output"},
-            "set_counts": {"set_count_value", "output_kind"},
-        }
-
-        if self.operation not in allowed_by_operation:
-            raise ValueError(f"Unsupported transform operation: {self.operation!r}")
-
-        provided: set[str] = set()
-        if self.min_count is not None:
-            provided.add("min_count")
-        if self.max_count is not None:
-            provided.add("max_count")
-        if self.counter_max is not None:
-            provided.add("counter_max")
-        if self.output_kind is not None:
-            provided.add("output_kind")
-        if self.sorted_output:
-            provided.add("sorted_output")
-        if self.set_count_value is not None:
-            provided.add("set_count_value")
-
-        illegal = provided - allowed_by_operation[self.operation]
-        if illegal:
-            raise ValueError(
-                f"Invalid parameter(s) for transform operation '{self.operation}': "
-                f"{', '.join(sorted(illegal))}"
-            )
-
-        if self.min_count is not None and self.min_count < 1:
-            raise ValueError(f"min_count must be >= 1, got {self.min_count}")
-        if self.max_count is not None and self.max_count < 1:
-            raise ValueError(f"max_count must be >= 1, got {self.max_count}")
-        if self.counter_max is not None and self.counter_max < 1:
-            raise ValueError(f"counter_max must be >= 1, got {self.counter_max}")
-        if (
-            self.min_count is not None
-            and self.max_count is not None
-            and self.min_count > self.max_count
-        ):
-            raise ValueError(
-                f"min_count ({self.min_count}) cannot be greater than max_count ({self.max_count})"
-            )
-
-        if self.output_kind is not None and self.output_kind not in {"kmc", "kff"}:
-            raise ValueError(
-                f"output_kind must be 'kmc' or 'kff', got {self.output_kind!r}"
-            )
-
-        if self.operation == "set_counts":
-            if self.set_count_value is None:
-                raise ValueError("set_counts requires set_count_value")
-            if self.set_count_value < 0:
-                raise ValueError(
-                    f"set_count_value must be >= 0, got {self.set_count_value}"
-                )
-        elif self.set_count_value is not None:
-            raise ValueError(
-                f"set_count_value is only valid for operation 'set_counts', not '{self.operation}'"
-            )
-
-    def to_argv(self) -> list[str]:
-        self.validate()
-
-        argv: list[str] = [self.operation]
-
-        # Operation parameters
-        if self.operation == "dump" and self.sorted_output:
-            argv.append("-s")
-        if self.operation == "set_counts":
-            argv.append(str(self.set_count_value))
-
-        # Output path
-        argv.append(str(self.output))
-
-        # Output parameters
-        if self.min_count is not None:
-            argv.append(f"-ci{self.min_count}")
-        if self.max_count is not None:
-            argv.append(f"-cx{self.max_count}")
-        if self.counter_max is not None:
-            argv.append(f"-cs{self.counter_max}")
-        if self.output_kind is not None:
-            argv.append(f"-o{self.output_kind}")
-
-        if self.additional_args:
-            argv.extend(self.additional_args)
-
-        return argv
-
-
-class KMCTools:
-    """
-    Runs the ``kmc_tools`` executable.
-
-    Currently implemented:
-      - transform
-    """
-
+class KMCTool:
     def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
         self._kmc_tools = self._resolve_executable(kmc_tools_executable)
+        self._argv: list[str] = []
 
     @property
     def executable(self) -> str:
@@ -243,162 +44,358 @@ class KMCTools:
         path = Path(name_or_path)
         if path.is_file() and os.access(path, os.X_OK):
             return str(path.resolve())
-        raise FileNotFoundError(
-            f"Executable not found or not executable: {name_or_path!r}"
-        )
+        raise FileNotFoundError(f"Executable not found or not executable: {name_or_path!r}")
 
     @staticmethod
     def _resolve_path(path: str | Path) -> str:
         return str(Path(path).resolve())
 
-    def _run(
+    @staticmethod
+    def _build_cli_args(param_map: dict[str, Any]) -> list[str]:
+        flags = []
+        for prefix, value in param_map.items():
+            if value is None or value is False:
+                continue
+            if value is True:
+                flags.append(prefix)  # Flag, example: "-v"
+            else:
+                flags.append(f"{prefix}{value}")  # Flag + value, example: "-ci5"
+        return flags
+
+    def run(
         self,
-        argv: list[str],
         *,
-        cwd: str | Path | None = None,
+        t: int | None = None,
+        v: bool = False,
+        hp: bool = False,
         debug: bool = True,
         check: bool = True,
+        cwd: str | Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        workdir = str(Path(cwd).resolve()) if cwd is not None else None
+        param_map = {
+            "-t": t,
+            "-v": True if v else None,
+            "-hp": True if hp else None,
+        }
+        global_flags = self._build_cli_args(param_map)
 
-        if debug:
-            logger.debug(
-                "kmc_tools cmd: %s",
-                " ".join(shlex.quote(str(a)) for a in argv),
-            )
-            if workdir is not None:
-                logger.debug("kmc_tools cwd: %s", workdir)
-        else:
-            logger.info("Running kmc_tools: %s", Path(argv[0]).name)
+        self._argv[0:0] = [self.executable]
+        self._argv[1:1] = global_flags
 
-        proc = subprocess.run(
-            argv,
-            capture_output=not debug,
-            text=True,
-            check=False,
-            cwd=workdir,
-        )
+        resolved_cwd = str(Path(cwd).resolve()) if cwd is not None else None
 
-        if check and proc.returncode != 0:
-            err_msg = proc.stderr or proc.stdout or ""
+        try:
             if debug:
-                err_msg = "Output streamed to terminal (see above)."
+                print(" ".join(shlex.quote(a) for a in self._argv))
+                if resolved_cwd is not None:
+                    print(f"cwd: {resolved_cwd}")
 
-            raise KMCToolsExecutionError(
-                f"kmc_tools failed with exit code {proc.returncode}\n{err_msg}",
-                returncode=proc.returncode,
-                cmd=argv,
-                stdout=proc.stdout,
-                stderr=proc.stderr,
+            proc = subprocess.run(
+                self._argv,
+                cwd=resolved_cwd,
+                text=True,
+                capture_output=not debug,
+                check=False,
             )
 
-        return proc
+            if check and proc.returncode != 0:
+                raise KMCToolsExecutionError(
+                    f"kmc_tools failed with exit code {proc.returncode}",
+                    returncode=proc.returncode,
+                    cmd=self._argv.copy(),
+                    stdout=proc.stdout,
+                    stderr=proc.stderr,
+                )
+            
+            return proc
+        
+        finally:
+            self._argv = []
+        
 
-    def transform(
+class KMCTransform(KMCTool):
+    def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
+        super().__init__(kmc_tools_executable)
+
+    def sort(
         self,
-        input_db: str | Path,
-        steps: Sequence[TransformStep],
+        output: str | Path | None = None,
         *,
-        input_params: TransformInputParams | None = None,
-        threads: int | None = None,
-        verbose: bool = False,
-        hide_progress: bool = False,
+        ci: int | None = None,
+        cx: int | None = None,
+        cs: int | None = None,
+        o: OutputKind | None = None,
+    ) -> "KMCTransform":
+        self._argv.append("sort")
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        param_map = {
+            "-ci": ci,
+            "-cx": cx,
+            "-cs": cs,
+            "-o": o,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
+
+    def reduce(
+        self,
+        output: str | Path | None = None,
+        *,
+        ci: int | None = None,
+        cx: int | None = None,
+        cs: int | None = None,
+        o: OutputKind | None = None,
+    ) -> "KMCTransform":
+        self._argv.append("reduce")
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        param_map = {
+            "-ci": ci,
+            "-cx": cx,
+            "-cs": cs,
+            "-o": o,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
+
+    def compact(
+        self,
+        output: str | Path | None = None,
+        *,
+        o: OutputKind | None = None,
+    ) -> "KMCTransform":
+        self._argv.append("compact")
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        param_map = {
+            "-o": o,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
+
+    def histogram(
+        self,
+        output: str | Path | None = None,
+        *,
+        ci: int | None = None,
+        cx: int | None = None,
+    ) -> "KMCTransform":
+        self._argv.append("histogram")
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        param_map = {
+            "-ci": ci,
+            "-cx": cx,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
+
+    def dump(
+        self,
+        output: str | Path | None = None,
+        *,
+        s: bool = False,
+    ) -> "KMCTransform":
+        self._argv.append("dump")
+        param_map = {
+            "-s": True if s else None,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        return self
+
+    def set_counts(
+        self,
+        value: int,
+        output: str | Path | None = None,
+        *,
+        o: OutputKind | None = None,
+    ) -> "KMCTransform":
+        self._argv.extend(["set_counts", str(value)])
+        if output is not None:
+            self._argv.append(self._resolve_path(output))
+        param_map = {
+            "-o": o,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
+
+    def run(
+        self,
+        input_path: str | Path,
+        *,
+        ci: int | None = None,
+        cx: int | None = None,
+        t: int | None = None,
+        v: bool = False,
+        hp: bool = False,
         debug: bool = True,
         check: bool = True,
         cwd: str | Path | None = None,
-        additional_global_args: Sequence[str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        """
-        Run:
+        operations = self._argv[:]
+        self._argv = ["transform", self._resolve_path(input_path)]
+        param_map = {
+            "-ci": ci,
+            "-cx": cx,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        self._argv.extend(operations)
+        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
 
-            kmc_tools [global params] transform <input> [input_params]
-                      <oper1 [oper_params1] output1 [output_params1]>
-                      [<oper2 [oper_params2] output2 [output_params2]> ...]
+class KMCSimple(KMCTool):
+    def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
+        super().__init__(kmc_tools_executable)
 
-        Args:
-            input_db:
-                Path to input KMC database prefix.
-            steps:
-                One or more TransformStep objects.
-            input_params:
-                Optional TransformInputParams for input-side -ci/-cx.
-            threads:
-                Global -t<value>.
-            verbose:
-                Global -v.
-            hide_progress:
-                Global -hp.
-            debug:
-                If True, stream stdout/stderr directly to terminal and log full command.
-            check:
-                If True, raise KMCToolsExecutionError on non-zero exit.
-            cwd:
-                Optional working directory.
-            additional_global_args:
-                Extra global args passed before 'transform'.
+    def _simple_operation(
+        self,
+        op: str,
+        output: str | Path,
+        *,
+        ci: int | None = None,
+        cx: int | None = None,
+        cs: int | None = None,
+        o: OutputKind | None = None,
+        oc: CalculationMode | None = None,
+    ) -> "KMCSimple":
+        self._argv.extend([op, self._resolve_path(output)])
+        param_map = {
+            "-ci": ci,
+            "-cx": cx,
+            "-cs": cs,
+            "-o": o,
+            "-oc": oc,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        return self
 
-        Returns:
-            subprocess.CompletedProcess[str]
+    def intersect(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("intersect", output, **kwargs)
 
-        Raises:
-            ValueError:
-                For invalid Python-side arguments or missing required fields.
-            KMCToolsExecutionError:
-                If kmc_tools exits non-zero and check=True.
-        """
-        if not steps:
-            raise ValueError("transform requires at least one TransformStep")
+    def union(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("union", output, **kwargs)
 
-        if threads is not None and threads < 1:
-            raise ValueError(f"threads must be >= 1, got {threads}")
+    def kmers_subtract(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("kmers_subtract", output, **kwargs)
 
-        resolved_input = self._resolve_path(input_db)
+    def counters_subtract(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("counters_subtract", output, **kwargs)
 
-        if input_params is None:
-            input_params = TransformInputParams()
-        input_params.validate()
+    def reverse_kmers_subtract(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("reverse_kmers_subtract", output, **kwargs)
 
-        validated_steps = list(steps)
-        for i, step in enumerate(validated_steps, start=1):
-            if not isinstance(step, TransformStep):
-                raise TypeError(
-                    f"All steps must be TransformStep instances; "
-                    f"item {i} has type {type(step).__name__}"
-                )
-            step.validate()
+    def reverse_counters_subtract(self, output: str | Path, **kwargs: Any) -> "KMCSimple":
+        return self._simple_operation("reverse_counters_subtract", output, **kwargs)
 
-        argv: list[str] = [self._kmc_tools]
+    def run(
+        self,
+        input1_path: str | Path,
+        input2_path: str | Path,
+        *,
+        input1_ci: int | None = None,
+        input1_cx: int | None = None,
+        input2_ci: int | None = None,
+        input2_cx: int | None = None,
+        t: int | None = None,
+        v: bool = False,
+        hp: bool = False,
+        debug: bool = True,
+        check: bool = True,
+        cwd: str | Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        operations = self._argv[:]
+        self._argv = ["simple"]
 
-        # Global params
-        if threads is not None:
-            argv.append(f"-t{threads}")
-        if verbose:
-            argv.append("-v")
-        if hide_progress:
-            argv.append("-hp")
-        if additional_global_args:
-            argv.extend(additional_global_args)
+        self._argv.append(self._resolve_path(input1_path))
+        param_map = {
+            "-ci": input1_ci,
+            "-cx": input1_cx,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+        
+        self._argv.append(self._resolve_path(input2_path))
+        param_map = {
+            "-ci": input2_ci,
+            "-cx": input2_cx,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
 
-        # Main operation
-        argv.extend(["transform", resolved_input])
+        self._argv.extend(operations)
+        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
 
-        # Input params
-        argv.extend(input_params.to_argv())
+class KMCComplex(KMCTool):
+    def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
+        super().__init__(kmc_tools_executable)
 
-        # Transform steps
-        for step in validated_steps:
-            argv.extend(step.to_argv())
+    def run(
+        self,
+        operations_definition_file: str | Path,
+        *,
+        t: int | None = None,
+        v: bool = False,
+        hp: bool = False,
+        debug: bool = True,
+        check: bool = True,
+        cwd: str | Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        self._argv = ["complex"]
+        self._argv.append(self._resolve_path(operations_definition_file))
+        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
 
-        print(f"argv: {argv} , cwd: {cwd} , debug: {debug} , check: {check}")
+class KMCFilter(KMCTool):
+    def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
+        super().__init__(kmc_tools_executable)
 
-        return self._run(argv, cwd=cwd, debug=debug, check=check)
+    def run(
+        self,
+        kmc_input_db_path: str | Path,
+        input_read_set_path: str | Path,
+        output_read_set_path: str | Path,
+        *,
+        trim: bool = False,
+        hm: bool = False,
+        db_ci: int | None = None,
+        db_cx: int | None = None,
+        read_ci: int | float | None = None,
+        read_cx: int | float | None = None,
+        read_f: ReadInputKind | None = None,
+        output_f: ReadInputKind | None = None,
+        t: int | None = None,
+        v: bool = False,
+        hp: bool = False,
+        debug: bool = True,
+        check: bool = True,
+        cwd: str | Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        self._argv = ["filter"]
 
+        param_map = {
+            "-t": True if trim else None,
+            "-hm": True if hm else None,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
 
+        self._argv.append(self._resolve_path(kmc_input_db_path))
+        param_map = {
+            "-ci": db_ci,
+            "-cx": db_cx,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
 
+        self._argv.append(self._resolve_path(input_read_set_path))
+        param_map = {
+            "-ci": read_ci,
+            "-cx": read_cx,
+            "-f": read_f,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
 
-__all__ = [
-    "KMCTools",
-    "KMCToolsExecutionError",
-    "TransformInputParams",
-    "TransformStep",
-]
+        self._argv.append(self._resolve_path(output_read_set_path))
+        param_map = {
+            "-f": output_f,
+        }
+        self._argv.extend(self._build_cli_args(param_map))
+
+        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)

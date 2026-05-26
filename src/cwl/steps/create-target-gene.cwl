@@ -6,15 +6,10 @@ baseCommand: [ASOkai, step, create-target-gene]
 
 doc: |
   Creates a target gene object from genome data and extracts ASO target sites.
-  Output: {target_id}.json written to outdir.
 
 requirements:
   WorkReuse:
     enableReuse: true
-
-arguments:
-  - prefix: --outdir
-    valueFrom: "."
 
 inputs:
 
@@ -64,9 +59,15 @@ inputs:
 
   assembly:
     type: string
-    doc: Assembly ID (e.g. GRCh38). Embedded in the output filename.
+    doc: Assembly ID (e.g. GRCh38).
     inputBinding:
       prefix: --assembly
+
+  release:
+    type: int
+    doc: Ensembl release number (e.g. 114).
+    inputBinding:
+      prefix: --release
 
   species:
     type: string
@@ -74,10 +75,16 @@ inputs:
     inputBinding:
       prefix: --species
 
+  target_gene_output:
+    type: string
+    doc: Filename for the output JSON.
+    inputBinding:
+      prefix: --output
+
 outputs:
 
   target_gene:
     type: File
-    doc: "Serialized target gene object ({target_id}.json)."
+    doc: Serialized target gene object.
     outputBinding:
-      glob: "*.json"
+      glob: $(inputs.target_gene_output)

@@ -1,70 +1,182 @@
 """
-Filename: src/ASOkai/pipeline/runner.py
-Description: Resolves dependencies, maps config to CWL inputs, and invokes Toil.
+Filename: src/pipeline/runner.py
+Description: Executes planned pipeline steps with optional dry-run and CWL export.
 License: LGPL-3.0-or-later
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import subprocess
 import tempfile
 from pathlib import Path
 
-from pipeline import config as cfg
-from pipeline.base import Step
+from pipeline.cwl_generation import generate_cwl
+from pipeline.executors import Executor, ToilExecutor
+from pipeline.base import Runnable, Step, Task, Workflow
+from pipeline.input_resolution import (
+    resolve_step_inputs,
+    resolve_step_sequence_inputs,
+    to_cwl_inputs,
+)
+from pipeline.plan import ExecutionPlan, build_plan
 from pipeline.registry import get_steps, get_tasks, get_workflows
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_inputs(step: Step, config: dict) -> dict:
-    """Map CWL input names to values using the step's config_map.
+# ---------------------------------------------------------------------------
+# Dry-run reporting (same resolution logic, annotated display)
+# ---------------------------------------------------------------------------
 
-    Missing keys are silently omitted so optional CWL inputs (string?) that
-    are not present in the config are not passed at all.
+def _log_dry_run_plan(plan: ExecutionPlan, config: dict, label: str) -> None:
     """
-    inputs = {}
-    for cwl_input, config_key in step.config_map.items():
-        try:
-            value = cfg.resolve(config, config_key)
-            inputs[cwl_input] = value
-        except KeyError:
-            pass
-    
-    steps = get_steps()
-    for dep_name in step.dependencies:
-        dep_step = steps.get(dep_name)
-        if dep_step is None:
-            continue
-        for output_key, path in dep_step.output_paths(config).items():
-            inputs[output_key] = {"class": "File", "path": str(path.resolve())}
-    
-    return inputs
+    Per-step dry-run breakdown.  Uses _resolve_step_inputs with plan context
+    so the display reflects exactly the same priority logic as execution.
+    """
+    steps_in_plan = {s.name for s in plan.steps_to_run}
+    logger.info("[%s] dry-run — would run %d step(s):", label, len(plan.steps_to_run))
+
+    for step in plan.steps_to_run:
+        logger.info("  ── %s", step.name)
+        resolved = resolve_step_inputs(
+            step, config,
+            pre_resolved=plan.pre_resolved,
+            steps_in_plan=steps_in_plan,
+        )
+        for cwl_key, ri in resolved.items():
+            if ri.source == "dep_wired":
+                logger.info("    %-22s wired from '%s'", cwl_key, ri.dep_name)
+            elif ri.source == "dep_disk":
+                p = ri.path
+                if p is not None:
+                    status = "OK" if p.exists() else "MISSING"
+                    logger.info("    %-22s %s  (%s)", cwl_key, p, status)
+                else:
+                    logger.info("    %-22s MISSING — dep '%s' output unknown",
+                                cwl_key, ri.dep_name)
+            elif ri.source == "input_override":
+                p = ri.path
+                status = "OK" if p is not None and p.exists() else "MISSING"
+                logger.info("    %-22s %s  (%s)  [override --config %s]",
+                            cwl_key, p, status, ri.config_path)
+            elif ri.source == "output_path":
+                logger.info("    %-22s %s  [→ output]", cwl_key, ri.cwl_value)
+            else:  # scalar
+                logger.info("    %-22s %s", cwl_key, ri.cwl_value)
 
 
-def _toil_run(cwl_path: str, inputs: dict, outdir: Path) -> None:
-    """Invoke toil-cwl-runner as a subprocess."""
-    outdir.mkdir(parents=True, exist_ok=True)
+# ---------------------------------------------------------------------------
+# Plan execution
+# ---------------------------------------------------------------------------
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False
-    ) as f:
-        json.dump(inputs, f)
-        inputs_file = f.name
+def run_plan(
+    plan: ExecutionPlan,
+    label: str,
+    config: dict,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    export_cwl: Path | None = None,
+    executor: Executor | None = None,
+) -> dict[str, Path] | None:
+    """
+    Execute an ExecutionPlan.
 
-    cmd = [
-        "toil-cwl-runner",
-        "--outdir", str(outdir),
-        # "--realTimeLogging", "true",
-        cwl_path,
-        inputs_file,
-    ]
-    logger.debug("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        raise RuntimeError(f"toil-cwl-runner failed for {cwl_path} (exit {result.returncode})")
+    Single-step fast path:
+      resolve inputs, then run the step's static CWL directly.
+
+    Multi-step path:
+      generate a workflow CWL document, then run it as one executor job.
+    """
+    executor = executor or ToilExecutor()
+
+    if not plan.steps_to_run:
+        logger.info("[%s] all outputs already exist, nothing to run.", label)
+        for key, path in plan.pre_resolved.items():
+            logger.info("  %s: %s", key, path)
+        return dict(plan.pre_resolved)
+
+    if len(plan.steps_to_run) == 1:
+        step = plan.steps_to_run[0]
+
+        if force and not dry_run:
+            logger.info("[%s] force=True, cleaning up '%s'.", label, step.name)
+            step.cleanup(config)
+
+        resolved = resolve_step_inputs(
+            step, config,
+            pre_resolved=plan.pre_resolved,
+            steps_in_plan=set(),
+        )
+        inputs = to_cwl_inputs(resolved)
+        outdir = step.outdir(config)
+
+        if dry_run:
+            _log_dry_run_plan(plan, config, label)
+            return step.output_paths(config)
+
+        logger.info("[%s] running '%s'.", label, step.name)
+        executor.run(step.cwl_path, inputs, outdir)
+        return step.output_paths(config)
+
+    # Multi-step path
+    if force and not dry_run:
+        for step in plan.steps_to_run:
+            step.cleanup(config)
+
+    cwl_doc = generate_cwl(plan.steps_to_run, plan.pre_resolved, config)
+    inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)
+    last_step = plan.steps_to_run[-1]
+    outdir = last_step.outdir(config)
+
+    if export_cwl:
+        export_cwl.parent.mkdir(parents=True, exist_ok=True)
+        export_cwl.write_text(cwl_doc)
+        logger.info("[%s] CWL exported to %s", label, export_cwl)
+        return None
+
+    if dry_run:
+        _log_dry_run_plan(plan, config, label)
+        return last_step.output_paths(config)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cwl", delete=False) as f:
+        f.write(cwl_doc)
+        cwl_path = f.name
+
+    logger.info("[%s] running %d steps.", label, len(plan.steps_to_run))
+    executor.run(cwl_path, inputs, outdir)
+    return last_step.output_paths(config)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def run_all(
+    runnables: list[Runnable],
+    config: dict,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    recursive: bool = False,
+    export_cwl: Path | None = None,
+    executor: Executor | None = None,
+) -> dict[str, Path] | None:
+    """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
+    if not runnables:
+        raise ValueError("run_all called with an empty runnables list.")
+
+    label = ", ".join(r.name for r in runnables)
+    plan = build_plan(runnables, config, recursive=recursive, force=force)
+    return run_plan(
+        plan,
+        label,
+        config,
+        force=force,
+        dry_run=dry_run,
+        export_cwl=export_cwl,
+        executor=executor,
+    )
 
 
 def run_step(
@@ -74,15 +186,9 @@ def run_step(
     force: bool = False,
     dry_run: bool = False,
     recursive: bool = False,
+    executor: Executor | None = None,
 ) -> dict[str, Path] | None:
-    """
-    Run a single step by name.
-
-    Dependencies are checked first:
-    - If their outputs already exist, proceed regardless.
-    - If their outputs are missing and recursive=True, run them automatically.
-    - If their outputs are missing and recursive=False, raise an error.
-    """
+    """Run a single step by name."""
     steps = get_steps()
     if step_name not in steps:
         raise ValueError(f"Unknown step '{step_name}'. Run 'ASOkai list steps' to see available steps.")
@@ -91,51 +197,23 @@ def run_step(
     if not isinstance(step, Step):
         raise TypeError(f"Step '{step_name}' does not conform to the Step protocol.")
 
-    for dep in step.dependencies:
-        dep_step = steps.get(dep)
-        if dep_step is None:
-            raise ValueError(f"Step '{step_name}' depends on unknown step '{dep}'.")
-        if not isinstance(dep_step, Step):
-            raise TypeError(f"Dependency '{dep}' does not conform to the Step protocol.")
-        if dep_step.outputs_exist(config):
-            logger.debug("[%s] dependency '%s' already satisfied.", step.name, dep)
-        elif recursive:
-            logger.info("[%s] dependency '%s' missing, running it.", step.name, dep)
-            run_step(dep, config, force=force, dry_run=dry_run, recursive=recursive)
-        else:
-            raise RuntimeError(
-                f"Step '{step_name}' requires '{dep}' but its outputs are missing. "
-                f"Run '{dep}' first, or use --recursive to run dependencies automatically."
-            )
+    plan = build_plan([step], config, recursive=recursive, force=force)
 
-    # skip if outputs already exist
-    if not force and step.outputs_exist(config):
+    if not plan.steps_to_run and not force:
         outputs = step.output_paths(config)
-        logger.info("[%s] outputs exist, skipping.", step.name)
+        logger.info("[%s] outputs exist, skipping.", step_name)
         for name, path in outputs.items():
             logger.info("  %s: %s", name, path)
         return outputs
 
-    if force and not dry_run:
-        logger.info("[%s] force=True, cleaning up existing outputs.", step.name)
-        step.cleanup(config)
-
-    inputs = _resolve_inputs(step, config)
-    outdir = step.outdir(config)
-
-    if dry_run:
-        logger.info("[%s] dry-run — would invoke toil-cwl-runner:", step.name)
-        logger.info("  CWL : %s", step.cwl_path)
-        logger.info("  Inputs: %s", inputs)
-        outputs = step.output_paths(config)
-        logger.info("  Outputs:")
-        for name, path in outputs.items():
-            logger.info("    %s: %s", name, path)
-        return outputs
-
-    logger.info("[%s] running.", step.name)
-    _toil_run(step.cwl_path, inputs, outdir)
-    return step.output_paths(config)
+    return run_plan(
+        plan,
+        step_name,
+        config,
+        force=force,
+        dry_run=dry_run,
+        executor=executor,
+    )
 
 
 def run_task(
@@ -145,35 +223,26 @@ def run_task(
     force: bool = False,
     dry_run: bool = False,
     recursive: bool = False,
+    export_cwl: Path | None = None,
+    executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     tasks = get_tasks()
     if task_name not in tasks:
         raise ValueError(f"Unknown task '{task_name}'. Run 'ASOkai list tasks' to see available tasks.")
     task = tasks[task_name]
+    if not isinstance(task, Task):
+        raise TypeError(f"Task '{task_name}' does not conform to the Task protocol.")
 
-    for dep in task.dependencies:
-        dep_task = tasks.get(dep)
-        if dep_task is None:
-            raise ValueError(f"Task '{task_name}' depends on unknown task '{dep}'.")
-        if not (hasattr(dep_task, "outputs_exist") and dep_task.outputs_exist(config)):
-            if recursive:
-                logger.info("[%s] dependency '%s' missing, running it.", task.name, dep)
-                run_task(dep, config, force=force, dry_run=dry_run, recursive=recursive)
-            else:
-                raise RuntimeError(
-                    f"Task '{task_name}' requires '{dep}' but its outputs are missing. "
-                    f"Run '{dep}' first, or use --recursive to run dependencies automatically."
-                )
-
-    inputs = _resolve_inputs(task, config)
-    outdir = task.outdir(config) if hasattr(task, "outdir") else Path(config["datadir"]).resolve()
-    if dry_run:
-        logger.info("[%s] dry-run — would invoke toil-cwl-runner:", task.name)
-        logger.info("  CWL : %s", task.cwl_path)
-        logger.info("  Inputs: %s", inputs)
-        return None
-    _toil_run(task.cwl_path, inputs, outdir)
-    return None
+    plan = build_plan([task], config, recursive=recursive, force=force)
+    return run_plan(
+        plan,
+        task_name,
+        config,
+        force=force,
+        dry_run=dry_run,
+        export_cwl=export_cwl,
+        executor=executor,
+    )
 
 
 def run_workflow(
@@ -183,16 +252,25 @@ def run_workflow(
     force: bool = False,
     dry_run: bool = False,
     recursive: bool = False,
-) -> None:
+    export_cwl: Path | None = None,
+    executor: Executor | None = None,
+) -> dict[str, Path] | None:
     workflows = get_workflows()
     if workflow_name not in workflows:
-        raise ValueError(f"Unknown workflow '{workflow_name}'. Run 'ASOkai list workflows' to see available workflows.")
-    workflow = workflows[workflow_name]
-    inputs = _resolve_inputs(workflow, config)
-    outdir = Path(config["datadir"]).resolve()
-    if dry_run:
-        logger.info("[%s] dry-run — would invoke toil-cwl-runner:", workflow.name)
-        logger.info("  CWL : %s", workflow.cwl_path)
-        logger.info("  Inputs: %s", inputs)
-        return
-    _toil_run(workflow.cwl_path, inputs, outdir)
+        raise ValueError(
+            f"Unknown workflow '{workflow_name}'. Run 'ASOkai list workflows' to see available workflows."
+        )
+    wf = workflows[workflow_name]
+    if not isinstance(wf, Workflow):
+        raise TypeError(f"Workflow '{workflow_name}' does not conform to the Workflow protocol.")
+
+    plan = build_plan([wf], config, recursive=recursive, force=force)
+    return run_plan(
+        plan,
+        workflow_name,
+        config,
+        force=force,
+        dry_run=dry_run,
+        export_cwl=export_cwl,
+        executor=executor,
+    )

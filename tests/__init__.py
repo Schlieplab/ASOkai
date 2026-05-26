@@ -1,3 +1,3 @@
 """
-ASOKai test suite.
+ASOkai test suite.
 """

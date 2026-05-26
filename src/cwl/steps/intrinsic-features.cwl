@@ -5,16 +5,11 @@ class: CommandLineTool
 baseCommand: [ASOkai, step, intrinsic-features]
 
 doc: |
-  Computes intrinsic features (GC content, T-runs, AT-runs) for each ASO
-  target site. Output: analysis/intrinsic/{target_id}/{assembly}_{target_id}_intrinsic.json
+  Computes intrinsic features (GC content, T-runs, AT-runs) for each ASO target site.
 
 requirements:
   WorkReuse:
     enableReuse: true
-
-arguments:
-  - prefix: --outdir
-    valueFrom: "."
 
 inputs:
 
@@ -26,7 +21,7 @@ inputs:
 
   assembly:
     type: string
-    doc: Assembly ID (e.g. GRCh38). Used in output filename.
+    doc: Assembly ID (e.g. GRCh38).
     inputBinding:
       prefix: --assembly
 
@@ -42,10 +37,30 @@ inputs:
     inputBinding:
       prefix: --target-name
 
+  k:
+    type: int
+    doc: ASO length.
+    inputBinding:
+      prefix: --k
+
+  region:
+    type:
+      type: enum
+      symbols: [exonic_only, pre-mrna, transcriptomic]
+    doc: Target region type.
+    inputBinding:
+      prefix: --region
+
+  intrinsic_features_output:
+    type: string
+    doc: Filename for the output JSON.
+    inputBinding:
+      prefix: --output
+
 outputs:
 
   intrinsic_features:
     type: File
-    doc: Intrinsic features per site ({assembly}_{target_id}_intrinsic.json).
+    doc: Intrinsic features per ASO target site.
     outputBinding:
-      glob: "*_intrinsic.json"
+      glob: $(inputs.intrinsic_features_output)

@@ -18,4 +18,4 @@ dependencies:
     - argparse2tool
     - "gffutils>=0.13,<0.14"
     - "-e /home/ayat/Repositories/genome_utils"
-    - "-e /home/ayat/Repositories/ASOKai"
+    - "-e /home/ayat/Repositories/ASOkai"

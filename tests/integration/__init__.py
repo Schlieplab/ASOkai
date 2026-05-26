@@ -1,3 +1,3 @@
 """
-Integration tests for ASOKai.
+Integration tests for ASOkai.
 """

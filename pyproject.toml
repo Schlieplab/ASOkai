@@ -37,11 +37,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"cwl.steps"     = ["*.cwl"]
-"cwl.tasks"     = ["*.cwl"]
-"cwl.workflows" = ["*.cwl"]
+"cwl.steps" = ["*.cwl"]
 
 [project.scripts]
-ASOkai              = "ASOkai.cli.main:main"
-
+ASOkai = "cli.main:main"
+asokai = "cli.main:main"
 

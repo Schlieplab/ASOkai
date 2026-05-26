@@ -1,5 +1,5 @@
 """
-Filename: src/ASOkai/pipeline/steps/create_target_gene.py
+Filename: src/pipeline/steps/create_target_gene.py
 Description: Definition and CLI entrypoint for the create-target-gene step.
 License: LGPL-3.0-or-later
 """
@@ -15,6 +15,7 @@ from importlib.resources import files
 class CreateTargetGeneStep:
     name = "create-target-gene"
     description = "[core] Creates a target gene object from genome data and extracts ASO target sites."
+    cli_module = "pipeline.steps.create_target_gene"
     dependencies: list[str] = ["download-genome"]
     config_map = {
         "target_id":   "target.target_id",
@@ -24,6 +25,11 @@ class CreateTargetGeneStep:
         "assembly":    "genome.assembly_id",
         "release":     "genome.ensembl_release",
         "species":     "genome.species",
+    }
+    input_overrides: dict[str, str] = {
+        "dna":        "genome.dna_path",
+        "cdna":       "genome.cdna_path",
+        "annotation": "genome.annotation_path",
     }
 
     @property
@@ -38,8 +44,9 @@ class CreateTargetGeneStep:
         )
 
     def _target_dir(self, config: dict) -> Path:
+        assembly = config["genome"]["assembly_id"]
         target_id = self._effective_target_id(config)
-        return Path(config["datadir"]) / "targets" / "gene" / target_id
+        return Path(config["datadir"]) / assembly / "targets" / target_id
 
     def outdir(self, config: dict) -> Path:
         return self._target_dir(config)
@@ -47,9 +54,10 @@ class CreateTargetGeneStep:
     def output_paths(self, config: dict) -> dict[str, Path]:
         base = self._target_dir(config)
         target_id = self._effective_target_id(config)
-        assembly = config["genome"]["assembly_id"]
+        k = config["target"]["k"]
+        region = config["target"]["region"]
         return {
-            "target_gene": base / f"{assembly}_{target_id}.json",
+            "target_gene": base / f"{target_id}_k{k}_{region}.json",
         }
 
     def outputs_exist(self, config: dict) -> bool:
@@ -61,8 +69,7 @@ class CreateTargetGeneStep:
                 p.unlink()
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entrypoint called by CWL baseCommand: create-target-gene."""
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create a target gene object and extract ASO target sites.",
     )
@@ -74,11 +81,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cdna",        required=True, type=Path, help="Path to cDNA FASTA.")
     parser.add_argument("--annotation",  required=True, type=Path, help="Path to GTF annotation file.")
     parser.add_argument("--assembly",    required=True, help="Assembly ID (e.g. GRCh38).")
+    parser.add_argument("--release",     required=True, type=int, help="Ensembl release number.")
     parser.add_argument("--species",     required=True, help="Species name (e.g. Homo_sapiens).")
-    parser.add_argument("--outdir",      required=True, type=Path, help="Output directory.")
+    parser.add_argument("--output",      required=True, type=Path, help="Full path for the output JSON file.")
+    return parser
 
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint called by CWL baseCommand: create-target-gene."""
+    parser = _build_parser()
     args = parser.parse_args(argv)
-    args.outdir.mkdir(parents=True, exist_ok=True)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
 
     if not args.target_id and not args.target_name:
         parser.error("Either --target-id or --target-name is required.")
@@ -100,17 +113,14 @@ def main(argv: list[str] | None = None) -> int:
 
     target_gene = TargetGeneCreator.from_genome(
         genome,
-        target_id=args.target_id or None,
-        target_name=args.target_name or None,
+        target_id=args.target_id,
+        target_name=args.target_name,
         k=args.k,
         region=args.region,
     )
 
-    effective_id = args.target_id or args.target_name
-    output_path = args.outdir / f"{args.assembly}_{effective_id}.json"
-    target_gene.to_file(str(output_path))
+    target_gene.to_file(str(args.output))
 
-    print(f"target_gene\t{output_path}")
     return 0
 
 

@@ -1,3 +1,3 @@
 """
-Unit tests for ASOKai.
+Unit tests for ASOkai.
 """

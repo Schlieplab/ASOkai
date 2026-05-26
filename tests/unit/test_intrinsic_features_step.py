@@ -18,6 +18,7 @@ def config(tmp_path):
             "target_id":   "ENSG00000133703",
             "target_name": "KRAS",
             "k":           16,
+            "region":      "pre-mrna",
         },
     }
 
@@ -43,12 +44,16 @@ def test_config_map_keys(step):
     assert "target_id" in step.config_map
     assert "target_name" in step.config_map
     assert "k" in step.config_map
+    assert "region" in step.config_map
     assert "assembly" in step.config_map
 
 
 def test_output_paths_structure(step, config, tmp_path):
     paths = step.output_paths(config)
-    expected = tmp_path / "analysis" / "intrinsic" / "ENSG00000133703" / "GRCh38_ENSG00000133703_intrinsic.json"
+    expected = (
+        tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
+        / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.json"
+    )
     assert paths["intrinsic_features"] == expected
 
 
@@ -56,15 +61,20 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     config = {
         "datadir": str(tmp_path),
         "genome": {"assembly_id": "GRCh38", "ensembl_release": 114, "species": "Homo_sapiens"},
-        "target": {"target_name": "KRAS", "k": 16},
+        "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
     }
     paths = step.output_paths(config)
-    expected = tmp_path / "analysis" / "intrinsic" / "KRAS" / "GRCh38_KRAS_intrinsic.json"
+    expected = (
+        tmp_path / "GRCh38" / "targets" / "KRAS"
+        / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.json"
+    )
     assert paths["intrinsic_features"] == expected
 
 
 def test_outdir(step, config, tmp_path):
-    assert step.outdir(config) == tmp_path / "analysis" / "intrinsic" / "ENSG00000133703"
+    assert step.outdir(config) == (
+        tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
+    )
 
 
 def test_outputs_do_not_exist(step, config):
@@ -72,7 +82,7 @@ def test_outputs_do_not_exist(step, config):
 
 
 def test_outputs_exist(step, config, tmp_path):
-    out = tmp_path / "analysis" / "intrinsic" / "ENSG00000133703"
+    out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
     out.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
@@ -80,7 +90,7 @@ def test_outputs_exist(step, config, tmp_path):
 
 
 def test_cleanup(step, config, tmp_path):
-    out = tmp_path / "analysis" / "intrinsic" / "ENSG00000133703"
+    out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
     out.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
@@ -90,3 +100,20 @@ def test_cleanup(step, config, tmp_path):
 
 def test_cwl_path_is_file(step):
     assert Path(step.cwl_path).exists(), f"CWL file not found: {step.cwl_path}"
+
+
+def test_main_rejects_missing_target_identifier_before_analysis(tmp_path):
+    from pipeline.steps import intrinsic_features
+
+    with pytest.raises(SystemExit) as excinfo:
+        intrinsic_features.main(
+            [
+                "--target-gene", str(tmp_path / "target.json"),
+                "--assembly", "GRCh38",
+                "--k", "16",
+                "--region", "pre-mrna",
+                "--output", str(tmp_path / "intrinsic.json"),
+            ]
+        )
+
+    assert excinfo.value.code == 2

@@ -6,6 +6,7 @@ datadir: ./data
 genome:
   assembly_id: GRCh38
   ensembl_release: 114
+  source: ensembl
   species: Homo_sapiens
 
 target:

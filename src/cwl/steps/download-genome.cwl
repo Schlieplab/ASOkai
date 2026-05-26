@@ -6,9 +6,9 @@ baseCommand: [ASOkai, step, download-genome]
 
 doc: |
   Download genome DNA (primary assembly FASTA), cDNA (FASTA), and annotation
-  (GTF) from the Ensembl FTP server.
+  (GTF) from a configured genome source.
   Files are written to:
-    ensembl/{assembly}/{release}/
+    {source}/{assembly}/{release}/
 
 requirements:
   NetworkAccess:
@@ -33,6 +33,13 @@ inputs:
     doc: Ensembl release number (e.g. 114).
     inputBinding:
       prefix: --release
+
+  source:
+    type: string
+    default: ensembl
+    doc: Genome data source.
+    inputBinding:
+      prefix: --source
 
   species:
     type: string

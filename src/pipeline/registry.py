@@ -1,6 +1,6 @@
 """
-Filename: src/ASOkai/pipeline/registry.py
-Description: Registry for steps, tasks, and workflows.
+Filename: src/pipeline/registry.py
+Description: Registry for pipeline steps, tasks, and workflows.
              Discovers built-in units and any installed plugins via entry points.
 License: LGPL-3.0-or-later
 """
@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from importlib.metadata import entry_points
 
-from pipeline.base import Step
+from pipeline.base import Step, Task, Workflow
 from pipeline.steps.download_genome import DownloadGenomeStep
 from pipeline.steps.create_target_gene import CreateTargetGeneStep
 from pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
+from pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from pipeline.workflows.standard import StandardWorkflow
 
 _BUILTIN_STEPS: list[Step] = [
@@ -21,9 +22,11 @@ _BUILTIN_STEPS: list[Step] = [
     IntrinsicFeaturesStep(),
 ]
 
-_BUILTIN_TASKS: list = []
+_BUILTIN_TASKS: list[Task] = [
+    InstantiateTargetGeneTask(),
+]
 
-_BUILTIN_WORKFLOWS: list = [
+_BUILTIN_WORKFLOWS: list[Workflow] = [
     StandardWorkflow(),
 ]
 
@@ -42,13 +45,13 @@ def get_steps() -> dict[str, Step]:
     return steps
 
 
-def get_tasks() -> dict:
+def get_tasks() -> dict[str, Task]:
     tasks = {t.name: t for t in _BUILTIN_TASKS}
     tasks.update({t.name: t for t in _load_plugins("asokai.tasks")})
     return tasks
 
 
-def get_workflows() -> dict:
+def get_workflows() -> dict[str, Workflow]:
     workflows = {w.name: w for w in _BUILTIN_WORKFLOWS}
     workflows.update({w.name: w for w in _load_plugins("asokai.workflows")})
     return workflows

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Shared pytest fixtures for ASOKai tests.
+Shared pytest fixtures for ASOkai tests.
 """
 import pytest
 import tempfile

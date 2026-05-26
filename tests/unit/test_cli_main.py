@@ -2,7 +2,7 @@
 
 from click.testing import CliRunner
 
-from ASOkai.cli.main import main
+from cli.main import main
 
 
 def test_hidden_step_command_is_not_listed_in_help():
@@ -12,6 +12,232 @@ def test_hidden_step_command_is_not_listed_in_help():
 
     assert result.exit_code == 0
     assert " step " not in result.output
+
+
+def test_run_help_uses_configfile_and_config_override_options():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "--configfile, --config-file PATH" in result.output
+    assert "--config KEY=VALUE [KEY=VALUE ...]" in result.output
+    assert "--set" not in result.output
+
+
+def test_list_commands_show_registered_units():
+    runner = CliRunner()
+
+    steps = runner.invoke(main, ["list", "steps"])
+    tasks = runner.invoke(main, ["list", "tasks"])
+    workflows = runner.invoke(main, ["list", "workflows"])
+
+    assert steps.exit_code == 0
+    assert "download-genome" in steps.output
+    assert "[core] Downloads genome DNA" in steps.output
+    assert "create-target-gene" in steps.output
+    assert "intrinsic-features" in steps.output
+
+    assert tasks.exit_code == 0
+    assert "instantiate-target-gene" in tasks.output
+    assert "[core] Downloads genome data" in tasks.output
+
+    assert workflows.exit_code == 0
+    assert "standard" in workflows.output
+    assert "Full pipeline" in workflows.output
+
+
+def test_describe_step_create_target_gene_shows_details():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "step", "create-target-gene"])
+
+    assert result.exit_code == 0
+    assert "Name        : create-target-gene" in result.output
+    assert "CWL         :" in result.output
+    assert "create-target-gene.cwl" in result.output
+    assert "Config keys :" in result.output
+    assert "--config target.target_id" in result.output
+    assert "--config target.region" in result.output
+    assert "Input overrides (optional, bypasses dep step):" in result.output
+    assert "--config genome.dna_path" in result.output
+    assert "Dependencies: download-genome" in result.output
+
+
+def test_describe_task_expands_step_names():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "task", "instantiate-target-gene"])
+
+    assert result.exit_code == 0
+    assert "Name        : instantiate-target-gene" in result.output
+    assert "Steps       : download-genome, create-target-gene" in result.output
+    assert "Steps: download-genome, create-target-gene" in result.output
+
+
+def test_describe_workflow_shows_members_and_expanded_steps():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "workflow", "standard"])
+
+    assert result.exit_code == 0
+    assert "Name        : standard" in result.output
+    assert "Members     : instantiate-target-gene, intrinsic-features" in result.output
+    assert (
+        "Steps (expanded): download-genome, create-target-gene, intrinsic-features"
+        in result.output
+    )
+
+
+def test_verbose_describe_step_shows_dependency_tree():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "--verbose", "step", "intrinsic-features"])
+
+    assert result.exit_code == 0
+    assert "Dependencies:" in result.output
+    assert "`-- create-target-gene" in result.output
+    assert "`-- download-genome" in result.output
+
+
+def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr(
+        "cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(config=config),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--steps",
+            "download-genome",
+            "--config",
+            "target.k=20",
+            "target.region=exonic_only",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["config"]["target"]["k"] == 20
+    assert captured["config"]["target"]["region"] == "exonic_only"
+
+
+def test_run_config_accepts_repeated_flags(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr(
+        "cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(config=config),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--steps",
+            "download-genome",
+            "--config",
+            "target.k=20",
+            "--config",
+            "target.region=exonic_only",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["config"]["target"]["k"] == 20
+    assert captured["config"]["target"]["region"] == "exonic_only"
+
+
+def test_run_defaults_to_standard_workflow(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr(
+        "cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run"])
+
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == ["standard"]
+
+
+def test_run_rejects_unknown_step(monkeypatch):
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {})
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--steps", "not-a-step"])
+
+    assert result.exit_code != 0
+    assert "Unknown step 'not-a-step'." in result.output
+
+
+def test_run_rejects_unknown_task(monkeypatch):
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {})
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--tasks", "not-a-task"])
+
+    assert result.exit_code != 0
+    assert "Unknown task 'not-a-task'." in result.output
+
+
+def test_run_rejects_unknown_workflow(monkeypatch):
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {})
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--workflow", "not-a-workflow"])
+
+    assert result.exit_code != 0
+    assert "Unknown workflow 'not-a-workflow'." in result.output
+
+
+def test_run_config_rejects_malformed_override(monkeypatch):
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {})
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--config", "target.k"])
+
+    assert result.exit_code != 0
+    assert "KEY=VALUE format" in result.output
+
+
+def test_run_config_preserves_yaml_scalar_types(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("cli.main.cfg.load", lambda _path: {"target": {}})
+    monkeypatch.setattr(
+        "cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(config=config),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--steps",
+            "download-genome",
+            "--config",
+            "target.k=20",
+            "target.flag=true",
+            "target.name=null",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["config"]["target"]["k"] == 20
+    assert captured["config"]["target"]["flag"] is True
+    assert captured["config"]["target"]["name"] is None
 
 
 def test_step_command_dispatches_to_builtin_step(monkeypatch):

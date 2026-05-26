@@ -1,5 +1,5 @@
 """
-Filename: src/ASOkai/pipeline/steps/download_genome.py
+Filename: src/pipeline/steps/download_genome.py
 Description: Definition and CLI entrypoint for the download-genome step.
 License: LGPL-3.0-or-later
 """
@@ -16,32 +16,33 @@ from GenomeUtils.Downloaders import EnsemblGenomeDownloader
 
 class DownloadGenomeStep:
     name = "download-genome"
-    description = "[core] Downloads genome DNA (primary assembly FASTA), cDNA (FASTA), and annotation (GTF) from Ensembl FTP."
+    description = "[core] Downloads genome DNA (primary assembly FASTA), cDNA (FASTA), and annotation (GTF)."
+    cli_module = "pipeline.steps.download_genome"
     dependencies: list[str] = []
     config_map = {
         "assembly": "genome.assembly_id",
         "release":  "genome.ensembl_release",
+        "source":   "genome.source",
         "species":  "genome.species",
     }
+    input_overrides: dict[str, str] = {}
 
     @property
     def cwl_path(self) -> str:
         return str(files("cwl.steps").joinpath("download-genome.cwl"))
 
-    def _genome_dir(self, config: dict) -> Path:
+
+    def outdir(self, config: dict) -> Path:
         return (
             Path(config["datadir"])
-            / "genomes"
-            / "ensembl"
             / config["genome"]["assembly_id"]
+            / "genomes"
+            / config["genome"]["source"]
             / str(config["genome"]["ensembl_release"])
         )
 
-    def outdir(self, config: dict) -> Path:
-        return self._genome_dir(config)
-
     def output_paths(self, config: dict) -> dict[str, Path]:
-        base = self._genome_dir(config)
+        base = self.outdir(config)
         parts = config["genome"]["species"].split("_")
         species_cap = parts[0].capitalize() + "_" + "_".join(p.lower() for p in parts[1:])
         assembly = config["genome"]["assembly_id"]
@@ -56,27 +57,30 @@ class DownloadGenomeStep:
         return all(p.exists() for p in self.output_paths(config).values())
 
     def cleanup(self, config: dict) -> None:
-        """Remove outputs before a forced re-run."""
-        import shutil
         for p in self.output_paths(config).values():
             if p.exists():
-                if p.is_dir():
-                    shutil.rmtree(p)
-                else:
-                    p.unlink()
+                p.unlink()
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Download genome DNA, cDNA, and GTF.",
+    )
+    parser.add_argument("--assembly", required=True, help="Assembly ID (e.g. GRCh38).")
+    parser.add_argument("--release", required=True, type=int, help="Ensembl release number.")
+    parser.add_argument("--source", required=True, help="Genome data source.")
+    parser.add_argument("--species", required=True, help="Species name (e.g. homo_sapiens).")
+    parser.add_argument("--outdir", required=True, type=Path, help="Root directory for downloaded genomes.")
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint called by CWL baseCommand: download-genome."""
-    parser = argparse.ArgumentParser(
-        description="Download genome DNA, cDNA, and GTF from Ensembl.",
-    )
-    parser.add_argument("--assembly", required=True, help="Assembly ID (e.g. GRCh38).")
-    parser.add_argument("--release", required=True, type=int, help="Ensembl release number.")
-    parser.add_argument("--species", required=True, help="Species name (e.g. homo_sapiens).")
-    parser.add_argument("--outdir", required=True, type=Path, help="Root directory for downloaded genomes.")
-
+    parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.source != "ensembl":
+        parser.error(f"Unsupported genome source: {args.source}")
 
     downloader = EnsemblGenomeDownloader(
         assembly_id=args.assembly,

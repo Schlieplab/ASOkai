@@ -1,5 +1,5 @@
 """
-Filename: src/ASOkai/pipeline/steps/intrinsic_features.py
+Filename: src/pipeline/steps/intrinsic_features.py
 Description: Definition and CLI entrypoint for the intrinsic-features step.
 License: LGPL-3.0-or-later
 """
@@ -15,12 +15,17 @@ from importlib.resources import files
 class IntrinsicFeaturesStep:
     name = "intrinsic-features"
     description = "[analysis] Computes intrinsic features (GC content, T-runs, AT-runs) for each ASO target site."
+    cli_module = "pipeline.steps.intrinsic_features"
     dependencies: list[str] = ["create-target-gene"]
     config_map = {
         "target_id":   "target.target_id",
         "target_name": "target.target_name",
         "k":           "target.k",
+        "region":      "target.region",
         "assembly":    "genome.assembly_id",
+    }
+    input_overrides: dict[str, str] = {
+        "target_gene": "target.target_gene_path",
     }
 
     @property
@@ -31,11 +36,15 @@ class IntrinsicFeaturesStep:
         return config["target"].get("target_id") or config["target"].get("target_name")
 
     def _analysis_dir(self, config: dict) -> Path:
+        assembly = config["genome"]["assembly_id"]
+        target_id = self._effective_target_id(config)
         return (
             Path(config["datadir"])
+            / assembly
+            / "targets"
+            / target_id
             / "analysis"
             / "intrinsic"
-            / self._effective_target_id(config)
         )
 
     def outdir(self, config: dict) -> Path:
@@ -44,9 +53,10 @@ class IntrinsicFeaturesStep:
     def output_paths(self, config: dict) -> dict[str, Path]:
         base = self._analysis_dir(config)
         target_id = self._effective_target_id(config)
-        assembly = config["genome"]["assembly_id"]
+        k = config["target"]["k"]
+        region = config["target"]["region"]
         return {
-            "intrinsic_features": base / f"{assembly}_{target_id}_intrinsic.json",
+            "intrinsic_features": base / f"{target_id}_k{k}_{region}_intrinsic.json",
         }
 
     def outputs_exist(self, config: dict) -> bool:
@@ -58,8 +68,7 @@ class IntrinsicFeaturesStep:
                 p.unlink()
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entrypoint called by CWL baseCommand: intrinsic-features."""
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Compute intrinsic features for ASO target sites.",
     )
@@ -67,16 +76,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--assembly", required=True, help="Assembly ID (e.g. GRCh38).")
     parser.add_argument("--target-id", default=None, help="Ensembl gene ID. Takes priority over --target-name.")
     parser.add_argument("--target-name", default=None, help="Gene name. Used if --target-id is not provided.")
-    parser.add_argument("--outdir", required=True, type=Path, help="Output directory.")
+    parser.add_argument("--k", required=True, type=int, help="ASO length.")
+    parser.add_argument("--region", required=True, choices=["exonic_only", "pre-mrna", "transcriptomic"], help="Target region type.")
+    parser.add_argument("--output", required=True, type=Path, help="Full path for the output JSON file.")
+    return parser
 
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint called by CWL baseCommand: intrinsic-features."""
+    parser = _build_parser()
     args = parser.parse_args(argv)
-    args.outdir.mkdir(parents=True, exist_ok=True)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
 
     if not args.target_id and not args.target_name:
         parser.error("Either --target-id or --target-name is required.")
-
-    effective_id = args.target_id or args.target_name
-    output_path = args.outdir / f"{args.assembly}_{effective_id}_intrinsic.json"
 
     # TODO: wire IntrinsicFeaturesAnalysis here
     raise NotImplementedError("intrinsic-features script not yet implemented.")

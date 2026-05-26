@@ -1,6 +1,6 @@
-# Plugin Architecture for ASOKai
+# Plugin Architecture for ASOkai
 
-ASOKai supports external plugins to add custom steps, tasks, and workflows without modifying the core codebase. Plugins are discovered and loaded automatically via Python entry points.
+ASOkai supports external plugins to add custom steps, tasks, and workflows without modifying the core codebase. Plugins are discovered and loaded automatically via Python entry points.
 
 ## How Plugins Work
 
@@ -9,7 +9,7 @@ The registry (`ASOkai.pipeline.registry`) loads plugins at runtime using `import
 1. Implement a class that follows the `Step` protocol (defined in `ASOkai.pipeline.base`)
 2. Declare an entry point in your `pyproject.toml`
 
-ASOKai will automatically discover and instantiate your plugin when the CLI runs.
+ASOkai will automatically discover and instantiate your plugin when the CLI runs.
 
 ## Creating a Plugin Step
 
@@ -149,6 +149,12 @@ ASOkai run my-custom-step --config config.yaml
 
 ## For Tasks and Workflows
 
+Tasks and workflows do **not** ship static CWL files. ASOkai generates workflow CWL at runtime from your step definitions.
+
+- **`PipelineUnit`** (`pipeline.base.PipelineUnit`): shared base protocol — `name`, `description`, `outdir`, `output_paths`, `outputs_exist`, `cleanup`. `Step`, `Task`, and `Workflow` all extend it.
+- **Task** (`pipeline.base.Task`): `steps` — ordered list of **step** names only.
+- **Workflow** (`pipeline.base.Workflow`): `units` — ordered `("step", name)`, `("task", name)`, or `("workflow", name)` pairs (nested workflows allowed).
+
 The process is the same—use entry points `asokai.tasks` and `asokai.workflows` respectively:
 
 ```toml
@@ -161,7 +167,7 @@ my-workflow = "my_plugin.workflows.my_workflow:MyCustomWorkflow"
 
 ## Key Points
 
-- **Protocol-based:** Your class must implement the `Step` protocol (`name`, `description`, `dependencies`, `config_map`, `cwl_path`, `outdir`, `output_paths`, `outputs_exist`, `cleanup`).
+- **Protocol-based:** Everything implements `PipelineUnit` at minimum. Steps add `dependencies`, `config_map`, and `cwl_path`. Tasks add `steps`. Workflows add `units` (see above).
 - **Entry points:** Declare in your `pyproject.toml` under `asokai.steps`, `asokai.tasks`, or `asokai.workflows`.
 - **CLI entrypoint:** Register a `[project.scripts]` entry for `baseCommand` to work.
 - **CWL files:** Use `importlib.resources.files()` to robustly locate your CWL files.

@@ -32,7 +32,7 @@ def test_run_step_skips_when_outputs_exist(config, tmp_path):
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai._pipeline.executors.ToilExecutor.run") as mock_run:
+    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
         result = runner.run_step("download-genome", config)
         mock_run.assert_not_called()
     assert result is not None
@@ -46,8 +46,8 @@ def test_run_step_dry_run_returns_outputs(config):
     assert "annotation" in result
 
 
-def test_run_step_dry_run_does_not_call_toil(config):
-    with patch("ASOkai._pipeline.executors.ToilExecutor.run") as mock_run:
+def test_run_step_dry_run_does_not_call_default_executor(config):
+    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
         runner.run_step("download-genome", config, dry_run=True, force=True)
         mock_run.assert_not_called()
 
@@ -87,7 +87,7 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai._pipeline.executors.ToilExecutor.run"):
+    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run"):
         runner.run_step("download-genome", config, force=True, dry_run=True)
 
     assert step.outputs_exist(config) is True
@@ -147,8 +147,8 @@ def test_run_workflow_unknown_raises(workflow_config):
         runner.run_workflow("nonexistent", workflow_config)
 
 
-def test_run_workflow_dry_run_does_not_call_toil(workflow_config):
-    with patch("ASOkai._pipeline.executors.ToilExecutor.run") as mock_run:
+def test_run_workflow_dry_run_does_not_call_default_executor(workflow_config):
+    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
         runner.run_workflow("standard", workflow_config, dry_run=True)
     mock_run.assert_not_called()
 

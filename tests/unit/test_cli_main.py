@@ -21,6 +21,7 @@ def test_run_help_uses_configfile_and_config_override_options():
 
     assert result.exit_code == 0
     assert "--configfile, --config-file PATH" in result.output
+    assert "--executor [toil|cwltool]" in result.output
     assert "--config KEY=VALUE [KEY=VALUE ...]" in result.output
     assert "--set" not in result.output
 
@@ -161,7 +162,10 @@ def test_run_defaults_to_standard_workflow(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
     monkeypatch.setattr(
         "ASOkai._cli.main.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables,
+            **kwargs,
+        ),
     )
 
     runner = CliRunner()
@@ -169,6 +173,23 @@ def test_run_defaults_to_standard_workflow(monkeypatch):
 
     assert result.exit_code == 0
     assert [r.name for r in captured["runnables"]] == ["standard"]
+    assert captured["executor"].__class__.__name__ == "CwlToolExecutor"
+
+
+def test_run_uses_toil_executor_when_requested(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(kwargs),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--steps", "download-genome", "--executor", "toil"])
+
+    assert result.exit_code == 0
+    assert captured["executor"].__class__.__name__ == "ToilExecutor"
 
 
 def test_run_rejects_unknown_step(monkeypatch):

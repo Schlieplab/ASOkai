@@ -2,7 +2,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from ASOkai._pipeline.input_resolution import resolve_step_inputs, to_cwl_inputs
+from ASOkai._cwl.input_resolution import resolve_step_inputs, to_cwl_inputs
 
 
 class _FakeStep:
@@ -62,7 +62,7 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
         input_overrides={"shared": "shared.override"},
     )
 
-    with patch("ASOkai._pipeline.input_resolution.get_steps", return_value={"dep": dep}):
+    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
             step,
             config,
@@ -81,7 +81,7 @@ def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
     dep = _FakeStep("dep", output_names=["dep_file"])
     step = _FakeStep("consumer", deps=["dep"])
 
-    with patch("ASOkai._pipeline.input_resolution.get_steps", return_value={"dep": dep}):
+    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
             step,
             config,
@@ -99,7 +99,7 @@ def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
     step = _FakeStep("consumer", deps=["dep"])
     path = tmp_path / "dep-output.txt"
 
-    with patch("ASOkai._pipeline.input_resolution.get_steps", return_value={"dep": dep}):
+    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
             step,
             config,

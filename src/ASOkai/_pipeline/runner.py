@@ -10,14 +10,14 @@ import logging
 import tempfile
 from pathlib import Path
 
-from ASOkai._pipeline.cwl_generation import generate_cwl
-from ASOkai._pipeline.executors import Executor, ToilExecutor
-from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
-from ASOkai._pipeline.input_resolution import (
+from ASOkai._cwl.generation import generate_cwl
+from ASOkai._cwl.input_resolution import (
     resolve_step_inputs,
     resolve_step_sequence_inputs,
     to_cwl_inputs,
 )
+from ASOkai._pipeline.executors import CwlToolExecutor, Executor
+from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
 from ASOkai._pipeline.plan import ExecutionPlan, build_plan
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
 
@@ -88,7 +88,7 @@ def run_plan(
     Multi-step path:
       generate a workflow CWL document, then run it as one executor job.
     """
-    executor = executor or ToilExecutor()
+    executor = executor or CwlToolExecutor()
 
     if not plan.steps_to_run:
         logger.info("[%s] all outputs already exist, nothing to run.", label)

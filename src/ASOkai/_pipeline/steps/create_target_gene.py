@@ -7,9 +7,13 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from importlib.resources import files
+
+
+logger = logging.getLogger(__name__)
 
 
 class CreateTargetGeneStep:
@@ -99,18 +103,30 @@ def main(argv: list[str] | None = None) -> int:
     from GenomeUtils.Genome import GenomeBuilder
     from ASOkai.Targets import TargetGeneCreator
 
-    genome, _ = (
-        GenomeBuilder(
-            id=args.assembly,
-            species=args.species.replace("_", " "),
-            name=args.assembly,
-        )
-        .with_dna_fasta(args.dna)
-        .with_cdna_fasta(args.cdna)
-        .with_gtf_file(args.annotation)
-        .build()
+    logger.info("create-target-gene: loading DNA FASTA from %s", args.dna)
+    builder = GenomeBuilder(
+        id=args.assembly,
+        species=args.species.replace("_", " "),
+        name=args.assembly,
     )
+    builder.with_dna_fasta(args.dna)
 
+    logger.info("create-target-gene: loading cDNA FASTA from %s", args.cdna)
+    builder.with_cdna_fasta(args.cdna)
+
+    logger.info("create-target-gene: loading GTF annotations from %s", args.annotation)
+    builder.with_gtf_file(args.annotation)
+
+    logger.info("create-target-gene: indexing genome")
+    genome, _ = builder.build()
+
+    logger.info(
+        "create-target-gene: extracting %s sites for target_id=%s target_name=%s k=%s",
+        args.region,
+        args.target_id,
+        args.target_name,
+        args.k,
+    )
     target_gene = TargetGeneCreator.from_genome(
         genome,
         target_id=args.target_id,
@@ -119,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         region=args.region,
     )
 
+    logger.info("create-target-gene: writing target gene to %s", args.output)
     target_gene.to_file(str(args.output))
 
     return 0

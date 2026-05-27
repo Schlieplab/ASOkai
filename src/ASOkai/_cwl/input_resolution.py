@@ -1,7 +1,5 @@
 """
-Filename: src/pipeline/input_resolution.py
-Description: Resolve step config, dependency, override, and output inputs.
-License: LGPL-3.0-or-later
+Resolve step config, dependency, override, and output inputs for CWL execution.
 """
 
 from __future__ import annotations
@@ -10,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from ASOkai._cwl.utils import step_input_names
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Step
 from ASOkai._pipeline.registry import get_steps
@@ -113,9 +112,18 @@ def resolve_step_inputs(
         except KeyError:
             pass
 
-    if getattr(step, "output_inputs", None) != {}:
-        for out_key, path in step.output_paths(config).items():
-            resolved[f"{out_key}_output"] = ResolvedInput(
+    try:
+        declared_inputs = step_input_names(step.cwl_path)
+    except FileNotFoundError:
+        declared_inputs = None
+    for out_key, path in step.output_paths(config).items():
+        cwl_key = f"{out_key}_output"
+        if declared_inputs is not None:
+            should_inject = cwl_key in declared_inputs
+        else:
+            should_inject = getattr(step, "output_inputs", None) != {}
+        if should_inject:
+            resolved[cwl_key] = ResolvedInput(
                 cwl_value=path.name,
                 source="output_path",
                 path=path,
@@ -152,4 +160,3 @@ def resolve_step_sequence_inputs(
             if key not in merged and ri.cwl_value is not None:
                 merged[key] = ri.cwl_value
     return merged
-

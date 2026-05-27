@@ -1,7 +1,5 @@
 """
-Filename: src/pipeline/cwl_generation.py
-Description: Generate multi-step CWL workflow documents from ASOkai._pipeline steps.
-License: LGPL-3.0-or-later
+Generate multi-step CWL workflow documents from ASOkai pipeline steps.
 """
 
 from __future__ import annotations
@@ -11,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from ASOkai._cwl.utils import step_input_names, step_input_types
 from ASOkai._pipeline.base import Step
 from ASOkai._pipeline.registry import get_steps
 
@@ -25,6 +24,23 @@ def _output_names(step: Step, config: dict) -> tuple[str, ...]:
     return tuple(step.output_paths(config).keys())
 
 
+def _output_input_names(step: Step, config: dict) -> tuple[str, ...]:
+    """Return output filename input names actually declared by the step CWL."""
+    declared_inputs = step_input_names(step.cwl_path)
+    return tuple(
+        f"{out_key}_output"
+        for out_key in _output_names(step, config)
+        if f"{out_key}_output" in declared_inputs
+    )
+
+
+def _workflow_input_type(cwl_type: Any) -> Any:
+    """Return a valid Workflow input declaration for a step input type."""
+    if isinstance(cwl_type, dict):
+        return {"type": cwl_type}
+    return cwl_type
+
+
 def generate_cwl(
     step_objs: list[Step],
     pre_resolved: dict[str, Path],
@@ -35,8 +51,9 @@ def generate_cwl(
 
     Wire-up rules:
     - pre_resolved keys become top-level ``File`` inputs.
-    - input_overrides not covered by an in-sequence dependency become ``File?``.
-    - config_map values become top-level scalar inputs.
+    - input_overrides not covered by an in-sequence dependency become top-level
+      inputs matching the declared step CWL type.
+    - config_map values become top-level inputs matching declared step CWL types.
     - generated workflow outputs come from the final step only.
     """
     step_by_name = {s.name: s for s in step_objs}
@@ -56,19 +73,28 @@ def generate_cwl(
         all_inputs[key] = "File"
 
     for step in step_objs:
+        input_types = step_input_types(step.cwl_path)
         for cwl_key in getattr(step, "input_overrides", {}):
             if cwl_key not in all_inputs and cwl_key not in dep_output_names_in_seq:
-                all_inputs[cwl_key] = "File?"
+                all_inputs[cwl_key] = _workflow_input_type(
+                    input_types.get(cwl_key, "File")
+                )
 
     for step in step_objs:
+        input_types = step_input_types(step.cwl_path)
         for cwl_key in step.config_map:
             if cwl_key not in all_inputs:
-                all_inputs[cwl_key] = "string"
+                all_inputs[cwl_key] = _workflow_input_type(
+                    input_types.get(cwl_key, "string")
+                )
 
     for step in step_objs:
-        if getattr(step, "output_inputs", None) != {}:
-            for out_key in _output_names(step, config):
-                all_inputs.setdefault(f"{out_key}_output", "string")
+        input_types = step_input_types(step.cwl_path)
+        for cwl_input_key in _output_input_names(step, config):
+            all_inputs.setdefault(
+                cwl_input_key,
+                _workflow_input_type(input_types.get(cwl_input_key, "string")),
+            )
 
     cwl_steps = {}
     for step in step_objs:
@@ -81,10 +107,8 @@ def generate_cwl(
             if cwl_key not in in_map:
                 in_map[cwl_key] = cwl_key
 
-        if getattr(step, "output_inputs", None) != {}:
-            for out_key in _output_names(step, config):
-                cwl_input_key = f"{out_key}_output"
-                in_map[cwl_input_key] = cwl_input_key
+        for cwl_input_key in _output_input_names(step, config):
+            in_map[cwl_input_key] = cwl_input_key
 
         for dep_name in step.dependencies:
             if dep_name not in step_names_in_seq:

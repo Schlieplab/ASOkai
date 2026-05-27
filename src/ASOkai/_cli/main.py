@@ -18,6 +18,7 @@ import yaml
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
+from ASOkai._pipeline.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
 
 DEFAULT_CONFIG = Path("config.yaml")
@@ -401,6 +402,14 @@ def _collect_runnables(
     help="Save the generated CWL for a task or workflow to PATH instead of a tempfile.",
 )
 @click.option(
+    "--executor",
+    "executor_name",
+    type=click.Choice(["toil", "cwltool"]),
+    default="cwltool",
+    show_default=True,
+    help="CWL executor backend.",
+)
+@click.option(
     "--config",
     "config_overrides",
     cls=_VariadicOption,
@@ -420,6 +429,7 @@ def run_cmd(
     dry_run: bool,
     recursive: bool,
     export_cwl: Path | None,
+    executor_name: str,
     config_overrides: tuple,
 ) -> None:
     """Run steps, tasks, or a workflow. Defaults to the 'standard' workflow."""
@@ -430,6 +440,7 @@ def run_cmd(
         cfg.apply_overrides(config, parsed_overrides)
 
     runnables = _collect_runnables(step_names, task_names, workflow_name)
+    executor = CwlToolExecutor() if executor_name == "cwltool" else ToilExecutor()
     runner.run_all(
         runnables,
         config,
@@ -437,6 +448,7 @@ def run_cmd(
         dry_run=dry_run,
         recursive=recursive,
         export_cwl=export_cwl,
+        executor=executor,
     )
 
 

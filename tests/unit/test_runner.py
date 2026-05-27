@@ -1,8 +1,10 @@
 """Tests for pipeline runner logic."""
 import pytest
+import yaml
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from ASOkai._pipeline import runner
+from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.plan import ExecutionPlan
 
 
@@ -32,7 +34,7 @@ def test_run_step_skips_when_outputs_exist(config, tmp_path):
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         result = runner.run_step("download-genome", config)
         mock_run.assert_not_called()
     assert result is not None
@@ -47,7 +49,7 @@ def test_run_step_dry_run_returns_outputs(config):
 
 
 def test_run_step_dry_run_does_not_call_default_executor(config):
-    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         runner.run_step("download-genome", config, dry_run=True, force=True)
         mock_run.assert_not_called()
 
@@ -58,6 +60,19 @@ def test_run_step_uses_injected_executor(config):
     runner.run_step("download-genome", config, force=True, executor=executor)
 
     executor.run.assert_called_once()
+
+
+def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
+    executor = MagicMock()
+
+    runner.run_step("download-genome", config, force=True, executor=executor)
+
+    export_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
+    assert len(export_dirs) == 1
+    workflow_path, inputs, _ = executor.run.call_args.args
+    assert workflow_path == str(export_dirs[0] / "workflow.cwl")
+    assert (export_dirs[0] / "job.yml").exists()
+    assert inputs["assembly"] == "GRCh38"
 
 
 def test_run_step_uses_config_download_source(config):
@@ -87,7 +102,7 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
     for p in step.output_paths(config).values():
         p.touch()
 
-    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run"):
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run"):
         runner.run_step("download-genome", config, force=True, dry_run=True)
 
     assert step.outputs_exist(config) is True
@@ -148,7 +163,7 @@ def test_run_workflow_unknown_raises(workflow_config):
 
 
 def test_run_workflow_dry_run_does_not_call_default_executor(workflow_config):
-    with patch("ASOkai._pipeline.executors.CwlToolExecutor.run") as mock_run:
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         runner.run_workflow("standard", workflow_config, dry_run=True)
     mock_run.assert_not_called()
 
@@ -167,6 +182,74 @@ def test_run_task_export_cwl_writes_file_and_skips_executor(workflow_config, tmp
     assert result is None
     assert export_path.exists()
     assert "class: Workflow" in export_path.read_text()
+    executor.run.assert_not_called()
+
+
+def test_run_task_export_only_writes_bundle_and_skips_executor(workflow_config, tmp_path):
+    result = runner.run_task(
+        "instantiate-target-gene",
+        workflow_config,
+        export_only=tmp_path,
+        executor=CwlToolExecutor(),
+    )
+
+    export_dirs = list(tmp_path.glob("asokai-export-*"))
+    assert result is None
+    assert len(export_dirs) == 1
+    export_dir = export_dirs[0]
+    assert (export_dir / "workflow.cwl").exists()
+    assert (export_dir / "job.yml").exists()
+    assert (export_dir / "README.md").exists()
+    assert "class: Workflow" in (export_dir / "workflow.cwl").read_text()
+    readme = (export_dir / "README.md").read_text()
+    assert "prepared for `cwltool`" in readme
+    assert f"cd {export_dir.resolve()}" in readme
+    assert "cwltool workflow.cwl job.yml" in readme
+
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert job["assembly"] == "GRCh38"
+    assert job["release"] == 114
+    assert job["target_id"] == "ENSG00000133703"
+    assert job["target_gene_output"] == "ENSG00000133703_k16_pre-mrna.json"
+
+
+def test_run_task_export_only_readme_uses_toil_runner(workflow_config, tmp_path):
+    runner.run_task(
+        "instantiate-target-gene",
+        workflow_config,
+        export_only=tmp_path,
+        executor=ToilExecutor(),
+    )
+
+    export_dir = next(tmp_path.glob("asokai-export-*"))
+    readme = (export_dir / "README.md").read_text()
+    assert "prepared for `toil-cwl-runner`" in readme
+    assert f"cd {export_dir.resolve()}" in readme
+    assert "toil-cwl-runner --outdir out workflow.cwl job.yml" in readme
+
+
+def test_run_all_single_step_export_only_writes_wrapper_workflow(config, tmp_path):
+    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+
+    executor = MagicMock()
+
+    result = runner.run_all(
+        [DownloadGenomeStep()],
+        config,
+        force=True,
+        export_only=tmp_path,
+        executor=executor,
+    )
+
+    export_dirs = list(tmp_path.glob("asokai-export-*"))
+    assert result is None
+    assert len(export_dirs) == 1
+    workflow_text = (export_dirs[0] / "workflow.cwl").read_text()
+    assert "class: Workflow" in workflow_text
+    assert "download_genome:" in workflow_text
+    job = yaml.safe_load((export_dirs[0] / "job.yml").read_text())
+    assert job["assembly"] == "GRCh38"
+    assert job["source"] == "ensembl"
     executor.run.assert_not_called()
 
 

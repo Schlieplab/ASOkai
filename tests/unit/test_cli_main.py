@@ -156,7 +156,17 @@ def test_run_config_accepts_repeated_flags(monkeypatch):
     assert captured["config"]["target"]["region"] == "exonic_only"
 
 
-def test_run_defaults_to_standard_workflow(monkeypatch):
+def test_run_requires_explicit_runnable_selection(monkeypatch):
+    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run"])
+
+    assert result.exit_code != 0
+    assert "Select at least one runnable" in result.output
+
+
+def test_run_workflow_selects_standard_explicitly(monkeypatch):
     captured = {}
 
     monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
@@ -169,11 +179,52 @@ def test_run_defaults_to_standard_workflow(monkeypatch):
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["run"])
+    result = runner.invoke(main, ["run", "--workflow", "standard"])
 
     assert result.exit_code == 0
     assert [r.name for r in captured["runnables"]] == ["standard"]
     assert captured["executor"].__class__.__name__ == "CwlToolExecutor"
+
+
+def test_run_steps_accepts_multiple_values_after_one_flag(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--steps", "download-genome", "create-target-gene"],
+    )
+
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == [
+        "download-genome",
+        "create-target-gene",
+    ]
+
+
+def test_run_tasks_accepts_multiple_values_after_one_flag(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--tasks", "instantiate-target-gene"],
+    )
+
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == ["instantiate-target-gene"]
 
 
 def test_run_uses_toil_executor_when_requested(monkeypatch):
@@ -190,6 +241,71 @@ def test_run_uses_toil_executor_when_requested(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["executor"].__class__.__name__ == "ToilExecutor"
+
+
+def test_run_export_only_without_value_uses_datadir_jobs(monkeypatch, tmp_path):
+    captured = {}
+
+    monkeypatch.setattr(
+        "ASOkai._cli.main.cfg.load",
+        lambda _path: {"datadir": str(tmp_path / "data")},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(kwargs),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--workflow", "standard", "--export-only"])
+
+    assert result.exit_code == 0
+    assert captured["export_only"] == tmp_path / "data" / "jobs"
+
+
+def test_run_export_only_with_value_uses_explicit_parent(monkeypatch, tmp_path):
+    captured = {}
+
+    monkeypatch.setattr(
+        "ASOkai._cli.main.cfg.load",
+        lambda _path: {"datadir": str(tmp_path / "data")},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(kwargs),
+    )
+
+    export_parent = tmp_path / "jobs"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--workflow", "standard", "--export-only", str(export_parent)],
+    )
+
+    assert result.exit_code == 0
+    assert captured["export_only"] == export_parent
+
+
+def test_run_export_only_rejects_export_cwl(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "ASOkai._cli.main.cfg.load",
+        lambda _path: {"datadir": str(tmp_path / "data")},
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--workflow",
+            "standard",
+            "--export-only",
+            "--export-cwl",
+            str(tmp_path / "workflow.cwl"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
 
 
 def test_run_rejects_unknown_step(monkeypatch):

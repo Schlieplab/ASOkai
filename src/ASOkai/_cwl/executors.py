@@ -1,7 +1,5 @@
 """
-Filename: src/pipeline/executors.py
-Description: Execution backends for pipeline CWL documents.
-License: LGPL-3.0-or-later
+Execution backends for CWL documents.
 """
 
 from __future__ import annotations
@@ -12,13 +10,15 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 logger = logging.getLogger(__name__)
 
 
 class Executor(Protocol):
     """Execution backend for CWL documents."""
+
+    runner_name: ClassVar[str]
 
     def run(self, cwl_path: str, inputs: dict, outdir: Path) -> None:
         """Run a CWL document with the provided inputs."""
@@ -29,6 +29,7 @@ class Executor(Protocol):
 class ToilExecutor:
     """Default CWL execution backend using toil-cwl-runner."""
 
+    runner_name: ClassVar[str] = "toil-cwl-runner"
     extra_args: list[str] = field(default_factory=list)
     realtime_output: bool = True
 
@@ -57,6 +58,7 @@ class ToilExecutor:
 class CwlToolExecutor:
     """Local CWL execution backend using cwltool."""
 
+    runner_name: ClassVar[str] = "cwltool"
     extra_args: list[str] = field(default_factory=list)
 
     def run(self, cwl_path: str, inputs: dict, outdir: Path) -> None:

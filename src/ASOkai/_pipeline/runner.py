@@ -7,16 +7,15 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
 
 from ASOkai._cwl.generation import generate_cwl
 from ASOkai._cwl.input_resolution import (
     resolve_step_inputs,
     resolve_step_sequence_inputs,
-    to_cwl_inputs,
 )
-from ASOkai._pipeline.executors import CwlToolExecutor, Executor
+from ASOkai._cwl.export import write_cwl_job_bundle
+from ASOkai._cwl.executors import CwlToolExecutor, Executor
 from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
 from ASOkai._pipeline.plan import ExecutionPlan, build_plan
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
@@ -77,6 +76,7 @@ def run_plan(
     force: bool = False,
     dry_run: bool = False,
     export_cwl: Path | None = None,
+    export_only: Path | None = None,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     """
@@ -88,6 +88,7 @@ def run_plan(
     Multi-step path:
       generate a workflow CWL document, then run it as one executor job.
     """
+    
     executor = executor or CwlToolExecutor()
 
     if not plan.steps_to_run:
@@ -95,34 +96,6 @@ def run_plan(
         for key, path in plan.pre_resolved.items():
             logger.info("  %s: %s", key, path)
         return dict(plan.pre_resolved)
-
-    if len(plan.steps_to_run) == 1:
-        step = plan.steps_to_run[0]
-
-        if force and not dry_run:
-            logger.info("[%s] force=True, cleaning up '%s'.", label, step.name)
-            step.cleanup(config)
-
-        resolved = resolve_step_inputs(
-            step, config,
-            pre_resolved=plan.pre_resolved,
-            steps_in_plan=set(),
-        )
-        inputs = to_cwl_inputs(resolved)
-        outdir = step.outdir(config)
-
-        if dry_run:
-            _log_dry_run_plan(plan, config, label)
-            return step.output_paths(config)
-
-        logger.info("[%s] running '%s'.", label, step.name)
-        executor.run(step.cwl_path, inputs, outdir)
-        return step.output_paths(config)
-
-    # Multi-step path
-    if force and not dry_run:
-        for step in plan.steps_to_run:
-            step.cleanup(config)
 
     cwl_doc = generate_cwl(plan.steps_to_run, plan.pre_resolved, config)
     inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)
@@ -135,16 +108,42 @@ def run_plan(
         logger.info("[%s] CWL exported to %s", label, export_cwl)
         return None
 
-    if dry_run:
+    if dry_run and export_only is None:
         _log_dry_run_plan(plan, config, label)
         return last_step.output_paths(config)
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".cwl", delete=False) as f:
-        f.write(cwl_doc)
-        cwl_path = f.name
+    job_parent = export_only or Path(config["datadir"]) / "jobs"
+    job_dir = write_cwl_job_bundle(
+        cwl_doc=cwl_doc,
+        inputs=inputs,
+        parent_dir=job_parent,
+        label=label,
+        runner_name=executor.runner_name,
+        name_prefix="asokai-export" if export_only is not None else "asokai-job",
+    )
+    logger.info("[%s] CWL job bundle written to %s", label, job_dir)
+
+    if export_only is not None:
+        return None
+
+    if len(plan.steps_to_run) == 1:
+        step = plan.steps_to_run[0]
+
+        if force and not dry_run:
+            logger.info("[%s] force=True, cleaning up '%s'.", label, step.name)
+            step.cleanup(config)
+
+        logger.info("[%s] running '%s'.", label, step.name)
+        executor.run(str(job_dir / "workflow.cwl"), inputs, outdir)
+        return step.output_paths(config)
+
+    # Multi-step path
+    if force and not dry_run:
+        for step in plan.steps_to_run:
+            step.cleanup(config)
 
     logger.info("[%s] running %d steps.", label, len(plan.steps_to_run))
-    executor.run(cwl_path, inputs, outdir)
+    executor.run(str(job_dir / "workflow.cwl"), inputs, outdir)
     return last_step.output_paths(config)
 
 
@@ -160,6 +159,7 @@ def run_all(
     dry_run: bool = False,
     recursive: bool = False,
     export_cwl: Path | None = None,
+    export_only: Path | None = None,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
@@ -175,6 +175,7 @@ def run_all(
         force=force,
         dry_run=dry_run,
         export_cwl=export_cwl,
+        export_only=export_only,
         executor=executor,
     )
 
@@ -224,6 +225,7 @@ def run_task(
     dry_run: bool = False,
     recursive: bool = False,
     export_cwl: Path | None = None,
+    export_only: Path | None = None,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     tasks = get_tasks()
@@ -241,6 +243,7 @@ def run_task(
         force=force,
         dry_run=dry_run,
         export_cwl=export_cwl,
+        export_only=export_only,
         executor=executor,
     )
 
@@ -253,6 +256,7 @@ def run_workflow(
     dry_run: bool = False,
     recursive: bool = False,
     export_cwl: Path | None = None,
+    export_only: Path | None = None,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     workflows = get_workflows()
@@ -272,5 +276,6 @@ def run_workflow(
         force=force,
         dry_run=dry_run,
         export_cwl=export_cwl,
+        export_only=export_only,
         executor=executor,
     )

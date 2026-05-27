@@ -87,9 +87,6 @@ ASOkai run --steps download-genome
 ASOkai run --tasks prepare-genome
 ASOkai run --workflow standard
 
-# Run standard workflow by default
-ASOkai run
-
 # Preview execution order without running
 ASOkai run --steps download-genome --dry-run
 

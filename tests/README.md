@@ -47,7 +47,7 @@ Run individual files or tests with standard pytest selectors:
 
 ```bash
 conda run -n ASOkai pytest tests/unit/test_runner.py
-conda run -n ASOkai pytest tests/unit/test_cli_main.py::test_run_defaults_to_standard_workflow
+conda run -n ASOkai pytest tests/unit/test_cli_main.py::test_run_requires_explicit_runnable_selection
 ```
 
 `pytest-cov` is not required by the current environment. Install it separately

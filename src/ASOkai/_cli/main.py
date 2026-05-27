@@ -11,14 +11,14 @@ import importlib
 import logging
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, cast
+from typing import Callable, Literal, cast
 
 import click
 import yaml
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
-from ASOkai._pipeline.executors import CwlToolExecutor, ToilExecutor
+from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
 
 DEFAULT_CONFIG = Path("config.yaml")
@@ -44,6 +44,42 @@ class _VariadicOption(click.Option):
                         break
                     values.append(state.rargs.pop(0))
                 previous_process(tuple(values), state)
+
+            option_parser.process = parser_process
+        return retval
+
+
+class _OptionalPathOption(click.Option):
+    """Click flag that optionally consumes one following path value."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args,
+            is_flag=True,
+            flag_value=True,
+            default=None,
+            type=click.UNPROCESSED,
+            **kwargs,
+        )
+
+    def add_to_parser(self, parser, ctx):
+        retval = super().add_to_parser(parser, ctx)
+        for name in self.opts:
+            option_parser = parser._long_opt.get(name) or parser._short_opt.get(name)
+            if option_parser is None:
+                continue
+
+            def parser_process(value, state, option_parser=option_parser):
+                if state.rargs:
+                    next_arg = state.rargs[0]
+                    if not next_arg.startswith("-"):
+                        value = state.rargs.pop(0)
+                    else:
+                        value = True
+                else:
+                    value = True
+                state.opts[option_parser.dest] = value
+                state.order.append(option_parser.obj)
 
             option_parser.process = parser_process
         return retval
@@ -301,6 +337,17 @@ def _flatten_config_overrides(config_overrides: tuple) -> list[str]:
     return flat_overrides
 
 
+def _flatten_option_values(values: tuple) -> list[str]:
+    """Flatten variadic and repeated option values."""
+    flat_values = []
+    for value in values:
+        if isinstance(value, tuple):
+            flat_values.extend(value)
+        else:
+            flat_values.append(value)
+    return flat_values
+
+
 def _parse_run_config(config_overrides: tuple) -> dict:
     """Parse KEY=VALUE config overrides."""
     parsed_overrides = {}
@@ -315,6 +362,18 @@ def _parse_run_config(config_overrides: tuple) -> dict:
     return parsed_overrides
 
 
+def _export_only_parent(
+    config: dict,
+    export_only: str | Literal[True] | None,
+) -> Path | None:
+    """Resolve the optional --export-only value to an export parent directory."""
+    if export_only is None:
+        return None
+    if export_only is True:
+        return Path(config["datadir"]) / "jobs"
+    return Path(export_only)
+
+
 def _collect_runnables(
     step_names: tuple[str, ...],
     task_names: tuple[str, ...],
@@ -326,11 +385,11 @@ def _collect_runnables(
     workflows_reg = get_workflows()
 
     runnables = []
-    for name in step_names:
+    for name in _flatten_option_values(step_names):
         if name not in steps_reg:
             raise click.BadParameter(f"Unknown step '{name}'.", param_hint="--steps")
         runnables.append(steps_reg[name])
-    for name in task_names:
+    for name in _flatten_option_values(task_names):
         if name not in tasks_reg:
             raise click.BadParameter(f"Unknown task '{name}'.", param_hint="--tasks")
         runnables.append(tasks_reg[name])
@@ -343,7 +402,9 @@ def _collect_runnables(
         runnables.append(workflows_reg[workflow_name])
 
     if not runnables:
-        runnables.append(workflows_reg["standard"])
+        raise click.UsageError(
+            "Select at least one runnable with --steps, --tasks, or --workflow."
+        )
     return runnables
 
 
@@ -360,16 +421,20 @@ def _collect_runnables(
 @click.option(
     "--steps",
     "step_names",
+    cls=_VariadicOption,
     multiple=True,
-    metavar="NAME",
-    help="Step to run. Repeat the flag for multiple steps.",
+    type=click.UNPROCESSED,
+    metavar="NAME [NAME ...]",
+    help="Step(s) to run. Repeat the flag or pass multiple names.",
 )
 @click.option(
     "--tasks",
     "task_names",
+    cls=_VariadicOption,
     multiple=True,
-    metavar="NAME",
-    help="Task to run. Repeat the flag for multiple tasks.",
+    type=click.UNPROCESSED,
+    metavar="NAME [NAME ...]",
+    help="Task(s) to run. Repeat the flag or pass multiple names.",
 )
 @click.option(
     "--workflow",
@@ -402,6 +467,16 @@ def _collect_runnables(
     help="Save the generated CWL for a task or workflow to PATH instead of a tempfile.",
 )
 @click.option(
+    "--export-only",
+    "export_only",
+    cls=_OptionalPathOption,
+    metavar="[PATH]",
+    help=(
+        "Export a runnable CWL bundle instead of executing. "
+        "Defaults to datadir/jobs when PATH is omitted."
+    ),
+)
+@click.option(
     "--executor",
     "executor_name",
     type=click.Choice(["toil", "cwltool"]),
@@ -429,15 +504,20 @@ def run_cmd(
     dry_run: bool,
     recursive: bool,
     export_cwl: Path | None,
+    export_only: str | Literal[True] | None,
     executor_name: str,
     config_overrides: tuple,
 ) -> None:
-    """Run steps, tasks, or a workflow. Defaults to the 'standard' workflow."""
+    """Run selected steps, tasks, or a workflow."""
     config = cfg.load(config_path)
 
     parsed_overrides = _parse_run_config(config_overrides)
     if parsed_overrides:
         cfg.apply_overrides(config, parsed_overrides)
+
+    export_only_dir = _export_only_parent(config, export_only)
+    if export_cwl is not None and export_only_dir is not None:
+        raise click.UsageError("--export-only and --export-cwl are mutually exclusive.")
 
     runnables = _collect_runnables(step_names, task_names, workflow_name)
     executor = CwlToolExecutor() if executor_name == "cwltool" else ToilExecutor()
@@ -448,6 +528,7 @@ def run_cmd(
         dry_run=dry_run,
         recursive=recursive,
         export_cwl=export_cwl,
+        export_only=export_only_dir,
         executor=executor,
     )
 

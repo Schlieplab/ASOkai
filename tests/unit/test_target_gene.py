@@ -258,7 +258,8 @@ class TestTargetGeneRoundtrip:
         
         for site_id, orig_site in orig_by_id.items():
             recon_site = recon_by_id[site_id]
-            
+            assert isinstance(orig_site, GenomicSite)
+            assert isinstance(recon_site, GenomicSite)
             assert recon_site.id == orig_site.id
             assert recon_site.chr == orig_site.chr
             assert recon_site.start == orig_site.start
@@ -336,6 +337,9 @@ class TestTargetGeneRoundtrip:
         data = gene.to_dict()
         reconstructed = TargetGene.from_dict(data)
         
-        assert reconstructed.custom_attr == "custom_value"
-        assert reconstructed.expression_level == 123.45
-        assert reconstructed.annotations == {"disease": "cancer", "pathway": "MAPK"}
+        assert getattr(reconstructed, "custom_attr") == "custom_value"
+        assert getattr(reconstructed, "expression_level") == 123.45
+        assert getattr(reconstructed, "annotations") == {
+            "disease": "cancer",
+            "pathway": "MAPK",
+        }

@@ -32,4 +32,4 @@ class Complex(KMCTool):
     ) -> subprocess.CompletedProcess[str]:
         self._argv = ["complex"]
         self._argv.append(self._resolve_path(operations_definition_file))
-        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
+        return self._execute(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)

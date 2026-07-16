@@ -1,50 +1,81 @@
 #!/usr/bin/env python
 """Tests for pipeline input resolution."""
-from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
-from ASOkai._cwl.input_resolution import resolve_step_inputs, to_cwl_inputs
+import pytest
+
+from ASOkai._cwl.spec import InputParam, OutputParam, ScalarParam, StepSpec
+from ASOkai._cwl.input_resolution import (
+    resolve_step_inputs,
+    resolve_step_sequence_inputs,
+    to_cwl_inputs,
+)
+from ASOkai._pipeline.base import Step
 
 
-class _FakeStep:
-    def __init__(
-        self,
-        name,
-        *,
-        deps=None,
-        config_map=None,
-        input_overrides=None,
-        output_names=None,
-        output_inputs=None,
-        exists=False,
-    ):
-        self.name = name
-        self.description = ""
-        self.cli_module = "tests.fake_step"
-        self.dependencies = list(deps or [])
-        self.config_map = dict(config_map or {})
-        self.input_overrides = dict(input_overrides or {})
-        self._output_names = tuple(output_names or [f"{name}_out"])
+class _FakeStep(Step):
+    name = "fake-step"
+    description = ""
+    cli_module = "tests.fake_step"
+    dependencies: ClassVar[list[str]] = []
+    spec = StepSpec()
+
+    def __init__(self, *, exists: bool = False) -> None:
         self._exists = exists
-        if output_inputs is not None:
-            self.output_inputs = output_inputs
 
-    @property
-    def cwl_path(self):
-        return f"/fake/{self.name}.cwl"
-
-    def outdir(self, config):
-        return Path(config["datadir"]) / self.name
-
-    def output_paths(self, config):
-        base = self.outdir(config)
-        return {key: base / f"{key}.txt" for key in self._output_names}
-
-    def outputs_exist(self, _config):
+    def outputs_exist(self, config):
         return self._exists
 
-    def cleanup(self, _config):
+    def cleanup(self, config):
         pass
+
+
+def _fake_step(
+    name: str,
+    *,
+    deps: list[str] | None = None,
+    config_map: dict[str, str] | None = None,
+    input_overrides: dict[str, str] | None = None,
+    input_names: list[str] | None = None,
+    output_names: list[str] | None = None,
+    exists: bool = False,
+) -> Step:
+    """Return an isolated fake Step with class-level declaration metadata."""
+    output_names = output_names or [f"{name}_out"]
+
+    class ConfiguredFakeStep(_FakeStep):
+        pass
+
+    ConfiguredFakeStep.name = name
+    ConfiguredFakeStep.dependencies = list(deps or [])
+    ConfiguredFakeStep.spec = StepSpec(
+        params=[
+            ScalarParam(
+                key,
+                str,
+                config=(config_map or {}).get(key),
+            )
+            for key in set(config_map or {}) - set(input_overrides or {})
+        ],
+        inputs=[
+            InputParam(
+                key,
+                config=(config_map or {}).get(key),
+                override=(input_overrides or {}).get(key),
+            )
+            for key in set(input_overrides or {}) | set(input_names or {})
+        ],
+        outputs=[
+            OutputParam(
+                key,
+                temp_filename=f"{key}.txt",
+                destination=f"{name}/{key}.txt",
+            )
+            for key in output_names
+        ],
+    )
+    return ConfiguredFakeStep(exists=exists)
 
 
 def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path):
@@ -55,8 +86,8 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
             "override": str(tmp_path / "override.fa"),
         },
     }
-    dep = _FakeStep("dep", output_names=["shared"])
-    step = _FakeStep(
+    dep = _fake_step("dep", output_names=["shared"])
+    step = _fake_step(
         "consumer",
         deps=["dep"],
         config_map={"shared": "shared.scalar"},
@@ -79,8 +110,8 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
 
 def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
     config = {"datadir": str(tmp_path)}
-    dep = _FakeStep("dep", output_names=["dep_file"])
-    step = _FakeStep("consumer", deps=["dep"])
+    dep = _fake_step("dep", output_names=["dep_file"])
+    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
@@ -96,8 +127,8 @@ def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
 
 def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
     config = {"datadir": str(tmp_path)}
-    dep = _FakeStep("dep", output_names=["dep_file"])
-    step = _FakeStep("consumer", deps=["dep"])
+    dep = _fake_step("dep", output_names=["dep_file"])
+    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
     path = tmp_path / "dep-output.txt"
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
@@ -114,20 +145,66 @@ def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
     }
 
 
-def test_resolve_step_inputs_auto_injects_output_filename(tmp_path):
+def test_resolve_step_inputs_uses_dependency_output_path_without_pre_resolution(
+    tmp_path,
+):
     config = {"datadir": str(tmp_path)}
-    step = _FakeStep("producer", output_names=["result"])
+    dep = _fake_step("dep", output_names=["dep_file"])
+    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
 
-    resolved = resolve_step_inputs(step, config)
+    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
+        resolved = resolve_step_inputs(step, config)
 
-    assert resolved["result_output"].source == "output_path"
-    assert resolved["result_output"].cwl_value == "result.txt"
+    expected = dep.output_paths(config)["dep_file"]
+    assert resolved["dep_file"].source == "dep_disk"
+    assert resolved["dep_file"].cwl_value == {
+        "class": "File",
+        "path": str(expected.resolve()),
+    }
 
 
-def test_resolve_step_inputs_respects_output_input_opt_out(tmp_path):
+def test_resolve_step_inputs_does_not_inject_output_filenames(tmp_path):
     config = {"datadir": str(tmp_path)}
-    step = _FakeStep("producer", output_names=["result"], output_inputs={})
+    step = _fake_step("producer", output_names=["result"])
 
     resolved = resolve_step_inputs(step, config)
 
     assert "result_output" not in resolved
+    assert "result_filename" not in resolved
+
+
+def test_resolve_step_inputs_ignores_undeclared_dependency_outputs(tmp_path):
+    config = {"datadir": str(tmp_path)}
+    dep = _fake_step("dep", output_names=["unused"])
+    step = _fake_step("consumer", deps=["dep"])
+
+    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
+        resolved = resolve_step_inputs(step, config, steps_in_plan={"dep", "consumer"})
+
+    assert "unused" not in resolved
+
+
+def test_resolve_step_sequence_rejects_conflicting_shared_inputs(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "first": {"mode": "fast"},
+        "second": {"mode": "careful"},
+    }
+    first = _fake_step("first", config_map={"mode": "first.mode"})
+    second = _fake_step("second", config_map={"mode": "second.mode"})
+
+    with pytest.raises(ValueError, match="input 'mode'.*conflicting values"):
+        resolve_step_sequence_inputs([first, second], config, {})
+
+
+def test_resolve_step_sequence_merges_matching_shared_inputs(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "shared": {"mode": "fast"},
+    }
+    first = _fake_step("first", config_map={"mode": "shared.mode"})
+    second = _fake_step("second", config_map={"mode": "shared.mode"})
+
+    resolved = resolve_step_sequence_inputs([first, second], config, {})
+
+    assert resolved["mode"] == "fast"

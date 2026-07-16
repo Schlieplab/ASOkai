@@ -4,25 +4,26 @@ Filename: src/ASOkai/_pipeline/base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Base protocols that steps, tasks, and workflows must implement.
+Description: Base protocols for steps and CLI-level step collections.
 License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import json
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
+
+from ASOkai._cwl.spec import CwlCommandLineToolSpec, StepSpec
 
 
 @runtime_checkable
 class Runnable(Protocol):
     """
-    Shared contract for every named pipeline unit (step, task, or workflow).
+    Shared contract for every named pipeline unit or CLI collection.
     """
 
-    name: str
-    description: str
+    name: ClassVar[str]
+    description: ClassVar[str]
 
     def output_paths(self, config: dict) -> dict[str, Path]:
         ...
@@ -34,38 +35,87 @@ class Runnable(Protocol):
         ...
 
 
-class Step(Runnable, ABC):
-    """Atomic pipeline unit backed by a CWL command-line tool."""
+class Step(Runnable):
+    """Atomic pipeline unit backed by a generated CWL command-line tool."""
 
     name: ClassVar[str]
     description: ClassVar[str]
     dependencies: ClassVar[list[str]]
-    config_map: ClassVar[dict[str, str]]
-    input_overrides: ClassVar[dict[str, str]]
     cli_module: ClassVar[str]
+    spec: ClassVar[StepSpec]
 
     @property
-    @abstractmethod
-    def cwl_path(self) -> str:
-        """Path to the static CWL file for this step."""
-        ...
+    def config_map(self) -> dict[str, str]:
+        """Return config-backed CWL inputs for this step."""
+        return self.spec.config_map()
 
-    @abstractmethod
-    def outdir(self, config: dict) -> Path:
-        """Directory passed to the CWL executor for this step's outputs."""
-        ...
+    @property
+    def input_overrides(self) -> dict[str, str]:
+        """Return optional file override inputs for this step."""
+        return self.spec.input_overrides()
 
-    @abstractmethod
+    @property
+    def cwl_spec(self) -> CwlCommandLineToolSpec:
+        """Return the generated lower-level CWL tool spec for this step."""
+        return self.spec.to_cwl_tool_spec()
+
+    def build_parser(self, *, description: str | None = None):
+        """Build an argparse parser from this step's parameter spec."""
+        return self.spec.build_parser(description=description or self.description)
+
+    def _output_template_values(self, config: dict) -> dict[str, Any]:
+        """Resolve config-backed values used by output path templates."""
+        from ASOkai._pipeline import config as cfg
+
+        values: dict[str, Any] = {}
+        for param in (*self.spec.params, *self.spec.inputs):
+            if not param.config:
+                continue
+            try:
+                values[param.name] = cfg.resolve(config, param.config)
+            except KeyError:
+                pass
+        return values
+
+    def output_relative_path(self, name: str, config: dict) -> Path:
+        """Render a declared output path relative to ``config['datadir']``."""
+        path = self.spec.output_relative_path(
+            name,
+            self._output_template_values(config),
+        )
+        return Path(*path.parts)
+
+    def validated_output_paths(self, config: dict) -> dict[str, Path]:
+        """Return output paths after checking them against the step specification."""
+        paths = self.output_paths(config)
+        self.spec.validate_output_paths(paths)
+        datadir = Path(config["datadir"])
+        for name, path in paths.items():
+            expected = datadir / self.output_relative_path(name, config)
+            if path != expected:
+                raise ValueError(
+                    f"Output '{name}' path does not match its destination template "
+                    f"(expected: {expected}; actual: {path})."
+                )
+        return paths
+
     def output_paths(self, config: dict) -> dict[str, Path]:
-        ...
+        """Return all declared output paths below the configured data directory."""
+        datadir = Path(config["datadir"])
+        return {
+            output.name: datadir / self.output_relative_path(output.name, config)
+            for output in self.spec.outputs
+        }
 
-    @abstractmethod
     def outputs_exist(self, config: dict) -> bool:
-        ...
+        """Return whether every declared output currently exists."""
+        return all(path.exists() for path in self.output_paths(config).values())
 
-    @abstractmethod
     def cleanup(self, config: dict) -> None:
-        ...
+        """Remove all declared output files that currently exist."""
+        for path in self.output_paths(config).values():
+            if path.exists():
+                path.unlink()
 
 
 class CoreStep(Step):
@@ -89,10 +139,20 @@ class AnalysisStep(Step):
         """Build output metadata written next to analysis results."""
         return {"analysis": self.name}
 
+    def output_arg(self, args):
+        """Return the parsed output path for single-output analysis steps."""
+        outputs = self.spec.outputs
+        if len(outputs) != 1:
+            raise RuntimeError(
+                f"Analysis step '{self.name}' must override output_arg for multiple outputs."
+            )
+        return getattr(args, outputs[0].argument_name)
+
     def write_analysis_output(self, args, payload: dict[str, Any]) -> None:
         """Write the analysis payload."""
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(payload, indent=4))
+        output = self.output_arg(args)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(payload, indent=4))
 
     def run_from_args(self, args) -> int:
         """Load inputs, run the configured analysis, and write its JSON output."""
@@ -111,7 +171,7 @@ class AnalysisStep(Step):
 
 @runtime_checkable
 class Task(Runnable, Protocol):
-    """Ordered composition of Steps."""
+    """CLI-level named collection of Steps."""
 
     steps: list[Step]
 
@@ -119,9 +179,9 @@ class Task(Runnable, Protocol):
 @runtime_checkable
 class Workflow(Runnable, Protocol):
     """
-    Ordered composition of Runnables (Steps, Tasks, or nested Workflows).
+    CLI-level named collection of Runnables.
 
-    CWL is generated at runtime by recursively flattening ``members`` to Steps.
+    Jobs are generated by recursively flattening ``members`` to Steps.
     """
 
     members: list[Runnable]

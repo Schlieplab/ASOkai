@@ -10,8 +10,7 @@ License: LGPL-3.0-or-later
 from abc import ABC, abstractmethod
 from ._target import Target
 from GenomeUtils.Genome import Genome
-from typing import Dict, Iterator, List, Optional
-from ..Sites import Site
+from typing import Iterator, List, Optional
 
 class TargetCreator(ABC):
     """Abstract base class for candidate target creators."""
@@ -33,7 +32,15 @@ class TargetCreator(ABC):
     
     @classmethod
     @abstractmethod
-    def from_genome(cls, genome: Genome, target_id: str) -> Target:
+    def from_genome(
+        cls,
+        genome: Genome,
+        target_id: str | None = None,
+        target_name: str | None = None,
+        *,
+        k: int,
+        region: str = "exonic_only",
+    ) -> Target:
         """
         Abstract method to load candidate from genome.
         """

@@ -179,9 +179,9 @@ class TestGenomicSiteRoundtrip:
         data = site.to_dict()
         reconstructed = GenomicSite.from_dict(data)
         
-        assert reconstructed.custom_attr == "custom_value"
-        assert reconstructed.score == 0.95
-        assert reconstructed.metadata == {"key": "value"}
+        assert getattr(reconstructed, "custom_attr") == "custom_value"
+        assert getattr(reconstructed, "score") == 0.95
+        assert getattr(reconstructed, "metadata") == {"key": "value"}
         
     def test_file_roundtrip(self, sample_genomic_site, temp_json_file):
         """Test roundtrip through file I/O."""

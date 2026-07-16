@@ -8,7 +8,7 @@ Description: This file defines the base Target class.
 License: LGPL-3.0-or-later
 """
 from abc import ABC
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
 from ..Sites import Site
 from ..Utils import Serializable
@@ -20,7 +20,7 @@ class Target(Serializable, ABC):
     """
     def __init__(self, 
                  id: str, 
-                 sites: Optional[Dict[str, Site]] = None, 
+                 sites: Mapping[str, Site] | None = None,
                  **kwargs):
         """
         Initializes a `CandidateTarget` object.
@@ -34,7 +34,7 @@ class Target(Serializable, ABC):
         
         Serializable.__init__(self, **kwargs)
         
-        self._sites: Dict[str, Site] = sites if sites is not None else {}
+        self._sites: Dict[str, Site] = dict(sites) if sites is not None else {}
     
         
     def site_by_id(self, id: str) -> Site:

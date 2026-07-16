@@ -27,7 +27,7 @@ dependencies = [
     "requests>=2.32,<3",
     "biopython>=1.83,<2",
     "tqdm>=4.67,<5",
-    "GenomeUtils>=0.1.1,<2",
+    "GenomeUtils>=0.1.3,<2",
 ]
 
 [tool.setuptools]
@@ -36,10 +36,6 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-"ASOkai._cwl.steps" = ["*.cwl"]
-
 [project.scripts]
 ASOkai = "ASOkai._cli.main:main"
 asokai = "ASOkai._cli.main:main"
-

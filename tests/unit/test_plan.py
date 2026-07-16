@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 from typing import cast
 
+from ASOkai._cwl.spec import OutputParam, StepSpec
 from ASOkai._pipeline.base import Runnable, Step
 from ASOkai._pipeline.plan import build_plan
 
@@ -25,40 +25,29 @@ def _make_step(
     if output_names is None:
         output_names = [f"{name}_out"]
     dependencies = list(deps or [])
+    spec = StepSpec(
+        outputs=[
+            OutputParam(
+                key,
+                temp_filename=f"{key}.txt",
+                destination=f"{name}/{key}.txt",
+            )
+            for key in output_names
+        ]
+    )
 
     class _Step(Step):
-        name: str
-        description: str
-        cli_module: str
-        dependencies: list[str]
-        config_map: dict[str, str]
-        input_overrides: dict[str, str]
-
-        def __init__(self) -> None:
-            self.name = name
-            self.description = ""
-            self.cli_module = "tests.fake_step"
-            self.dependencies = dependencies
-            self.config_map = {}
-            self.input_overrides = {}
-
-        @property
-        def cwl_path(self) -> str:
-            return f"/fake/{name}.cwl"
-
-        def outdir(self, config: dict) -> Path:
-            return Path(config.get("datadir", "/tmp")) / name
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            base = self.outdir(config)
-            return {k: base / f"{k}.txt" for k in output_names}
-
-        def outputs_exist(self, _config: dict) -> bool:
+        def outputs_exist(self, config: dict) -> bool:
             return exists
 
-        def cleanup(self, _config: dict) -> None:
+        def cleanup(self, config: dict) -> None:
             pass
 
+    _Step.name = name
+    _Step.description = ""
+    _Step.cli_module = "tests.fake_step"
+    _Step.dependencies = dependencies
+    _Step.spec = spec
     return _Step()
 
 

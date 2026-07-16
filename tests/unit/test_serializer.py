@@ -22,7 +22,13 @@ class SerializableWithExclusions(Serializable):
     
     _non_serializable_attrs = {'private_data', 'cache'}
     
-    def __init__(self, public: str, private_data: str = None, cache: dict = None, **kwargs):
+    def __init__(
+        self,
+        public: str,
+        private_data: str | None = None,
+        cache: dict | None = None,
+        **kwargs,
+    ):
         self.public = public
         self.private_data = private_data
         self.cache = cache
@@ -186,7 +192,7 @@ class TestSerializableComplexTypes:
     def test_nested_dict_serialization(self):
         """Test serialization of nested dictionaries."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.data = {"nested": {"key": "value"}}
+        setattr(obj, "data", {"nested": {"key": "value"}})
         
         data = obj.to_dict()
         
@@ -195,7 +201,7 @@ class TestSerializableComplexTypes:
     def test_list_serialization(self):
         """Test serialization of lists."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.items = [1, 2, 3, "four"]
+        setattr(obj, "items", [1, 2, 3, "four"])
         
         data = obj.to_dict()
         
@@ -204,7 +210,7 @@ class TestSerializableComplexTypes:
     def test_registered_type_in_dict(self, sample_sequence):
         """External types in nested dicts are not supported by default."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.sequences = {"seq1": sample_sequence}
+        setattr(obj, "sequences", {"seq1": sample_sequence})
         
         with pytest.raises(TypeError, match="Cannot serialize type Seq"):
             obj.to_dict()

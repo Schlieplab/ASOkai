@@ -2,8 +2,12 @@
 """
 Functional tests for TargetCreator base class.
 """
+import inspect
+
 import pytest
-from ASOkai.Targets import TargetCreator
+from GenomeUtils.Genome import Genome
+
+from ASOkai.Targets import Target, TargetCreator
 
 
 @pytest.mark.unit
@@ -109,8 +113,7 @@ class TestTargetCreatorAbstractMethods:
     
     def test_cannot_instantiate_target_creator(self):
         """Test that TargetCreator cannot be instantiated."""
-        with pytest.raises(TypeError):
-            TargetCreator()
+        assert inspect.isabstract(TargetCreator)
 
 
 @pytest.mark.unit
@@ -193,12 +196,20 @@ class TestTargetCreatorClassAttributes:
             SITE_ID_PREFIX_PARTS = ["ASOkai", "Custom"]
             
             @classmethod
-            def from_file(cls, file_path: str):
-                pass
+            def from_file(cls, file_path: str) -> Target:
+                raise NotImplementedError
             
             @classmethod
-            def from_genome(cls, genome, target_id: str):
-                pass
+            def from_genome(
+                cls,
+                genome: Genome,
+                target_id: str | None = None,
+                target_name: str | None = None,
+                *,
+                k: int,
+                region: str = "exonic_only",
+            ) -> Target:
+                raise NotImplementedError
         
         generator = CustomTargetCreator.site_id_generator()
         first_id = next(generator)

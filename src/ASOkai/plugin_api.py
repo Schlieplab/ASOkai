@@ -9,6 +9,15 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
+from ASOkai._cwl.spec import (
+    CwlToolArgument,
+    InputParam,
+    OutputParam,
+    OutputPathTemplate,
+    ScalarParam,
+    StepSpec,
+    TemplateField,
+)
 from ASOkai._pipeline.base import (
     AnalysisStep,
     CoreStep,
@@ -21,8 +30,15 @@ from ASOkai._pipeline.base import (
 __all__ = [
     "AnalysisStep",
     "CoreStep",
+    "CwlToolArgument",
+    "InputParam",
+    "OutputParam",
+    "OutputPathTemplate",
     "Runnable",
+    "ScalarParam",
     "Step",
+    "StepSpec",
     "Task",
+    "TemplateField",
     "Workflow",
 ]

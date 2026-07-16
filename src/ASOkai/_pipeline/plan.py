@@ -148,7 +148,7 @@ def _resolve_external_deps(
                     f"Run '{dep_name}' first, or use --recursive to run dependencies automatically."
                 )
 
-            for key, path in dep.output_paths(config).items():
+            for key, path in dep.validated_output_paths(config).items():
                 pre_resolved[key] = path
             logger.debug("[plan] dependency '%s' outputs exist — pre-resolved.", dep_name)
 
@@ -212,7 +212,7 @@ def build_plan(
 
     for step in ordered:
         if not force and step.outputs_exist(config):
-            for key, path in step.output_paths(config).items():
+            for key, path in step.validated_output_paths(config).items():
                 pre_resolved[key] = path
             logger.debug("[plan] '%s' outputs exist — pre-resolved.", step.name)
         else:

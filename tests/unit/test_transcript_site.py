@@ -213,9 +213,9 @@ class TestTranscriptSiteEquality:
         data = site.to_dict()
         reconstructed = TranscriptSite.from_dict(data)
         
-        assert reconstructed.custom_attr == "custom_value"
-        assert reconstructed.score == 0.85
-        assert reconstructed.annotation == {"type": "exonic"}
+        assert getattr(reconstructed, "custom_attr") == "custom_value"
+        assert getattr(reconstructed, "score") == 0.85
+        assert getattr(reconstructed, "annotation") == {"type": "exonic"}
         
     def test_file_roundtrip(self, sample_transcript_site, temp_json_file):
         """Test roundtrip through file I/O."""

@@ -18,7 +18,7 @@ class Site(Serializable, ABC):
 
     def __init__(self,
                  id: str,
-                 sequence: Seq = None,
+                 sequence: Seq,
                  **kwargs):
         """
         Initializes a Site object.
@@ -38,8 +38,8 @@ class Site(Serializable, ABC):
         return self._sequence
 
     @abstractmethod
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of this site."""
-        pass
+        raise NotImplementedError
 
     

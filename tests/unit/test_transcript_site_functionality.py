@@ -2,6 +2,8 @@
 """
 Functional tests for TranscriptSite class.
 """
+from typing import Any, cast
+
 import pytest
 from Bio.Seq import Seq
 from ASOkai.Sites import TranscriptSite
@@ -48,7 +50,7 @@ class TestTranscriptSiteInitialization:
             custom_attr="custom_value"
         )
         
-        assert site.custom_attr == "custom_value"
+        assert getattr(site, "custom_attr") == "custom_value"
 
 
 @pytest.mark.unit
@@ -243,8 +245,8 @@ class TestTranscriptSiteToGenomic:
             sequence=sample_sequence
         )
         
-        result = site.to_genomic(None)
-        assert result is None
+        with pytest.raises(NotImplementedError):
+            site.to_genomic(cast(Any, None))
 
 
 @pytest.mark.unit

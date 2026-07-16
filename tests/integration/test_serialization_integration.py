@@ -68,6 +68,8 @@ class TestCompleteWorkflow:
         assert set(recon_by_id.keys()) == set(orig_by_id.keys())
         for site_id, orig in orig_by_id.items():
             recon = recon_by_id[site_id]
+            assert isinstance(orig, GenomicSite)
+            assert isinstance(recon, GenomicSite)
             assert recon.id == orig.id
             assert recon.chr == orig.chr
             assert recon.start == orig.start

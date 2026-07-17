@@ -17,12 +17,12 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
     Analyzes intrinsic features for each target site.
 
     Available features:
-        - GC_content: The proportion of Guanine (G) and Cytosine (C) bases (between 0 and 1).
-        - AT_content: The proportion of Adenine (A) and Thymine (T) bases (between 0 and 1).
-        - T_count: The count of Thymine (T) bases.
-        - CpG_count: The total count of CpG dinucleotides (a Cytosine followed by a Guanine).
-        - T_content: The proportion of Thymine (T) bases (between 0 and 1).
-        - CpG_content: The proportion of CpG dinucleotides (between 0 and 1).
+        - **GC_content**: The proportion of Guanine (G) and Cytosine (C) bases (between 0 and 1).
+        - **AT_content**: The proportion of Adenine (A) and Thymine (T) bases (between 0 and 1).
+        - **T_count**: The count of Thymine (T) bases.
+        - **CpG_count**: The total count of CpG dinucleotides (a Cytosine followed by a Guanine).
+        - **T_content**: The proportion of Thymine (T) bases (between 0 and 1).
+        - **CpG_content**: The proportion of CpG dinucleotides (between 0 and 1).
     """
 
     def __init__(self, sites: list, features: list[str] | None = None, **kwargs):

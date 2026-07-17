@@ -125,5 +125,5 @@ class TestTargetGeneCreatorMethods:
     
     def test_from_file_not_implemented(self):
         """Test that from_file is not yet implemented."""
-        result = TargetGeneCreator.from_file("test.json")
-        assert result is None
+        with pytest.raises(NotImplementedError):
+            TargetGeneCreator.from_file("test.json")

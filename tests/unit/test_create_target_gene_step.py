@@ -2,6 +2,8 @@
 """Tests for CreateTargetGeneStep."""
 import pytest
 from pathlib import Path
+import yaml
+from ASOkai._cwl.spec import StepCwlGenerator
 from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.base import CoreStep, Step
 
@@ -66,10 +68,6 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     assert paths["target_gene"] == expected
 
 
-def test_outdir(step, config, tmp_path):
-    assert step.outdir(config) == tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
-
-
 def test_outputs_do_not_exist(step, config):
     assert step.outputs_exist(config) is False
 
@@ -91,8 +89,22 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_path_is_file(step):
-    assert Path(step.cwl_path).exists(), f"CWL file not found: {step.cwl_path}"
+def test_cwl_spec_generates_command_line_tool(step):
+    doc = yaml.safe_load(StepCwlGenerator().render(step))
+
+    assert doc["class"] == "CommandLineTool"
+    assert doc["baseCommand"] == ["ASOkai", "step", "create-target-gene"]
+    assert doc["inputs"]["k"]["type"] == "int"
+    assert doc["inputs"]["region"]["type"]["type"] == "enum"
+    assert "target_gene_output" not in doc["inputs"]
+    assert "target_gene_filename" not in doc["inputs"]
+    assert {
+        "prefix": "--target-gene-output",
+        "valueFrom": "target_gene.json",
+    } in doc["arguments"]
+    assert doc["outputs"]["target_gene"]["outputBinding"]["glob"] == (
+        "target_gene.json"
+    )
 
 
 def test_main_rejects_missing_target_identifier(tmp_path):
@@ -106,10 +118,11 @@ def test_main_rejects_missing_target_identifier(tmp_path):
                 "--dna", str(tmp_path / "dna.fa.gz"),
                 "--cdna", str(tmp_path / "cdna.fa.gz"),
                 "--annotation", str(tmp_path / "annotation.gtf.gz"),
+                "--db", str(tmp_path / "annotation.gtf.db"),
                 "--assembly", "GRCh38",
                 "--release", "114",
                 "--species", "Homo_sapiens",
-                "--output", str(tmp_path / "target.json"),
+                "--target-gene-output", str(tmp_path / "target.json"),
             ]
         )
 
@@ -136,8 +149,9 @@ def test_main_accepts_target_name_only_with_mocked_genome_creation(monkeypatch, 
             captured["cdna"] = path
             return self
 
-        def with_gtf_file(self, path):
+        def with_gtf_file(self, path, db_path=None):
             captured["annotation"] = path
+            captured["db"] = db_path
             return self
 
         def build(self):
@@ -166,16 +180,18 @@ def test_main_accepts_target_name_only_with_mocked_genome_creation(monkeypatch, 
             "--dna", str(tmp_path / "dna.fa.gz"),
             "--cdna", str(tmp_path / "cdna.fa.gz"),
             "--annotation", str(tmp_path / "annotation.gtf.gz"),
+            "--db", str(tmp_path / "annotation.gtf.db"),
             "--assembly", "GRCh38",
             "--release", "114",
             "--species", "Homo_sapiens",
-            "--output", str(output),
+            "--target-gene-output", str(output),
         ]
     )
 
     assert result == 0
     assert output.exists()
     assert captured["builder_kwargs"]["species"] == "Homo sapiens"
+    assert captured["db"] == tmp_path / "annotation.gtf.db"
     assert captured["creator_kwargs"]["target_id"] is None
     assert captured["creator_kwargs"]["target_name"] == "KRAS"
     assert captured["creator_kwargs"]["k"] == 16

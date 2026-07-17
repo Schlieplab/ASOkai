@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 from ._target_creator import TargetCreator
 from ._target_gene import TargetGene
 from GenomeUtils.Genome import Genome, Gene, Exon, Locus
-from typing import Literal, Dict, Set, List, Iterator, Optional
+from typing import Dict, Set, List, Iterator, Literal, Optional, cast
 from Bio.Seq import Seq
 from ..Sites import Site
 from ..Sites import GenomicSite
@@ -18,6 +18,11 @@ from ..Sites import TranscriptSite
 
 
 # Module-level helper functions for site extraction
+
+def _validated_strand(value: str) -> Literal["+", "-"]:
+    if value not in ("+", "-"):
+        raise ValueError(f"Invalid strand: {value!r}")
+    return cast(Literal["+", "-"], value)
 
 def _extract_exonic_only_sites(gene: Gene, genome: Genome, k: int, id_generator: Iterator[str]) -> Dict[str, GenomicSite]:
     """
@@ -50,13 +55,14 @@ def _extract_exonic_only_sites(gene: Gene, genome: Genome, k: int, id_generator:
             id = next(id_generator)
             site_start = exon.start + i
             site_end = exon.start + i + k - 1
+            strand = _validated_strand(exon.strand)
             site = GenomicSite(
                 id=id,
                 chr=exon.chr,
                 start=site_start,
                 end=site_end,
-                strand=exon.strand,
-                sequence=genome.get_sequence_by_locus(Locus(exon.chr, site_start, site_end, exon.strand)),
+                strand=strand,
+                sequence=genome.get_sequence_by_locus(Locus(exon.chr, site_start, site_end, strand)),
             )
             sites[site.id] = site
     
@@ -81,13 +87,14 @@ def _extract_pre_mrna_sites(gene: Gene, genome: Genome, k: int, id_generator: It
         id = next(id_generator)
         site_start = gene.start + i
         site_end = gene.start + i + k - 1
+        strand = _validated_strand(gene.strand)
         site = GenomicSite(
             id=id,
             chr=gene.chr,
             start=site_start,
             end=site_end,
-            strand=gene.strand,
-            sequence=genome.get_sequence_by_locus(Locus(gene.chr, site_start, site_end, gene.strand)),
+            strand=strand,
+            sequence=genome.get_sequence_by_locus(Locus(gene.chr, site_start, site_end, strand)),
         )
         sites[site.id] = site
     return sites
@@ -104,7 +111,7 @@ def _extract_transcript_sites(gene: Gene, id_generator: Iterator[str]) -> Dict[s
     Returns:
         A dictionary of sites.
     """
-    pass
+    raise NotImplementedError
 
 
 class TargetGeneCreator(TargetCreator):
@@ -145,6 +152,7 @@ class TargetGeneCreator(TargetCreator):
         if target_id is not None:
             gene_to_target = genome.gene_by_id(target_id)
         else:
+            assert target_name is not None
             gene_to_target = genome.gene_by_name(target_name)
             
         gene_sequence = gene_to_target.sequence
@@ -168,7 +176,7 @@ class TargetGeneCreator(TargetCreator):
             chr=gene_to_target.chr,
             start=gene_to_target.start,
             end=gene_to_target.end,
-            strand=gene_to_target.strand,
+            strand=_validated_strand(gene_to_target.strand),
             sequence=gene_sequence,
             sites=sites,
             genome=genome,
@@ -178,9 +186,9 @@ class TargetGeneCreator(TargetCreator):
         return target_gene
     
     @classmethod
-    def from_file(cls, file_path: str):
+    def from_file(cls, file_path: str) -> TargetGene:
         """
         Load a TargetGene object from a file.
         """
-        pass
+        raise NotImplementedError
     

@@ -1,0 +1,6 @@
+version: 1
+outputs:
+  - id: dna
+    destination: GRCh38/genomes/ensembl/114/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+  - id: target
+    destination: GRCh38/targets/ENSG00000133703/ENSG00000133703_k16_pre-mrna.json

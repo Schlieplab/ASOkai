@@ -6,6 +6,7 @@ from argparse import Namespace
 
 import pytest
 
+from ASOkai._cwl.spec import OutputParam, StepSpec
 from ASOkai._pipeline.base import AnalysisStep
 
 
@@ -23,12 +24,9 @@ class FakeAnalysisStep(AnalysisStep):
     analysis_cls = FakeAnalysis
     cli_module = "tests.fake"
     dependencies = []
-    config_map = {}
-    input_overrides = {}
-
-    @property
-    def cwl_path(self):
-        return "/fake/fake-analysis.cwl"
+    spec = StepSpec(
+        outputs=[OutputParam("analysis", temp_filename="analysis.json")]
+    )
 
     def outdir(self, config):
         return config["outdir"]
@@ -58,7 +56,7 @@ class MissingAnalysisClassStep(FakeAnalysisStep):
 
 def test_analysis_step_run_from_args_writes_metadata_and_results(tmp_path):
     output = tmp_path / "analysis.json"
-    args = Namespace(output=output, value=7)
+    args = Namespace(analysis_output=output, value=7)
 
     result = FakeAnalysisStep().run_from_args(args)
 
@@ -71,7 +69,7 @@ def test_analysis_step_run_from_args_writes_metadata_and_results(tmp_path):
 
 
 def test_analysis_step_requires_analysis_class(tmp_path):
-    args = Namespace(output=tmp_path / "analysis.json", value=7)
+    args = Namespace(analysis_output=tmp_path / "analysis.json", value=7)
 
     with pytest.raises(RuntimeError, match="analysis_cls"):
         MissingAnalysisClassStep().run_from_args(args)

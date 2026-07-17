@@ -40,5 +40,4 @@ class TestSiteBase:
             custom_attr="custom_value"
         )
         
-        assert site.custom_attr == "custom_value"
-
+        assert getattr(site, "custom_attr") == "custom_value"

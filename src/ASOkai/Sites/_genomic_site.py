@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from GenomeUtils.Genome import Locus
 from GenomeUtils.Genome import GenomeElement
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 from Bio.Seq import Seq
 from ._site import Site
 
@@ -29,8 +29,8 @@ class GenomicSite(Site, GenomeElement):
                  end: int, 
                  strand: Literal["+", "-"], 
                  sequence: Seq,
-                 id: str = None,
-                 genome: "Genome" = None,
+                 id: str | None = None,
+                 genome: "Genome | None" = None,
                  **kwargs):
         """
         Initializes a GenomicSite object.
@@ -51,8 +51,8 @@ class GenomicSite(Site, GenomeElement):
             id = str(locus)
             
         Site.__init__(self, id=id, sequence=sequence, **kwargs)
-        GenomeElement.__init__(self, id=id, locus=locus, genome=genome)
+        GenomeElement.__init__(self, id=id, locus=locus, genome=cast("Genome", genome))
         
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', locus={self.locus!r}), sequence={self.sequence!r})"
     

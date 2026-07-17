@@ -116,4 +116,4 @@ class Transform(KMCTool):
         self._argv = ["transform", self._resolve_path(input_path)]
         self._argv.extend(self._build_cli_args({"-ci": ci, "-cx": cx}))
         self._argv.extend(operations)
-        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
+        return self._execute(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)

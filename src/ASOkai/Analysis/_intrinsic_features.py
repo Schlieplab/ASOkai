@@ -34,10 +34,8 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             features: The features to analyze, defaults to all features.
             kwargs: Additional keyword arguments.
         """
-        super().__init__(sites, **kwargs)
-        self.features = features
-        if self.features is None:
-            self.features = [
+        if features is None:
+            features = [
                 "GC_content",
                 "AT_content",
                 "T_count",
@@ -45,6 +43,8 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
                 "T_content",
                 "CpG_content",
             ]
+        self.features: list[str] = features
+        super().__init__(sites, **kwargs)
 
     def analyze(self, site) -> dict[str, Any]:
         """

@@ -73,8 +73,8 @@ or node selectors unless a marker is present on the tests you want.
   ordering, deduplication, recursive dependencies, pre-resolved outputs, and
   cycle detection.
 - Runner and CWL generation: input resolution precedence, dependency wiring,
-  pre-resolved file inputs, output filename injection, dry-run behavior, CWL
-  export, final workflow outputs, and normalized CWL step IDs.
+  pre-resolved file inputs, fixed output arguments, dry-run behavior, CWL
+  export, publication layouts, and normalized CWL step IDs.
 - CLI: listing and describing registered units, hidden internal step dispatch,
   run selection defaults, unknown runnable errors, config override parsing, and
   YAML scalar preservation.

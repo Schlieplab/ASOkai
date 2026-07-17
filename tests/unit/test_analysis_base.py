@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 """Tests for generic analysis base-class execution."""
 
+import inspect
+from typing import cast
+
 import pytest
+from GenomeUtils.Genome import Genome
 
 from ASOkai.Analysis import (
     Analysis,
@@ -9,6 +13,7 @@ from ASOkai.Analysis import (
     SiteSpecificAnalysis,
     TargetSpecificAnalysis,
 )
+from ASOkai.Targets import Target
 
 
 class FakeSite:
@@ -57,8 +62,9 @@ def test_site_specific_run_calls_analyze_for_each_site():
 
 
 def test_site_specific_requires_sites():
-    with pytest.raises(TypeError):
-        CountingAnalysis()
+    sites_parameter = inspect.signature(CountingAnalysis).parameters["sites"]
+
+    assert sites_parameter.default is inspect.Parameter.empty
 
 
 def test_site_specific_multiprocessing_matches_serial():
@@ -76,7 +82,7 @@ def test_analysis_rejects_invalid_process_count():
 
 
 def test_target_specific_run_exposes_target_context():
-    target = FakeTarget("target-1")
+    target = cast(Target, FakeTarget("target-1"))
     analysis = ContextTargetAnalysis(target=target, sites=[FakeSite("site-1")])
 
     assert analysis.run() == {
@@ -85,8 +91,8 @@ def test_target_specific_run_exposes_target_context():
 
 
 def test_genome_wide_run_exposes_genome_and_target_context():
-    genome = FakeGenome("genome-1")
-    target = FakeTarget("target-1")
+    genome = cast(Genome, FakeGenome("genome-1"))
+    target = cast(Target, FakeTarget("target-1"))
     analysis = ContextGenomeAnalysis(
         genome=genome,
         target=target,

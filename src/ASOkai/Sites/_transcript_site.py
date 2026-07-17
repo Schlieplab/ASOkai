@@ -26,7 +26,7 @@ class TranscriptSite(Site):
                  t_start: int,
                  t_end: int,
                  sequence: Seq,
-                 id: str = None,
+                 id: str | None = None,
                  **kwargs):
         """
         Initializes a TranscriptSite object.
@@ -50,11 +50,11 @@ class TranscriptSite(Site):
         
         Site.__init__(self, sequence=sequence, id=id, **kwargs)
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', transcript_id='{self.transcript_id}', t_start={self.t_start}, t_end={self.t_end})"
 
     def to_genomic(self, transcript: "Transcript") -> List[GenomicSite]:
-        pass
+        raise NotImplementedError
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TranscriptSite):
@@ -65,7 +65,6 @@ class TranscriptSite(Site):
             and self.t_start == other.t_start
             and self.t_end == other.t_end
         )
-
 
 
 

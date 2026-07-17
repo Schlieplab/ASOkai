@@ -6,7 +6,7 @@ from click.testing import CliRunner
 from ASOkai._cli.main import main
 
 
-def test_hidden_step_command_is_not_listed_in_help():
+def test_internal_cwl_commands_are_not_listed_in_help():
     runner = CliRunner()
 
     result = runner.invoke(main, ["--help"])
@@ -16,6 +16,7 @@ def test_hidden_step_command_is_not_listed_in_help():
     assert short_result.exit_code == 0
     assert "Usage:" in short_result.output
     assert " step " not in result.output
+    assert "publish-outputs" not in result.output
 
 
 def test_run_help_uses_configfile_and_config_override_options():
@@ -36,7 +37,7 @@ def test_run_help_uses_configfile_and_config_override_options():
 def test_public_subcommands_accept_short_help():
     runner = CliRunner()
 
-    for command in ("list", "describe", "run"):
+    for command in ("list", "describe", "run", "export"):
         result = runner.invoke(main, [command, "-h"])
         assert result.exit_code == 0
         assert "Usage:" in result.output
@@ -75,14 +76,26 @@ def test_describe_step_create_target_gene_shows_details():
     assert result.exit_code == 0
     assert "Name        : create-target-gene" in result.output
     assert "Type        : Core" in result.output
-    assert "CWL         :" in result.output
-    assert "create-target-gene.cwl" in result.output
     assert "Config keys :" in result.output
     assert "--config target.target_id" in result.output
     assert "--config target.region" in result.output
     assert "Input overrides (optional, bypasses dep step):" in result.output
     assert "--config genome.dna_path" in result.output
     assert "Dependencies: download-genome" in result.output
+
+
+def test_describe_step_uses_stepspec_not_step_argparse(monkeypatch):
+    monkeypatch.setattr(
+        "ASOkai._cli.main._resolve_step_module",
+        lambda _name: (_ for _ in ()).throw(AssertionError("unexpected parser lookup")),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["describe", "step", "create-target-gene"])
+
+    assert result.exit_code == 0
+    assert "pre-mrna" in result.output
+    assert "Ensembl gene ID" in result.output
 
 
 def test_describe_task_expands_step_names():
@@ -93,6 +106,7 @@ def test_describe_task_expands_step_names():
     assert result.exit_code == 0
     assert "Name        : instantiate-target-gene" in result.output
     assert "Steps       : download-genome, create-target-gene" in result.output
+    assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert "Steps: download-genome, create-target-gene" in result.output
 
 
@@ -104,6 +118,7 @@ def test_describe_workflow_shows_members_and_expanded_steps():
     assert result.exit_code == 0
     assert "Name        : standard" in result.output
     assert "Members     : instantiate-target-gene, intrinsic-features" in result.output
+    assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert (
         "Steps (expanded): download-genome, create-target-gene, intrinsic-features"
         in result.output
@@ -265,7 +280,16 @@ def test_run_uses_toil_executor_when_requested(monkeypatch):
     assert captured["executor"].__class__.__name__ == "ToilExecutor"
 
 
-def test_run_export_only_without_value_uses_datadir_jobs(monkeypatch, tmp_path):
+def test_run_help_does_not_include_export_flags():
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "-h"])
+
+    assert result.exit_code == 0
+    assert "--export-only" not in result.output
+    assert "--export-cwl" not in result.output
+
+
+def test_export_steps_uses_outdir_and_runner_name(monkeypatch, tmp_path):
     captured = {}
 
     monkeypatch.setattr(
@@ -273,61 +297,82 @@ def test_run_export_only_without_value_uses_datadir_jobs(monkeypatch, tmp_path):
         lambda _path: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(kwargs),
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(main, ["run", "--workflow", "standard", "--export-only"])
-
-    assert result.exit_code == 0
-    assert captured["export_only"] == tmp_path / "data" / "jobs"
-
-
-def test_run_export_only_with_value_uses_explicit_parent(monkeypatch, tmp_path):
-    captured = {}
-
-    monkeypatch.setattr(
-        "ASOkai._cli.main.cfg.load",
-        lambda _path: {"datadir": str(tmp_path / "data")},
-    )
-    monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(kwargs),
-    )
-
-    export_parent = tmp_path / "jobs"
-    runner = CliRunner()
-    result = runner.invoke(
-        main,
-        ["run", "--workflow", "standard", "--export-only", str(export_parent)],
-    )
-
-    assert result.exit_code == 0
-    assert captured["export_only"] == export_parent
-
-
-def test_run_export_only_rejects_export_cwl(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "ASOkai._cli.main.cfg.load",
-        lambda _path: {"datadir": str(tmp_path / "data")},
+        "ASOkai._cli.main.runner.export_all",
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables,
+            config=config,
+            **kwargs,
+        ) or tmp_path / "exports" / "asokai-export-1",
     )
 
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "run",
-            "--workflow",
-            "standard",
-            "--export-only",
-            "--export-cwl",
-            str(tmp_path / "workflow.cwl"),
+            "export",
+            "--steps",
+            "download-genome",
+            "create-target-gene",
+            "--outdir",
+            str(tmp_path / "exports"),
+            "--executor",
+            "toil",
         ],
     )
 
-    assert result.exit_code != 0
-    assert "mutually exclusive" in result.output
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == [
+        "download-genome",
+        "create-target-gene",
+    ]
+    assert captured["outdir"] == tmp_path / "exports"
+    assert captured["runner_name"] == "toil-cwl-runner"
+    assert "CWL export bundle written" in result.output
+
+
+def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_path):
+    captured = {}
+
+    monkeypatch.setattr(
+        "ASOkai._cli.main.cfg.load",
+        lambda _path: {"datadir": str(tmp_path / "data")},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.export_all",
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables,
+            **kwargs,
+        ) or tmp_path / "data" / "jobs" / "asokai-export-1",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["export", "--workflow", "standard"])
+
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == ["standard"]
+    assert captured["outdir"] is None
+
+
+def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
+    captured = {}
+
+    monkeypatch.setattr(
+        "ASOkai._cli.main.cfg.load",
+        lambda _path: {"datadir": str(tmp_path / "data")},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.main.runner.export_all",
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables,
+            **kwargs,
+        ) or tmp_path / "data" / "jobs" / "asokai-export-1",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["export", "--tasks", "instantiate-target-gene"])
+
+    assert result.exit_code == 0
+    assert [r.name for r in captured["runnables"]] == ["instantiate-target-gene"]
 
 
 def test_run_rejects_unknown_step(monkeypatch):

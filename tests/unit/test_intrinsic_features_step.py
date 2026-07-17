@@ -3,7 +3,9 @@
 import json
 import pytest
 from pathlib import Path
+import yaml
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
+from ASOkai._cwl.spec import StepCwlGenerator
 from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.base import (
     AnalysisStep,
@@ -79,12 +81,6 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     assert paths["intrinsic_features"] == expected
 
 
-def test_outdir(step, config, tmp_path):
-    assert step.outdir(config) == (
-        tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
-    )
-
-
 def test_outputs_do_not_exist(step, config):
     assert step.outputs_exist(config) is False
 
@@ -106,8 +102,22 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_path_is_file(step):
-    assert Path(step.cwl_path).exists(), f"CWL file not found: {step.cwl_path}"
+def test_cwl_spec_generates_command_line_tool(step):
+    doc = yaml.safe_load(StepCwlGenerator().render(step))
+
+    assert doc["class"] == "CommandLineTool"
+    assert doc["baseCommand"] == ["ASOkai", "step", "intrinsic-features"]
+    assert doc["inputs"]["target_gene"]["type"] == "File"
+    assert doc["inputs"]["region"]["type"]["type"] == "enum"
+    assert "intrinsic_features_output" not in doc["inputs"]
+    assert "intrinsic_features_filename" not in doc["inputs"]
+    assert {
+        "prefix": "--intrinsic-features-output",
+        "valueFrom": "intrinsic_features.json",
+    } in doc["arguments"]
+    assert doc["outputs"]["intrinsic_features"]["outputBinding"]["glob"] == (
+        "intrinsic_features.json"
+    )
 
 
 def test_main_rejects_missing_target_identifier_before_analysis(tmp_path):
@@ -120,7 +130,7 @@ def test_main_rejects_missing_target_identifier_before_analysis(tmp_path):
                 "--assembly", "GRCh38",
                 "--k", "16",
                 "--region", "pre-mrna",
-                "--output", str(tmp_path / "intrinsic.json"),
+                "--intrinsic-features-output", str(tmp_path / "intrinsic.json"),
             ]
         )
 
@@ -202,7 +212,7 @@ def test_main_writes_metadata_with_site_keyed_results(monkeypatch, tmp_path):
             "--target-id", "ENSG00000133703",
             "--k", "16",
             "--region", "pre-mrna",
-            "--output", str(output),
+            "--intrinsic-features-output", str(output),
         ]
     )
 

@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
@@ -17,8 +18,10 @@ from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGene
 
 
 class StandardWorkflow:
-    name = "standard"
-    description = "Full pipeline: genome download → target gene creation → intrinsic features."
+    name: ClassVar[str] = "standard"
+    description: ClassVar[str] = (
+        "Full pipeline: genome download → target gene creation → intrinsic features."
+    )
     members: list[Runnable] = [
         InstantiateTargetGeneTask(),
         IntrinsicFeaturesStep(),

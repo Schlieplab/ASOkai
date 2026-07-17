@@ -358,4 +358,4 @@ class TestTargetGeneEdgeCases:
             custom_attribute="custom_value"
         )
         
-        assert gene.custom_attribute == "custom_value"
+        assert getattr(gene, "custom_attribute") == "custom_value"

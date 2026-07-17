@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from ASOkai._pipeline.base import Step
 from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
@@ -17,8 +18,10 @@ from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
 
 
 class InstantiateTargetGeneTask:
-    name = "instantiate-target-gene"
-    description = "Downloads genome data and creates the configured target gene."
+    name: ClassVar[str] = "instantiate-target-gene"
+    description: ClassVar[str] = (
+        "Downloads genome data and creates the configured target gene."
+    )
     steps: list[Step] = [
         DownloadGenomeStep(),
         CreateTargetGeneStep(),

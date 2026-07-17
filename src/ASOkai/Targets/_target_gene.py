@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from GenomeUtils.Genome import Gene, Genome, Chromosome
 from ._target import Target
-from typing import Literal, Dict
+from typing import Literal, Mapping, cast
 from Bio.Seq import Seq
 from ..Sites import Site
 
@@ -30,9 +30,9 @@ class TargetGene(Target, Gene):
                  end: int,
                  strand: Literal["+", "-"],
                  sequence: Seq,
-                 sites: Dict[str, Site],
-                 genome: Genome = None,
-                 chromosome: "Chromosome" = None, 
+                 sites: Mapping[str, Site],
+                 genome: Genome | None = None,
+                 chromosome: "Chromosome | None" = None,
                  **kwargs):
         """
         Initializes a `TargetGene` object.
@@ -58,12 +58,10 @@ class TargetGene(Target, Gene):
         Gene.__init__(self, id, name, 
                       chr, start, end, 
                       strand, 
-                      genome=genome, 
-                      chromosome=chromosome)
+                      genome=cast(Genome, genome),
+                      chromosome=cast(Chromosome, chromosome))
 
     @property
     def sequence(self) -> Seq:
         return self._sequence
-
-
 

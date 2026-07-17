@@ -9,20 +9,18 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-import argparse
 import importlib
 import logging
 from itertools import groupby
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, Literal, cast
+from typing import Any, Callable, cast
 
 import click
 import yaml
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
-from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.base import (
     AnalysisStep,
     CoreStep,
@@ -58,42 +56,6 @@ class _VariadicOption(click.Option):
         return retval
 
 
-class _OptionalPathOption(click.Option):
-    """Click flag that optionally consumes one following path value."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            *args,
-            is_flag=True,
-            flag_value=True,
-            default=None,
-            type=click.UNPROCESSED,
-            **kwargs,
-        )
-
-    def add_to_parser(self, parser, ctx):
-        retval = super().add_to_parser(parser, ctx)
-        for name in self.opts:
-            option_parser = parser._long_opt.get(name) or parser._short_opt.get(name)
-            if option_parser is None:
-                continue
-
-            def parser_process(value, state, option_parser=option_parser):
-                if state.rargs:
-                    next_arg = state.rargs[0]
-                    if not next_arg.startswith("-"):
-                        value = state.rargs.pop(0)
-                    else:
-                        value = True
-                else:
-                    value = True
-                state.opts[option_parser.dest] = value
-                state.order.append(option_parser.obj)
-
-            option_parser.process = parser_process
-        return retval
-
-
 def _set_verbose(ctx: click.Context, param: click.Parameter, value: bool) -> bool:
     if value:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -114,7 +76,28 @@ verbose_option = click.option(
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """ASOkai — ASO design pipeline."""
+    """\b
+            ..=#*+==-==+**-.
+          :+#-.............-#=.
+        :#=:.................:=#:
+      .++.......................+=.
+     .#-.......-*#**+**#*:.......-#.
+    .*:.....-*+:::::::::::**-.....-+.
+    -+....-#-:::::::::::::::-#-....+:
+    *-...=*:::::::::::::::::::*-...-+
+    %:..=*:::::::::+*+:::::::::#-..:*
+    %:.:*:::::-+#-------%+::::::#:.:*
+    *-.-+::::++-----------++::::*-.-+
+    :+.-+:::++-------------*=:::*-.+:
+    .+-:*::-%---------------%:::#:-+.
+     .#-++:-%---------------%::#==*.
+      .=++*:%--------------=#:*=*=.
+        .###-#-------------*=##*.
+          .=@%@*---------#@@%=.
+             .-+#%*+++*%#+:.
+
+    ASOkai — ASO design pipeline.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
@@ -267,46 +250,40 @@ def _dependency_tree_lines(
     return lines
 
 
-def _step_parser_actions_by_dest(step_name: str) -> dict[str, argparse.Action]:
-    """Return argparse actions from a step's internal parser, keyed by dest."""
-    action_by_dest: dict[str, argparse.Action] = {}
-    try:
-        mod = _resolve_step_module(step_name)
-        build_parser = getattr(mod, "_build_parser")
-        for action in build_parser()._actions:
-            if action.dest != "help":
-                action_by_dest[action.dest] = action
-    except (KeyError, AttributeError):
-        pass
-    return action_by_dest
+def _config_hint_for_param(param: Any) -> str:
+    """Return a compact describe hint from StepSpec parameter metadata."""
+    choices = param.parser_choices()
+    if choices:
+        return f"  {' | '.join(str(c) for c in choices)}"
 
-
-def _config_hint_for_action(action: argparse.Action | None) -> str:
-    """Return a compact describe hint for a step config option."""
-    if action and action.choices:
-        return f"  {' | '.join(str(c) for c in action.choices)}"
-    if action and action.type is int:
+    if param.parser_type() is int:
         return "  int"
-    if action and action.help and action.help != argparse.SUPPRESS:
-        return f"  {action.help}"
+
+    doc = getattr(param, "doc", None)
+    if doc:
+        return f"  {doc}"
     return ""
 
 
 def _describe_step_config_keys(step) -> None:
     """Print configurable keys for a step."""
-    if not step.config_map:
+    config_params = [
+        param
+        for param in (*step.spec.params, *step.spec.inputs)
+        if param.cwl and param.config
+    ]
+    if not config_params:
         return
 
-    action_by_dest = _step_parser_actions_by_dest(step.name)
     click.echo("Config keys :")
-    for cwl_key, config_path in step.config_map.items():
-        hint = _config_hint_for_action(action_by_dest.get(cwl_key))
-        click.echo(f"  --config {config_path:<32}{hint}")
+    for param in config_params:
+        hint = _config_hint_for_param(param)
+        click.echo(f"  --config {param.config:<32}{hint}")
 
 
 def _describe_step_input_overrides(step) -> None:
     """Print optional input overrides for a step."""
-    input_overrides = getattr(step, "input_overrides", {})
+    input_overrides = step.input_overrides
     if not input_overrides:
         return
 
@@ -321,7 +298,6 @@ def _describe_step_input_overrides(step) -> None:
 def _describe_step(step) -> tuple[list[str], str]:
     """Print step-specific details and return dependencies for summary."""
     click.echo(f"Type        : {_step_type_label(step)}")
-    click.echo(f"CWL         : {step.cwl_path}")
     _describe_step_config_keys(step)
     _describe_step_input_overrides(step)
     return step.dependencies or [], "Dependencies"
@@ -331,7 +307,7 @@ def _describe_task(task) -> tuple[list[str], str]:
     """Print task-specific details and return steps for summary."""
     step_names = [s.name for s in task.steps]
     click.echo(f"Steps       : {', '.join(step_names)}")
-    click.echo("CWL         : (generated at runtime)")
+    click.echo("CWL         : (CLI collection; export creates run.cwl)")
     return step_names, "Steps"
 
 
@@ -339,7 +315,7 @@ def _describe_workflow(workflow) -> tuple[list[str], str]:
     """Print workflow-specific details and return expanded steps for summary."""
     member_names = [m.name for m in workflow.members]
     click.echo(f"Members     : {', '.join(member_names)}")
-    click.echo("CWL         : (generated at runtime)")
+    click.echo("CWL         : (CLI collection; export creates run.cwl)")
     return _expand_members_for_describe(workflow.members), "Steps (expanded)"
 
 
@@ -424,18 +400,6 @@ def _parse_run_config(config_overrides: tuple) -> dict:
         key, _, value = override.partition("=")
         parsed_overrides[key] = yaml.safe_load(value)
     return parsed_overrides
-
-
-def _export_only_parent(
-    config: dict,
-    export_only: str | Literal[True] | None,
-) -> Path | None:
-    """Resolve the optional --export-only value to an export parent directory."""
-    if export_only is None:
-        return None
-    if export_only is True:
-        return Path(config["datadir"]) / "jobs"
-    return Path(export_only)
 
 
 def _collect_runnables(
@@ -523,27 +487,9 @@ def _collect_runnables(
     help="Automatically run missing step dependencies.",
 )
 @click.option(
-    "--export-cwl",
-    "export_cwl",
-    type=click.Path(path_type=Path),
-    default=None,
-    metavar="PATH",
-    help="Save the generated CWL for a task or workflow to PATH instead of a tempfile.",
-)
-@click.option(
-    "--export-only",
-    "export_only",
-    cls=_OptionalPathOption,
-    metavar="[PATH]",
-    help=(
-        "Export a runnable CWL bundle instead of executing. "
-        "Defaults to datadir/jobs when PATH is omitted."
-    ),
-)
-@click.option(
     "--executor",
     "executor_name",
-    type=click.Choice(["toil", "cwltool"]),
+    type=click.Choice(runner.RUNNER_NAMES),
     default="cwltool",
     show_default=True,
     help="CWL executor backend.",
@@ -567,8 +513,6 @@ def run_cmd(
     force: bool,
     dry_run: bool,
     recursive: bool,
-    export_cwl: Path | None,
-    export_only: str | Literal[True] | None,
     executor_name: str,
     config_overrides: tuple,
 ) -> None:
@@ -579,27 +523,142 @@ def run_cmd(
     if parsed_overrides:
         cfg.apply_overrides(config, parsed_overrides)
 
-    export_only_dir = _export_only_parent(config, export_only)
-    if export_cwl is not None and export_only_dir is not None:
-        raise click.UsageError("--export-only and --export-cwl are mutually exclusive.")
-
     runnables = _collect_runnables(step_names, task_names, workflow_name)
-    executor = CwlToolExecutor() if executor_name == "cwltool" else ToilExecutor()
+    executor = runner.executor_from_name(executor_name)
     runner.run_all(
         runnables,
         config,
         force=force,
         dry_run=dry_run,
         recursive=recursive,
-        export_cwl=export_cwl,
-        export_only=export_only_dir,
         executor=executor,
     )
 
 
 # ---------------------------------------------------------------------------
-# step  (hidden — called by CWL baseCommand)
+# export
 # ---------------------------------------------------------------------------
+
+@main.command("export", context_settings=CONTEXT_SETTINGS)
+@verbose_option
+@click.option(
+    "-c", "--configfile", "--config-file",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_CONFIG,
+    show_default=True,
+    help="Path to config.yaml.",
+)
+@click.option(
+    "--steps",
+    "step_names",
+    cls=_VariadicOption,
+    multiple=True,
+    type=click.UNPROCESSED,
+    metavar="NAME [NAME ...]",
+    help="Step(s) to export. Repeat the flag or pass multiple names.",
+)
+@click.option(
+    "--tasks",
+    "task_names",
+    cls=_VariadicOption,
+    multiple=True,
+    type=click.UNPROCESSED,
+    metavar="NAME [NAME ...]",
+    help="Task(s) to export. Repeat the flag or pass multiple names.",
+)
+@click.option(
+    "--workflow",
+    "workflow_name",
+    default=None,
+    metavar="NAME",
+    help="Workflow to export.",
+)
+@click.option(
+    "--recursive",
+    is_flag=True,
+    help="Include missing step dependencies in the exported plan.",
+)
+@click.option(
+    "--outdir",
+    "outdir",
+    type=click.Path(path_type=Path),
+    default=None,
+    metavar="DIR",
+    help="Directory under which to write the export bundle. Defaults to datadir/jobs.",
+)
+@click.option(
+    "--executor",
+    "executor_name",
+    type=click.Choice(runner.RUNNER_NAMES),
+    default="cwltool",
+    show_default=True,
+    help="CWL executor backend documented in the export README.",
+)
+@click.option(
+    "--config",
+    "config_overrides",
+    cls=_VariadicOption,
+    multiple=True,
+    type=click.UNPROCESSED,
+    metavar="KEY=VALUE [KEY=VALUE ...]",
+    help="Override config values.",
+)
+def export_cmd(
+    config_path: Path,
+    step_names: tuple[str, ...],
+    task_names: tuple[str, ...],
+    workflow_name: str | None,
+    recursive: bool,
+    outdir: Path | None,
+    executor_name: str,
+    config_overrides: tuple,
+) -> None:
+    """Export selected steps, tasks, or a workflow as a runnable CWL bundle."""
+    config = cfg.load(config_path)
+
+    parsed_overrides = _parse_run_config(config_overrides)
+    if parsed_overrides:
+        cfg.apply_overrides(config, parsed_overrides)
+
+    runnables = _collect_runnables(step_names, task_names, workflow_name)
+    try:
+        export_dir = runner.export_all(
+            runnables,
+            config,
+            recursive=recursive,
+            outdir=outdir,
+            runner_name=runner.runner_name_from_name(executor_name),
+        )
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"CWL export bundle written to {export_dir}")
+
+
+# ---------------------------------------------------------------------------
+# Internal CWL commands
+# ---------------------------------------------------------------------------
+
+@main.command("publish-outputs", hidden=True)
+@click.argument(
+    "manifest",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.argument(
+    "sources",
+    nargs=-1,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+def publish_outputs_cmd(manifest: Path, sources: tuple[Path, ...]) -> None:
+    """Publish CWL output files into their declared data hierarchy."""
+    from ASOkai._cwl.publisher import publish_outputs
+
+    try:
+        publish_outputs(manifest, sources)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
 
 def _resolve_step_cli(step_name: str) -> Callable[[list[str] | None], int]:
     """Return the CLI entrypoint for an internal step command."""

@@ -15,7 +15,13 @@ The :doc:`API reference <api/index>` contains detailed documentation for every p
    getting-started
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
+   :caption: Contributor Guide
+
+   contributor-guide/index
+
+.. toctree::
+   :maxdepth: 4
    :caption: API Reference
 
    api/index

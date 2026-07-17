@@ -17,10 +17,11 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.todo',
 ]
 
 autosummary_generate = True
-
+todo_include_todos = True
 autodoc_typehints = 'description'
 autodoc_member_order = 'bysource'
 autodoc_default_options = {

@@ -152,21 +152,22 @@ class TargetGeneCreator(TargetCreator):
 
         if target_id is not None:
             gene_to_target = genome.gene_by_id(target_id)
+            site_id_target = target_id
         else:
             assert target_name is not None
             gene_to_target = genome.gene_by_name(target_name)
+            site_id_target = target_name
             
         gene_sequence = gene_to_target.sequence
-        gene_name_clean = gene_to_target.name.replace(" ", "_")
         
         if region == "exonic_only":
-            id_generator = cls.site_id_generator(extra_prefix_parts=[gene_name_clean, "Exon"])
+            id_generator = cls.site_id_generator(extra_prefix_parts=[site_id_target, "Exon"])
             sites = _extract_exonic_only_sites(gene_to_target, genome, k, id_generator)
         elif region == "pre-mrna":
-            id_generator = cls.site_id_generator(extra_prefix_parts=[gene_name_clean, "Premrna"])
+            id_generator = cls.site_id_generator(extra_prefix_parts=[site_id_target, "Premrna"])
             sites = _extract_pre_mrna_sites(gene_to_target, genome, k, id_generator)
         elif region == "transcriptomic":
-            id_generator = cls.site_id_generator(extra_prefix_parts=[gene_name_clean, "Transcript"])
+            id_generator = cls.site_id_generator(extra_prefix_parts=[site_id_target, "Transcript"])
             sites = _extract_transcript_sites(gene_to_target, id_generator)
         else:
             raise ValueError(f"Invalid region: {region}")

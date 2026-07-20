@@ -9,14 +9,15 @@ License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
 
+from ..Utils import Serializable
 
-class Chemistry(ABC):
-    """Abstract base class for antisense construct chemistry."""
+
+class Chemistry(Serializable, ABC):
+    """Abstract base class for oligonucleotide chemistry."""
 
     @property
     @abstractmethod
     def Smiles(self) -> str:
         """Return the chemistry SMILES"""
         pass
-
 

@@ -22,6 +22,11 @@ def config(tmp_path):
             "k":           16,
             "region":      "pre-mrna",
         },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+        },
     }
 
 
@@ -46,11 +51,13 @@ def test_members_are_runnables(workflow):
     assert all(isinstance(m, Runnable) for m in workflow.members)
     assert isinstance(workflow.members[0], Task)
     assert isinstance(workflow.members[1], Step)
+    assert isinstance(workflow.members[2], Step)
 
 
 def test_member_names(workflow):
     assert [m.name for m in workflow.members] == [
         "instantiate-target-gene",
+        "generate-antisense-candidates",
         "intrinsic-features",
     ]
 
@@ -59,6 +66,7 @@ def test_flattens_to_step_names(workflow):
     assert [s.name for s in _flatten_runnable(workflow)] == [
         "download-genome",
         "create-target-gene",
+        "generate-antisense-candidates",
         "intrinsic-features",
     ]
 
@@ -67,6 +75,14 @@ def test_output_paths(workflow, config, tmp_path):
     paths = workflow.output_paths(config)
     target_base = tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
     assert paths["target_gene"] == target_base / "ENSG00000133703_k16_pre-mrna.json"
+    assert paths["therapeutics"] == (
+        target_base / "antisense"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_therapeutics.json"
+    )
+    assert paths["bindings"] == (
+        target_base / "antisense"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_bindings.json"
+    )
     assert paths["intrinsic_features"] == (
         target_base / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.json"
     )

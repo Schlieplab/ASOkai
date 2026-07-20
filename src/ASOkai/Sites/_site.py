@@ -14,7 +14,7 @@ from ..Utils import Serializable
 
 
 class Site(Serializable, ABC):
-    """Abstract base class for sites that may or may not be genomic."""
+    """Abstract base class for sites whose sequences are stored 5' to 3'."""
 
     def __init__(self,
                  id: str,
@@ -35,6 +35,7 @@ class Site(Serializable, ABC):
 
     @property
     def sequence(self) -> Seq:
+        """Return the site sequence in the 5' to 3' direction."""
         return self._sequence
 
     @abstractmethod

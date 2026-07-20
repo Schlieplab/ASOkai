@@ -14,15 +14,18 @@ from ..Utils import Serializable
 
 
 class Oligonucleotide(Serializable):
-    """A single oligonucleotide strand."""
+    """A single oligonucleotide strand stored 5' to 3' using ``ACGT``."""
 
-    def __init__(self, id: str, sequence: Seq, chemistry: Chemistry, **kwargs):
-        self.id = id
+    def __init__(self, sequence: Seq, chemistry: Chemistry, **kwargs):
         self._sequence = sequence
-        self.chemistry = chemistry
+        self._chemistry = chemistry
         super().__init__(**kwargs)
 
     @property
     def sequence(self) -> Seq:
-        """Return the strand sequence."""
+        """Return the strand sequence in the 5' to 3' direction."""
         return self._sequence
+
+    @property
+    def chemistry(self) -> Chemistry:
+        return self._chemistry

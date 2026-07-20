@@ -9,10 +9,12 @@ License: LGPL-3.0-or-later
 """
 from ._mechanism_of_action import MechanismOfAction
 from ._chemistry import Chemistry
+from ._gapmer import GapmerChemistry
+from ._rnase_h1 import RNaseH1Mechanism
 
 __all__ = [
     "MechanismOfAction",
     "Chemistry",
+    "GapmerChemistry",
+    "RNaseH1Mechanism",
 ]
-
-

@@ -12,6 +12,7 @@ from ._binding import Binding
 from ._oligonucleotide import Oligonucleotide
 from ._aso import ASO
 from ._sirna import SiRNA
+from ._candidate_generator import AntisenseCandidateGenerator, ASOCandidateGenerator
 
 __all__ = [
     "ASO",
@@ -19,4 +20,6 @@ __all__ = [
     "Binding",
     "Oligonucleotide",
     "SiRNA",
+    "AntisenseCandidateGenerator",
+    "ASOCandidateGenerator",
 ]

@@ -5,10 +5,28 @@ While the pipeline can be utilised as a ready-to-use workflow, its modularity en
 
 ## Antisense therapeutic sequences
 
+ASOkai represents nucleotide sequences with `T`, not `U`.
+
 For every `AntisenseTherapeutic`, the `sequence` property returns the
 antisense-strand sequence used for target recognition. For a multi-stranded
 therapeutic such as siRNA, it does not combine the antisense and sense strands;
 the sense-strand sequence is available separately as `sense_strand.sequence`.
+
+Candidate generation writes therapeutics and their site bindings to separate
+files. Each binding stores a therapeutic ID and a site ID.
+
+The standard workflow currently generates one RNase-H1 gapmer ASO per target
+site. Its initial design settings are scalar configuration values so they can
+also be overridden through the normal pipeline interface:
+
+```yaml
+antisense:
+  modality: aso
+  mechanism: rnase-h1
+  chemistry:
+    type: gapmer
+    layout: "3-10-3"
+```
 
 image
 

@@ -15,7 +15,7 @@ from ._oligonucleotide import Oligonucleotide
 
 
 class ASO(Oligonucleotide, AntisenseTherapeutic):
-    """A single-stranded antisense oligonucleotide therapeutic."""
+    """A single-stranded antisense therapeutic stored 5' to 3'."""
 
     def __init__(
         self,
@@ -25,14 +25,13 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
         mechanism: MechanismOfAction,
         **kwargs,
     ):
-        Oligonucleotide.__init__(
-            self,
+        super().__init__(
             id=id,
             sequence=sequence,
             chemistry=chemistry,
+            mechanism=mechanism,
             **kwargs,
         )
-        AntisenseTherapeutic.__init__(self, mechanism=mechanism)
 
     @property
     def antisense_strand(self) -> Oligonucleotide:

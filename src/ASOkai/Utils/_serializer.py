@@ -7,7 +7,7 @@ Version: 0.1.1
 Description: This file defines the Serializable class for serializing and deserializing objects.
 License: LGPL-3.0-or-later
 """
-from typing import Dict, Any, Type, Callable, Optional
+from typing import Dict, Any, Callable, Optional
 import json
 import importlib
 import inspect
@@ -148,7 +148,10 @@ class Serializable:
         return {attribute_name: cls._deserialize_value(value)}
 
     @classmethod
-    def from_dict(cls: Type["Serializable"], data: Dict[str, Any]) -> "Serializable":
+    def from_dict(
+        cls: type["Serializable"],
+        data: Dict[str, Any],
+    ) -> "Serializable":
         """
         Create an object from a dictionary.
         """
@@ -188,7 +191,10 @@ class Serializable:
 
 
     @classmethod
-    def from_file(cls: Type["Serializable"], file_path: str) -> "Serializable":
+    def from_file(
+        cls: type["Serializable"],
+        file_path: str,
+    ) -> "Serializable":
         """
         Create an object from a JSON file.
         """

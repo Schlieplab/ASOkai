@@ -8,13 +8,12 @@ Description: This file defines the SiRNA class.
 License: LGPL-3.0-or-later
 """
 from ..Biochemistry import MechanismOfAction
-from ..Utils import Serializable
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._oligonucleotide import Oligonucleotide
 
 
-class SiRNA(AntisenseTherapeutic, Serializable):
-    """A duplex composed of antisense and sense oligonucleotide strands."""
+class SiRNA(AntisenseTherapeutic):
+    """An antiparallel duplex whose two strands are each stored 5' to 3'."""
 
     def __init__(
         self,
@@ -24,30 +23,16 @@ class SiRNA(AntisenseTherapeutic, Serializable):
         mechanism: MechanismOfAction,
         **kwargs,
     ):
-        self.id = id
         self._antisense_strand = antisense_strand
         self._sense_strand = sense_strand
-        AntisenseTherapeutic.__init__(self, mechanism=mechanism)
-        Serializable.__init__(self, **kwargs)
+        super().__init__(id=id, mechanism=mechanism, **kwargs)
 
     @property
     def antisense_strand(self) -> Oligonucleotide:
-        """Return the antisense, or guide, strand."""
+        """Return the antisense, or guide, strand in the 5' to 3' direction."""
         return self._antisense_strand
 
     @property
     def sense_strand(self) -> Oligonucleotide:
-        """Return the sense, or passenger, strand."""
+        """Return the sense, or passenger, strand in the 5' to 3' direction."""
         return self._sense_strand
-
-
-SiRNA.register_attribute(
-    "_antisense_strand",
-    "antisense_strand",
-    serialize=lambda strand: strand.to_dict(),
-)
-SiRNA.register_attribute(
-    "_sense_strand",
-    "sense_strand",
-    serialize=lambda strand: strand.to_dict(),
-)

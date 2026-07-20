@@ -75,6 +75,11 @@ def workflow_config(tmp_path):
             "k": 16,
             "region": "pre-mrna",
         },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+        },
     }
 
 

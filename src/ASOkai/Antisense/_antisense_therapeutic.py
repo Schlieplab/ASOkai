@@ -12,19 +12,22 @@ from abc import ABC, abstractmethod
 from Bio.Seq import Seq
 
 from ..Biochemistry import MechanismOfAction
+from ..Utils import Serializable
 from ._oligonucleotide import Oligonucleotide
 
 
-class AntisenseTherapeutic(ABC):
+class AntisenseTherapeutic(Serializable, ABC):
     """Base class for therapeutics that act through an antisense strand.
 
-    ``sequence`` always means the antisense-strand sequence. For a
-    multi-stranded therapeutic, it does not include the sense or passenger
-    strand.
+    ``sequence`` means the antisense-strand sequence in the 5' to 3'
+    direction. For a multi-stranded therapeutic, it does not include the sense
+    or passenger strand.
     """
 
-    def __init__(self, mechanism: MechanismOfAction):
+    def __init__(self, id: str, mechanism: MechanismOfAction, **kwargs):
+        self.id = id
         self.mechanism = mechanism
+        super().__init__(**kwargs)
 
     @property
     @abstractmethod
@@ -34,5 +37,5 @@ class AntisenseTherapeutic(ABC):
 
     @property
     def sequence(self) -> Seq:
-        """Return the antisense-strand sequence."""
+        """Return the antisense-strand sequence in the 5' to 3' direction."""
         return self.antisense_strand.sequence

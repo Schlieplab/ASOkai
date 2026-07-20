@@ -14,22 +14,28 @@ from typing import ClassVar
 
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
+from ASOkai._pipeline.steps.generate_antisense_candidates import (
+    GenerateAntisenseCandidatesStep,
+)
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 
 
 class StandardWorkflow:
     name: ClassVar[str] = "standard"
     description: ClassVar[str] = (
-        "Full pipeline: genome download → target gene creation → intrinsic features."
+        "Full pipeline: genome download → target gene creation → antisense "
+        "candidate generation → intrinsic features."
     )
     members: list[Runnable] = [
         InstantiateTargetGeneTask(),
+        GenerateAntisenseCandidatesStep(),
         IntrinsicFeaturesStep(),
     ]
 
     def output_paths(self, config: dict) -> dict[str, Path]:
         paths = {}
         paths.update(InstantiateTargetGeneTask().output_paths(config))
+        paths.update(GenerateAntisenseCandidatesStep().output_paths(config))
         paths.update(IntrinsicFeaturesStep().output_paths(config))
         return paths
 

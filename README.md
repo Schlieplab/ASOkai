@@ -3,6 +3,13 @@
 ASOkai is designed to provide analytical features from different aspects around ASO drug design, commonly used attributes like GC content as well as attributes usually requiring human experts. In particular, our focus is on extensive analysis of specific and unspecific off-targets and their impact on potential target knockdown evaluated through kinetic simulations.
 While the pipeline can be utilised as a ready-to-use workflow, its modularity enables the user to use any individual analytical step individually and integrate them in already existing user-defined drug design workflows. The frame work is open-source.
 
+## Antisense therapeutic sequences
+
+For every `AntisenseTherapeutic`, the `sequence` property returns the
+antisense-strand sequence used for target recognition. For a multi-stranded
+therapeutic such as siRNA, it does not combine the antisense and sense strands;
+the sense-strand sequence is available separately as `sense_strand.sequence`.
+
 image
 
 Intrinsic Attributes:

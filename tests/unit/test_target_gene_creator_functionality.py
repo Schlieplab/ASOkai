@@ -55,23 +55,35 @@ class TestTargetGeneCreatorFromGenome:
         """Test that from_genome with target_id uses genome.gene_by_id."""
         genome, gene = mock_genome_and_gene
 
-        result = TargetGeneCreator.from_genome(genome, target_id="ENSG00000133703", k=16)
+        result = TargetGeneCreator.from_genome(
+            genome,
+            target_id="ENSG00000133703",
+            k=16,
+            region="pre-mrna",
+        )
 
         genome.gene_by_id.assert_called_once_with("ENSG00000133703")
         genome.gene_by_name.assert_not_called()
         assert result.id == gene.id
         assert result.name == gene.name
+        assert result.sites[0].id == "ASOkai-ENSG00000133703-Premrna-S00001"
 
     def test_from_genome_by_target_name_calls_gene_by_name(self, mock_genome_and_gene):
         """Test that from_genome with target_name uses genome.gene_by_name."""
         genome, gene = mock_genome_and_gene
 
-        result = TargetGeneCreator.from_genome(genome, target_name="KRAS", k=16)
+        result = TargetGeneCreator.from_genome(
+            genome,
+            target_name="KRAS",
+            k=16,
+            region="pre-mrna",
+        )
 
         genome.gene_by_name.assert_called_once_with("KRAS")
         genome.gene_by_id.assert_not_called()
         assert result.id == gene.id
         assert result.name == gene.name
+        assert result.sites[0].id == "ASOkai-KRAS-Premrna-S00001"
 
 
 @pytest.mark.unit

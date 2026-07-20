@@ -14,6 +14,9 @@ from importlib.metadata import entry_points
 from ASOkai._pipeline.base import Step, Task, Workflow
 from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.generate_antisense_candidates import (
+    GenerateAntisenseCandidatesStep,
+)
 from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
@@ -21,6 +24,7 @@ from ASOkai._pipeline.workflows.standard import StandardWorkflow
 _BUILTIN_STEPS: list[Step] = [
     DownloadGenomeStep(),
     CreateTargetGeneStep(),
+    GenerateAntisenseCandidatesStep(),
     IntrinsicFeaturesStep(),
 ]
 

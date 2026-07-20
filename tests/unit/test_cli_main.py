@@ -56,6 +56,7 @@ def test_list_commands_show_registered_units():
     assert "download-genome" in steps.output
     assert "Downloads genome DNA" in steps.output
     assert "create-target-gene" in steps.output
+    assert "generate-antisense-candidates" in steps.output
     assert "intrinsic-features" in steps.output
     assert "[Site-specific] Computes intrinsic features" in steps.output
 
@@ -117,10 +118,14 @@ def test_describe_workflow_shows_members_and_expanded_steps():
 
     assert result.exit_code == 0
     assert "Name        : standard" in result.output
-    assert "Members     : instantiate-target-gene, intrinsic-features" in result.output
+    assert (
+        "Members     : instantiate-target-gene, generate-antisense-candidates, "
+        "intrinsic-features" in result.output
+    )
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert (
-        "Steps (expanded): download-genome, create-target-gene, intrinsic-features"
+        "Steps (expanded): download-genome, create-target-gene, "
+        "generate-antisense-candidates, intrinsic-features"
         in result.output
     )
 

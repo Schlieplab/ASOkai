@@ -14,8 +14,8 @@ class ExampleChemistry(Chemistry):
         self.smiles = smiles
 
     @property
-    def Smiles(self) -> str:
-        return self.smiles
+    def id(self) -> str:
+        return "example"
 
 
 class ExampleMechanism(MechanismOfAction):
@@ -45,25 +45,23 @@ def test_antisense_therapeutic_is_abstract():
 def test_aso_is_its_own_antisense_strand():
     aso = ASO(
         id="aso-1",
-        sequence=Seq("AUGC"),
+        sequence=Seq("ATGC"),
         chemistry=make_chemistry(),
         mechanism=make_mechanism(),
     )
 
     assert aso.antisense_strand is aso
-    assert aso.sequence == Seq("AUGC")
-    assert aso.chemistry.Smiles == "example"
+    assert aso.sequence == Seq("ATGC")
+    assert aso.chemistry.id == "example"
 
 
 def test_sirna_sequence_is_the_antisense_sequence():
     antisense = Oligonucleotide(
-        id="guide",
-        sequence=Seq("AUGC"),
+        sequence=Seq("ATGC"),
         chemistry=make_chemistry(),
     )
     sense = Oligonucleotide(
-        id="passenger",
-        sequence=Seq("GCAU"),
+        sequence=Seq("GCAT"),
         chemistry=make_chemistry(),
     )
     sirna = SiRNA(
@@ -80,7 +78,7 @@ def test_sirna_sequence_is_the_antisense_sequence():
 def test_aso_serialization_roundtrip():
     aso = ASO(
         id="aso-1",
-        sequence=Seq("AUGC"),
+        sequence=Seq("ATGC"),
         chemistry=make_chemistry(),
         mechanism=make_mechanism(),
     )
@@ -98,13 +96,11 @@ def test_sirna_serialization_roundtrip():
     sirna = SiRNA(
         id="sirna-1",
         antisense_strand=Oligonucleotide(
-            id="guide",
-            sequence=Seq("AUGC"),
+            sequence=Seq("ATGC"),
             chemistry=make_chemistry(),
         ),
         sense_strand=Oligonucleotide(
-            id="passenger",
-            sequence=Seq("GCAU"),
+            sequence=Seq("GCAT"),
             chemistry=make_chemistry(),
         ),
         mechanism=make_mechanism(),
@@ -117,6 +113,8 @@ def test_sirna_serialization_roundtrip():
     assert "sense_strand" in data
     assert "_antisense_strand" not in data
     assert "_sense_strand" not in data
+    assert "id" not in data["antisense_strand"]
+    assert "id" not in data["sense_strand"]
     assert isinstance(reconstructed, SiRNA)
     assert reconstructed.sequence == sirna.sequence
     assert reconstructed.sense_strand.sequence == sirna.sense_strand.sequence

@@ -11,6 +11,7 @@ from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
 
 from ._serializer import Serializable
+from ..Antisense import Oligonucleotide, SiRNA
 from ..Targets import Target
 
 
@@ -34,6 +35,24 @@ def register_attributes() -> None:
         'sites',
         serialize=lambda sites: {k: (v.to_dict() if isinstance(v, Serializable) else v) for k, v in sites.items()},
     )
+
+    Oligonucleotide.register_attribute(
+        "_chemistry",
+        "chemistry",
+        serialize=lambda chemistry: chemistry.to_dict(),
+    )
+
+    SiRNA.register_attribute(
+        "_antisense_strand",
+        "antisense_strand",
+        serialize=lambda strand: strand.to_dict(),
+    )
+    SiRNA.register_attribute(
+        "_sense_strand",
+        "sense_strand",
+        serialize=lambda strand: strand.to_dict(),
+    )
+
     # Register GenomeUtils.Locus with flatten=True
     # Components (chr, start, end, strand) merge directly into parent dict
     Serializable.register_attribute(

@@ -64,4 +64,5 @@ class TargetGene(Target, Gene):
 
     @property
     def sequence(self) -> Seq:
+        """Return the target-gene sequence in the 5' to 3' direction."""
         return self._sequence

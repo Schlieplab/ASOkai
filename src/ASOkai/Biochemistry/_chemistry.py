@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: This file defines the base Chemistry class.
 License: LGPL-3.0-or-later
 """
+
 from abc import ABC, abstractmethod
 
 from ..Utils import Serializable
@@ -17,7 +18,6 @@ class Chemistry(Serializable, ABC):
 
     @property
     @abstractmethod
-    def Smiles(self) -> str:
-        """Return the chemistry SMILES"""
-        pass
-
+    def id(self) -> str:
+        """Return a stable identifier suitable for candidate IDs."""
+        raise NotImplementedError

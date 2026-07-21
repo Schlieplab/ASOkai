@@ -51,3 +51,74 @@ def test_apply_overrides_new_key(sample_config):
     config = cfg.load(sample_config)
     cfg.apply_overrides(config, {"genome.new_key": "value"})
     assert config["genome"]["new_key"] == "value"
+
+
+def test_step_resources_returns_supported_fields():
+    config = {
+        "resources": {
+            "analysis": {
+                "n_processes": 4,
+                "memory_mb": 8192,
+            }
+        }
+    }
+
+    assert cfg.step_resources(config, "analysis") == {
+        "n_processes": 4,
+        "memory_mb": 8192,
+    }
+
+
+def test_step_resources_uses_builtin_defaults_without_configuration():
+    expected = {"n_processes": 1, "memory_mb": 4096}
+    assert cfg.step_resources({}, "analysis") == expected
+    assert cfg.step_resources({"resources": {}}, "analysis") == expected
+
+
+def test_step_resources_merges_configured_defaults_and_step_overrides():
+    config = {
+        "resources": {
+            "default": {
+                "n_processes": 2,
+                "memory_mb": 2048,
+            },
+            "analysis": {"n_processes": 8},
+        }
+    }
+
+    assert cfg.step_resources(config, "analysis") == {
+        "n_processes": 8,
+        "memory_mb": 2048,
+    }
+    assert cfg.step_resources(config, "unconfigured") == {
+        "n_processes": 2,
+        "memory_mb": 2048,
+    }
+
+
+@pytest.mark.parametrize("section", ["default", "analysis"])
+def test_step_resources_rejects_unsupported_fields(section):
+    config = {"resources": {section: {"nodes": 2}}}
+
+    with pytest.raises(ValueError, match=rf"resources.{section}.*nodes"):
+        cfg.step_resources(config, "analysis")
+
+
+@pytest.mark.parametrize("key", ["n_processes", "memory_mb"])
+@pytest.mark.parametrize("value", [True, 0, -1, 1.5, "4"])
+def test_step_resources_rejects_invalid_supported_values(key, value):
+    config = {"resources": {"analysis": {key: value}}}
+
+    with pytest.raises(ValueError, match=rf"resources.analysis.{key}"):
+        cfg.step_resources(config, "analysis")
+
+
+def test_step_resources_rejects_non_mapping_sections():
+    with pytest.raises(TypeError, match="resources.*mapping"):
+        cfg.step_resources({"resources": []}, "analysis")
+
+    with pytest.raises(TypeError, match="resources.analysis.*mapping"):
+        cfg.step_resources({"resources": {"analysis": 4}}, "analysis")
+
+    with pytest.raises(TypeError, match="resources.default.*mapping"):
+        cfg.step_resources({"resources": {"default": 4}}, "analysis")

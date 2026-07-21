@@ -694,7 +694,12 @@ class BaseCwlGenerator:
 class StepCwlGenerator(BaseCwlGenerator):
     """Render a step's CwlCommandLineToolSpec as a CWL CommandLineTool document."""
 
-    def document(self, step) -> dict[str, Any]:
+    def document(
+        self,
+        step,
+        *,
+        resource_requirement: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         spec = step.cwl_spec
         doc: dict[str, Any] = {
             "cwlVersion": self.cwl_version,
@@ -702,8 +707,15 @@ class StepCwlGenerator(BaseCwlGenerator):
             "baseCommand": spec.command_for_step(step.name),
             "doc": spec.doc_for_step(step.description),
         }
-        if spec.requirements:
-            doc["requirements"] = deepcopy(spec.requirements)
+        requirements = deepcopy(spec.requirements)
+        if resource_requirement:
+            authored_resources = requirements.get("ResourceRequirement", {})
+            requirements["ResourceRequirement"] = {
+                **authored_resources,
+                **resource_requirement,
+            }
+        if requirements:
+            doc["requirements"] = requirements
         if spec.arguments:
             doc["arguments"] = [argument.to_cwl() for argument in spec.arguments]
         doc["inputs"] = {item.name: item.to_cwl() for item in spec.inputs}
@@ -711,8 +723,19 @@ class StepCwlGenerator(BaseCwlGenerator):
         doc.update(deepcopy(spec.extra))
         return doc
 
-    def render(self, step, *, shebang: bool = True) -> str:
-        text = self.dump(self.document(step))
+    def render(
+        self,
+        step,
+        *,
+        shebang: bool = True,
+        resource_requirement: dict[str, int] | None = None,
+    ) -> str:
+        text = self.dump(
+            self.document(
+                step,
+                resource_requirement=resource_requirement,
+            )
+        )
         if shebang:
             return f"#!/usr/bin/env cwl-runner\n{text}"
         return text

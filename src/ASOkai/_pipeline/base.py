@@ -10,10 +10,19 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
-from ASOkai._cwl.spec import CwlCommandLineToolSpec, StepSpec
+from ASOkai._cwl.spec import CwlCommandLineToolSpec, ScalarParam, StepSpec
+
+
+_N_PROCESSES_PARAM = ScalarParam(
+    "n_processes",
+    int,
+    default=1,
+    doc="Number of processes allocated to this step.",
+)
 
 
 @runtime_checkable
@@ -54,14 +63,33 @@ class Step(Runnable):
         """Return optional file override inputs for this step."""
         return self.spec.input_overrides()
 
+    def _validate_standard_parameters(self) -> None:
+        for param in (*self.spec.params, *self.spec.inputs):
+            if (
+                param.name == _N_PROCESSES_PARAM.name
+                or param.cli_prefix == _N_PROCESSES_PARAM.cli_prefix
+            ):
+                raise ValueError(
+                    f"Step '{self.name}' declares reserved standard parameter "
+                    f"'{_N_PROCESSES_PARAM.name}'."
+                )
+
     @property
     def cwl_spec(self) -> CwlCommandLineToolSpec:
         """Return the generated lower-level CWL tool spec for this step."""
-        return self.spec.to_cwl_tool_spec()
+        self._validate_standard_parameters()
+        spec = self.spec.to_cwl_tool_spec()
+        n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
+        if n_processes_input is None:
+            raise RuntimeError("The standard n_processes parameter must be a CWL input.")
+        return replace(spec, inputs=[*spec.inputs, n_processes_input])
 
     def build_parser(self, *, description: str | None = None):
         """Build an argparse parser from this step's parameter spec."""
-        return self.spec.build_parser(description=description or self.description)
+        self._validate_standard_parameters()
+        parser = self.spec.build_parser(description=description or self.description)
+        _N_PROCESSES_PARAM.add_to_parser(parser)
+        return parser
 
     def _output_template_values(self, config: dict) -> dict[str, Any]:
         """Resolve config-backed values used by output path templates."""
@@ -160,7 +188,9 @@ class AnalysisStep(Step):
             raise RuntimeError(f"Analysis step '{self.name}' does not define analysis_cls.")
 
         inputs = self.load_analysis_inputs(args)
-        analysis = self.analysis_cls(**self.analysis_kwargs(args, inputs))
+        analysis_kwargs = self.analysis_kwargs(args, inputs)
+        analysis_kwargs.setdefault("n_processes", args.n_processes)
+        analysis = self.analysis_cls(**analysis_kwargs)
         payload = {
             **self.analysis_metadata(args, inputs),
             "results": analysis.run(),

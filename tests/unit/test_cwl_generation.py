@@ -249,6 +249,113 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     }
 
 
+def test_generate_cwl_adds_each_steps_configured_resources(workflow_config):
+    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
+    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+
+    workflow_config["resources"] = {
+        "download-genome": {"n_processes": 2, "memory_mb": 4096},
+        "create-target-gene": {"n_processes": 8, "memory_mb": 16384},
+    }
+
+    generated = generate_cwl_bundle(
+        [DownloadGenomeStep(), CreateTargetGeneStep()],
+        {},
+        workflow_config,
+    )
+    download = yaml.safe_load(generated.step_cwls["download-genome.cwl"])
+    create = yaml.safe_load(generated.step_cwls["create-target-gene.cwl"])
+    workflow = yaml.safe_load(generated.run_cwl)
+
+    assert download["requirements"]["ResourceRequirement"] == {
+        "coresMin": 2,
+        "ramMin": 4096,
+    }
+    assert create["requirements"]["ResourceRequirement"] == {
+        "coresMin": 8,
+        "ramMin": 16384,
+    }
+    assert download["inputs"]["n_processes"] == {
+        "type": "int",
+        "doc": "Number of processes allocated to this step.",
+        "default": 1,
+        "inputBinding": {"prefix": "--n-processes"},
+    }
+    assert create["inputs"]["n_processes"] == download["inputs"]["n_processes"]
+    assert workflow["steps"]["step_download_genome"]["in"]["n_processes"] == {
+        "default": 2,
+    }
+    assert workflow["steps"]["step_create_target_gene"]["in"]["n_processes"] == {
+        "default": 8,
+    }
+    assert "n_processes" not in workflow["inputs"]
+
+
+def test_generate_cwl_uses_default_resource_requirement_when_not_configured(
+    workflow_config,
+):
+    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+
+    generated = generate_cwl_bundle(
+        [DownloadGenomeStep()],
+        {},
+        workflow_config,
+    )
+    download = yaml.safe_load(generated.step_cwls["download-genome.cwl"])
+
+    assert download["requirements"]["ResourceRequirement"] == {
+        "coresMin": 1,
+        "ramMin": 4096,
+    }
+
+
+def test_generate_cwl_resource_precedence(workflow_config):
+    step = _spec_step(
+        "authored-resources",
+        StepSpec(
+            requirements={
+                "ResourceRequirement": {
+                    "coresMin": 6,
+                    "ramMin": 12288,
+                    "tmpdirMin": 2048,
+                }
+            },
+            outputs=[OutputParam("result", temp_filename="result.txt")],
+        ),
+    )
+    workflow_config["resources"] = {
+        "authored-resources": {"memory_mb": 8192},
+    }
+
+    generated = generate_cwl_bundle([step], {}, workflow_config)
+    document = yaml.safe_load(generated.step_cwls["authored-resources.cwl"])
+
+    assert document["requirements"]["ResourceRequirement"] == {
+        "coresMin": 6,
+        "ramMin": 8192,
+        "tmpdirMin": 2048,
+    }
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        ScalarParam("n_processes", int),
+        ScalarParam("workers", int, prefix="--n-processes"),
+    ],
+)
+def test_step_rejects_reserved_n_processes_parameter(parameter):
+    step = _spec_step(
+        "conflicting-processes",
+        StepSpec(params=[parameter]),
+    )
+
+    with pytest.raises(ValueError, match="reserved.*n_processes"):
+        _ = step.cwl_spec
+    with pytest.raises(ValueError, match="reserved.*n_processes"):
+        step.build_parser()
+
+
 def test_generate_cwl_normalizes_step_ids_with_underscores(workflow_config):
     from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
     from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep

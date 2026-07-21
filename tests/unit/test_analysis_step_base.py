@@ -11,8 +11,11 @@ from ASOkai._pipeline.base import AnalysisStep
 
 
 class FakeAnalysis:
-    def __init__(self, value):
+    last_process_count = None
+
+    def __init__(self, value, n_processes):
         self.value = value
+        type(self).last_process_count = n_processes
 
     def run(self):
         return {"site-1": {"value": self.value}}
@@ -56,7 +59,7 @@ class MissingAnalysisClassStep(FakeAnalysisStep):
 
 def test_analysis_step_run_from_args_writes_metadata_and_results(tmp_path):
     output = tmp_path / "analysis.json"
-    args = Namespace(analysis_output=output, value=7)
+    args = Namespace(analysis_output=output, value=7, n_processes=3)
 
     result = FakeAnalysisStep().run_from_args(args)
 
@@ -66,10 +69,15 @@ def test_analysis_step_run_from_args_writes_metadata_and_results(tmp_path):
         "value": 7,
         "results": {"site-1": {"value": 7}},
     }
+    assert FakeAnalysis.last_process_count == 3
 
 
 def test_analysis_step_requires_analysis_class(tmp_path):
-    args = Namespace(analysis_output=tmp_path / "analysis.json", value=7)
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.json",
+        value=7,
+        n_processes=1,
+    )
 
     with pytest.raises(RuntimeError, match="analysis_cls"):
         MissingAnalysisClassStep().run_from_args(args)

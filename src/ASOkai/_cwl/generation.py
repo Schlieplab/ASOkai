@@ -16,12 +16,14 @@ import re
 from typing import Any
 
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
+from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._cwl.spec import (
     BaseCwlGenerator,
     StepCwlGenerator,
     step_cwl_filename,
     step_cwl_run_path,
 )
+from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Step
 from ASOkai._pipeline.registry import get_steps
 
@@ -172,6 +174,12 @@ class JobCwlGenerator(BaseCwlGenerator):
         cwl_steps = {}
         for step in step_objs:
             in_map: dict[str, str | dict] = {}
+
+            in_map[cfg.RESOURCE_N_PROCESSES_KEY] = {
+                "default": cfg.step_resources(config, step.name)[
+                    cfg.RESOURCE_N_PROCESSES_KEY
+                ]
+            }
 
             for cwl_key in step.config_map:
                 in_map[cwl_key] = cwl_key
@@ -325,12 +333,25 @@ def generate_cwl_bundle(
         publication_plan,
     )
     step_generator = StepCwlGenerator()
+    step_cwls = {}
+    for step in step_objs:
+        authored_requirement = step.cwl_spec.requirements.get(
+            "ResourceRequirement",
+            {},
+        )
+        resource_requirement = cwl_resource_requirement(
+            config,
+            step.name,
+            authored_requirement,
+        )
+        step_cwls[step_cwl_filename(step)] = step_generator.render(
+            step,
+            resource_requirement=resource_requirement,
+        )
+
     return GeneratedCwlBundle(
         run_cwl=run_cwl,
         publish_cwl=PublisherCwlGenerator().render(publication_plan),
         output_layout=publication_plan.render(),
-        step_cwls={
-            step_cwl_filename(step): step_generator.render(step)
-            for step in step_objs
-        },
+        step_cwls=step_cwls,
     )

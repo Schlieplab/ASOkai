@@ -58,6 +58,26 @@ Target attributes:
 
 The `ASOkai` CLI is primarily driven by the configuration file (`config.yaml`). This file contains all the necessary parameters for the different workflows, tasks, and steps. Commands allow you to override specific configuration settings directly via command-line arguments.
 
+Each step can declare its single-node resource request under `resources`:
+
+```yaml
+resources:
+  default:
+    n_processes: 1
+    memory_mb: 4096
+  download-genome:
+    n_processes: 1
+    memory_mb: 4096
+  create-target-gene:
+    n_processes: 1
+    memory_mb: 4096
+```
+
+Missing per-step fields inherit from `resources.default`; if the entire section
+is omitted, ASOkai uses one process and 4096 MiB. `memory_mb` is measured in
+MiB. ASOkai translates these values to the CWL `ResourceRequirement` fields
+`coresMin` and `ramMin`.
+
 ### Reporting
 
 Most commands support an optional `--report` flag, which generates a summary report for that specific step.

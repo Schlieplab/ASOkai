@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Unit tests for the Serializable base class.
+Filename: tests/unit/test_serializer.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Unit tests for the Serializable base class.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 import json
 from Bio.Seq import Seq

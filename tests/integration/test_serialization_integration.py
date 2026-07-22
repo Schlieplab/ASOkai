@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Integration tests for complete serialization workflows.
+Filename: tests/integration/test_serialization_integration.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Integration tests for complete serialization workflows.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 import json
 from Bio.Seq import Seq

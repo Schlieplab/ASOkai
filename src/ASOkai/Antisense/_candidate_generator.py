@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Candidate generation from target sites."""
+"""
+Filename: src/ASOkai/Antisense/_candidate_generator.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Candidate generation from target sites.
+License: LGPL-3.0-or-later
+"""
 
 from abc import ABC, abstractmethod
 

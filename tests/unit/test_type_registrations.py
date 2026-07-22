@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Unit tests for attribute adapters registered on Serializable.
+Filename: tests/unit/test_type_registrations.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Unit tests for attribute adapters registered on Serializable.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 from ASOkai.Utils import Serializable
 

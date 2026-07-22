@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Integration coverage for the CWL-only output publisher prototype."""
+"""
+Filename: tests/unit/test_cwl_publisher.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Integration coverage for the CWL-only output publisher prototype.
+License: LGPL-3.0-or-later
+"""
 
 import errno
 import os

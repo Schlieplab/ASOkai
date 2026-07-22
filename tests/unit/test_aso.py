@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Tests for antisense oligonucleotide domain classes."""
+"""
+Filename: tests/unit/test_aso.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for antisense oligonucleotide domain classes.
+License: LGPL-3.0-or-later
+"""
 
 import inspect
 

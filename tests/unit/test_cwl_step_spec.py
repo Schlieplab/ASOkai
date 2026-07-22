@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""Tests for systematic step parameter specs."""
+"""
+Filename: tests/unit/test_cwl_step_spec.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for systematic step parameter specs.
+License: LGPL-3.0-or-later
+"""
+
 from __future__ import annotations
 
 import inspect

@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""Tests for writing standalone CWL job bundles."""
+"""
+Filename: tests/unit/test_cwl_export.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for writing standalone CWL job bundles.
+License: LGPL-3.0-or-later
+"""
+
 from datetime import datetime
 from unittest.mock import patch
 

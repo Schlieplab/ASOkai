@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""Tests for StandardWorkflow."""
+"""
+Filename: tests/unit/test_standard_workflow.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for StandardWorkflow.
+License: LGPL-3.0-or-later
+"""
+
 import pytest
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 from ASOkai._pipeline.base import Runnable, Workflow, Step, Task

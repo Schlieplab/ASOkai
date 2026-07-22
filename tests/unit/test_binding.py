@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Tests for therapeutic-to-site binding relationships."""
+"""
+Filename: tests/unit/test_binding.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for therapeutic-to-site binding relationships.
+License: LGPL-3.0-or-later
+"""
 
 from ASOkai.Antisense import Binding
 

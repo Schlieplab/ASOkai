@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Functional tests for TargetCreator base class.
+Filename: tests/unit/test_target_creator_functionality.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Functional tests for TargetCreator base class.
+License: LGPL-3.0-or-later
 """
+
 import inspect
 
 import pytest

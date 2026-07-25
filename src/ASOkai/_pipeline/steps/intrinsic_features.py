@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import ClassVar
 
 from ASOkai.Types import TargetRegion
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai._cwl.spec import (
     TemplateField,
     OutputPathTemplate,
-    InputParam,
-    OutputParam,
+    FileInput,
+    FileOutput,
+    OutputRef,
     ScalarParam,
     StepSpec,
 )
@@ -31,7 +31,6 @@ class IntrinsicFeaturesStep(AnalysisStep):
     description = "Computes intrinsic features (GC content, T-runs, AT-runs) for each ASO target site."
     analysis_cls = IntrinsicFeaturesAnalysis
     cli_module = "ASOkai._pipeline.steps.intrinsic_features"
-    dependencies: ClassVar[list[str]] = ["create-target-gene"]
     spec = StepSpec(
         requirements={
             "WorkReuse": {"enableReuse": True},
@@ -59,16 +58,17 @@ class IntrinsicFeaturesStep(AnalysisStep):
             ),
         ],
         inputs=[
-            InputParam(
+            FileInput(
                 "target_gene",
+                source=OutputRef("create-target-gene", "target_gene"),
                 override="target.target_gene_path",
                 doc="Serialized target gene object from create-target-gene.",
             ),
         ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 "intrinsic_features",
-                temp_filename="intrinsic_features.json",
+                media_type="application/json",
                 destination=OutputPathTemplate(
                     "{assembly}/targets/{target}/analysis/intrinsic/"
                     "{target}_k{k}_{region}_intrinsic.json",

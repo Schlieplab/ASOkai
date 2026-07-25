@@ -14,6 +14,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ASOkai._cwl.spec import OutputRef
 from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ class ExecutionPlan:
     """Describes exactly what needs to run and what is already done."""
 
     steps_to_run: list[Step]
-    pre_resolved: dict[str, Path] = field(default_factory=dict)
+    pre_resolved: dict[OutputRef, Path] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ def _resolve_external_deps(
     steps: list[Step],
     registry: dict[str, Step],
     config: dict,
-) -> dict[str, Path]:
+) -> dict[OutputRef, Path]:
     """
     Validate deps outside the current plan and reuse completed outputs.
 
@@ -130,27 +131,41 @@ def _resolve_external_deps(
     already have outputs on disk. Otherwise the caller should use recursive=True.
     """
     by_name = {s.name: s for s in steps}
-    pre_resolved: dict[str, Path] = {}
+    pre_resolved: dict[OutputRef, Path] = {}
 
     for step in steps:
-        for dep_name in step.dependencies:
-            if dep_name in by_name:
-                continue
-
-            dep = registry.get(dep_name)
+        for file_input in step.spec.inputs:
+            source = file_input.source
+            dep = by_name.get(source.step) or registry.get(source.step)
             if dep is None:
                 raise ValueError(
-                    f"Step '{step.name}' depends on unknown step '{dep_name}'."
+                    f"Step '{step.name}' references unknown producer "
+                    f"'{source.step}'."
                 )
+            try:
+                dep.spec.output(source.output)
+            except KeyError as error:
+                raise ValueError(
+                    f"Step '{step.name}' input '{file_input.name}' references "
+                    f"unknown output '{source.output}' on step '{source.step}'."
+                ) from error
+
+            if source.step in by_name:
+                continue
+
             if not dep.outputs_exist(config):
                 raise RuntimeError(
-                    f"Step '{step.name}' requires '{dep_name}' but its outputs are missing. "
-                    f"Run '{dep_name}' first, or use --recursive to run dependencies automatically."
+                    f"Step '{step.name}' requires '{source.step}' but its outputs "
+                    f"are missing. Run '{source.step}' first, or use --recursive "
+                    "to run dependencies automatically."
                 )
 
-            for key, path in dep.validated_output_paths(config).items():
-                pre_resolved[key] = path
-            logger.debug("[plan] dependency '%s' outputs exist — pre-resolved.", dep_name)
+            pre_resolved[source] = dep.validated_output_paths(config)[source.output]
+            logger.debug(
+                "[plan] dependency '%s/%s' exists — pre-resolved.",
+                source.step,
+                source.output,
+            )
 
     return pre_resolved
 
@@ -213,7 +228,7 @@ def build_plan(
     for step in ordered:
         if not force and step.outputs_exist(config):
             for key, path in step.validated_output_paths(config).items():
-                pre_resolved[key] = path
+                pre_resolved[OutputRef(step.name, key)] = path
             logger.debug("[plan] '%s' outputs exist — pre-resolved.", step.name)
         else:
             steps_to_run.append(step)

@@ -10,8 +10,9 @@ Low-level CWL `CommandLineTool` documents are generated from each step's
 separated by role:
 
 - `params`: typed scalar `ScalarParam` values.
-- `inputs`: existing file/path `InputParam` values.
-- `outputs`: produced-file `OutputParam` values with stable temporary filenames.
+- `inputs`: `FileInput` values that reference exact producer outputs.
+- `outputs`: produced-file `FileOutput` values with destination templates and
+  media types.
 
 ASOkai derives CWL inputs, CWL outputs, command-line parser options, config
 keys, and file override keys from that one spec.
@@ -20,7 +21,13 @@ Plugin packages should import the supported step-authoring contracts from
 `ASOkai.plugin_api`, rather than importing the internal `ASOkai._cwl` package:
 
 ```python
-from ASOkai.plugin_api import InputParam, OutputParam, ScalarParam, StepSpec
+from ASOkai.plugin_api import (
+    FileInput,
+    FileOutput,
+    OutputRef,
+    ScalarParam,
+    StepSpec,
+)
 ```
 
 ```python
@@ -29,24 +36,32 @@ StepSpec(
         ScalarParam("assembly", str, config="genome.assembly_id"),
     ],
     inputs=[
-        InputParam("dna", override="genome.dna_path"),
+        FileInput(
+            "dna",
+            source=OutputRef("download-genome", "dna"),
+            override="genome.dna_path",
+        ),
     ],
     outputs=[
-        OutputParam(
+        FileOutput(
             "result",
-            temp_filename="result.json",
             destination="{assembly}/results/{assembly}.result.json",
+            media_type="application/json",
         ),
     ],
 )
 ```
 
-The stable `result.json` filename is used only inside the CWL working directory.
+Dependencies are not declared separately: `Step.dependencies` is derived from
+the `OutputRef` values in its inputs.
+
 The structured `destination` template defines the complete path relative to
 `datadir`. The base `Step` derives output paths, existence checks, and cleanup
-from this declaration. The temporary filename becomes a fixed command-line
-argument and a static CWL output glob, so it is never exposed as a configurable
-input in `run.cwl` or `job.yml`.
+from this declaration. When a job is generated, the rendered destination's
+basename becomes the filename inside the isolated CWL working directory.
+ASOkai uses it for the fixed command-line argument and static output glob, so
+contributors do not declare a second filename and it is never exposed as a
+configurable input in `run.cwl` or `job.yml`.
 
 Generated step files are written into export/run bundles under:
 

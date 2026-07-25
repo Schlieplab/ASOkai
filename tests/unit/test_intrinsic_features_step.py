@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 import yaml
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
-from ASOkai._cwl.spec import StepCwlGenerator
+from ASOkai._cwl.spec import OutputRef, StepCwlGenerator
 from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.base import (
     AnalysisStep,
@@ -47,7 +47,11 @@ def test_name(step):
 
 
 def test_dependencies(step):
-    assert "create-target-gene" in step.dependencies
+    assert step.dependencies == ["create-target-gene"]
+    assert step.spec.input("target_gene").source == OutputRef(
+        "create-target-gene",
+        "target_gene",
+    )
 
 
 def test_config_map_keys(step):
@@ -102,8 +106,8 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_spec_generates_command_line_tool(step):
-    doc = yaml.safe_load(StepCwlGenerator().render(step))
+def test_cwl_spec_generates_command_line_tool(step, config):
+    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
 
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == ["ASOkai", "step", "intrinsic-features"]
@@ -113,10 +117,10 @@ def test_cwl_spec_generates_command_line_tool(step):
     assert "intrinsic_features_filename" not in doc["inputs"]
     assert {
         "prefix": "--intrinsic-features-output",
-        "valueFrom": "intrinsic_features.json",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna_intrinsic.json",
     } in doc["arguments"]
     assert doc["outputs"]["intrinsic_features"]["outputBinding"]["glob"] == (
-        "intrinsic_features.json"
+        "ENSG00000133703_k16_pre-mrna_intrinsic.json"
     )
 
 

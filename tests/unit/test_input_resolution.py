@@ -8,12 +8,17 @@ Description: Tests for pipeline input resolution.
 License: LGPL-3.0-or-later
 """
 
-from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
 
-from ASOkai._cwl.spec import InputParam, OutputParam, ScalarParam, StepSpec
+from ASOkai._cwl.spec import (
+    FileInput,
+    FileOutput,
+    OutputRef,
+    ScalarParam,
+    StepSpec,
+)
 from ASOkai._cwl.input_resolution import (
     resolve_step_inputs,
     resolve_step_sequence_inputs,
@@ -26,7 +31,6 @@ class _FakeStep(Step):
     name = "fake-step"
     description = ""
     cli_module = "tests.fake_step"
-    dependencies: ClassVar[list[str]] = []
     spec = StepSpec()
 
     def __init__(self, *, exists: bool = False) -> None:
@@ -56,7 +60,10 @@ def _fake_step(
         pass
 
     ConfiguredFakeStep.name = name
-    ConfiguredFakeStep.dependencies = list(deps or [])
+    file_input_names = set(input_overrides or {}) | set(input_names or {})
+    if file_input_names and len(deps or []) != 1:
+        raise ValueError("Test file inputs require exactly one producer.")
+    producer = (deps or [None])[0]
     ConfiguredFakeStep.spec = StepSpec(
         params=[
             ScalarParam(
@@ -67,17 +74,16 @@ def _fake_step(
             for key in set(config_map or {}) - set(input_overrides or {})
         ],
         inputs=[
-            InputParam(
+            FileInput(
                 key,
-                config=(config_map or {}).get(key),
+                source=OutputRef(producer, key),
                 override=(input_overrides or {}).get(key),
             )
-            for key in set(input_overrides or {}) | set(input_names or {})
+            for key in file_input_names
         ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 key,
-                temp_filename=f"{key}.txt",
                 destination=f"{name}/{key}.txt",
             )
             for key in output_names
@@ -106,7 +112,7 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
         resolved = resolve_step_inputs(
             step,
             config,
-            pre_resolved={"shared": tmp_path / "dep.fa"},
+            pre_resolved={OutputRef("dep", "shared"): tmp_path / "dep.fa"},
         )
 
     assert resolved["shared"].source == "input_override"
@@ -143,7 +149,7 @@ def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
         resolved = resolve_step_inputs(
             step,
             config,
-            pre_resolved={"dep_file": path},
+            pre_resolved={OutputRef("dep", "dep_file"): path},
         )
 
     assert resolved["dep_file"].source == "dep_disk"

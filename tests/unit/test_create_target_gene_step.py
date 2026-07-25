@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 import yaml
-from ASOkai._cwl.spec import StepCwlGenerator
+from ASOkai._cwl.spec import OutputRef, StepCwlGenerator
 from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.base import CoreStep, Step
 
@@ -41,7 +41,8 @@ def test_name(step):
 
 
 def test_dependencies(step):
-    assert "download-genome" in step.dependencies
+    assert step.dependencies == ["download-genome"]
+    assert step.spec.input("dna").source == OutputRef("download-genome", "dna")
 
 
 def test_config_map_keys(step):
@@ -89,8 +90,8 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_spec_generates_command_line_tool(step):
-    doc = yaml.safe_load(StepCwlGenerator().render(step))
+def test_cwl_spec_generates_command_line_tool(step, config):
+    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
 
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == ["ASOkai", "step", "create-target-gene"]
@@ -100,10 +101,10 @@ def test_cwl_spec_generates_command_line_tool(step):
     assert "target_gene_filename" not in doc["inputs"]
     assert {
         "prefix": "--target-gene-output",
-        "valueFrom": "target_gene.json",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna.json",
     } in doc["arguments"]
     assert doc["outputs"]["target_gene"]["outputBinding"]["glob"] == (
-        "target_gene.json"
+        "ENSG00000133703_k16_pre-mrna.json"
     )
 
 

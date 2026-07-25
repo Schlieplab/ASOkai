@@ -142,9 +142,11 @@ def run_plan(
 
     if not plan.steps_to_run:
         logger.info("[%s] all outputs already exist, nothing to run.", label)
-        for key, path in plan.pre_resolved.items():
-            logger.info("  %s: %s", key, path)
-        return dict(plan.pre_resolved)
+        outputs: dict[str, Path] = {}
+        for ref, path in plan.pre_resolved.items():
+            logger.info("  %s/%s: %s", ref.step, ref.output, path)
+            outputs[ref.output] = path
+        return outputs
 
     cwl_bundle = generate_cwl_bundle(
         plan.steps_to_run,

@@ -6,12 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import ClassVar, Literal
+from typing import Literal
 
 from ASOkai.Types import TargetRegion
 from ASOkai._cwl.spec import (
-    InputParam,
-    OutputParam,
+    FileInput,
+    FileOutput,
+    OutputRef,
     OutputPathTemplate,
     ScalarParam,
     StepSpec,
@@ -24,7 +25,6 @@ class GenerateAntisenseCandidatesStep(CoreStep):
     name = "generate-antisense-candidates"
     description = "Generates antisense therapeutic candidates for target sites."
     cli_module = "ASOkai._pipeline.steps.generate_antisense_candidates"
-    dependencies: ClassVar[list[str]] = ["create-target-gene"]
     spec = StepSpec(
         requirements={"WorkReuse": {"enableReuse": True}},
         params=[
@@ -51,16 +51,17 @@ class GenerateAntisenseCandidatesStep(CoreStep):
             ),
         ],
         inputs=[
-            InputParam(
+            FileInput(
                 "target_gene",
+                source=OutputRef("create-target-gene", "target_gene"),
                 override="target.target_gene_path",
                 doc="Serialized target gene object from create-target-gene.",
             ),
         ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 "therapeutics",
-                temp_filename="therapeutics.json",
+                media_type="application/json",
                 destination=OutputPathTemplate(
                     "{assembly}/targets/{target}/antisense/"
                     "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
@@ -71,9 +72,9 @@ class GenerateAntisenseCandidatesStep(CoreStep):
                 ),
                 doc="Serialized antisense therapeutic candidates.",
             ),
-            OutputParam(
+            FileOutput(
                 "bindings",
-                temp_filename="bindings.json",
+                media_type="application/json",
                 destination=OutputPathTemplate(
                     "{assembly}/targets/{target}/antisense/"
                     "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"

@@ -10,9 +10,10 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from ASOkai._cwl.spec import (
+    FileInput,
     CwlToolArgument,
-    InputParam,
-    OutputParam,
+    FileOutput,
+    OutputRef,
     OutputPathTemplate,
     ScalarParam,
     StepSpec,
@@ -29,10 +30,11 @@ from ASOkai._pipeline.base import (
 
 __all__ = [
     "AnalysisStep",
+    "FileInput",
     "CoreStep",
     "CwlToolArgument",
-    "InputParam",
-    "OutputParam",
+    "FileOutput",
+    "OutputRef",
     "OutputPathTemplate",
     "Runnable",
     "ScalarParam",

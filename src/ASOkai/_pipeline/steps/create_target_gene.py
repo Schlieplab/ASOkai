@@ -12,14 +12,14 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from typing import ClassVar
 
 from ASOkai.Types import TargetRegion
 from ASOkai._cwl.spec import (
     TemplateField,
     OutputPathTemplate,
-    InputParam,
-    OutputParam,
+    FileInput,
+    FileOutput,
+    OutputRef,
     ScalarParam,
     StepSpec,
 )
@@ -33,7 +33,6 @@ class CreateTargetGeneStep(CoreStep):
     name = "create-target-gene"
     description = "Creates a target gene object from genome data and extracts ASO target sites."
     cli_module = "ASOkai._pipeline.steps.create_target_gene"
-    dependencies: ClassVar[list[str]] = ["download-genome"]
     spec = StepSpec(
         requirements={
             "WorkReuse": {"enableReuse": True},
@@ -63,15 +62,35 @@ class CreateTargetGeneStep(CoreStep):
             ScalarParam("species", str, config="genome.species", doc="Species name (e.g. Homo_sapiens)."),
         ],
         inputs=[
-            InputParam("dna", override="genome.dna_path", doc="Primary assembly FASTA from download-genome."),
-            InputParam("cdna", override="genome.cdna_path", doc="cDNA FASTA from download-genome."),
-            InputParam("annotation", override="genome.annotation_path", doc="GTF annotation file from download-genome."),
-            InputParam("db", override="genome.db_path", doc="Reusable annotation database from download-genome."),
+            FileInput(
+                "dna",
+                source=OutputRef("download-genome", "dna"),
+                override="genome.dna_path",
+                doc="Primary assembly FASTA from download-genome.",
+            ),
+            FileInput(
+                "cdna",
+                source=OutputRef("download-genome", "cdna"),
+                override="genome.cdna_path",
+                doc="cDNA FASTA from download-genome.",
+            ),
+            FileInput(
+                "annotation",
+                source=OutputRef("download-genome", "annotation"),
+                override="genome.annotation_path",
+                doc="GTF annotation file from download-genome.",
+            ),
+            FileInput(
+                "db",
+                source=OutputRef("download-genome", "db"),
+                override="genome.db_path",
+                doc="Reusable annotation database from download-genome.",
+            ),
         ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 "target_gene",
-                temp_filename="target_gene.json",
+                media_type="application/json",
                 destination=OutputPathTemplate(
                     "{assembly}/targets/{target}/{target}_k{k}_{region}.json",
                     fields={

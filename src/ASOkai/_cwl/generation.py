@@ -18,14 +18,15 @@ from typing import Any
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._cwl.spec import (
+    FileInput,
     BaseCwlGenerator,
+    OutputRef,
     StepCwlGenerator,
     step_cwl_filename,
     step_cwl_run_path,
 )
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Step
-from ASOkai._pipeline.registry import get_steps
 
 
 def _cwl_step_id(step_name: str) -> str:
@@ -84,21 +85,6 @@ def _publication_sources(step_objs: list[Step]) -> list[str]:
     ]
 
 
-def _validate_unique_temp_filenames(step_objs: list[Step]) -> None:
-    """Reject output files that would collide inside CWL working directories."""
-    owners: dict[str, str] = {}
-    for step in step_objs:
-        for output in step.spec.outputs:
-            owner = f"{step.name}/{output.name}"
-            previous = owners.get(output.temp_filename)
-            if previous is not None:
-                raise ValueError(
-                    f"CWL temporary filename '{output.temp_filename}' is used by both "
-                    f"'{previous}' and '{owner}'."
-                )
-            owners[output.temp_filename] = owner
-
-
 def _workflow_input_type(cwl_type: Any) -> Any:
     """Return a valid Workflow input declaration for a step input type."""
     if isinstance(cwl_type, dict):
@@ -121,13 +107,27 @@ def _declare_workflow_input(
     all_inputs.setdefault(name, deepcopy(cwl_type))
 
 
+def _has_input_override(
+    file_input: FileInput,
+    config: dict,
+) -> bool:
+    """Return whether this file input has a configured path override."""
+    if not file_input.override:
+        return False
+    try:
+        cfg.resolve(config, file_input.override)
+    except KeyError:
+        return False
+    return True
+
+
 class JobCwlGenerator(BaseCwlGenerator):
     """Build the top-level runtime CWL document that wires together planned steps."""
 
     def document(
         self,
         step_objs: list[Step],
-        pre_resolved: dict[str, Path],
+        pre_resolved: dict[OutputRef, Path],
         config: dict,
         publication_plan: PublicationPlan,
     ) -> dict[str, Any]:
@@ -142,32 +142,23 @@ class JobCwlGenerator(BaseCwlGenerator):
         - every planned step output is wired into the final publisher.
         - the publisher's top-level data roots become workflow outputs.
         """
-        step_by_name = {s.name: s for s in step_objs}
-        step_names_in_seq = set(step_by_name)
+        step_names_in_seq = {step.name for step in step_objs}
         all_inputs: dict[str, Any] = {}
-        declared_step_inputs = {
-            input_name
-            for step in step_objs
-            for input_name in step.cwl_spec.input_names()
-        }
-
-        for key in pre_resolved:
-            if key in declared_step_inputs:
-                _declare_workflow_input(all_inputs, key, "File")
+        for step in step_objs:
+            input_types = step.cwl_spec(config).input_types()
+            for file_input in step.spec.inputs:
+                if (
+                    _has_input_override(file_input, config)
+                    or file_input.source.step not in step_names_in_seq
+                ):
+                    _declare_workflow_input(
+                        all_inputs,
+                        file_input.name,
+                        input_types[file_input.name],
+                    )
 
         for step in step_objs:
-            input_types = step.cwl_spec.input_types()
-            for cwl_key in step.input_overrides:
-                wired_by_dependency = any(
-                    dep_name in step_names_in_seq
-                    and cwl_key in _output_names(step_by_name[dep_name])
-                    for dep_name in step.dependencies
-                )
-                if not wired_by_dependency:
-                    _declare_workflow_input(all_inputs, cwl_key, input_types[cwl_key])
-
-        for step in step_objs:
-            input_types = step.cwl_spec.input_types()
+            input_types = step.cwl_spec(config).input_types()
             for cwl_key in step.config_map:
                 _declare_workflow_input(all_inputs, cwl_key, input_types[cwl_key])
 
@@ -184,30 +175,17 @@ class JobCwlGenerator(BaseCwlGenerator):
             for cwl_key in step.config_map:
                 in_map[cwl_key] = cwl_key
 
-            for cwl_key in step.input_overrides:
-                if cwl_key not in in_map:
-                    in_map[cwl_key] = cwl_key
-
-            consumer_inputs = step.cwl_spec.input_names()
-            for dep_name in step.dependencies:
-                if dep_name not in step_names_in_seq:
-                    dep_step = step_by_name.get(dep_name) or get_steps().get(dep_name)
-                    if dep_step is None:
-                        continue
-                    for out_key in _output_names(dep_step):
-                        if out_key in pre_resolved and out_key in consumer_inputs:
-                            in_map[out_key] = out_key
-                    continue
-
-                dep_step = step_by_name[dep_name]
-                dep_cwl_id = _cwl_step_id(dep_name)
-                for out_key in _output_names(dep_step):
-                    if out_key not in consumer_inputs:
-                        continue
-                    if out_key in pre_resolved:
-                        in_map[out_key] = out_key
-                    else:
-                        in_map[out_key] = f"{dep_cwl_id}/{out_key}"
+            for file_input in step.spec.inputs:
+                source = file_input.source
+                if (
+                    _has_input_override(file_input, config)
+                    or source.step not in step_names_in_seq
+                ):
+                    in_map[file_input.name] = file_input.name
+                else:
+                    in_map[file_input.name] = (
+                        f"{_cwl_step_id(source.step)}/{source.output}"
+                    )
 
             cwl_steps[_cwl_step_id(step.name)] = {
                 "run": step_cwl_run_path(step),
@@ -247,7 +225,7 @@ class JobCwlGenerator(BaseCwlGenerator):
     def render(
         self,
         step_objs: list[Step],
-        pre_resolved: dict[str, Path],
+        pre_resolved: dict[OutputRef, Path],
         config: dict,
         publication_plan: PublicationPlan,
     ) -> str:
@@ -320,11 +298,10 @@ class GeneratedCwlBundle:
 
 def generate_cwl_bundle(
     step_objs: list[Step],
-    pre_resolved: dict[str, Path],
+    pre_resolved: dict[OutputRef, Path],
     config: dict,
 ) -> GeneratedCwlBundle:
     """Generate every CWL document required by a runnable bundle."""
-    _validate_unique_temp_filenames(step_objs)
     publication_plan = build_publication_plan(step_objs, config)
     run_cwl = JobCwlGenerator().render(
         step_objs,
@@ -335,7 +312,7 @@ def generate_cwl_bundle(
     step_generator = StepCwlGenerator()
     step_cwls = {}
     for step in step_objs:
-        authored_requirement = step.cwl_spec.requirements.get(
+        authored_requirement = step.cwl_spec(config).requirements.get(
             "ResourceRequirement",
             {},
         )
@@ -346,6 +323,7 @@ def generate_cwl_bundle(
         )
         step_cwls[step_cwl_filename(step)] = step_generator.render(
             step,
+            config,
             resource_requirement=resource_requirement,
         )
 

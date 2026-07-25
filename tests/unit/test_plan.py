@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from typing import cast
 
-from ASOkai._cwl.spec import OutputParam, StepSpec
+from ASOkai._cwl.spec import FileInput, FileOutput, OutputRef, StepSpec
 from ASOkai._pipeline.base import Runnable, Step
 from ASOkai._pipeline.plan import build_plan
 
@@ -32,12 +32,17 @@ def _make_step(
     """Return a minimal concrete Step for plan tests."""
     if output_names is None:
         output_names = [f"{name}_out"]
-    dependencies = list(deps or [])
     spec = StepSpec(
+        inputs=[
+            FileInput(
+                f"{dep}_out",
+                source=OutputRef(dep, f"{dep}_out"),
+            )
+            for dep in deps or []
+        ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 key,
-                temp_filename=f"{key}.txt",
                 destination=f"{name}/{key}.txt",
             )
             for key in output_names
@@ -54,7 +59,6 @@ def _make_step(
     _Step.name = name
     _Step.description = ""
     _Step.cli_module = "tests.fake_step"
-    _Step.dependencies = dependencies
     _Step.spec = spec
     return _Step()
 
@@ -79,7 +83,7 @@ def test_single_step_outputs_exist_goes_to_pre_resolved(cfg):
     step = _make_step("alpha", exists=True, output_names=["result"])
     plan = build_plan([step], cfg)
     assert plan.steps_to_run == []
-    assert "result" in plan.pre_resolved
+    assert OutputRef("alpha", "result") in plan.pre_resolved
 
 
 def test_force_keeps_done_step_in_steps_to_run(cfg):
@@ -94,7 +98,7 @@ def test_dep_done_goes_to_pre_resolved(cfg):
     step = _make_step("step", deps=["dep"])
     plan = build_plan([step, dep], cfg)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert "dep_out" in plan.pre_resolved
+    assert OutputRef("dep", "dep_out") in plan.pre_resolved
 
 
 def test_dep_not_done_included_in_steps_to_run(cfg):
@@ -152,6 +156,40 @@ def test_duplicate_across_runnables_deduplicated(cfg):
     assert sum(1 for s in plan.steps_to_run if s.name == "shared") == 1
 
 
+def test_pre_resolved_outputs_are_keyed_by_producer_and_port(cfg):
+    first = _make_step("first", exists=True, output_names=["result"])
+    second = _make_step("second", exists=True, output_names=["result"])
+
+    plan = build_plan([first, second], cfg)
+
+    assert set(plan.pre_resolved) == {
+        OutputRef("first", "result"),
+        OutputRef("second", "result"),
+    }
+
+
+def test_unknown_referenced_output_raises(cfg):
+    producer = _make_step("producer", output_names=["actual"])
+    consumer = _make_step("consumer")
+    type(consumer).spec = StepSpec(
+        inputs=[
+            FileInput(
+                "input",
+                source=OutputRef("producer", "missing"),
+            )
+        ],
+        outputs=[
+            FileOutput(
+                "consumer_out",
+                destination="consumer/consumer_out.txt",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="unknown output 'missing'"):
+        build_plan([producer, consumer], cfg)
+
+
 # ---------------------------------------------------------------------------
 # Recursive dependency resolution
 # ---------------------------------------------------------------------------
@@ -173,7 +211,7 @@ def test_recursive_skips_done_dep(cfg):
     plan = build_plan([step], cfg, recursive=True, _registry=registry)
     names = [s.name for s in plan.steps_to_run]
     assert "dep" not in names
-    assert "dep_out" in plan.pre_resolved
+    assert OutputRef("dep", "dep_out") in plan.pre_resolved
 
 
 def test_recursive_unknown_dep_raises(cfg):
@@ -189,7 +227,7 @@ def test_nonrecursive_external_done_dep_goes_to_pre_resolved(cfg):
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, recursive=False, _registry=registry)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert "dep_out" in plan.pre_resolved
+    assert OutputRef("dep", "dep_out") in plan.pre_resolved
 
 
 def test_force_keeps_external_done_dep_pre_resolved(cfg):
@@ -198,7 +236,7 @@ def test_force_keeps_external_done_dep_pre_resolved(cfg):
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, force=True, _registry=registry)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert "dep_out" in plan.pre_resolved
+    assert OutputRef("dep", "dep_out") in plan.pre_resolved
 
 
 def test_nonrecursive_external_missing_dep_raises(cfg):

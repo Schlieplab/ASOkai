@@ -11,15 +11,15 @@ License: LGPL-3.0-or-later
 from pathlib import Path
 import shutil
 import subprocess
-from typing import ClassVar
 
 import pytest
 import yaml
 
 from ASOkai._cwl.generation import generate_cwl_bundle
 from ASOkai._cwl.spec import (
-    InputParam,
-    OutputParam,
+    FileInput,
+    FileOutput,
+    OutputRef,
     ScalarParam,
     StepCwlGenerator,
     StepSpec,
@@ -32,7 +32,6 @@ class _SpecStep(Step):
     name = "test-step"
     description = "Test step."
     cli_module = "tests.fake_step"
-    dependencies: ClassVar[list[str]] = []
     spec = StepSpec()
 
     def outputs_exist(self, config):
@@ -45,8 +44,6 @@ class _SpecStep(Step):
 def _spec_step(
     name: str,
     spec: StepSpec,
-    *,
-    dependencies: list[str] | None = None,
 ) -> Step:
     """Return an isolated Step subclass configured with class-level metadata."""
 
@@ -55,13 +52,12 @@ def _spec_step(
 
     ConfiguredSpecStep.name = name
     ConfiguredSpecStep.spec = spec
-    ConfiguredSpecStep.dependencies = list(dependencies or [])
     return ConfiguredSpecStep()
 
 
 def _generate_run_cwl(
     steps: list[Step],
-    pre_resolved: dict[str, Path],
+    pre_resolved: dict[OutputRef, Path],
     config: dict,
 ) -> str:
     return generate_cwl_bundle(steps, pre_resolved, config).run_cwl
@@ -170,7 +166,10 @@ def test_generate_cwl_pre_resolved_dependency_outputs_are_file_inputs(tmp_path):
     doc = yaml.safe_load(
         _generate_run_cwl(
             [CreateTargetGeneStep()],
-            {"dna": tmp_path / "dna.fa.gz", "cdna": tmp_path / "cdna.fa.gz"},
+            {
+                OutputRef("download-genome", "dna"): tmp_path / "dna.fa.gz",
+                OutputRef("download-genome", "cdna"): tmp_path / "cdna.fa.gz",
+            },
             config,
         )
     )
@@ -328,7 +327,7 @@ def test_generate_cwl_resource_precedence(workflow_config):
                     "tmpdirMin": 2048,
                 }
             },
-            outputs=[OutputParam("result", temp_filename="result.txt")],
+            outputs=[FileOutput("result", destination="result.txt")],
         ),
     )
     workflow_config["resources"] = {
@@ -359,7 +358,7 @@ def test_step_rejects_reserved_n_processes_parameter(parameter):
     )
 
     with pytest.raises(ValueError, match="reserved.*n_processes"):
-        _ = step.cwl_spec
+        step.cwl_spec({})
     with pytest.raises(ValueError, match="reserved.*n_processes"):
         step.build_parser()
 
@@ -403,8 +402,8 @@ def test_registered_step_output_paths_define_names(workflow_config):
 
 def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
     for step in get_steps().values():
-        input_names = step.cwl_spec.input_names()
-        output_names = step.cwl_spec.output_names()
+        input_names = step.cwl_spec(workflow_config).input_names()
+        output_names = step.cwl_spec(workflow_config).output_names()
 
         assert set(step.config_map).issubset(input_names)
         assert set(step.input_overrides).issubset(input_names)
@@ -417,7 +416,7 @@ def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
         StepSpec(
             params=[ScalarParam("shared", str, config="first.shared")],
             outputs=[
-                OutputParam("first_result", temp_filename="first_result.txt")
+                FileOutput("first_result", destination="first_result.txt")
             ],
         ),
     )
@@ -426,7 +425,7 @@ def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
         StepSpec(
             params=[ScalarParam("shared", int, config="second.shared")],
             outputs=[
-                OutputParam("second_result", temp_filename="second_result.txt")
+                FileOutput("second_result", destination="second_result.txt")
             ],
         ),
     )
@@ -438,12 +437,11 @@ def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
 def test_generate_cwl_does_not_wire_undeclared_dependency_outputs(tmp_path):
     producer = _spec_step(
         "producer",
-        StepSpec(outputs=[OutputParam("unused", temp_filename="unused.txt")]),
+        StepSpec(outputs=[FileOutput("unused", destination="unused.txt")]),
     )
     consumer = _spec_step(
         "consumer",
-        StepSpec(outputs=[OutputParam("result", temp_filename="result.txt")]),
-        dependencies=["producer"],
+        StepSpec(outputs=[FileOutput("result", destination="result.txt")]),
     )
 
     doc = yaml.safe_load(
@@ -454,18 +452,61 @@ def test_generate_cwl_does_not_wire_undeclared_dependency_outputs(tmp_path):
     assert "unused" not in doc["inputs"]
 
 
-def test_generate_cwl_rejects_duplicate_temp_filenames(tmp_path):
+def test_generate_cwl_wires_differently_named_input_to_exact_output(tmp_path):
+    producer = _spec_step(
+        "producer",
+        StepSpec(
+            outputs=[FileOutput("result", destination="producer-result.txt")]
+        ),
+    )
+    consumer = _spec_step(
+        "consumer",
+        StepSpec(
+            inputs=[
+                FileInput(
+                    "renamed_input",
+                    source=OutputRef("producer", "result"),
+                )
+            ],
+            outputs=[FileOutput("done", destination="consumer-done.txt")],
+        ),
+    )
+
+    doc = yaml.safe_load(
+        _generate_run_cwl([producer, consumer], {}, {"datadir": str(tmp_path)})
+    )
+
+    assert doc["steps"]["step_consumer"]["in"]["renamed_input"] == (
+        "step_producer/result"
+    )
+
+
+def test_generate_cwl_allows_matching_work_filenames_in_separate_steps(tmp_path):
     first = _spec_step(
         "first",
-        StepSpec(outputs=[OutputParam("shared", temp_filename="shared.txt")]),
+        StepSpec(outputs=[FileOutput("shared", destination="first/shared.txt")]),
     )
     second = _spec_step(
         "second",
-        StepSpec(outputs=[OutputParam("shared", temp_filename="shared.txt")]),
+        StepSpec(outputs=[FileOutput("shared", destination="second/shared.txt")]),
     )
 
-    with pytest.raises(ValueError, match="temporary filename 'shared.txt'.*both"):
-        _generate_run_cwl([first, second], {}, {"datadir": str(tmp_path)})
+    _generate_run_cwl([first, second], {}, {"datadir": str(tmp_path)})
+
+
+def test_generate_cwl_rejects_matching_work_filenames_within_one_step(tmp_path):
+    step = _spec_step(
+        "producer",
+        StepSpec(
+            outputs=[
+                FileOutput("first", destination="a/shared.txt"),
+                FileOutput("second", destination="b/shared.txt"),
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Duplicate CWL output filename.*shared.txt"):
+        _generate_run_cwl([step], {}, {"datadir": str(tmp_path)})
 
 
 @pytest.mark.skipif(shutil.which("cwltool") is None, reason="cwltool is not installed")
@@ -478,7 +519,9 @@ def test_generated_registered_tools_and_workflow_validate_with_cwltool(
     steps_dir.mkdir()
     generator = StepCwlGenerator()
     for step in steps:
-        (steps_dir / f"{step.name}.cwl").write_text(generator.render(step))
+        (steps_dir / f"{step.name}.cwl").write_text(
+            generator.render(step, workflow_config)
+        )
 
     generated = generate_cwl_bundle(steps, {}, workflow_config)
     run_path = tmp_path / "run.cwl"

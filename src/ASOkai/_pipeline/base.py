@@ -49,9 +49,13 @@ class Step(Runnable):
 
     name: ClassVar[str]
     description: ClassVar[str]
-    dependencies: ClassVar[list[str]]
     cli_module: ClassVar[str]
     spec: ClassVar[StepSpec]
+
+    @property
+    def dependencies(self) -> list[str]:
+        """Return dependencies derived from the step's file inputs."""
+        return list(self.spec.dependencies())
 
     @property
     def config_map(self) -> dict[str, str]:
@@ -74,11 +78,12 @@ class Step(Runnable):
                     f"'{_N_PROCESSES_PARAM.name}'."
                 )
 
-    @property
-    def cwl_spec(self) -> CwlCommandLineToolSpec:
+    def cwl_spec(self, config: dict) -> CwlCommandLineToolSpec:
         """Return the generated lower-level CWL tool spec for this step."""
         self._validate_standard_parameters()
-        spec = self.spec.to_cwl_tool_spec()
+        spec = self.spec.to_cwl_tool_spec(
+            self._output_template_values(config),
+        )
         n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
         if n_processes_input is None:
             raise RuntimeError("The standard n_processes parameter must be a CWL input.")
@@ -96,7 +101,7 @@ class Step(Runnable):
         from ASOkai._pipeline import config as cfg
 
         values: dict[str, Any] = {}
-        for param in (*self.spec.params, *self.spec.inputs):
+        for param in self.spec.params:
             if not param.config:
                 continue
             try:

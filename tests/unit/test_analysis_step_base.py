@@ -6,7 +6,7 @@ from argparse import Namespace
 
 import pytest
 
-from ASOkai._cwl.spec import OutputParam, StepSpec
+from ASOkai._cwl.spec import FileOutput, StepSpec
 from ASOkai._pipeline.base import AnalysisStep
 
 
@@ -26,9 +26,8 @@ class FakeAnalysisStep(AnalysisStep):
     description = "Fake analysis."
     analysis_cls = FakeAnalysis
     cli_module = "tests.fake"
-    dependencies = []
     spec = StepSpec(
-        outputs=[OutputParam("analysis", temp_filename="analysis.json")]
+        outputs=[FileOutput("analysis", destination="analysis.json")]
     )
 
     def outdir(self, config):

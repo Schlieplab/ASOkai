@@ -96,8 +96,8 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_spec_generates_command_line_tool(step):
-    doc = yaml.safe_load(StepCwlGenerator().render(step))
+def test_cwl_spec_generates_command_line_tool(step, config):
+    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
 
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == ["ASOkai", "step", "download-genome"]
@@ -108,8 +108,12 @@ def test_cwl_spec_generates_command_line_tool(step):
     assert doc["inputs"]["release"]["type"] == "int"
     assert doc["inputs"]["source"]["default"] == "ensembl"
     assert "dna_filename" not in doc["inputs"]
-    assert {"prefix": "--dna-output", "valueFrom": "dna.fa.gz"} in doc["arguments"]
-    assert doc["outputs"]["dna"]["outputBinding"]["glob"] == "dna.fa.gz"
+    dna_filename = "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+    assert {
+        "prefix": "--dna-output",
+        "valueFrom": dna_filename,
+    } in doc["arguments"]
+    assert doc["outputs"]["dna"]["outputBinding"]["glob"] == dna_filename
 
 
 def test_main_downloads_with_mocked_ensembl_downloader(monkeypatch, tmp_path, capsys):

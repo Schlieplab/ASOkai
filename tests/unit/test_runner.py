@@ -10,10 +10,16 @@ License: LGPL-3.0-or-later
 
 import pytest
 import yaml
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch, MagicMock
-from ASOkai._cwl.spec import StepSpec
+from ASOkai._cwl.spec import (
+    FileInput,
+    FileOutput,
+    OutputRef,
+    StepSpec,
+)
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.base import Runnable, Step
@@ -162,18 +168,32 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
     from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
 
     step = DownloadGenomeStep()
-    monkeypatch.setattr(DownloadGenomeStep, "dependencies", ["build-genome"])
+    monkeypatch.setattr(
+        DownloadGenomeStep,
+        "spec",
+        replace(
+            DownloadGenomeStep.spec,
+            inputs=[
+                FileInput(
+                    "genome",
+                    source=OutputRef("build-genome", "genome"),
+                )
+            ],
+        ),
+    )
 
-    # build-genome must conform to Step protocol to pass runner validation
-    class MockBuildStep:
+    class MockBuildStep(Step):
         name = "build-genome"
         description = ""
         cli_module = "tests.fake_step"
-        dependencies = []
-        spec = StepSpec()
-
-        def output_paths(self, c):
-            return {}
+        spec = StepSpec(
+            outputs=[
+                FileOutput(
+                    "genome",
+                    destination="genome/genome.txt",
+                )
+            ]
+        )
 
         def outputs_exist(self, c):
             return False

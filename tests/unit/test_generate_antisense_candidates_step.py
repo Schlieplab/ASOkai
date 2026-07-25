@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from ASOkai.Sites import TranscriptSite
-from ASOkai._cwl.spec import StepCwlGenerator
+from ASOkai._cwl.spec import OutputRef, StepCwlGenerator
 from ASOkai._pipeline.base import CoreStep, Step
 from ASOkai._pipeline.steps.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
@@ -44,6 +44,10 @@ def test_step_contract_and_dependency(step):
     assert isinstance(step, CoreStep)
     assert step.name == "generate-antisense-candidates"
     assert step.dependencies == ["create-target-gene"]
+    assert step.spec.input("target_gene").source == OutputRef(
+        "create-target-gene",
+        "target_gene",
+    )
 
 
 def test_config_and_override_mapping(step):
@@ -95,8 +99,8 @@ def test_output_path_uses_supplied_target_name(step, config, tmp_path):
     assert paths["therapeutics"].parent.parent.name == "KRAS"
 
 
-def test_cwl_contains_scalar_configuration_and_file_io(step):
-    document = yaml.safe_load(StepCwlGenerator().render(step))
+def test_cwl_contains_scalar_configuration_and_file_io(step, config):
+    document = yaml.safe_load(StepCwlGenerator().render(step, config))
 
     assert document["baseCommand"] == [
         "ASOkai",
@@ -109,9 +113,13 @@ def test_cwl_contains_scalar_configuration_and_file_io(step):
     assert document["inputs"]["layout"]["type"] == "string"
     assert document["inputs"]["target_gene"]["type"] == "File"
     assert document["outputs"]["therapeutics"]["outputBinding"]["glob"] == (
-        "therapeutics.json"
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_"
+        "rnase-h1_therapeutics.json"
     )
-    assert document["outputs"]["bindings"]["outputBinding"]["glob"] == "bindings.json"
+    assert document["outputs"]["bindings"]["outputBinding"]["glob"] == (
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_"
+        "rnase-h1_bindings.json"
+    )
 
 
 def test_main_writes_therapeutics_and_bindings_separately(monkeypatch, tmp_path):

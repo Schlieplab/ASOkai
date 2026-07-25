@@ -13,14 +13,14 @@ import argparse
 import shutil
 import sys
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Literal
 
 from GenomeUtils.Downloaders import EnsemblGenomeDownloader
 
 from ASOkai._cwl.spec import (
     TemplateField,
     OutputPathTemplate,
-    OutputParam,
+    FileOutput,
     ScalarParam,
     StepSpec,
 )
@@ -31,7 +31,6 @@ class DownloadGenomeStep(CoreStep):
     name = "download-genome"
     description = "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
     cli_module = "ASOkai._pipeline.steps.download_genome"
-    dependencies: ClassVar[list[str]] = []
     spec = StepSpec(
         doc=(
             "Download genome DNA (primary assembly FASTA), cDNA (FASTA), and "
@@ -71,9 +70,9 @@ class DownloadGenomeStep(CoreStep):
             ),
         ],
         outputs=[
-            OutputParam(
+            FileOutput(
                 "dna",
-                temp_filename="dna.fa.gz",
+                media_type="application/gzip",
                 destination=OutputPathTemplate(
                     "{assembly}/genomes/{source}/{release}/"
                     "{species}.{assembly}.dna.primary_assembly.fa.gz",
@@ -86,9 +85,9 @@ class DownloadGenomeStep(CoreStep):
                 ),
                 doc="Primary assembly DNA FASTA ({Species}.{Assembly}.dna.primary_assembly.fa.gz)",
             ),
-            OutputParam(
+            FileOutput(
                 "cdna",
-                temp_filename="cdna.fa.gz",
+                media_type="application/gzip",
                 destination=OutputPathTemplate(
                     "{assembly}/genomes/{source}/{release}/"
                     "{species}.{assembly}.cdna.all.fa.gz",
@@ -101,9 +100,9 @@ class DownloadGenomeStep(CoreStep):
                 ),
                 doc="cDNA FASTA ({Species}.{Assembly}.cdna.all.fa.gz)",
             ),
-            OutputParam(
+            FileOutput(
                 "annotation",
-                temp_filename="annotation.gtf.gz",
+                media_type="application/gzip",
                 destination=OutputPathTemplate(
                     "{assembly}/genomes/{source}/{release}/"
                     "{species}.{assembly}.{release}.gtf.gz",
@@ -116,9 +115,9 @@ class DownloadGenomeStep(CoreStep):
                 ),
                 doc="Gene annotation GTF ({Species}.{Assembly}.{release}.gtf.gz)",
             ),
-            OutputParam(
+            FileOutput(
                 "db",
-                temp_filename="annotation.db",
+                media_type="application/vnd.sqlite3",
                 destination=OutputPathTemplate(
                     "{assembly}/genomes/{source}/{release}/"
                     "{species}.{assembly}.{release}.gtf.db",

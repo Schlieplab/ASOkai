@@ -328,7 +328,7 @@ class ScalarParam(Param):
     def __post_init__(self) -> None:
         if _strip_optional(self.annotation) is Path:
             raise TypeError(
-                f"Parameter '{self.name}' is path-like; use InputParam instead."
+                f"Parameter '{self.name}' is path-like; use FileInput instead."
             )
 
     @property
@@ -395,17 +395,28 @@ class ScalarParam(Param):
         parser.add_argument(self.cli_prefix, **kwargs)
 
 
-@dataclass(frozen=True)
-class InputParam(Param):
-    """An existing file/path supplied to a step."""
+@dataclass(frozen=True, slots=True)
+class OutputRef:
+    """An exact reference to one output port on another step."""
 
-    config: str | None = None
+    step: str
+    output: str
+
+    def __post_init__(self) -> None:
+        if not self.step.strip():
+            raise ValueError("OutputRef.step cannot be blank.")
+        if not self.output.strip():
+            raise ValueError("OutputRef.output cannot be blank.")
+
+
+@dataclass(frozen=True)
+class FileInput(Param):
+    """A file input whose meaning is inherited from its producer output."""
+
+    source: OutputRef
     override: str | None = None
     prefix: str | None = None
     doc: str | None = None
-    default: Any = _UNSET
-    required: bool | None = None
-    cwl: bool = True
 
     @property
     def cli_prefix(self) -> str:
@@ -413,10 +424,8 @@ class InputParam(Param):
         return self.prefix or _flag_for_name(self.name)
 
     def parser_required(self) -> bool:
-        """Return whether argparse should require this input path."""
-        if self.required is not None:
-            return self.required
-        return self.default is _UNSET
+        """File inputs are always required by the step command."""
+        return True
 
     def parser_type(self) -> Any:
         """Return the argparse converter for file/path inputs."""
@@ -426,68 +435,51 @@ class InputParam(Param):
         """File/path inputs do not define argparse choices."""
         return None
 
-    def to_cwl_input(self) -> CwlToolInput | None:
-        """Return this path as a CWL File input, unless it is CLI-only."""
-        if not self.cwl:
-            return None
+    def to_cwl_input(self) -> CwlToolInput:
+        """Return this path as a CWL File input."""
         return CwlToolInput(
             self.name,
             "File",
             self.cli_prefix,
             self.doc,
-            self.default,
         )
 
     def add_to_parser(self, parser: argparse.ArgumentParser) -> None:
         """Add this file/path input as an argparse option."""
         kwargs: dict[str, Any] = {
             "dest": self.name,
-            "required": self.parser_required(),
+            "required": True,
             "type": Path,
         }
-        if self.default is not _UNSET:
-            kwargs["default"] = deepcopy(self.default)
         if self.doc:
             kwargs["help"] = self.doc
         parser.add_argument(self.cli_prefix, **kwargs)
 
 
 @dataclass(frozen=True, init=False)
-class OutputParam(Param):
-    """A produced file with a stable temporary name and destination path."""
+class FileOutput(Param):
+    """A produced file whose declaration is its pipeline contract."""
 
-    temp_filename: str
     destination: OutputPathTemplate
+    media_type: str
     doc: str | None = None
 
     def __init__(
         self,
         name: str,
         *,
-        temp_filename: str,
-        destination: OutputPathTemplate | str | None = None,
+        destination: OutputPathTemplate | str,
+        media_type: str = "application/octet-stream",
         doc: str | None = None,
     ) -> None:
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "temp_filename", temp_filename)
-        if destination is None:
-            destination = OutputPathTemplate(temp_filename)
-        elif isinstance(destination, str):
+        if isinstance(destination, str):
             destination = OutputPathTemplate(destination)
         object.__setattr__(self, "destination", destination)
+        if not media_type.strip():
+            raise ValueError("FileOutput.media_type cannot be blank.")
+        object.__setattr__(self, "media_type", media_type)
         object.__setattr__(self, "doc", doc)
-        self.__post_init__()
-
-    def __post_init__(self) -> None:
-        if (
-            not self.temp_filename
-            or Path(self.temp_filename).name != self.temp_filename
-            or "{" in self.temp_filename
-            or "}" in self.temp_filename
-        ):
-            raise ValueError(
-                "OutputParam.temp_filename must be one stable temporary filename."
-            )
 
     @property
     def cli_prefix(self) -> str:
@@ -499,19 +491,23 @@ class OutputParam(Param):
         """Return the generated argparse destination for this output path."""
         return f"{self.name}_output"
 
-    def to_cwl_argument(self) -> CwlToolArgument:
+    def working_filename(self, values: Mapping[str, Any]) -> str:
+        """Derive the CWL work-directory filename from the final destination."""
+        return self.destination.render(values).name
+
+    def to_cwl_argument(self, values: Mapping[str, Any]) -> CwlToolArgument:
         """Return the fixed command-line argument for this output path."""
         return CwlToolArgument(
             prefix=self.cli_prefix,
-            value_from=self.temp_filename,
+            value_from=self.working_filename(values),
         )
 
-    def to_cwl_output(self) -> CwlToolOutput:
+    def to_cwl_output(self, values: Mapping[str, Any]) -> CwlToolOutput:
         """Return the rendered tool output declaration."""
         return CwlToolOutput(
             self.name,
             "File",
-            self.temp_filename,
+            self.working_filename(values),
             self.doc,
         )
 
@@ -532,8 +528,8 @@ class StepSpec:
     """Source-of-truth metadata for a pipeline step."""
 
     params: Sequence[ScalarParam] = field(default_factory=tuple)
-    inputs: Sequence[InputParam] = field(default_factory=tuple)
-    outputs: Sequence[OutputParam] = field(default_factory=tuple)
+    inputs: Sequence[FileInput] = field(default_factory=tuple)
+    outputs: Sequence[FileOutput] = field(default_factory=tuple)
     base_command: list[str] | None = None
     doc: str | None = None
     requirements: dict[str, Any] = field(default_factory=dict)
@@ -556,13 +552,13 @@ class StepSpec:
         self._require_unique("parameter/input", authored_inputs)
 
         cwl_inputs = [param.name for param in self.params if param.cwl]
-        cwl_inputs.extend(item.name for item in self.inputs if item.cwl)
+        cwl_inputs.extend(item.name for item in self.inputs)
         self._require_unique("generated CWL input", cwl_inputs)
 
         declared_cwl_inputs = {
             param.name for param in self.params if param.cwl
         }
-        declared_cwl_inputs.update(item.name for item in self.inputs if item.cwl)
+        declared_cwl_inputs.update(item.name for item in self.inputs)
         for output in self.outputs:
             missing_inputs = output.destination.input_names() - declared_cwl_inputs
             if missing_inputs:
@@ -588,17 +584,25 @@ class StepSpec:
             joined = ", ".join(duplicates)
             raise ValueError(f"Duplicate {label} name(s): {joined}.")
 
-    def to_cwl_tool_spec(self) -> CwlCommandLineToolSpec:
+    def to_cwl_tool_spec(
+        self,
+        values: Mapping[str, Any] | None = None,
+    ) -> CwlCommandLineToolSpec:
         """Return the low-level CommandLineTool spec generated from this step spec."""
+        values = values or {}
+        working_filenames = [
+            output.working_filename(values)
+            for output in self.outputs
+        ]
+        self._require_unique("CWL output filename", working_filenames)
         inputs = [
             item
             for param in self.params
             if (item := param.to_cwl_input()) is not None
         ]
         inputs.extend(
-            item
+            input_param.to_cwl_input()
             for input_param in self.inputs
-            if (item := input_param.to_cwl_input()) is not None
         )
         return CwlCommandLineToolSpec(
             base_command=self.base_command,
@@ -606,10 +610,10 @@ class StepSpec:
             requirements=deepcopy(self.requirements),
             arguments=[
                 *self.arguments,
-                *(output.to_cwl_argument() for output in self.outputs),
+                *(output.to_cwl_argument(values) for output in self.outputs),
             ],
             inputs=inputs,
-            outputs=[output.to_cwl_output() for output in self.outputs],
+            outputs=[output.to_cwl_output(values) for output in self.outputs],
             extra=deepcopy(self.extra),
         )
 
@@ -620,13 +624,6 @@ class StepSpec:
             for param in self.params
             if param.cwl and param.config
         }
-        result.update(
-            {
-                item.name: item.config
-                for item in self.inputs
-                if item.cwl and item.config
-            }
-        )
         return result
 
     def input_overrides(self) -> dict[str, str]:
@@ -634,8 +631,26 @@ class StepSpec:
         return {
             item.name: item.override
             for item in self.inputs
-            if item.cwl and item.override
+            if item.override
         }
+
+    def input(self, name: str) -> FileInput:
+        """Return one declared file input by name."""
+        for item in self.inputs:
+            if item.name == name:
+                return item
+        raise KeyError(f"Unknown step input: {name!r}.")
+
+    def output(self, name: str) -> FileOutput:
+        """Return one declared output by name."""
+        for output in self.outputs:
+            if output.name == name:
+                return output
+        raise KeyError(f"Unknown step output: {name!r}.")
+
+    def dependencies(self) -> tuple[str, ...]:
+        """Return producer step names, derived from exact input references."""
+        return tuple(dict.fromkeys(item.source.step for item in self.inputs))
 
     def output_names(self) -> tuple[str, ...]:
         """Return produced output names in declaration order."""
@@ -697,10 +712,11 @@ class StepCwlGenerator(BaseCwlGenerator):
     def document(
         self,
         step,
+        config: dict,
         *,
         resource_requirement: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        spec = step.cwl_spec
+        spec = step.cwl_spec(config)
         doc: dict[str, Any] = {
             "cwlVersion": self.cwl_version,
             "class": "CommandLineTool",
@@ -726,6 +742,7 @@ class StepCwlGenerator(BaseCwlGenerator):
     def render(
         self,
         step,
+        config: dict,
         *,
         shebang: bool = True,
         resource_requirement: dict[str, int] | None = None,
@@ -733,6 +750,7 @@ class StepCwlGenerator(BaseCwlGenerator):
         text = self.dump(
             self.document(
                 step,
+                config,
                 resource_requirement=resource_requirement,
             )
         )

@@ -19,18 +19,22 @@ import pytest
 from ASOkai._cwl.spec import (
     TemplateField,
     OutputPathTemplate,
-    InputParam,
-    OutputParam,
+    FileInput,
+    FileOutput,
+    OutputRef,
     Param,
     ScalarParam,
     StepSpec,
 )
 
+def _file_input(name: str = "input_file") -> FileInput:
+    return FileInput(name, source=OutputRef("producer", "result"))
+
 
 def test_parameter_types_share_the_param_base_contract():
     assert issubclass(ScalarParam, Param)
-    assert issubclass(InputParam, Param)
-    assert issubclass(OutputParam, Param)
+    assert issubclass(FileInput, Param)
+    assert issubclass(FileOutput, Param)
     assert inspect.isabstract(Param)
 
 
@@ -42,9 +46,9 @@ def test_step_spec_infers_cwl_types_from_annotations():
             ScalarParam("optional_label", str | None),
             ScalarParam("mode", Literal["fast", "careful"]),
         ],
-        inputs=[InputParam("input_file")],
+        inputs=[_file_input()],
         outputs=[
-            OutputParam("result", temp_filename="result.json"),
+            FileOutput("result", destination="result.json"),
         ],
     )
 
@@ -78,8 +82,11 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
             ScalarParam("scalar", str, config="section.scalar"),
         ],
         inputs=[
-            InputParam("file_input", override="section.file"),
-            InputParam("parser_only", cwl=False),
+            FileInput(
+                "file_input",
+                source=OutputRef("producer", "result"),
+                override="section.file",
+            ),
         ],
     )
 
@@ -99,9 +106,9 @@ def test_step_spec_builds_argparse_parser_from_params(tmp_path):
             ScalarParam("source", str, default="ensembl"),
             ScalarParam("mode", Literal["fast", "careful"]),
         ],
-        inputs=[InputParam("input_file")],
+        inputs=[_file_input()],
         outputs=[
-            OutputParam("result", temp_filename="result.json"),
+            FileOutput("result", destination="result.json"),
         ],
     ).build_parser(description="Test parser.")
 
@@ -124,16 +131,16 @@ def test_step_spec_builds_argparse_parser_from_params(tmp_path):
 
 
 def test_scalar_param_rejects_path_annotations():
-    with pytest.raises(TypeError, match="InputParam"):
+    with pytest.raises(TypeError, match="FileInput"):
         ScalarParam("input_file", Path)
 
 
-def test_output_param_generates_fixed_argument_and_static_output_glob():
+def test_file_output_generates_fixed_argument_and_static_output_glob():
     spec = StepSpec(
         outputs=[
-            OutputParam(
+            FileOutput(
                 "result",
-                temp_filename="result.json",
+                destination="result.json",
                 doc="Result JSON.",
             ),
         ],
@@ -164,9 +171,8 @@ def test_step_spec_rejects_undeclared_output_path_inputs():
     with pytest.raises(ValueError, match="path references undeclared CWL input"):
         StepSpec(
             outputs=[
-                OutputParam(
+                FileOutput(
                     "result",
-                    temp_filename="result.json",
                     destination="{missing}.json",
                 )
             ],
@@ -177,18 +183,18 @@ def test_step_spec_rejects_undeclared_output_path_inputs():
     ("kwargs", "message"),
     [
         ({"params": [ScalarParam("value", str), ScalarParam("value", int)]}, "parameter"),
-        ({"inputs": [InputParam("file"), InputParam("file")]}, "input"),
+        ({"inputs": [_file_input("file"), _file_input("file")]}, "input"),
         (
             {
                 "outputs": [
-                    OutputParam("result", temp_filename="result.json"),
-                    OutputParam("result", temp_filename="result.json"),
+                    FileOutput("result", destination="result.json"),
+                    FileOutput("result", destination="result.json"),
                 ]
             },
             "output",
         ),
         (
-            {"params": [ScalarParam("shared", str)], "inputs": [InputParam("shared")]},
+            {"params": [ScalarParam("shared", str)], "inputs": [_file_input("shared")]},
             "parameter/input",
         ),
     ],
@@ -212,7 +218,7 @@ def test_step_spec_rejects_unsupported_cwl_annotations():
 
 def test_step_spec_validates_runtime_output_names(tmp_path):
     spec = StepSpec(
-        outputs=[OutputParam("result", temp_filename="result.json")]
+        outputs=[FileOutput("result", destination="result.json")]
     )
 
     spec.validate_output_paths({"result": tmp_path / "result.json"})
@@ -245,15 +251,14 @@ def test_output_path_template_rejects_unknown_field_rules():
         OutputPathTemplate("result.json", fields={"unused": TemplateField("value")})
 
 
-def test_output_param_rejects_dynamic_cwl_temp_filenames():
-    with pytest.raises(ValueError, match="stable temporary filename"):
-        OutputParam("result", temp_filename="{sample}.json")
+def test_file_output_derives_working_filename_from_rendered_destination():
+    output = FileOutput(
+        "result",
+        destination="{sample}/named-{sample}.json",
+    )
 
-
-def test_output_param_requires_named_temp_filename():
-    parameter = inspect.signature(OutputParam).parameters["temp_filename"]
-
-    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert output.working_filename({"sample": "A"}) == "named-A.json"
+    assert "temp_filename" not in inspect.signature(FileOutput).parameters
 
 
 def test_output_path_template_rejects_paths_outside_datadir():
@@ -261,3 +266,18 @@ def test_output_path_template_rejects_paths_outside_datadir():
 
     with pytest.raises(ValueError, match="stay below datadir"):
         destination.render({"sample": "result"})
+
+
+def test_step_spec_derives_dependencies_and_supports_exact_lookups():
+    source = OutputRef("producer", "result")
+    spec = StepSpec(
+        inputs=[
+            FileInput("renamed_input", source=source),
+            FileInput("second_input", source=source),
+        ],
+        outputs=[FileOutput("output", destination="output.txt")],
+    )
+
+    assert spec.dependencies() == ("producer",)
+    assert spec.input("renamed_input").source == source
+    assert spec.output("output").name == "output"

@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/steps/core/create_target_gene.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Definition of the create-target-gene pipeline step.
+License: LGPL-3.0-or-later
+"""
+from __future__ import annotations
+
+import logging
+
+from ASOkai.Targets import TargetGene
+from ASOkai.Types import TargetRegion
+from ASOkai._pipeline.file_types import JsonFile
+from ASOkai._pipeline.files import FileInput, FileOutput
+from ASOkai._pipeline.parameters import ScalarParam
+from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
+from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.steps.core.base import CoreStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+
+
+logger = logging.getLogger(__name__)
+
+
+class CreateTargetGeneStep(CoreStep):
+    name = "create-target-gene"
+    description = "Creates a target gene object from genome data and extracts ASO target sites."
+    target_gene_output = FileOutput(
+        "target_gene",
+        file_type=JsonFile(TargetGene),
+        destination=OutputPathTemplate(
+            "{assembly}/targets/{target}/{target}_k{k}_{region}.json",
+            fields={
+                "target": TemplateField.first_of(
+                    "target_id",
+                    "target_name",
+                ),
+            },
+        ),
+        doc="Serialized target gene object.",
+    )
+    spec = StepSpec(
+        requirements={
+            "WorkReuse": {"enableReuse": True},
+        },
+        params=[
+            ScalarParam(
+                "target_id",
+                str | None,
+                config="target.target_id",
+                doc="Ensembl gene ID (e.g. ENSG00000133703). Takes priority over target_name.",
+            ),
+            ScalarParam(
+                "target_name",
+                str | None,
+                config="target.target_name",
+                doc="Gene name (e.g. KRAS). Used if target_id is not provided.",
+            ),
+            ScalarParam("k", int, config="target.k", doc="ASO length."),
+            ScalarParam(
+                "region",
+                TargetRegion,
+                config="target.region",
+                doc="Target region type.",
+            ),
+            ScalarParam("assembly", str, config="genome.assembly_id", doc="Assembly ID (e.g. GRCh38)."),
+            ScalarParam("release", int, config="genome.ensembl_release", doc="Ensembl release number (e.g. 114)."),
+            ScalarParam("species", str, config="genome.species", doc="Species name (e.g. Homo_sapiens)."),
+        ],
+        inputs=[
+            FileInput(
+                "dna",
+                source=DownloadGenomeStep.dna_output,
+                override="genome.dna_path",
+                doc="Primary assembly FASTA from download-genome.",
+            ),
+            FileInput(
+                "cdna",
+                source=DownloadGenomeStep.cdna_output,
+                override="genome.cdna_path",
+                doc="cDNA FASTA from download-genome.",
+            ),
+            FileInput(
+                "annotation",
+                source=DownloadGenomeStep.annotation_output,
+                override="genome.annotation_path",
+                doc="GTF annotation file from download-genome.",
+            ),
+            FileInput(
+                "db",
+                source=DownloadGenomeStep.db_output,
+                override="genome.db_path",
+                doc="Reusable annotation database from download-genome.",
+            ),
+        ],
+        outputs=[target_gene_output],
+    )
+
+    def run_from_args(self, args) -> int:
+        """Create and serialize the configured target gene."""
+        from GenomeUtils.Genome import GenomeBuilder
+        from ASOkai.Targets import TargetGeneCreator
+
+        logger.info("create-target-gene: loading DNA FASTA from %s", args.dna)
+        builder = GenomeBuilder(
+            id=args.assembly,
+            species=args.species.replace("_", " "),
+            name=args.assembly,
+        )
+        builder.with_dna_fasta(args.dna)
+
+        logger.info("create-target-gene: loading cDNA FASTA from %s", args.cdna)
+        builder.with_cdna_fasta(args.cdna)
+
+        logger.info(
+            "create-target-gene: loading GTF annotations from %s using database %s",
+            args.annotation,
+            args.db,
+        )
+        builder.with_gtf_file(args.annotation, db_path=args.db)
+
+        logger.info("create-target-gene: indexing genome")
+        genome, _ = builder.build()
+
+        logger.info(
+            "create-target-gene: extracting %s sites for "
+            "target_id=%s target_name=%s k=%s",
+            args.region,
+            args.target_id,
+            args.target_name,
+            args.k,
+        )
+        target_gene = TargetGeneCreator.from_genome(
+            genome,
+            target_id=args.target_id,
+            target_name=args.target_name,
+            k=args.k,
+            region=args.region,
+        )
+
+        logger.info(
+            "create-target-gene: writing target gene to %s",
+            args.target_gene_output,
+        )
+        self.target_gene_output.write(
+            args.target_gene_output,
+            target_gene,
+        )
+
+        return 0

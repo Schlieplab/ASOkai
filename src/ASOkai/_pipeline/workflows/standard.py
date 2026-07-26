@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import ClassVar
 
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
-from ASOkai._pipeline.steps.generate_antisense_candidates import (
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
+from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
 )
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask

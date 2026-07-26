@@ -8,11 +8,17 @@ import pytest
 import yaml
 
 from ASOkai.Sites import TranscriptSite
-from ASOkai._cwl.spec import OutputRef, StepCwlGenerator
-from ASOkai._pipeline.base import CoreStep, Step
-from ASOkai._pipeline.steps.generate_antisense_candidates import (
+from ASOkai.Targets import TargetGene
+from ASOkai._cwl.generation import StepCwlGenerator
+from ASOkai.plugin_api import CoreStep, FileInput, JsonFile, Step
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
 )
+
+
+def _write_target_gene(path, target) -> None:
+    CreateTargetGeneStep.target_gene_output.write(path, target)
 
 
 @pytest.fixture
@@ -44,10 +50,13 @@ def test_step_contract_and_dependency(step):
     assert isinstance(step, CoreStep)
     assert step.name == "generate-antisense-candidates"
     assert step.dependencies == ["create-target-gene"]
-    assert step.spec.input("target_gene").source == OutputRef(
-        "create-target-gene",
-        "target_gene",
+    assert (
+        step.spec.input("target_gene").source
+        is CreateTargetGeneStep.target_gene_output
     )
+    assert isinstance(step.spec.input("target_gene"), FileInput)
+    assert isinstance(step.target_gene_input.file_type, JsonFile)
+    assert step.target_gene_input.file_type.value_type is TargetGene
 
 
 def test_config_and_override_mapping(step):
@@ -122,9 +131,8 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config):
     )
 
 
-def test_main_writes_therapeutics_and_bindings_separately(monkeypatch, tmp_path):
+def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
     from ASOkai.Targets import TargetGene
-    from ASOkai._pipeline.steps import generate_antisense_candidates as command
 
     site = TranscriptSite(
         id="ENSG00000133703-S00001",
@@ -143,15 +151,12 @@ def test_main_writes_therapeutics_and_bindings_separately(monkeypatch, tmp_path)
         sequence=Seq("AAA" + "C" * 10 + "TTT"),
         sites={site.id: site},
     )
-    monkeypatch.setattr(
-        TargetGene,
-        "from_file",
-        classmethod(lambda cls, path: target),
-    )
+    target_input = tmp_path / "target.json"
+    _write_target_gene(target_input, target)
     therapeutics_output = tmp_path / "nested" / "therapeutics.json"
     bindings_output = tmp_path / "nested" / "bindings.json"
 
-    result = command.main(
+    result = GenerateAntisenseCandidatesStep().run_cli(
         [
             "--assembly",
             "GRCh38",
@@ -170,7 +175,7 @@ def test_main_writes_therapeutics_and_bindings_separately(monkeypatch, tmp_path)
             "--mechanism",
             "rnase-h1",
             "--target-gene",
-            str(tmp_path / "target.json"),
+            str(target_input),
             "--therapeutics-output",
             str(therapeutics_output),
             "--bindings-output",
@@ -188,9 +193,8 @@ def test_main_writes_therapeutics_and_bindings_separately(monkeypatch, tmp_path)
     assert bindings[0]["site_id"] == "ENSG00000133703-S00001"
 
 
-def test_main_writes_empty_lists_for_target_without_sites(monkeypatch, tmp_path):
+def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
     from ASOkai.Targets import TargetGene
-    from ASOkai._pipeline.steps import generate_antisense_candidates as command
 
     target = TargetGene(
         id="ENSG00000133703",
@@ -202,15 +206,12 @@ def test_main_writes_empty_lists_for_target_without_sites(monkeypatch, tmp_path)
         sequence=Seq("AAA" + "C" * 10 + "TTT"),
         sites={},
     )
-    monkeypatch.setattr(
-        TargetGene,
-        "from_file",
-        classmethod(lambda cls, path: target),
-    )
+    target_input = tmp_path / "target.json"
+    _write_target_gene(target_input, target)
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = command.main(
+    result = GenerateAntisenseCandidatesStep().run_cli(
         [
             "--assembly",
             "GRCh38",
@@ -229,7 +230,7 @@ def test_main_writes_empty_lists_for_target_without_sites(monkeypatch, tmp_path)
             "--mechanism",
             "rnase-h1",
             "--target-gene",
-            str(tmp_path / "target.json"),
+            str(target_input),
             "--therapeutics-output",
             str(therapeutics_output),
             "--bindings-output",
@@ -242,21 +243,20 @@ def test_main_writes_empty_lists_for_target_without_sites(monkeypatch, tmp_path)
     assert json.loads(bindings_output.read_text()) == []
 
 
-def test_main_rejects_target_file_with_wrong_object_type(monkeypatch, tmp_path):
-    from ASOkai.Targets import Target, TargetGene
-    from ASOkai._pipeline.steps import generate_antisense_candidates as command
-
-    monkeypatch.setattr(
-        TargetGene,
-        "from_file",
-        classmethod(lambda cls, path: Target(id="not-a-target-gene")),
+def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
+    target_input = tmp_path / "target.json"
+    target_input.write_text(
+        json.dumps(
+            {
+                "__class__": "Other",
+                "__module__": "some.other.module",
+            }
+        ),
+        encoding="utf-8",
     )
 
-    with pytest.raises(
-        TypeError,
-        match="The target gene file does not contain a TargetGene",
-    ):
-        command.main(
+    with pytest.raises(SystemExit) as error:
+        GenerateAntisenseCandidatesStep().run_cli(
             [
                 "--assembly",
                 "GRCh38",
@@ -275,42 +275,12 @@ def test_main_rejects_target_file_with_wrong_object_type(monkeypatch, tmp_path):
                 "--mechanism",
                 "rnase-h1",
                 "--target-gene",
-                str(tmp_path / "target.json"),
+                str(target_input),
                 "--therapeutics-output",
                 str(tmp_path / "therapeutics.json"),
                 "--bindings-output",
                 str(tmp_path / "bindings.json"),
             ]
         )
-
-
-def test_main_rejects_missing_target_identifier(tmp_path):
-    from ASOkai._pipeline.steps import generate_antisense_candidates as command
-
-    with pytest.raises(SystemExit) as error:
-        command.main(
-            [
-                "--assembly",
-                "GRCh38",
-                "--k",
-                "16",
-                "--region",
-                "pre-mrna",
-                "--modality",
-                "aso",
-                "--chemistry",
-                "gapmer",
-                "--layout",
-                "3-10-3",
-                "--mechanism",
-                "rnase-h1",
-                "--target-gene",
-                str(tmp_path / "target.json"),
-                "--therapeutics-output",
-                str(tmp_path / "therapeutics.json"),
-                "--bindings-output",
-                str(tmp_path / "bindings.json"),
-            ]
-        )
-
     assert error.value.code == 2
+    assert "must contain ASOkai.Targets._target_gene.TargetGene" in capsys.readouterr().err

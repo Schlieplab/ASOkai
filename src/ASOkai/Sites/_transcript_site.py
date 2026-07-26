@@ -53,6 +53,24 @@ class TranscriptSite(Site):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', transcript_id='{self.transcript_id}', t_start={self.t_start}, t_end={self.t_end})"
 
+    def validate(self) -> None:
+        """Validate a serialized transcript site."""
+        super().validate()
+        if type(self.transcript_id) is not str or not self.transcript_id.strip():
+            raise ValueError("Transcript id must be a non-blank string.")
+        if type(self.t_start) is not int or self.t_start < 0:
+            raise ValueError(
+                "Transcript site start must be a non-negative integer."
+            )
+        if type(self.t_end) is not int or self.t_end <= self.t_start:
+            raise ValueError(
+                "Transcript site end must be an integer greater than start."
+            )
+        if len(self.sequence) != self.t_end - self.t_start:
+            raise ValueError(
+                "Transcript site sequence length must match its half-open interval."
+            )
+
     def to_genomic(self, transcript: "Transcript") -> List[GenomicSite]:
         raise NotImplementedError
     
@@ -65,7 +83,6 @@ class TranscriptSite(Site):
             and self.t_start == other.t_start
             and self.t_end == other.t_end
         )
-
 
 
 

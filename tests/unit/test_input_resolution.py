@@ -12,11 +12,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ASOkai._cwl.spec import (
+from ASOkai.plugin_api import (
     FileInput,
     FileOutput,
-    OutputRef,
     ScalarParam,
+    Step,
     StepSpec,
 )
 from ASOkai._cwl.input_resolution import (
@@ -24,13 +24,11 @@ from ASOkai._cwl.input_resolution import (
     resolve_step_sequence_inputs,
     to_cwl_inputs,
 )
-from ASOkai._pipeline.base import Step
 
 
 class _FakeStep(Step):
     name = "fake-step"
     description = ""
-    cli_module = "tests.fake_step"
     spec = StepSpec()
 
     def __init__(self, *, exists: bool = False) -> None:
@@ -46,7 +44,7 @@ class _FakeStep(Step):
 def _fake_step(
     name: str,
     *,
-    deps: list[str] | None = None,
+    deps: list[Step] | None = None,
     config_map: dict[str, str] | None = None,
     input_overrides: dict[str, str] | None = None,
     input_names: list[str] | None = None,
@@ -55,16 +53,18 @@ def _fake_step(
 ) -> Step:
     """Return an isolated fake Step with class-level declaration metadata."""
     output_names = output_names or [f"{name}_out"]
-
-    class ConfiguredFakeStep(_FakeStep):
-        pass
-
-    ConfiguredFakeStep.name = name
+    outputs = [
+        FileOutput(
+            key,
+            destination=f"{name}/{key}.txt",
+        )
+        for key in output_names
+    ]
     file_input_names = set(input_overrides or {}) | set(input_names or {})
     if file_input_names and len(deps or []) != 1:
         raise ValueError("Test file inputs require exactly one producer.")
     producer = (deps or [None])[0]
-    ConfiguredFakeStep.spec = StepSpec(
+    spec = StepSpec(
         params=[
             ScalarParam(
                 key,
@@ -76,20 +76,24 @@ def _fake_step(
         inputs=[
             FileInput(
                 key,
-                source=OutputRef(producer, key),
+                source=producer.spec.output(key),
                 override=(input_overrides or {}).get(key),
             )
-            for key in file_input_names
+            for key in sorted(file_input_names)
+            if producer is not None
         ],
-        outputs=[
-            FileOutput(
-                key,
-                destination=f"{name}/{key}.txt",
-            )
-            for key in output_names
-        ],
+        outputs=outputs,
     )
-    return ConfiguredFakeStep(exists=exists)
+    configured_fake_step = type(
+        "ConfiguredFakeStep",
+        (_FakeStep,),
+        {
+            "name": name,
+            "spec": spec,
+            **{f"{output.name}_output": output for output in outputs},
+        },
+    )
+    return configured_fake_step(exists=exists)
 
 
 def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path):
@@ -103,16 +107,18 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
     dep = _fake_step("dep", output_names=["shared"])
     step = _fake_step(
         "consumer",
-        deps=["dep"],
+        deps=[dep],
         config_map={"shared": "shared.scalar"},
         input_overrides={"shared": "shared.override"},
     )
 
-    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
+    with patch(
+        "ASOkai._cwl.input_resolution.get_steps",
+        side_effect=AssertionError("override should bypass producer resolution"),
+    ):
         resolved = resolve_step_inputs(
             step,
             config,
-            pre_resolved={OutputRef("dep", "shared"): tmp_path / "dep.fa"},
         )
 
     assert resolved["shared"].source == "input_override"
@@ -125,7 +131,7 @@ def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path
 def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
     config = {"datadir": str(tmp_path)}
     dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
+    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
@@ -136,20 +142,21 @@ def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
 
     assert resolved["dep_file"].source == "dep_wired"
     assert resolved["dep_file"].cwl_value is None
+    assert resolved["dep_file"].source_output is dep.spec.output("dep_file")
     assert "dep_file" not in to_cwl_inputs(resolved)
 
 
 def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
     config = {"datadir": str(tmp_path)}
     dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
+    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
     path = tmp_path / "dep-output.txt"
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(
             step,
             config,
-            pre_resolved={OutputRef("dep", "dep_file"): path},
+            pre_resolved={dep.spec.output("dep_file"): path},
         )
 
     assert resolved["dep_file"].source == "dep_disk"
@@ -157,6 +164,7 @@ def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
         "class": "File",
         "path": str(path.resolve()),
     }
+    assert resolved["dep_file"].source_output is dep.spec.output("dep_file")
 
 
 def test_resolve_step_inputs_uses_dependency_output_path_without_pre_resolution(
@@ -164,7 +172,7 @@ def test_resolve_step_inputs_uses_dependency_output_path_without_pre_resolution(
 ):
     config = {"datadir": str(tmp_path)}
     dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=["dep"], input_names=["dep_file"])
+    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(step, config)
@@ -190,7 +198,7 @@ def test_resolve_step_inputs_does_not_inject_output_filenames(tmp_path):
 def test_resolve_step_inputs_ignores_undeclared_dependency_outputs(tmp_path):
     config = {"datadir": str(tmp_path)}
     dep = _fake_step("dep", output_names=["unused"])
-    step = _fake_step("consumer", deps=["dep"])
+    step = _fake_step("consumer", deps=[dep])
 
     with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
         resolved = resolve_step_inputs(step, config, steps_in_plan={"dep", "consumer"})

@@ -9,22 +9,18 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-import importlib
 import logging
 from itertools import groupby
 from pathlib import Path
-from types import ModuleType
-from typing import Any, Callable, cast
+from typing import Any
 
 import click
 import yaml
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
-from ASOkai._pipeline.base import (
-    AnalysisStep,
-    CoreStep,
-)
+from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
 
 DEFAULT_CONFIG = Path("config.yaml")
@@ -103,14 +99,6 @@ def main(ctx: click.Context) -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
     ctx.ensure_object(dict)
-
-
-def _resolve_step_module(step_name: str) -> ModuleType:
-    """Return the module declared by a registered step's ``cli_module``."""
-    step = get_steps().get(step_name)
-    if step is None:
-        raise KeyError(step_name)
-    return importlib.import_module(step.cli_module)
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +181,9 @@ def list_cmd(unit: str) -> None:
 
 def _expand_members_for_describe(members: list) -> list[str]:
     """Recursively expand workflow members to an ordered list of step names."""
-    from ASOkai._pipeline.base import Step, Task, Workflow
+    from ASOkai._pipeline.steps.base import Step
+    from ASOkai._pipeline.tasks.base import Task
+    from ASOkai._pipeline.workflows.base import Workflow
     out: list[str] = []
     for member in members:
         if isinstance(member, Workflow):
@@ -660,14 +650,6 @@ def publish_outputs_cmd(manifest: Path, sources: tuple[Path, ...]) -> None:
         raise click.ClickException(str(exc)) from exc
 
 
-def _resolve_step_cli(step_name: str) -> Callable[[list[str] | None], int]:
-    """Return the CLI entrypoint for an internal step command."""
-    return cast(
-        Callable[[list[str] | None], int],
-        getattr(_resolve_step_module(step_name), "main"),
-    )
-
-
 @main.command(
     "step",
     hidden=True,
@@ -677,18 +659,12 @@ def _resolve_step_cli(step_name: str) -> Callable[[list[str] | None], int]:
 @click.pass_context
 def step_cmd(ctx: click.Context, step_name: str) -> None:
     """Dispatch an internal step CLI for CWL and debugging."""
-    if step_name not in get_steps():
+    step = get_steps().get(step_name)
+    if step is None:
         raise click.ClickException(f"Unknown step '{step_name}'.")
 
     try:
-        step_main = _resolve_step_cli(step_name)
-    except (AttributeError, ImportError, KeyError) as exc:
-        raise click.ClickException(
-            f"Step '{step_name}' does not expose an internal CLI entrypoint."
-        ) from exc
-
-    try:
-        exit_code = step_main(list(ctx.args))
+        exit_code = step.run_cli(list(ctx.args))
     except SystemExit as exc:
         code = exc.code if isinstance(exc.code, int) else 1
         raise click.exceptions.Exit(code) from exc

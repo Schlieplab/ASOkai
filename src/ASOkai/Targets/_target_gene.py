@@ -66,3 +66,34 @@ class TargetGene(Target, Gene):
     def sequence(self) -> Seq:
         """Return the target-gene sequence in the 5' to 3' direction."""
         return self._sequence
+
+    def validate(self) -> None:
+        """Validate a TargetGene before or after file serialization."""
+        super().validate()
+        if type(self.name) is not str or not self.name.strip():
+            raise ValueError("Target gene name must be a non-blank string.")
+        if type(self.chr) is not str or not self.chr.strip():
+            raise ValueError("Target gene chromosome must be a non-blank string.")
+        if type(self.start) is not int or self.start < 1:
+            raise ValueError(
+                "Target gene start must be an integer greater than zero."
+            )
+        if type(self.end) is not int or self.end < self.start:
+            raise ValueError(
+                "Target gene end must be an integer greater than or equal to start."
+            )
+        if type(self.strand) is not str or self.strand not in ("+", "-"):
+            raise ValueError("Target gene strand must be '+' or '-'.")
+        if not isinstance(self.sequence, Seq):
+            raise TypeError("Target gene sequence must be a Bio.Seq.Seq.")
+        if self._genome is not None and not isinstance(self._genome, Genome):
+            raise TypeError("Target gene genome must be a Genome or None.")
+        if self._parent is not None and not isinstance(self._parent, Chromosome):
+            raise TypeError(
+                "Target gene chromosome reference must be a Chromosome or None."
+            )
+        sequence = str(self.sequence)
+        if not sequence or any(character.isspace() for character in sequence):
+            raise ValueError(
+                "Target gene sequence must be non-empty and contain no whitespace."
+            )

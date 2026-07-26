@@ -11,14 +11,18 @@ from __future__ import annotations
 
 from importlib.metadata import entry_points
 
-from ASOkai._pipeline.base import Step, Task, Workflow
-from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-from ASOkai._pipeline.steps.generate_antisense_candidates import (
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
+from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
 )
-from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
+from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 _BUILTIN_STEPS: list[Step] = [
@@ -45,19 +49,34 @@ def _load_plugins(group: str) -> list:
     return instances
 
 
+def _index_unique(kind: str, instances: list) -> dict:
+    """Index registered objects by name without allowing silent replacement."""
+    result = {}
+    for instance in instances:
+        if instance.name in result:
+            raise ValueError(
+                f"Duplicate registered {kind} name: {instance.name!r}."
+            )
+        result[instance.name] = instance
+    return result
+
+
 def get_steps() -> dict[str, Step]:
-    steps = {s.name: s for s in _BUILTIN_STEPS}
-    steps.update({s.name: s for s in _load_plugins("asokai.steps")})
-    return steps
+    return _index_unique(
+        "step",
+        [*_BUILTIN_STEPS, *_load_plugins("asokai.steps")],
+    )
 
 
 def get_tasks() -> dict[str, Task]:
-    tasks = {t.name: t for t in _BUILTIN_TASKS}
-    tasks.update({t.name: t for t in _load_plugins("asokai.tasks")})
-    return tasks
+    return _index_unique(
+        "task",
+        [*_BUILTIN_TASKS, *_load_plugins("asokai.tasks")],
+    )
 
 
 def get_workflows() -> dict[str, Workflow]:
-    workflows = {w.name: w for w in _BUILTIN_WORKFLOWS}
-    workflows.update({w.name: w for w in _load_plugins("asokai.workflows")})
-    return workflows
+    return _index_unique(
+        "workflow",
+        [*_BUILTIN_WORKFLOWS, *_load_plugins("asokai.workflows")],
+    )

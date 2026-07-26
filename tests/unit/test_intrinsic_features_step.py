@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 """Tests for IntrinsicFeaturesStep."""
 import json
+
+from Bio.Seq import Seq
 import pytest
-from pathlib import Path
 import yaml
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
-from ASOkai._cwl.spec import OutputRef, StepCwlGenerator
-from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
-from ASOkai._pipeline.base import (
-    AnalysisStep,
-    Step,
-)
+from ASOkai.Sites import TranscriptSite
+from ASOkai.Targets import TargetGene
+from ASOkai._cwl.generation import StepCwlGenerator
+from ASOkai.plugin_api import AnalysisStep, FileInput, JsonFile, Step
+from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
 @pytest.fixture
@@ -48,10 +49,13 @@ def test_name(step):
 
 def test_dependencies(step):
     assert step.dependencies == ["create-target-gene"]
-    assert step.spec.input("target_gene").source == OutputRef(
-        "create-target-gene",
-        "target_gene",
+    assert (
+        step.spec.input("target_gene").source
+        is CreateTargetGeneStep.target_gene_output
     )
+    assert isinstance(step.spec.input("target_gene"), FileInput)
+    assert isinstance(step.target_gene_input.file_type, JsonFile)
+    assert step.target_gene_input.file_type.value_type is TargetGene
 
 
 def test_config_map_keys(step):
@@ -124,23 +128,6 @@ def test_cwl_spec_generates_command_line_tool(step, config):
     )
 
 
-def test_main_rejects_missing_target_identifier_before_analysis(tmp_path):
-    from ASOkai._pipeline.steps import intrinsic_features
-
-    with pytest.raises(SystemExit) as excinfo:
-        intrinsic_features.main(
-            [
-                "--target-gene", str(tmp_path / "target.json"),
-                "--assembly", "GRCh38",
-                "--k", "16",
-                "--region", "pre-mrna",
-                "--intrinsic-features-output", str(tmp_path / "intrinsic.json"),
-            ]
-        )
-
-    assert excinfo.value.code == 2
-
-
 def test_intrinsic_features_analysis_returns_site_keyed_results():
     class FakeSite:
         def __init__(self, id, sequence):
@@ -190,28 +177,34 @@ def test_intrinsic_features_analysis_analyzes_one_site():
     }
 
 
-def test_main_writes_metadata_with_site_keyed_results(monkeypatch, tmp_path):
-    from ASOkai._pipeline.steps import intrinsic_features
-    from ASOkai.Targets import TargetGene
-
-    class FakeSite:
-        def __init__(self, id, sequence):
-            self.id = id
-            self.sequence = sequence
-
-    class FakeTargetGene:
-        sites = [FakeSite("site-1", "GCGT")]
-
-    monkeypatch.setattr(
-        TargetGene,
-        "from_file",
-        classmethod(lambda cls, path: FakeTargetGene()),
+def test_run_cli_writes_metadata_with_site_keyed_results(tmp_path):
+    site = TranscriptSite(
+        id="site-1",
+        transcript_id="transcript-1",
+        t_start=0,
+        t_end=4,
+        sequence=Seq("GCGT"),
+    )
+    target = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=4,
+        strand="+",
+        sequence=Seq("GCGT"),
+        sites={site.id: site},
+    )
+    target_input = tmp_path / "target.json"
+    CreateTargetGeneStep.target_gene_output.write(
+        target_input,
+        target,
     )
 
     output = tmp_path / "intrinsic.json"
-    result = intrinsic_features.main(
+    result = IntrinsicFeaturesStep().run_cli(
         [
-            "--target-gene", str(tmp_path / "target.json"),
+            "--target-gene", str(target_input),
             "--assembly", "GRCh38",
             "--target-id", "ENSG00000133703",
             "--k", "16",

@@ -37,6 +37,8 @@ class Serializable:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    def validate(self) -> None:
+        """Hook for subclasses to validate their file-boundary invariants."""
 
     @classmethod
     def register_attribute(

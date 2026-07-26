@@ -86,10 +86,14 @@ def test_describe_step_create_target_gene_shows_details():
 
 
 def test_describe_step_uses_stepspec_not_step_argparse(monkeypatch):
-    monkeypatch.setattr(
-        "ASOkai._cli.main._resolve_step_module",
-        lambda _name: (_ for _ in ()).throw(AssertionError("unexpected parser lookup")),
+    from ASOkai._pipeline.steps.core.create_target_gene import (
+        CreateTargetGeneStep,
     )
+
+    def unexpected_parser(*args, **kwargs):
+        raise AssertionError("unexpected parser lookup")
+
+    monkeypatch.setattr(CreateTargetGeneStep, "build_parser", unexpected_parser)
 
     runner = CliRunner()
     result = runner.invoke(main, ["describe", "step", "create-target-gene"])
@@ -450,15 +454,15 @@ def test_run_config_preserves_yaml_scalar_types(monkeypatch):
 
 
 def test_step_command_dispatches_to_builtin_step(monkeypatch):
-    from ASOkai._pipeline.steps import download_genome
+    from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
     received: dict[str, list[str] | None] = {}
 
-    def fake_main(argv: list[str] | None = None) -> int:
+    def fake_run_cli(self, argv: list[str] | None = None) -> int:
         received["argv"] = argv
         return 0
 
-    monkeypatch.setattr(download_genome, "main", fake_main)
+    monkeypatch.setattr(DownloadGenomeStep, "run_cli", fake_run_cli)
 
     runner = CliRunner()
     result = runner.invoke(

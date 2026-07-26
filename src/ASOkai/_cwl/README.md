@@ -10,9 +10,8 @@ Low-level CWL `CommandLineTool` documents are generated from each step's
 separated by role:
 
 - `params`: typed scalar `ScalarParam` values.
-- `inputs`: `FileInput` values that reference exact producer outputs.
-- `outputs`: produced-file `FileOutput` values with destination templates and
-  media types.
+- `inputs`: `FileInput` values that point directly to producer outputs.
+- `outputs`: `FileOutput` values with destination templates and a `FileType`.
 
 ASOkai derives CWL inputs, CWL outputs, command-line parser options, config
 keys, and file override keys from that one spec.
@@ -24,36 +23,50 @@ Plugin packages should import the supported step-authoring contracts from
 from ASOkai.plugin_api import (
     FileInput,
     FileOutput,
-    OutputRef,
+    CoreStep,
+    JsonFile,
     ScalarParam,
     StepSpec,
 )
 ```
 
 ```python
-StepSpec(
-    params=[
-        ScalarParam("assembly", str, config="genome.assembly_id"),
-    ],
-    inputs=[
-        FileInput(
-            "dna",
-            source=OutputRef("download-genome", "dna"),
-            override="genome.dna_path",
-        ),
-    ],
-    outputs=[
-        FileOutput(
-            "result",
-            destination="{assembly}/results/{assembly}.result.json",
-            media_type="application/json",
-        ),
-    ],
-)
+class ProducerStep(CoreStep):
+    name = "producer"
+    description = "Produces one result."
+    result_output = FileOutput(
+        "result",
+        destination="results/result.json",
+        file_type=JsonFile(),
+    )
+    spec = StepSpec(outputs=[result_output])
+
+
+class ConsumerStep(CoreStep):
+    name = "consumer"
+    description = "Consumes the result."
+    result_input = FileInput(
+        "result",
+        source=ProducerStep.result_output,
+        override="result.path",
+    )
+    spec = StepSpec(inputs=[result_input])
 ```
 
+The file type owns format-specific I/O and validation. `FileType` leaves an
+input as a `Path`, `JsonFile` handles JSON, and `CsvFile` handles tabular CSV.
+`JsonFile(SomeSerializableClass)` reconstructs and validates that domain type.
+The consumer inherits the exact file type from its source output and does not
+repeat the format or value class.
+
 Dependencies are not declared separately: `Step.dependencies` is derived from
-the `OutputRef` values in its inputs.
+the producer outputs referenced by its inputs.
+
+Contributors implement `run_from_args(args)` for the step's work. The central
+`ASOkai step <name>` command invokes `run_cli` on the registered step; step
+modules do not declare a separate `main()` or module path. `run_cli` builds and
+parses the generated CLI and creates the parent directory for every declared
+output.
 
 The structured `destination` template defines the complete path relative to
 `datadir`. The base `Step` derives output paths, existence checks, and cleanup

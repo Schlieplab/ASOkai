@@ -9,32 +9,28 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from ASOkai._cwl.spec import (
-    FileInput,
-    CwlToolArgument,
-    FileOutput,
-    OutputRef,
-    OutputPathTemplate,
-    ScalarParam,
-    StepSpec,
-    TemplateField,
-)
-from ASOkai._pipeline.base import (
-    AnalysisStep,
-    CoreStep,
-    Runnable,
-    Step,
-    Task,
-    Workflow,
-)
+from ASOkai._cwl.model import CwlToolArgument
+from ASOkai._pipeline.file_types import CsvFile, FileType, JsonFile
+from ASOkai._pipeline.files import FileInput, FileOutput
+from ASOkai._pipeline.parameters import ScalarParam
+from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
+from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.core.base import CoreStep
+from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.workflows.base import Workflow
 
 __all__ = [
     "AnalysisStep",
     "FileInput",
     "CoreStep",
     "CwlToolArgument",
+    "CsvFile",
     "FileOutput",
-    "OutputRef",
+    "FileType",
+    "JsonFile",
     "OutputPathTemplate",
     "Runnable",
     "ScalarParam",

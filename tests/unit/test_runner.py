@@ -14,16 +14,18 @@ from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch, MagicMock
-from ASOkai._cwl.spec import (
+from ASOkai.plugin_api import (
     FileInput,
     FileOutput,
-    OutputRef,
+    Runnable,
+    Step,
     StepSpec,
 )
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
-from ASOkai._pipeline.base import Runnable, Step
 from ASOkai._pipeline.plan import ExecutionPlan
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
 @pytest.fixture
@@ -62,7 +64,6 @@ def test_run_step_unknown_step(config):
 
 
 def test_run_step_skips_when_outputs_exist(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
     step = DownloadGenomeStep()
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
@@ -112,15 +113,12 @@ def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
     assert (export_dirs[0] / "output-layout.yml").exists()
     assert (export_dirs[0] / "steps" / "download-genome.cwl").exists()
     assert inputs["assembly"] == "GRCh38"
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
     assert all(DownloadGenomeStep().output_paths(config)[name].exists() for name in (
         "dna", "cdna", "annotation", "db"
     ))
 
 
 def test_run_step_rejects_missing_published_outputs(config):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     executor = _materializing_executor("dna.fa.gz")
 
     with pytest.raises(RuntimeError, match="did not publish expected output"):
@@ -151,7 +149,6 @@ def test_run_step_uses_configured_download_source(config):
 
 
 def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
     step = DownloadGenomeStep()
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
@@ -165,9 +162,23 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
 
 
 def test_run_step_missing_dependency_raises(config, monkeypatch):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     step = DownloadGenomeStep()
+
+    class MockBuildStep(Step):
+        name = "build-genome"
+        description = ""
+        genome_output = FileOutput(
+            "genome",
+            destination="genome/genome.txt",
+        )
+        spec = StepSpec(outputs=[genome_output])
+
+        def outputs_exist(self, c):
+            return False
+
+        def cleanup(self, c):
+            return None
+
     monkeypatch.setattr(
         DownloadGenomeStep,
         "spec",
@@ -176,30 +187,11 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
             inputs=[
                 FileInput(
                     "genome",
-                    source=OutputRef("build-genome", "genome"),
+                    source=MockBuildStep.genome_output,
                 )
             ],
         ),
     )
-
-    class MockBuildStep(Step):
-        name = "build-genome"
-        description = ""
-        cli_module = "tests.fake_step"
-        spec = StepSpec(
-            outputs=[
-                FileOutput(
-                    "genome",
-                    destination="genome/genome.txt",
-                )
-            ]
-        )
-
-        def outputs_exist(self, c):
-            return False
-
-        def cleanup(self, c):
-            return None
 
     mock_build = MockBuildStep()
 
@@ -249,8 +241,6 @@ def test_run_workflow_dry_run_does_not_call_default_executor(workflow_config):
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     export_dir = runner.export_all(
         [DownloadGenomeStep()],
         config,
@@ -333,8 +323,6 @@ def test_export_all_empty_runnables_raises(workflow_config):
 
 
 def test_export_all_includes_steps_even_when_outputs_exist(workflow_config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     step = DownloadGenomeStep()
     for path in step.output_paths(workflow_config).values():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,9 +365,6 @@ def test_run_all_empty_runnables_raises(workflow_config):
 
 
 def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     executor = MagicMock()
     plan = ExecutionPlan(
         steps_to_run=[DownloadGenomeStep(), CreateTargetGeneStep()],
@@ -400,9 +385,6 @@ def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
 
 def test_flatten_workflow_expands_task_then_step():
     """A workflow with a Task followed by a Step flattens to their Steps in order."""
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-
     download = DownloadGenomeStep()
     create = CreateTargetGeneStep()
 
@@ -442,9 +424,6 @@ def test_flatten_workflow_expands_task_then_step():
 
 def test_flatten_workflow_expands_nested_workflow():
     """A workflow containing a nested workflow flattens all steps recursively."""
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-
     download = DownloadGenomeStep()
     create = CreateTargetGeneStep()
 

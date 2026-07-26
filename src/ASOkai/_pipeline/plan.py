@@ -14,8 +14,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ASOkai._cwl.spec import OutputRef
-from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
+from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.files import FileInput, FileOutput
+from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ class ExecutionPlan:
     """Describes exactly what needs to run and what is already done."""
 
     steps_to_run: list[Step]
-    pre_resolved: dict[OutputRef, Path] = field(default_factory=dict)
+    pre_resolved: dict[FileOutput, Path] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +57,16 @@ def _flatten_runnable(
     )
 
 
-def _topo_sort(steps: list[Step]) -> list[Step]:
+def _dependency_inputs(step: Step, config: dict) -> list[FileInput]:
+    """Return file inputs whose producer has not been replaced by an override."""
+    return [
+        file_input
+        for file_input in step.spec.inputs
+        if file_input.configured_override_path(config) is None
+    ]
+
+
+def _topo_sort(steps: list[Step], config: dict) -> list[Step]:
     """
     Return a dep-first topological ordering of the given steps.
 
@@ -75,7 +87,8 @@ def _topo_sort(steps: list[Step]) -> list[Step]:
                 f"Dependency cycle detected involving step '{step.name}'."
             )
         visiting.add(step.name)
-        for dep_name in step.dependencies:
+        for file_input in _dependency_inputs(step, config):
+            dep_name = file_input.source.producer
             dep = by_name.get(dep_name)
             if dep is not None:
                 visit(dep)
@@ -92,6 +105,7 @@ def _topo_sort(steps: list[Step]) -> list[Step]:
 def _collect_transitive_deps(
     steps: list[Step],
     registry: dict[str, Step],
+    config: dict,
 ) -> list[Step]:
     """
     Starting from *steps*, walk each step's dependencies recursively and
@@ -104,7 +118,8 @@ def _collect_transitive_deps(
     queue: deque[Step] = deque(steps)
     while queue:
         current = queue.popleft()
-        for dep_name in current.dependencies:
+        for file_input in _dependency_inputs(current, config):
+            dep_name = file_input.source.producer
             if dep_name in seen:
                 continue
             dep = registry.get(dep_name)
@@ -123,7 +138,7 @@ def _resolve_external_deps(
     steps: list[Step],
     registry: dict[str, Step],
     config: dict,
-) -> dict[OutputRef, Path]:
+) -> dict[FileOutput, Path]:
     """
     Validate deps outside the current plan and reuse completed outputs.
 
@@ -131,40 +146,46 @@ def _resolve_external_deps(
     already have outputs on disk. Otherwise the caller should use recursive=True.
     """
     by_name = {s.name: s for s in steps}
-    pre_resolved: dict[OutputRef, Path] = {}
+    pre_resolved: dict[FileOutput, Path] = {}
 
     for step in steps:
-        for file_input in step.spec.inputs:
+        for file_input in _dependency_inputs(step, config):
             source = file_input.source
-            dep = by_name.get(source.step) or registry.get(source.step)
+            producer = source.producer
+            dep = by_name.get(producer) or registry.get(producer)
             if dep is None:
                 raise ValueError(
                     f"Step '{step.name}' references unknown producer "
-                    f"'{source.step}'."
+                    f"'{producer}'."
                 )
             try:
-                dep.spec.output(source.output)
+                declared = dep.spec.output(source.name)
             except KeyError as error:
                 raise ValueError(
                     f"Step '{step.name}' input '{file_input.name}' references "
-                    f"unknown output '{source.output}' on step '{source.step}'."
+                    f"unknown output '{source.name}' on step '{producer}'."
                 ) from error
+            if declared is not source:
+                raise ValueError(
+                    f"Step '{step.name}' input '{file_input.name}' references "
+                    f"an output declaration that does not belong to '{producer}'."
+                )
 
-            if source.step in by_name:
+            if producer in by_name:
                 continue
 
             if not dep.outputs_exist(config):
                 raise RuntimeError(
-                    f"Step '{step.name}' requires '{source.step}' but its outputs "
-                    f"are missing. Run '{source.step}' first, or use --recursive "
+                    f"Step '{step.name}' requires '{producer}' but its outputs "
+                    f"are missing. Run '{producer}' first, or use --recursive "
                     "to run dependencies automatically."
                 )
 
-            pre_resolved[source] = dep.validated_output_paths(config)[source.output]
+            pre_resolved[source] = dep.validated_output_paths(config)[source.name]
             logger.debug(
                 "[plan] dependency '%s/%s' exists — pre-resolved.",
-                source.step,
-                source.output,
+                producer,
+                source.name,
             )
 
     return pre_resolved
@@ -188,11 +209,12 @@ def build_plan(
     Steps:
     1. Flatten each Runnable to Step objects.
     2. Deduplicate by name, preserving first-seen order.
-    3. If recursive=True, prepend any missing transitive dependencies from
+    3. Remove dependency edges replaced by configured file overrides.
+    4. If recursive=True, prepend any missing transitive dependencies from
        the step registry.
-    4. Validate external dependencies and reuse completed dep outputs.
-    5. Topologically sort (dep-first DFS).
-    6. Partition: steps whose outputs already exist (and force=False) go into
+    5. Validate external dependencies and reuse completed dep outputs.
+    6. Topologically sort (dep-first DFS).
+    7. Partition: steps whose outputs already exist (and force=False) go into
        pre_resolved; the rest go into steps_to_run.
     """
     if _registry is None:
@@ -208,27 +230,27 @@ def build_plan(
                 seen_names.add(step.name)
                 flat.append(step)
 
-    # 3: collect transitive deps when recursive
+    # 3 + 4: remove overridden edges and collect active transitive deps
     if recursive:
-        flat = _collect_transitive_deps(flat, _registry)
+        flat = _collect_transitive_deps(flat, _registry, config)
 
-    # 4: validate deps not included in the plan and reuse completed outputs
+    # 5: validate deps not included in the plan and reuse completed outputs
     pre_resolved = _resolve_external_deps(
         flat,
         _registry,
         config,
     )
 
-    # 5: topological sort
-    ordered = _topo_sort(flat)
+    # 6: topological sort
+    ordered = _topo_sort(flat, config)
 
-    # 6: partition
+    # 7: partition
     steps_to_run: list[Step] = []
 
     for step in ordered:
         if not force and step.outputs_exist(config):
             for key, path in step.validated_output_paths(config).items():
-                pre_resolved[OutputRef(step.name, key)] = path
+                pre_resolved[step.spec.output(key)] = path
             logger.debug("[plan] '%s' outputs exist — pre-resolved.", step.name)
         else:
             steps_to_run.append(step)

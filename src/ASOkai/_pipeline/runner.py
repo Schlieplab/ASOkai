@@ -21,9 +21,12 @@ from ASOkai._cwl.input_resolution import (
 )
 from ASOkai._cwl.export import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
-from ASOkai._pipeline.base import Runnable, Step, Task, Workflow
+from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.plan import ExecutionPlan, build_plan
 from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
+from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -143,14 +146,13 @@ def run_plan(
     if not plan.steps_to_run:
         logger.info("[%s] all outputs already exist, nothing to run.", label)
         outputs: dict[str, Path] = {}
-        for ref, path in plan.pre_resolved.items():
-            logger.info("  %s/%s: %s", ref.step, ref.output, path)
-            outputs[ref.output] = path
+        for output, path in plan.pre_resolved.items():
+            logger.info("  %s/%s: %s", output.producer, output.name, path)
+            outputs[output.name] = path
         return outputs
 
     cwl_bundle = generate_cwl_bundle(
         plan.steps_to_run,
-        plan.pre_resolved,
         config,
     )
     inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)
@@ -234,7 +236,6 @@ def export_all(
 
     cwl_bundle = generate_cwl_bundle(
         plan.steps_to_run,
-        plan.pre_resolved,
         config,
     )
     inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)

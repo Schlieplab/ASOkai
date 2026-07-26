@@ -6,8 +6,13 @@ from argparse import Namespace
 
 import pytest
 
-from ASOkai._cwl.spec import FileOutput, StepSpec
-from ASOkai._pipeline.base import AnalysisStep
+from ASOkai.plugin_api import (
+    AnalysisStep,
+    FileOutput,
+    JsonFile,
+    ScalarParam,
+    StepSpec,
+)
 
 
 class FakeAnalysis:
@@ -25,9 +30,14 @@ class FakeAnalysisStep(AnalysisStep):
     name = "fake-analysis"
     description = "Fake analysis."
     analysis_cls = FakeAnalysis
-    cli_module = "tests.fake"
+    analysis_output = FileOutput(
+        "analysis",
+        destination="analysis.json",
+        file_type=JsonFile(),
+    )
     spec = StepSpec(
-        outputs=[FileOutput("analysis", destination="analysis.json")]
+        params=[ScalarParam("value", int)],
+        outputs=[analysis_output],
     )
 
     def outdir(self, config):
@@ -42,21 +52,15 @@ class FakeAnalysisStep(AnalysisStep):
     def cleanup(self, config):
         pass
 
-    def load_analysis_inputs(self, args):
+    def analysis_kwargs(self, args):
         return {"value": args.value}
-
-    def analysis_kwargs(self, args, inputs):
-        return {"value": inputs["value"]}
-
-    def analysis_metadata(self, args, inputs):
-        return {"analysis": self.name, "value": inputs["value"]}
 
 
 class MissingAnalysisClassStep(FakeAnalysisStep):
     analysis_cls = None
 
 
-def test_analysis_step_run_from_args_writes_metadata_and_results(tmp_path):
+def test_analysis_step_run_from_args_writes_declared_params_and_results(tmp_path):
     output = tmp_path / "analysis.json"
     args = Namespace(analysis_output=output, value=7, n_processes=3)
 

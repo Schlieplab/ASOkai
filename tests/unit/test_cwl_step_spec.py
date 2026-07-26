@@ -12,23 +12,31 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 import pytest
 
-from ASOkai._cwl.spec import (
-    TemplateField,
-    OutputPathTemplate,
-    FileInput,
-    FileOutput,
-    OutputRef,
+from ASOkai.Utils import Serializable
+from ASOkai._pipeline.file_types import JsonFile
+from ASOkai._pipeline.files import FileInput, FileOutput
+from ASOkai._pipeline.parameters import (
     Param,
     ScalarParam,
-    StepSpec,
 )
+from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
+from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.steps.base import Step
+
+
+class _InputProducer(Step):
+    name = "producer"
+    description = "Test input producer."
+    result_output = FileOutput("result", destination="result.json")
+    spec = StepSpec(outputs=[result_output])
+
 
 def _file_input(name: str = "input_file") -> FileInput:
-    return FileInput(name, source=OutputRef("producer", "result"))
+    return FileInput(name, source=_InputProducer.result_output)
 
 
 def test_parameter_types_share_the_param_base_contract():
@@ -36,6 +44,46 @@ def test_parameter_types_share_the_param_base_contract():
     assert issubclass(FileInput, Param)
     assert issubclass(FileOutput, Param)
     assert inspect.isabstract(Param)
+
+
+def test_file_input_references_the_producers_exact_output_declaration():
+    file_input = _file_input()
+
+    assert file_input.source is _InputProducer.result_output
+    assert file_input.source.producer == "producer"
+
+
+def test_step_output_must_be_declared_as_a_class_attribute():
+    with pytest.raises(TypeError, match="must be declared once as a class attribute"):
+
+        class InlineOutputStep(Step):
+            name = "inline-output"
+            description = "Invalid test step."
+            spec = StepSpec(
+                outputs=[FileOutput("result", destination="result.json")]
+            )
+
+
+def test_json_file_validates_its_declared_value_type():
+    class Data(Serializable):
+        def __init__(self, count):
+            self.count = count
+            super().__init__()
+
+        def validate(self):
+            if type(self.count) is not int:
+                raise TypeError("count must be an integer")
+
+    output = FileOutput(
+        "result",
+        file_type=JsonFile(Data),
+        destination="result.json",
+    )
+
+    with pytest.raises(ValueError, match="count must be an integer"):
+        output.dumps(Data("not-an-integer"))
+    with pytest.raises(TypeError, match="requires Data"):
+        output.dumps(cast(Any, "not-a-Data"))
 
 
 def test_step_spec_infers_cwl_types_from_annotations():
@@ -84,7 +132,7 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
         inputs=[
             FileInput(
                 "file_input",
-                source=OutputRef("producer", "result"),
+                source=_InputProducer.result_output,
                 override="section.file",
             ),
         ],
@@ -269,7 +317,7 @@ def test_output_path_template_rejects_paths_outside_datadir():
 
 
 def test_step_spec_derives_dependencies_and_supports_exact_lookups():
-    source = OutputRef("producer", "result")
+    source = _InputProducer.result_output
     spec = StepSpec(
         inputs=[
             FileInput("renamed_input", source=source),

@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 
 import pytest
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
-from ASOkai._pipeline.base import Runnable, Workflow, Step, Task
+from ASOkai.plugin_api import Runnable, Step, Task, Workflow
 from ASOkai._pipeline.plan import _flatten_runnable
 
 

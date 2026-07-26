@@ -13,8 +13,13 @@ from __future__ import annotations
 import pytest
 from typing import cast
 
-from ASOkai._cwl.spec import FileInput, FileOutput, OutputRef, StepSpec
-from ASOkai._pipeline.base import Runnable, Step
+from ASOkai.plugin_api import (
+    FileInput,
+    FileOutput,
+    Runnable,
+    Step,
+    StepSpec,
+)
 from ASOkai._pipeline.plan import build_plan
 
 
@@ -24,43 +29,53 @@ from ASOkai._pipeline.plan import build_plan
 
 def _make_step(
     name: str,
-    deps: list[str] | None = None,
+    deps: list[Step] | None = None,
     *,
     exists: bool = False,
     output_names: list[str] | None = None,
+    input_override: str | None = None,
 ) -> Step:
     """Return a minimal concrete Step for plan tests."""
     if output_names is None:
         output_names = [f"{name}_out"]
+    outputs = [
+        FileOutput(
+            key,
+            destination=f"{name}/{key}.txt",
+        )
+        for key in output_names
+    ]
     spec = StepSpec(
         inputs=[
             FileInput(
-                f"{dep}_out",
-                source=OutputRef(dep, f"{dep}_out"),
+                dep.spec.outputs[0].name,
+                source=dep.spec.outputs[0],
+                override=input_override,
             )
             for dep in deps or []
         ],
-        outputs=[
-            FileOutput(
-                key,
-                destination=f"{name}/{key}.txt",
-            )
-            for key in output_names
-        ]
+        outputs=outputs,
     )
 
-    class _Step(Step):
-        def outputs_exist(self, config: dict) -> bool:
-            return exists
+    def outputs_exist(self, config: dict) -> bool:
+        return exists
 
-        def cleanup(self, config: dict) -> None:
-            pass
+    def cleanup(self, config: dict) -> None:
+        pass
 
-    _Step.name = name
-    _Step.description = ""
-    _Step.cli_module = "tests.fake_step"
-    _Step.spec = spec
-    return _Step()
+    step_type = type(
+        "_Step",
+        (Step,),
+        {
+            "name": name,
+            "description": "",
+            "spec": spec,
+            "outputs_exist": outputs_exist,
+            "cleanup": cleanup,
+            **{f"{output.name}_output": output for output in outputs},
+        },
+    )
+    return step_type()
 
 
 @pytest.fixture
@@ -83,7 +98,7 @@ def test_single_step_outputs_exist_goes_to_pre_resolved(cfg):
     step = _make_step("alpha", exists=True, output_names=["result"])
     plan = build_plan([step], cfg)
     assert plan.steps_to_run == []
-    assert OutputRef("alpha", "result") in plan.pre_resolved
+    assert step.spec.output("result") in plan.pre_resolved
 
 
 def test_force_keeps_done_step_in_steps_to_run(cfg):
@@ -95,15 +110,15 @@ def test_force_keeps_done_step_in_steps_to_run(cfg):
 
 def test_dep_done_goes_to_pre_resolved(cfg):
     dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     plan = build_plan([step, dep], cfg)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert OutputRef("dep", "dep_out") in plan.pre_resolved
+    assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
 def test_dep_not_done_included_in_steps_to_run(cfg):
     dep = _make_step("dep")
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     plan = build_plan([dep, step], cfg)
     names = [s.name for s in plan.steps_to_run]
     assert names == ["dep", "step"]
@@ -117,7 +132,7 @@ def test_dep_not_done_included_in_steps_to_run(cfg):
 def test_topo_order_dep_first(cfg):
     """dep must come before step regardless of input order."""
     dep = _make_step("dep")
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     plan = build_plan([step, dep], cfg)
     names = [s.name for s in plan.steps_to_run]
     assert names.index("dep") < names.index("step")
@@ -125,16 +140,25 @@ def test_topo_order_dep_first(cfg):
 
 def test_topo_order_chain(cfg):
     a = _make_step("a")
-    b = _make_step("b", deps=["a"])
-    c = _make_step("c", deps=["b"])
+    b = _make_step("b", deps=[a])
+    c = _make_step("c", deps=[b])
     plan = build_plan([c, a, b], cfg)
     names = [s.name for s in plan.steps_to_run]
     assert names == ["a", "b", "c"]
 
 
 def test_cycle_raises(cfg):
-    a = _make_step("a", deps=["b"])
-    b = _make_step("b", deps=["a"])
+    a = _make_step("a")
+    b = _make_step("b", deps=[a])
+    type(a).spec = StepSpec(
+        inputs=[
+            FileInput(
+                "b_out",
+                source=b.spec.output("b_out"),
+            )
+        ],
+        outputs=a.spec.outputs,
+    )
     with pytest.raises(ValueError, match="cycle"):
         build_plan([a, b], cfg)
 
@@ -163,28 +187,15 @@ def test_pre_resolved_outputs_are_keyed_by_producer_and_port(cfg):
     plan = build_plan([first, second], cfg)
 
     assert set(plan.pre_resolved) == {
-        OutputRef("first", "result"),
-        OutputRef("second", "result"),
+        first.spec.output("result"),
+        second.spec.output("result"),
     }
 
 
 def test_unknown_referenced_output_raises(cfg):
     producer = _make_step("producer", output_names=["actual"])
-    consumer = _make_step("consumer")
-    type(consumer).spec = StepSpec(
-        inputs=[
-            FileInput(
-                "input",
-                source=OutputRef("producer", "missing"),
-            )
-        ],
-        outputs=[
-            FileOutput(
-                "consumer_out",
-                destination="consumer/consumer_out.txt",
-            )
-        ],
-    )
+    shadow_producer = _make_step("producer", output_names=["missing"])
+    consumer = _make_step("consumer", deps=[shadow_producer])
 
     with pytest.raises(ValueError, match="unknown output 'missing'"):
         build_plan([producer, consumer], cfg)
@@ -196,7 +207,7 @@ def test_unknown_referenced_output_raises(cfg):
 
 def test_recursive_prepends_missing_dep(cfg):
     dep = _make_step("dep")
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, recursive=True, _registry=registry)
     names = [s.name for s in plan.steps_to_run]
@@ -206,16 +217,17 @@ def test_recursive_prepends_missing_dep(cfg):
 
 def test_recursive_skips_done_dep(cfg):
     dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, recursive=True, _registry=registry)
     names = [s.name for s in plan.steps_to_run]
     assert "dep" not in names
-    assert OutputRef("dep", "dep_out") in plan.pre_resolved
+    assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
 def test_recursive_unknown_dep_raises(cfg):
-    step = _make_step("step", deps=["ghost"])
+    ghost = _make_step("ghost")
+    step = _make_step("step", deps=[ghost])
     registry = {"step": step}
     with pytest.raises(ValueError, match="unknown step 'ghost'"):
         build_plan([step], cfg, recursive=True, _registry=registry)
@@ -223,28 +235,60 @@ def test_recursive_unknown_dep_raises(cfg):
 
 def test_nonrecursive_external_done_dep_goes_to_pre_resolved(cfg):
     dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, recursive=False, _registry=registry)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert OutputRef("dep", "dep_out") in plan.pre_resolved
+    assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
 def test_force_keeps_external_done_dep_pre_resolved(cfg):
     dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     registry = {"dep": dep, "step": step}
     plan = build_plan([step], cfg, force=True, _registry=registry)
     assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert OutputRef("dep", "dep_out") in plan.pre_resolved
+    assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
 def test_nonrecursive_external_missing_dep_raises(cfg):
     dep = _make_step("dep", exists=False)
-    step = _make_step("step", deps=["dep"])
+    step = _make_step("step", deps=[dep])
     registry = {"dep": dep, "step": step}
     with pytest.raises(RuntimeError, match="use --recursive"):
         build_plan([step], cfg, recursive=False, _registry=registry)
+
+
+def test_nonrecursive_override_replaces_external_dependency(cfg, tmp_path):
+    dep = _make_step("dep", exists=False, output_names=["dep_out"])
+    step = _make_step(
+        "step",
+        deps=[dep],
+        input_override="inputs.dep",
+    )
+    registry = {"dep": dep, "step": step}
+    cfg["inputs"] = {"dep": str(tmp_path / "override.txt")}
+
+    plan = build_plan([step], cfg, recursive=False, _registry=registry)
+
+    assert [planned.name for planned in plan.steps_to_run] == ["step"]
+    assert plan.pre_resolved == {}
+
+
+def test_recursive_override_does_not_schedule_dependency(cfg, tmp_path):
+    dep = _make_step("dep", exists=False, output_names=["dep_out"])
+    step = _make_step(
+        "step",
+        deps=[dep],
+        input_override="inputs.dep",
+    )
+    registry = {"dep": dep, "step": step}
+    cfg["inputs"] = {"dep": str(tmp_path / "override.txt")}
+
+    plan = build_plan([step], cfg, recursive=True, _registry=registry)
+
+    assert [planned.name for planned in plan.steps_to_run] == ["step"]
+    assert plan.pre_resolved == {}
 
 
 # ---------------------------------------------------------------------------

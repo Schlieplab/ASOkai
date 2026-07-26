@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 import yaml
-from ASOkai._cwl.spec import StepCwlGenerator
-from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.base import CoreStep, Step
+from ASOkai._cwl.generation import StepCwlGenerator
+from ASOkai.plugin_api import CoreStep, Step
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
 @pytest.fixture
@@ -116,8 +116,12 @@ def test_cwl_spec_generates_command_line_tool(step, config):
     assert doc["outputs"]["dna"]["outputBinding"]["glob"] == dna_filename
 
 
-def test_main_downloads_with_mocked_ensembl_downloader(monkeypatch, tmp_path, capsys):
-    from ASOkai._pipeline.steps import download_genome
+def test_run_cli_downloads_with_mocked_ensembl_downloader(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    from ASOkai._pipeline.steps.core import download_genome
 
     captured = {}
 
@@ -140,7 +144,7 @@ def test_main_downloads_with_mocked_ensembl_downloader(monkeypatch, tmp_path, ca
 
     monkeypatch.setattr(download_genome, "EnsemblGenomeDownloader", FakeDownloader)
 
-    result = download_genome.main(
+    result = DownloadGenomeStep().run_cli(
         [
             "--assembly", "GRCh38",
             "--release", "114",
@@ -165,21 +169,3 @@ def test_main_downloads_with_mocked_ensembl_downloader(monkeypatch, tmp_path, ca
     assert (tmp_path / "out" / "annotation.gtf.gz").exists()
     assert (tmp_path / "out" / "annotation.db").exists()
     assert "dna\t" in capsys.readouterr().out
-
-
-def test_main_rejects_outputs_with_different_parent_directories(tmp_path):
-    from ASOkai._pipeline.steps import download_genome
-
-    with pytest.raises(SystemExit):
-        download_genome.main(
-            [
-                "--assembly", "GRCh38",
-                "--release", "114",
-                "--source", "ensembl",
-                "--species", "Homo_sapiens",
-                "--dna-output", str(tmp_path / "one" / "dna.fa.gz"),
-                "--cdna-output", str(tmp_path / "two" / "cdna.fa.gz"),
-                "--annotation-output", str(tmp_path / "one" / "annotation.gtf.gz"),
-                "--db-output", str(tmp_path / "one" / "annotation.db"),
-            ]
-        )

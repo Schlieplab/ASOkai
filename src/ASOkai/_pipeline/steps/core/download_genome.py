@@ -15,11 +15,14 @@ from typing import Literal
 
 from GenomeUtils.Downloaders import EnsemblGenomeDownloader
 
-from ASOkai._pipeline.file_types import FileType
-from ASOkai._pipeline.files import FileOutput
-from ASOkai._pipeline.parameters import ScalarParam
-from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
-from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.contracts.file_types import FileType
+from ASOkai._pipeline.contracts.files import FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
+from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 
 

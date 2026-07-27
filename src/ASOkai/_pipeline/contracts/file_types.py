@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/file_types.py
+Filename: src/ASOkai/_pipeline/contracts/file_types.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Generic, Mapping, Sequence, TypeAlias, TypeVar, cast
 
 from ASOkai.Utils._serializer import Serializable
+from ASOkai._pipeline.contracts.json_schemas import JSON_SCHEMAS
 
 
 FileValueT = TypeVar("FileValueT")
@@ -114,28 +115,15 @@ class JsonFile(FileType[JsonValueT], Generic[JsonValueT]):
         if value_type is None:
             return cast(JsonValueT, payload)
         domain_type = cast(type[Serializable], value_type)
-        if not isinstance(payload, dict):
-            raise ValueError(
-                f"JSON from {source} must contain a "
-                f"{domain_type.__module__}.{domain_type.__name__} object."
-            )
-        if (
-            payload.get("__class__") != domain_type.__name__
-            or payload.get("__module__") != domain_type.__module__
-        ):
-            raise ValueError(
-                f"JSON from {source} must contain "
-                f"{domain_type.__module__}.{domain_type.__name__}."
-        )
 
         try:
+            JSON_SCHEMAS.validate(domain_type, payload)
             value = domain_type.from_dict(payload)
             if type(value) is not domain_type:
                 raise TypeError(
                     f"Deserializer returned {type(value).__name__}; expected "
                     f"{domain_type.__name__}."
                 )
-            value.validate()
         except (ImportError, AttributeError, TypeError, ValueError) as error:
             raise ValueError(
                 f"Invalid {domain_type.__name__} from {source}: {error}"
@@ -154,12 +142,12 @@ class JsonFile(FileType[JsonValueT], Generic[JsonValueT]):
                 )
             try:
                 domain_value = cast(Serializable, value)
-                domain_value.validate()
                 payload = domain_value.to_dict()
                 if not isinstance(payload, dict):
                     raise TypeError(
                         "Serializable.to_dict() must return a dictionary."
                     )
+                JSON_SCHEMAS.validate(domain_type, payload)
             except (TypeError, ValueError) as error:
                 raise ValueError(
                     f"Cannot serialize {domain_type.__name__}: {error}"

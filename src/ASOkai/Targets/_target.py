@@ -84,30 +84,3 @@ class Target(Serializable, ABC):
         Get all target sites as a list.
         """
         return list(self._sites.values())
-
-    def validate(self) -> None:
-        """Validate fields shared by every serialized target."""
-        super().validate()
-        if type(self.id) is not str or not self.id.strip():
-            raise ValueError("Target id must be a non-blank string.")
-        if not isinstance(self._sites, dict):
-            raise TypeError("Target sites must be stored as a dictionary.")
-        for site_id, site in self._sites.items():
-            if type(site_id) is not str or not site_id.strip():
-                raise ValueError("Target site keys must be non-blank strings.")
-            if not isinstance(site, Site):
-                raise TypeError(
-                    f"Target site {site_id!r} must contain a Site instance."
-                )
-            if site_id != site.id:
-                raise ValueError(
-                    f"Target site key {site_id!r} does not match site id "
-                    f"{site.id!r}."
-                )
-            try:
-                site.validate()
-            except (TypeError, ValueError) as error:
-                raise type(error)(
-                    f"Target site {site_id!r} is invalid: {error}"
-                ) from error
-        

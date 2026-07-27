@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/step_spec.py
+Filename: src/ASOkai/_pipeline/contracts/step_spec.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
@@ -17,8 +17,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from ASOkai._cwl.model import CwlCommandLineToolSpec, CwlToolArgument
-from ASOkai._pipeline.files import FileInput, FileOutput
-from ASOkai._pipeline.parameters import ScalarParam
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
 
 
 @dataclass(frozen=True)

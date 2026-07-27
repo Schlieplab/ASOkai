@@ -135,17 +135,17 @@ def test_target_gene_input_rejects_the_wrong_root_type(
     payload = json.loads(output.dumps(target_gene))
     payload["__class__"] = "Other"
 
-    with pytest.raises(ValueError, match="must contain .*TargetGene"):
+    with pytest.raises(ValueError, match=r"\$.__class__"):
         input_contract.loads(json.dumps(payload))
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "message"),
+    ("field", "value"),
     [
-        ("name", "", "name must be a non-blank string"),
-        ("start", True, "start must be an integer greater than zero"),
-        ("strand", "?", "strand must be"),
-        ("sequence", "", "sequence must be non-empty"),
+        ("name", ""),
+        ("start", True),
+        ("strand", "?"),
+        ("sequence", ""),
     ],
 )
 def test_target_gene_input_rejects_invalid_core_fields(
@@ -154,16 +154,15 @@ def test_target_gene_input_rejects_invalid_core_fields(
     target_gene,
     field,
     value,
-    message,
 ):
     payload = json.loads(output.dumps(target_gene))
     payload[field] = value
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match=rf"\$.{field}"):
         input_contract.loads(json.dumps(payload))
 
 
-def test_target_gene_input_rejects_site_key_mismatch(
+def test_target_gene_schema_does_not_enforce_site_key_relationships(
     output,
     input_contract,
     target_gene,
@@ -171,8 +170,9 @@ def test_target_gene_input_rejects_site_key_mismatch(
     payload = json.loads(output.dumps(target_gene))
     payload["sites"]["wrong-key"] = payload["sites"].pop("genomic-site")
 
-    with pytest.raises(ValueError, match="does not match site id"):
-        input_contract.loads(json.dumps(payload))
+    restored = input_contract.loads(json.dumps(payload))
+
+    assert restored.site_by_id("wrong-key").id == "genomic-site"
 
 
 def test_target_gene_input_rejects_non_site_values(
@@ -183,20 +183,16 @@ def test_target_gene_input_rejects_non_site_values(
     payload = json.loads(output.dumps(target_gene))
     payload["sites"]["not-a-site"] = 42
 
-    with pytest.raises(ValueError, match="must contain a Site instance"):
+    with pytest.raises(ValueError, match=r"\$.sites.not-a-site"):
         input_contract.loads(json.dumps(payload))
 
 
 @pytest.mark.parametrize(
-    ("site_id", "field", "message"),
+    ("site_id", "field"),
     [
-        (None, "genome", "genome must be a Genome or None"),
-        (
-            None,
-            "chromosome",
-            "chromosome reference must be a Chromosome or None",
-        ),
-        ("genomic-site", "genome", "genome must be a Genome or None"),
+        (None, "genome"),
+        (None, "chromosome"),
+        ("genomic-site", "genome"),
     ],
 )
 def test_target_gene_input_rejects_invalid_runtime_references(
@@ -205,47 +201,38 @@ def test_target_gene_input_rejects_invalid_runtime_references(
     target_gene,
     site_id,
     field,
-    message,
 ):
     payload = json.loads(output.dumps(target_gene))
     destination = payload if site_id is None else payload["sites"][site_id]
     destination[field] = "not-a-genome"
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError) as raised:
         input_contract.loads(json.dumps(payload))
+
+    assert field in str(raised.value)
 
 
 @pytest.mark.parametrize(
-    ("site_id", "field", "value", "message"),
+    ("site_id", "field", "value"),
     [
-        (
-            "genomic-site",
-            "end",
-            5,
-            "sequence length must match its inclusive interval",
-        ),
-        (
-            "transcript-site",
-            "t_end",
-            9,
-            "sequence length must match its half-open interval",
-        ),
+        ("genomic-site", "end", 5),
+        ("transcript-site", "t_end", 9),
     ],
 )
-def test_target_gene_input_rejects_invalid_site_intervals(
+def test_target_gene_schema_does_not_enforce_coordinate_relationships(
     output,
     input_contract,
     target_gene,
     site_id,
     field,
     value,
-    message,
 ):
     payload = json.loads(output.dumps(target_gene))
     payload["sites"][site_id][field] = value
 
-    with pytest.raises(ValueError, match=message):
-        input_contract.loads(json.dumps(payload))
+    restored = input_contract.loads(json.dumps(payload))
+
+    assert getattr(restored.site_by_id(site_id), field) == value
 
 
 @pytest.mark.parametrize(
@@ -262,11 +249,31 @@ def test_target_gene_input_rejects_ambiguous_json(input_contract, content):
         input_contract.loads(content)
 
 
-def test_target_gene_output_rejects_invalid_objects(output, target_gene):
+def test_target_gene_output_schema_does_not_enforce_site_key_relationships(
+    output,
+    target_gene,
+):
     target_gene._sites["wrong-key"] = target_gene._sites.pop("genomic-site")
 
-    with pytest.raises(ValueError, match="does not match site id"):
-        output.dumps(target_gene)
+    content = output.dumps(target_gene)
+
+    assert json.loads(content)["sites"]["wrong-key"]["id"] == "genomic-site"
+
+
+def test_target_gene_schema_reports_all_structural_errors(
+    output,
+    input_contract,
+    target_gene,
+):
+    payload = json.loads(output.dumps(target_gene))
+    payload["name"] = ""
+    payload["start"] = True
+
+    with pytest.raises(ValueError) as raised:
+        input_contract.loads(json.dumps(payload))
+
+    assert "$.name" in str(raised.value)
+    assert "$.start" in str(raised.value)
 
 
 def test_target_gene_output_rejects_the_wrong_value_type(output):

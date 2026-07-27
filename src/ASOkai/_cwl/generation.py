@@ -20,7 +20,7 @@ import yaml
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._pipeline import config as cfg
-from ASOkai._pipeline.files import FileInput
+from ASOkai._pipeline.contracts.files import FileInput
 from ASOkai._pipeline.steps.base import Step
 
 

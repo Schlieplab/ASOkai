@@ -281,6 +281,6 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
                 "--bindings-output",
                 str(tmp_path / "bindings.json"),
             ]
-        )
+    )
     assert error.value.code == 2
-    assert "must contain ASOkai.Targets._target_gene.TargetGene" in capsys.readouterr().err
+    assert "does not match the TargetGene schema" in capsys.readouterr().err

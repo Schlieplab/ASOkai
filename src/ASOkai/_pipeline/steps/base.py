@@ -17,9 +17,9 @@ from typing import Any, ClassVar
 
 from ASOkai._cwl.model import CwlCommandLineToolSpec
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.files import FileOutput
-from ASOkai._pipeline.parameters import ScalarParam
-from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.contracts.files import FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.step_spec import StepSpec
 
 
 _N_PROCESSES_PARAM = ScalarParam(

@@ -52,24 +52,3 @@ class GenomicSite(Site, GenomeElement):
         
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', locus={self.locus!r}), sequence={self.sequence!r})"
-
-    def validate(self) -> None:
-        """Validate a serialized genomic site."""
-        super().validate()
-        if type(self.chr) is not str or not self.chr.strip():
-            raise ValueError("Genomic site chromosome must be a non-blank string.")
-        if type(self.start) is not int or self.start < 1:
-            raise ValueError("Genomic site start must be an integer greater than zero.")
-        if type(self.end) is not int or self.end < self.start:
-            raise ValueError(
-                "Genomic site end must be an integer greater than or equal to start."
-            )
-        if type(self.strand) is not str or self.strand not in ("+", "-"):
-            raise ValueError("Genomic site strand must be '+' or '-'.")
-        if self._genome is not None and not isinstance(self._genome, Genome):
-            raise TypeError("Genomic site genome must be a Genome or None.")
-        if len(self.sequence) != self.end - self.start + 1:
-            raise ValueError(
-                "Genomic site sequence length must match its inclusive interval."
-            )
-    

@@ -38,16 +38,6 @@ class Site(Serializable, ABC):
         """Return the site sequence in the 5' to 3' direction."""
         return self._sequence
 
-    def validate(self) -> None:
-        """Validate fields shared by every serialized site."""
-        if type(self.id) is not str or not self.id.strip():
-            raise ValueError("Site id must be a non-blank string.")
-        if not isinstance(self.sequence, Seq):
-            raise TypeError("Site sequence must be a Bio.Seq.Seq.")
-        sequence = str(self.sequence)
-        if not sequence or any(character.isspace() for character in sequence):
-            raise ValueError("Site sequence must be non-empty and contain no whitespace.")
-
     @abstractmethod
     def __repr__(self) -> str:
         """Return a string representation of this site."""

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow

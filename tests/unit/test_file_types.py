@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from ASOkai._pipeline.file_types import CsvFile, FileType, JsonFile
+from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
 
 
 def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):

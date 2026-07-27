@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/files.py
+Filename: src/ASOkai/_pipeline/contracts/files.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any, Generic, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
-from ASOkai._pipeline.file_types import FileType, FileValueT
-from ASOkai._pipeline.parameters import Param, _flag_for_name
-from ASOkai._pipeline.paths import OutputPathTemplate
+from ASOkai._pipeline.contracts.file_types import FileType, FileValueT
+from ASOkai._pipeline.contracts.parameters import Param, _flag_for_name
+from ASOkai._pipeline.contracts.paths import OutputPathTemplate
 
 
 @dataclass(frozen=True, init=False, eq=False)

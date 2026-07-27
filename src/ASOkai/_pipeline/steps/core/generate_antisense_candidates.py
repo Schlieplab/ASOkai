@@ -13,11 +13,14 @@ from __future__ import annotations
 from typing import Literal
 
 from ASOkai.Types import TargetRegion
-from ASOkai._pipeline.file_types import JsonFile
-from ASOkai._pipeline.files import FileInput, FileOutput
-from ASOkai._pipeline.parameters import ScalarParam
-from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
-from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.contracts.file_types import JsonFile
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
+from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 

@@ -17,14 +17,17 @@ from typing import Any, Literal, cast
 import pytest
 
 from ASOkai.Utils import Serializable
-from ASOkai._pipeline.file_types import JsonFile
-from ASOkai._pipeline.files import FileInput, FileOutput
-from ASOkai._pipeline.parameters import (
+from ASOkai._pipeline.contracts.file_types import JsonFile
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import (
     Param,
     ScalarParam,
 )
-from ASOkai._pipeline.paths import OutputPathTemplate, TemplateField
-from ASOkai._pipeline.step_spec import StepSpec
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
+from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.base import Step
 
 
@@ -64,15 +67,11 @@ def test_step_output_must_be_declared_as_a_class_attribute():
             )
 
 
-def test_json_file_validates_its_declared_value_type():
+def test_typed_json_file_requires_a_registered_schema():
     class Data(Serializable):
         def __init__(self, count):
             self.count = count
             super().__init__()
-
-        def validate(self):
-            if type(self.count) is not int:
-                raise TypeError("count must be an integer")
 
     output = FileOutput(
         "result",
@@ -80,8 +79,8 @@ def test_json_file_validates_its_declared_value_type():
         destination="result.json",
     )
 
-    with pytest.raises(ValueError, match="count must be an integer"):
-        output.dumps(Data("not-an-integer"))
+    with pytest.raises(ValueError, match="No JSON schema is registered"):
+        output.dumps(Data(1))
     with pytest.raises(TypeError, match="requires Data"):
         output.dumps(cast(Any, "not-a-Data"))
 

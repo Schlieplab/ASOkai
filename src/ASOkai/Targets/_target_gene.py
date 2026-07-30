@@ -19,6 +19,8 @@ class TargetGene(Target, Gene):
     """
     Represents a candidate target gene, inheriting from GenomeUtils.Gene.
     """
+
+    _sequence: Seq
     
     # Attributes to exclude from serialization (references to large/circular objects)
     _non_serializable_attrs = {'_genome', '_parent', '_children'}

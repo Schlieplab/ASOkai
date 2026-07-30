@@ -13,6 +13,9 @@ from ..Utils import Serializable
 class Binding(Serializable):
     """A binding between an antisense therapeutic and a site."""
 
+    therapeutic_id: str
+    site_id: str
+
     def __init__(self, therapeutic_id: str, site_id: str):
         self.therapeutic_id = therapeutic_id
         self.site_id = site_id

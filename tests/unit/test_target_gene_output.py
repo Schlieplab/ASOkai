@@ -20,12 +20,12 @@ from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
 
 
 @pytest.fixture
-def output() -> FileOutput[TargetGene]:
+def output() -> FileOutput:
     return CreateTargetGeneStep.target_gene_output
 
 
 @pytest.fixture
-def input_contract() -> FileInput[TargetGene]:
+def input_contract() -> FileInput:
     return GenerateAntisenseCandidatesStep.target_gene_input
 
 
@@ -142,10 +142,10 @@ def test_target_gene_input_rejects_the_wrong_root_type(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("name", ""),
+        ("name", 42),
         ("start", True),
         ("strand", "?"),
-        ("sequence", ""),
+        ("sequence", 42),
     ],
 )
 def test_target_gene_input_rejects_invalid_core_fields(
@@ -266,7 +266,7 @@ def test_target_gene_schema_reports_all_structural_errors(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["name"] = ""
+    payload["name"] = []
     payload["start"] = True
 
     with pytest.raises(ValueError) as raised:
@@ -276,12 +276,39 @@ def test_target_gene_schema_reports_all_structural_errors(
     assert "$.start" in str(raised.value)
 
 
+def test_target_gene_input_allows_extra_scalar_kwargs(
+    output,
+    input_contract,
+    target_gene,
+):
+    payload = json.loads(output.dumps(target_gene))
+    payload["source_label"] = "external"
+    payload["priority"] = 1
+
+    restored = input_contract.loads(json.dumps(payload))
+
+    assert restored.source_label == "external"
+    assert restored.priority == 1
+
+
+def test_target_gene_input_rejects_non_scalar_extra_kwargs(
+    output,
+    input_contract,
+    target_gene,
+):
+    payload = json.loads(output.dumps(target_gene))
+    payload["source_details"] = {"name": "external"}
+
+    with pytest.raises(ValueError, match=r"\$.source_details"):
+        input_contract.loads(json.dumps(payload))
+
+
 def test_target_gene_output_rejects_the_wrong_value_type(output):
     with pytest.raises(TypeError, match="requires TargetGene"):
         output.dumps(cast(Any, "not-a-target-gene"))
 
 
-def test_target_gene_output_rejects_subclasses(output):
+def test_target_gene_output_schema_rejects_subclasses(output):
     class SpecializedTargetGene(TargetGene):
         pass
 
@@ -296,5 +323,5 @@ def test_target_gene_output_rejects_subclasses(output):
         sites={},
     )
 
-    with pytest.raises(TypeError, match="requires TargetGene"):
+    with pytest.raises(ValueError, match="does not match the TargetGene schema"):
         output.dumps(cast(Any, target))

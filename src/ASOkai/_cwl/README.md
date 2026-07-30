@@ -55,8 +55,8 @@ class ConsumerStep(CoreStep):
 
 The file type owns format-specific I/O and validation. `FileType` leaves an
 input as a `Path`, `JsonFile` handles JSON, and `CsvFile` handles tabular CSV.
-`JsonFile(SomeSerializableClass)` validates against that type's registered
-schema before reconstructing it.
+`JsonFile(SomeSerializableClass)` validates and reconstructs one domain value;
+`JsonFile(list[SomeSerializableClass])` does the same for a collection.
 The consumer inherits the exact file type from its source output and does not
 repeat the format or value class.
 

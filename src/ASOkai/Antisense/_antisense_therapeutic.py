@@ -24,6 +24,9 @@ class AntisenseTherapeutic(Serializable, ABC):
     or passenger strand.
     """
 
+    id: str
+    mechanism: MechanismOfAction
+
     def __init__(self, id: str, mechanism: MechanismOfAction, **kwargs):
         self.id = id
         self.mechanism = mechanism

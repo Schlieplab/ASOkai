@@ -16,6 +16,9 @@ from ..Utils import Serializable
 class Site(Serializable, ABC):
     """Abstract base class for sites whose sequences are stored 5' to 3'."""
 
+    id: str
+    _sequence: Seq
+
     def __init__(self,
                  id: str,
                  sequence: Seq,

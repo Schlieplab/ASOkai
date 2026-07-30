@@ -21,6 +21,10 @@ class TranscriptSite(Site):
     Represents a region on a specific spliced transcript
     """
 
+    transcript_id: str
+    t_start: int
+    t_end: int
+
     def __init__(self,
                  transcript_id: str,
                  t_start: int,
@@ -65,6 +69,5 @@ class TranscriptSite(Site):
             and self.t_start == other.t_start
             and self.t_end == other.t_end
         )
-
 
 

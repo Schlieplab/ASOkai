@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from ASOkai.Antisense import AntisenseTherapeutic, Binding
 from ASOkai.Types import TargetRegion
 from ASOkai._pipeline.contracts.file_types import JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
@@ -36,7 +37,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
     )
     therapeutics_output = FileOutput(
         "therapeutics",
-        file_type=JsonFile(),
+        file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
@@ -49,7 +50,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
     )
     bindings_output = FileOutput(
         "bindings",
-        file_type=JsonFile(),
+        file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
@@ -104,10 +105,10 @@ class GenerateAntisenseCandidatesStep(CoreStep):
 
         self.therapeutics_output.write(
             args.therapeutics_output,
-            [therapeutic.to_dict() for therapeutic in therapeutics],
+            therapeutics,
         )
         self.bindings_output.write(
             args.bindings_output,
-            [binding.to_dict() for binding in bindings],
+            bindings,
         )
         return 0

@@ -18,6 +18,10 @@ class Target(Serializable, ABC):
     """
     Abstract base class for candidate target.
     """
+
+    id: str
+    _sites: dict[str, Site]
+
     def __init__(self, 
                  id: str, 
                  sites: Mapping[str, Site] | None = None,

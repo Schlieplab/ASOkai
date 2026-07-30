@@ -13,20 +13,20 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generic, Mapping
+from typing import Any, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
-from ASOkai._pipeline.contracts.file_types import FileType, FileValueT
+from ASOkai._pipeline.contracts.file_types import FileType
 from ASOkai._pipeline.contracts.parameters import Param, _flag_for_name
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate
 
 
 @dataclass(frozen=True, init=False, eq=False)
-class FileOutput(Param, Generic[FileValueT]):
+class FileOutput(Param):
     """A produced file and the complete contract inherited by its consumers."""
 
     destination: OutputPathTemplate
-    file_type: FileType[FileValueT]
+    file_type: FileType
     doc: str | None = None
     _owner: type[Any] | None = field(
         default=None,
@@ -40,7 +40,7 @@ class FileOutput(Param, Generic[FileValueT]):
         name: str,
         *,
         destination: OutputPathTemplate | str,
-        file_type: FileType[FileValueT] | None = None,
+        file_type: FileType | None = None,
         doc: str | None = None,
     ) -> None:
         object.__setattr__(self, "name", name)
@@ -139,20 +139,20 @@ class FileOutput(Param, Generic[FileValueT]):
         kwargs["help"] = help_text
         parser.add_argument(self.cli_prefix, **kwargs)
 
-    def dumps(self, value: FileValueT) -> str:
+    def dumps(self, value: Any) -> str:
         """Serialize one value through this output's file type."""
         return self.file_type.dumps(value)
 
-    def write(self, path: str | Path, value: FileValueT) -> None:
+    def write(self, path: str | Path, value: Any) -> None:
         """Write one value through this output's file type."""
         self.file_type.write(path, value)
 
 
 @dataclass(frozen=True)
-class FileInput(Param, Generic[FileValueT]):
+class FileInput(Param):
     """A file input that inherits its behavior from a producer output."""
 
-    source: FileOutput[FileValueT]
+    source: FileOutput
     override: str | None = None
     prefix: str | None = None
     doc: str | None = None
@@ -190,7 +190,7 @@ class FileInput(Param, Generic[FileValueT]):
             ) from error
 
     @property
-    def file_type(self) -> FileType[FileValueT]:
+    def file_type(self) -> FileType:
         """Return the file type inherited from the producer output."""
         return self.source.file_type
 
@@ -236,18 +236,18 @@ class FileInput(Param, Generic[FileValueT]):
         content: str,
         *,
         source: str = "<string>",
-    ) -> FileValueT:
+    ) -> Any:
         """Decode text through the file type inherited from the source."""
         return self.file_type.loads(
             content,
             source=source,
         )
 
-    def read(self, path: str | Path) -> FileValueT:
+    def read(self, path: str | Path) -> Any:
         """Read through the file type inherited from the source."""
         return self.file_type.read(path)
 
-    def _parse_argument(self, value: str) -> FileValueT:
+    def _parse_argument(self, value: str) -> Any:
         try:
             return self.read(value)
         except (OSError, UnicodeError, TypeError, ValueError) as error:

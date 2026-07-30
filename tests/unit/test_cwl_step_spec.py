@@ -11,6 +11,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import inspect
+import json
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -67,8 +68,10 @@ def test_step_output_must_be_declared_as_a_class_attribute():
             )
 
 
-def test_typed_json_file_requires_a_registered_schema():
+def test_typed_json_file_uses_serializable_annotations():
     class Data(Serializable):
+        count: int
+
         def __init__(self, count):
             self.count = count
             super().__init__()
@@ -79,8 +82,9 @@ def test_typed_json_file_requires_a_registered_schema():
         destination="result.json",
     )
 
-    with pytest.raises(ValueError, match="No JSON schema is registered"):
-        output.dumps(Data(1))
+    assert json.loads(output.dumps(Data(1)))["count"] == 1
+    with pytest.raises(ValueError, match=r"\$.count"):
+        output.dumps(Data("not-an-integer"))
     with pytest.raises(TypeError, match="requires Data"):
         output.dumps(cast(Any, "not-a-Data"))
 

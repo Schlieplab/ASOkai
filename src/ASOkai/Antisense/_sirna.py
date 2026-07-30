@@ -15,6 +15,9 @@ from ._oligonucleotide import Oligonucleotide
 class SiRNA(AntisenseTherapeutic):
     """An antiparallel duplex whose two strands are each stored 5' to 3'."""
 
+    _antisense_strand: Oligonucleotide
+    _sense_strand: Oligonucleotide
+
     def __init__(
         self,
         id: str,

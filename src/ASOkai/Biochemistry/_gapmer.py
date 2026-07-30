@@ -14,6 +14,8 @@ from ._chemistry import Chemistry
 class GapmerChemistry(Chemistry):
     """A wing-gap-wing oligonucleotide chemistry."""
 
+    layout: str
+
     def __init__(self, layout: str = "3-10-3", **kwargs):
         try:
             lengths = tuple(int(part) for part in layout.split("-"))

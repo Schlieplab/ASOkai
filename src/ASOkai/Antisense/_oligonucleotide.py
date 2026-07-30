@@ -16,6 +16,9 @@ from ..Utils import Serializable
 class Oligonucleotide(Serializable):
     """A single oligonucleotide strand stored 5' to 3' using ``ACGT``."""
 
+    _sequence: Seq
+    _chemistry: Chemistry
+
     def __init__(self, sequence: Seq, chemistry: Chemistry, **kwargs):
         self._sequence = sequence
         self._chemistry = chemistry

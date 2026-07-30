@@ -40,8 +40,14 @@ def test_json_file_rejects_ambiguous_json(content):
         JsonFile().loads(content)
 
 
-def test_csv_file_roundtrip_validates_columns_and_scalar_cells(tmp_path):
-    file_type = CsvFile(("site_id", "score", "accepted"))
+def test_csv_file_roundtrip_preserves_declared_scalar_types(tmp_path):
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={
+            "score": float,
+            "accepted": bool,
+        },
+    )
     path = tmp_path / "results.csv"
     rows = [
         {"site_id": "site-1", "score": 0.75, "accepted": True},
@@ -50,23 +56,31 @@ def test_csv_file_roundtrip_validates_columns_and_scalar_cells(tmp_path):
 
     file_type.write(path, rows)
 
-    assert file_type.read(path) == [
-        {"site_id": "site-1", "score": "0.75", "accepted": "True"},
-        {"site_id": "site-2", "score": "0.25", "accepted": "False"},
-    ]
+    assert path.read_text() == (
+        "site_id,score,accepted\n"
+        "site-1,0.75,true\n"
+        "site-2,0.25,false\n"
+    )
+    assert file_type.read(path) == rows
 
 
 def test_csv_file_rejects_inconsistent_columns():
-    file_type = CsvFile(("site_id", "score"))
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
 
     with pytest.raises(ValueError, match="inconsistent columns"):
         file_type.dumps([{"site_id": "site-1"}])
 
 
-def test_csv_file_rejects_non_scalar_cells():
-    file_type = CsvFile(("site_id", "score"))
+def test_csv_file_rejects_values_with_the_wrong_declared_type():
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
 
-    with pytest.raises(TypeError, match="scalar value"):
+    with pytest.raises(TypeError, match="must be float; received dict"):
         file_type.dumps(
             cast(
                 Any,
@@ -76,5 +90,80 @@ def test_csv_file_rejects_non_scalar_cells():
 
 
 def test_csv_file_rejects_duplicate_header_columns():
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
+
     with pytest.raises(ValueError, match="Duplicate CSV column"):
-        CsvFile().loads("site_id,site_id\nsite-1,site-2\n")
+        file_type.loads("site_id,score,score\nsite-1,0.5,0.6\n")
+
+
+def test_csv_file_rejects_invalid_declared_column_types():
+    with pytest.raises(TypeError, match="'details'.*str, int, float, or bool"):
+        CsvFile(
+            index={"site_id": str},
+            columns=cast(Any, {"details": dict}),
+        )
+
+
+def test_csv_file_keeps_index_and_data_columns_separate():
+    with pytest.raises(ValueError, match="overlap.*site_id"):
+        CsvFile(
+            index={"site_id": str},
+            columns={
+                "site_id": str,
+                "score": float,
+            },
+        )
+
+
+def test_csv_file_rejects_invalid_file_values_with_row_and_column():
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"row 2 column 'score'.*must be float.*'high'",
+    ):
+        file_type.loads("site_id,score\nsite-1,high\n")
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [
+            {"site_id": "site-1", "score": 0.5},
+            {"site_id": "site-1", "score": 0.6},
+        ],
+        [
+            {"site_id": "", "score": 0.5},
+        ],
+    ],
+)
+def test_csv_file_rejects_invalid_index_values(rows):
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
+
+    with pytest.raises(ValueError, match="index"):
+        file_type.dumps(rows)
+
+
+def test_csv_file_validates_a_combined_index():
+    file_type = CsvFile(
+        index={
+            "target_id": str,
+            "site_id": str,
+        },
+        columns={"score": float},
+    )
+    rows = [
+        {"target_id": "target-1", "site_id": "site-1", "score": 0.5},
+        {"target_id": "target-1", "site_id": "site-2", "score": 0.6},
+    ]
+
+    assert file_type.loads(file_type.dumps(rows)) == rows

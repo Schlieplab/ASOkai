@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: tests/unit/test_cwl_export.py
+Filename: tests/unit/test_cwl_job_bundle.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
@@ -11,7 +11,7 @@ License: LGPL-3.0-or-later
 from datetime import datetime
 from unittest.mock import patch
 
-from ASOkai._cwl.export import _run_commands, write_cwl_job_bundle
+from ASOkai._cwl.job_bundle import _run_commands, write_cwl_job_bundle
 from ASOkai._cwl.generation import GeneratedCwlBundle
 
 
@@ -33,7 +33,7 @@ def test_run_commands_accepts_an_arbitrary_runner_executable():
 def test_write_cwl_job_bundle_avoids_timestamp_name_collisions(tmp_path):
     fixed_time = datetime(2026, 7, 13, 12, 34, 56)
 
-    with patch("ASOkai._cwl.export.datetime") as datetime_mock:
+    with patch("ASOkai._cwl.job_bundle.datetime") as datetime_mock:
         datetime_mock.now.return_value = fixed_time
         first = write_cwl_job_bundle(
             bundle=_bundle(),

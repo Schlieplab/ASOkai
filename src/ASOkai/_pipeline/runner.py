@@ -19,7 +19,7 @@ from ASOkai._cwl.input_resolution import (
     resolve_step_inputs,
     resolve_step_sequence_inputs,
 )
-from ASOkai._cwl.export import write_cwl_job_bundle
+from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.plan import ExecutionPlan, build_plan

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_cwl/export.py
+Filename: src/ASOkai/_cwl/job_bundle.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1

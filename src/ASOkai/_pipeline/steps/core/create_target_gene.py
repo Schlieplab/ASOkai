@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from ASOkai.Targets import TargetGene
-from ASOkai.Types import TargetRegion
+from ASOkai._types import TargetRegion
 from ASOkai._pipeline.contracts.file_types import JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam

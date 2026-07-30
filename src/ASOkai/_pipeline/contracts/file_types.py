@@ -27,14 +27,14 @@ from typing import (
 )
 
 from ASOkai.Utils._serializer import Serializable
+from ASOkai._types import Scalar
 from ASOkai._pipeline.contracts.json_schema import (
     json_file_type_name,
     validate_json_data,
 )
 
 
-CsvScalar: TypeAlias = str | int | float | bool | None
-CsvRow: TypeAlias = Mapping[str, CsvScalar]
+CsvRow: TypeAlias = Mapping[str, Scalar]
 CsvTable: TypeAlias = Sequence[CsvRow]
 
 
@@ -306,7 +306,7 @@ class CsvFile(FileType):
             )
 
         expected = set(columns)
-        normalized_rows: list[dict[str, CsvScalar]] = []
+        normalized_rows: list[dict[str, Scalar]] = []
         for row_number, row in enumerate(rows, start=1):
             if not isinstance(row, Mapping):
                 raise TypeError(f"CSV row {row_number} must be a mapping.")
@@ -318,7 +318,7 @@ class CsvFile(FileType):
                     f"CSV row {row_number} has inconsistent columns "
                     f"(missing: {missing}; unexpected: {unexpected})."
                 )
-            normalized: dict[str, CsvScalar] = {}
+            normalized: dict[str, Scalar] = {}
             for column in columns:
                 cell = row[column]
                 if type(cell) not in (str, int, float, bool, type(None)):

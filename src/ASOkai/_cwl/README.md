@@ -17,10 +17,10 @@ ASOkai derives CWL inputs, CWL outputs, command-line parser options, config
 keys, and file override keys from that one spec.
 
 Plugin packages should import the supported step-authoring contracts from
-`ASOkai.plugin_api`, rather than importing the internal `ASOkai._cwl` package:
+`ASOkai.Plugins`, rather than importing the internal `ASOkai._cwl` package:
 
 ```python
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     CoreStep,

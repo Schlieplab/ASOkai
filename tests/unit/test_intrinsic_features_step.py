@@ -9,7 +9,7 @@ from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
 from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.plugin_api import AnalysisStep, FileInput, JsonFile, Step
+from ASOkai.Plugins import AnalysisStep, FileInput, JsonFile, Step
 from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 

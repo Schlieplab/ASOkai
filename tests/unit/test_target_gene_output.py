@@ -12,7 +12,7 @@ import pytest
 
 from ASOkai.Sites import GenomicSite, TranscriptSite
 from ASOkai.Targets import TargetGene
-from ASOkai.plugin_api import FileInput, FileOutput, JsonFile
+from ASOkai.Plugins import FileInput, FileOutput, JsonFile
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,

@@ -12,7 +12,7 @@ from ._target_gene import TargetGene
 from GenomeUtils.Genome import Genome, Gene, Exon, Locus
 from typing import Dict, Set, List, Iterator, Optional, cast
 from Bio.Seq import Seq
-from ..Types import Strand, TargetRegion
+from .._types import Strand, TargetRegion
 from ..Sites import Site
 from ..Sites import GenomicSite
 from ..Sites import TranscriptSite

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/registry.py
+Filename: src/ASOkai/Plugins/_registry.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Registry for pipeline steps, tasks, and workflows.
+Description: Discovery registry for built-in and external extensions.
 License: LGPL-3.0-or-later
 """
 from __future__ import annotations

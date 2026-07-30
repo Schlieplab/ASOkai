@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/plugin_api.py
+Filename: src/ASOkai/Plugins/__init__.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Public plugin contracts for ASOkai extension packages.
+Description: Public contracts for ASOkai extension packages.
 License: LGPL-3.0-or-later
 """
 from __future__ import annotations

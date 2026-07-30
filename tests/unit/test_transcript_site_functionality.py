@@ -8,8 +8,6 @@ Description: Functional tests for TranscriptSite class.
 License: LGPL-3.0-or-later
 """
 
-from typing import Any, cast
-
 import pytest
 from Bio.Seq import Seq
 from ASOkai.Sites import TranscriptSite
@@ -227,11 +225,11 @@ class TestTranscriptSiteSequence:
 
 
 @pytest.mark.unit
-class TestTranscriptSiteToGenomic:
-    """Test to_genomic method."""
+class TestTranscriptSiteToGenomicCoordinates:
+    """Test to_genomic_coordinates method."""
     
-    def test_to_genomic_method_exists(self, sample_sequence):
-        """Test that to_genomic method exists."""
+    def test_to_genomic_coordinates_method_exists(self, sample_sequence):
+        """Test that to_genomic_coordinates exists."""
         site = TranscriptSite(
             transcript_id="ENST00000001",
             t_start=0,
@@ -239,11 +237,11 @@ class TestTranscriptSiteToGenomic:
             sequence=sample_sequence
         )
         
-        assert hasattr(site, 'to_genomic')
-        assert callable(site.to_genomic)
+        assert hasattr(site, "to_genomic_coordinates")
+        assert callable(site.to_genomic_coordinates)
     
-    def test_to_genomic_not_implemented(self, sample_sequence):
-        """Test that to_genomic is not yet implemented."""
+    def test_to_genomic_coordinates_not_implemented(self, sample_sequence):
+        """Test that to_genomic_coordinates is not yet implemented."""
         site = TranscriptSite(
             transcript_id="ENST00000001",
             t_start=0,
@@ -252,7 +250,7 @@ class TestTranscriptSiteToGenomic:
         )
         
         with pytest.raises(NotImplementedError):
-            site.to_genomic(cast(Any, None))
+            site.to_genomic_coordinates(site.t_start, site.t_end)
 
 
 @pytest.mark.unit

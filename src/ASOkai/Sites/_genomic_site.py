@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 from GenomeUtils.Genome import Genome, GenomeElement, Locus
 from typing import cast
 from Bio.Seq import Seq
-from ..Types import Strand
+from .._types import Strand
 from ._site import Site
 
 

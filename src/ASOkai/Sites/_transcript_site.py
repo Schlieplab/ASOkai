@@ -7,7 +7,7 @@ Version: 0.1.1
 Description: This file defines the TranscriptSite class for representing transcript-anchored sites.
 License: LGPL-3.0-or-later
 """
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 from Bio.Seq import Seq
 from ._site import Site
 from ._genomic_site import GenomicSite
@@ -57,7 +57,11 @@ class TranscriptSite(Site):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', transcript_id='{self.transcript_id}', t_start={self.t_start}, t_end={self.t_end})"
 
-    def to_genomic(self, transcript: "Transcript") -> List[GenomicSite]:
+    def to_genomic_coordinates(
+        self,
+        t_start: int,
+        t_end: int,
+    ) -> list[GenomicSite]:
         raise NotImplementedError
     
     def __eq__(self, other: object) -> bool:
@@ -69,5 +73,4 @@ class TranscriptSite(Site):
             and self.t_start == other.t_start
             and self.t_end == other.t_end
         )
-
 

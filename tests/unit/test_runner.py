@@ -14,7 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch, MagicMock
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     Runnable,
@@ -200,7 +200,7 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
         "build-genome": mock_build,
     }
     with patch("ASOkai._pipeline.runner.get_steps", return_value=registry), \
-         patch("ASOkai._pipeline.registry.get_steps", return_value=registry):
+         patch("ASOkai.Plugins._registry.get_steps", return_value=registry):
         with pytest.raises(RuntimeError, match="requires 'build-genome'"):
             runner.run_step("download-genome", config, recursive=False)
 

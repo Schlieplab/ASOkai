@@ -12,7 +12,7 @@ import json
 import importlib
 import inspect
 
-from ..Types import Scalar
+from .._types import Scalar
 
 class Serializable:
     """

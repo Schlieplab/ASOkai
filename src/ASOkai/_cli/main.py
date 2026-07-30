@@ -21,7 +21,7 @@ from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.core.base import CoreStep
-from ASOkai._pipeline.registry import get_steps, get_tasks, get_workflows
+from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
 
 DEFAULT_CONFIG = Path("config.yaml")
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}

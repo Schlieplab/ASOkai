@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from ASOkai.plugin_api import FileOutput, ScalarParam, Step, StepSpec
+from ASOkai.Plugins import FileOutput, ScalarParam, Step, StepSpec
 
 
 class CliLifecycleStep(Step):

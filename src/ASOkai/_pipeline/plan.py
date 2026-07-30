@@ -218,7 +218,7 @@ def build_plan(
        pre_resolved; the rest go into steps_to_run.
     """
     if _registry is None:
-        from ASOkai._pipeline.registry import get_steps
+        from ASOkai.Plugins._registry import get_steps
         _registry = get_steps()
 
     # 1 + 2: flatten and deduplicate

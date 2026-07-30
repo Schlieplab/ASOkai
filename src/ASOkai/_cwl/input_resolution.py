@@ -16,7 +16,7 @@ from typing import Any, Literal
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.contracts.files import FileOutput
 from ASOkai._pipeline.steps.base import Step
-from ASOkai._pipeline.registry import get_steps
+from ASOkai.Plugins._registry import get_steps
 
 
 InputSource = Literal[

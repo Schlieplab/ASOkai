@@ -15,14 +15,14 @@ import pytest
 import yaml
 
 from ASOkai._cwl.generation import StepCwlGenerator, generate_cwl_bundle
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     ScalarParam,
     Step,
     StepSpec,
 )
-from ASOkai._pipeline.registry import get_steps
+from ASOkai.Plugins._registry import get_steps
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 

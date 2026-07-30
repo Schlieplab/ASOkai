@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.plugin_api import CoreStep, Step
+from ASOkai.Plugins import CoreStep, Step
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 

@@ -6,7 +6,7 @@ from argparse import Namespace
 
 import pytest
 
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     AnalysisStep,
     FileOutput,
     JsonFile,

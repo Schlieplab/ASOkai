@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     ScalarParam,

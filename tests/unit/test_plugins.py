@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Tests for the supported plugin authoring API."""
+"""Tests for extension authoring and discovery."""
 
 import pytest
 
-from ASOkai import plugin_api
-from ASOkai._pipeline import registry
+from ASOkai import Plugins
+from ASOkai.Plugins import _registry as plugin_registry
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
@@ -28,16 +28,16 @@ def test_step_authoring_contracts_are_public() -> None:
         "Workflow",
     }
 
-    assert set(plugin_api.__all__) == expected
-    assert all(hasattr(plugin_api, name) for name in expected)
+    assert set(Plugins.__all__) == expected
+    assert all(hasattr(Plugins, name) for name in expected)
 
 
 def test_plugin_steps_cannot_silently_replace_registered_names(monkeypatch):
     monkeypatch.setattr(
-        registry,
+        plugin_registry,
         "_load_plugins",
         lambda group: [DownloadGenomeStep()] if group == "asokai.steps" else [],
     )
 
     with pytest.raises(ValueError, match="Duplicate registered step name"):
-        registry.get_steps()
+        plugin_registry.get_steps()

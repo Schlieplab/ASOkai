@@ -11,7 +11,7 @@ import pytest
 
 from ASOkai.Antisense import ASO, AntisenseTherapeutic, Binding
 from ASOkai.Biochemistry import GapmerChemistry, RNaseH1Mechanism
-from ASOkai.plugin_api import JsonFile
+from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
 )

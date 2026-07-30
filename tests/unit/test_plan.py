@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from typing import cast
 
-from ASOkai.plugin_api import (
+from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     Runnable,

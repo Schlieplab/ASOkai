@@ -11,7 +11,7 @@ from GenomeUtils.Genome import Gene, Genome, Chromosome
 from ._target import Target
 from typing import Mapping, cast
 from Bio.Seq import Seq
-from ..Types import Strand
+from .._types import Strand
 from ..Sites import Site
 
 

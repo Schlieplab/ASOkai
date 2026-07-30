@@ -10,7 +10,7 @@ import yaml
 from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.plugin_api import CoreStep, FileInput, JsonFile, Step
+from ASOkai.Plugins import CoreStep, FileInput, JsonFile, Step
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,

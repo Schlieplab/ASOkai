@@ -150,9 +150,9 @@ def test_verbose_describe_step_shows_dependency_tree():
 def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {"k": 16}})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),
     )
 
@@ -177,9 +177,9 @@ def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_config_accepts_repeated_flags(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {"k": 16}})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),
     )
 
@@ -203,7 +203,7 @@ def test_run_config_accepts_repeated_flags(monkeypatch):
 
 
 def test_run_requires_explicit_runnable_selection(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run"])
@@ -215,9 +215,9 @@ def test_run_requires_explicit_runnable_selection(monkeypatch):
 def test_run_workflow_selects_standard_explicitly(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
             **kwargs,
@@ -235,9 +235,9 @@ def test_run_workflow_selects_standard_explicitly(monkeypatch):
 def test_run_steps_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(runnables=runnables),
     )
 
@@ -257,9 +257,9 @@ def test_run_steps_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_tasks_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(runnables=runnables),
     )
 
@@ -276,9 +276,9 @@ def test_run_tasks_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_uses_toil_executor_when_requested(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(kwargs),
     )
 
@@ -302,11 +302,11 @@ def test_export_steps_uses_outdir_and_runner_name(monkeypatch, tmp_path):
     captured = {}
 
     monkeypatch.setattr(
-        "ASOkai._cli.main.cfg.load",
+        "ASOkai._cli.execution.cfg.load",
         lambda _path: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.export_all",
+        "ASOkai._cli.execution.runner.export_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
             config=config,
@@ -343,11 +343,11 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
     captured = {}
 
     monkeypatch.setattr(
-        "ASOkai._cli.main.cfg.load",
+        "ASOkai._cli.execution.cfg.load",
         lambda _path: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.export_all",
+        "ASOkai._cli.execution.runner.export_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
             **kwargs,
@@ -366,11 +366,11 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
     captured = {}
 
     monkeypatch.setattr(
-        "ASOkai._cli.main.cfg.load",
+        "ASOkai._cli.execution.cfg.load",
         lambda _path: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.export_all",
+        "ASOkai._cli.execution.runner.export_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
             **kwargs,
@@ -385,7 +385,7 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
 
 
 def test_run_rejects_unknown_step(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--steps", "not-a-step"])
@@ -395,7 +395,7 @@ def test_run_rejects_unknown_step(monkeypatch):
 
 
 def test_run_rejects_unknown_task(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--tasks", "not-a-task"])
@@ -405,7 +405,7 @@ def test_run_rejects_unknown_task(monkeypatch):
 
 
 def test_run_rejects_unknown_workflow(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--workflow", "not-a-workflow"])
@@ -415,7 +415,7 @@ def test_run_rejects_unknown_workflow(monkeypatch):
 
 
 def test_run_config_rejects_malformed_override(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--config", "target.k"])
@@ -427,9 +427,9 @@ def test_run_config_rejects_malformed_override(monkeypatch):
 def test_run_config_preserves_yaml_scalar_types(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.main.cfg.load", lambda _path: {"target": {}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {}})
     monkeypatch.setattr(
-        "ASOkai._cli.main.runner.run_all",
+        "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),
     )
 

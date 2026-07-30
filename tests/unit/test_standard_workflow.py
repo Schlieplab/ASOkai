@@ -92,7 +92,7 @@ def test_output_paths(workflow, config, tmp_path):
         / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_bindings.json"
     )
     assert paths["intrinsic_features"] == (
-        target_base / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.json"
+        target_base / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
 
 

@@ -57,11 +57,19 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
         results: dict[str, Scalar] = {}
 
         if "GC_content" in self.features:
-            GC_content = sum(map(sequence.count, "GC")) / seq_len if seq_len > 0 else 0
+            GC_content = (
+                sum(map(sequence.count, "GC")) / seq_len
+                if seq_len > 0
+                else 0.0
+            )
             results["GC_content"] = GC_content
 
         if "AT_content" in self.features:
-            AT_content = sum(map(sequence.count, "AT")) / seq_len if seq_len > 0 else 0
+            AT_content = (
+                sum(map(sequence.count, "AT")) / seq_len
+                if seq_len > 0
+                else 0.0
+            )
             results["AT_content"] = AT_content
 
         if "T_count" in self.features:
@@ -69,7 +77,11 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             results["T_count"] = T_count
             
         if "T_content" in self.features:
-            T_content = sequence.count("T") / seq_len if seq_len > 0 else 0
+            T_content = (
+                sequence.count("T") / seq_len
+                if seq_len > 0
+                else 0.0
+            )
             results["T_content"] = T_content
 
         if "CpG_count" in self.features:
@@ -77,7 +89,11 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             results["CpG_count"] = CpG_count
             
         if "CpG_content" in self.features:
-            CpG_content = sequence.count("CG") / seq_len if seq_len > 0 else 0
+            CpG_content = (
+                sequence.count("CG") / seq_len
+                if seq_len > 0
+                else 0.0
+            )
             results["CpG_content"] = CpG_content
 
         return results

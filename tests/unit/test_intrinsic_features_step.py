@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 """Tests for IntrinsicFeaturesStep."""
-import json
 
 from Bio.Seq import Seq
 import pytest
@@ -9,7 +8,7 @@ from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
 from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.Plugins import AnalysisStep, FileInput, JsonFile, Step
+from ASOkai.Plugins import AnalysisStep, CsvFile, FileInput, JsonFile, Step
 from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
@@ -58,6 +57,21 @@ def test_dependencies(step):
     assert step.target_gene_input.file_type.value_type is TargetGene
 
 
+def test_output_file_contract(step):
+    file_type = step.intrinsic_features_output.file_type
+
+    assert isinstance(file_type, CsvFile)
+    assert file_type.index == {"site_id": str}
+    assert file_type.columns == {
+        "GC_content": float,
+        "AT_content": float,
+        "T_count": int,
+        "CpG_count": int,
+        "T_content": float,
+        "CpG_content": float,
+    }
+
+
 def test_config_map_keys(step):
     assert "target_id" in step.config_map
     assert "target_name" in step.config_map
@@ -70,7 +84,7 @@ def test_output_paths_structure(step, config, tmp_path):
     paths = step.output_paths(config)
     expected = (
         tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
-        / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.json"
+        / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
 
@@ -84,7 +98,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     paths = step.output_paths(config)
     expected = (
         tmp_path / "GRCh38" / "targets" / "KRAS"
-        / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.json"
+        / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
 
@@ -121,10 +135,10 @@ def test_cwl_spec_generates_command_line_tool(step, config):
     assert "intrinsic_features_filename" not in doc["inputs"]
     assert {
         "prefix": "--intrinsic-features-output",
-        "valueFrom": "ENSG00000133703_k16_pre-mrna_intrinsic.json",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna_intrinsic.csv",
     } in doc["arguments"]
     assert doc["outputs"]["intrinsic_features"]["outputBinding"]["glob"] == (
-        "ENSG00000133703_k16_pre-mrna_intrinsic.json"
+        "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
 
 
@@ -177,7 +191,7 @@ def test_intrinsic_features_analysis_analyzes_one_site():
     }
 
 
-def test_run_cli_writes_metadata_with_site_keyed_results(tmp_path):
+def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
     site = TranscriptSite(
         id="site-1",
         transcript_id="transcript-1",
@@ -201,7 +215,7 @@ def test_run_cli_writes_metadata_with_site_keyed_results(tmp_path):
         target,
     )
 
-    output = tmp_path / "intrinsic.json"
+    output = tmp_path / "intrinsic.csv"
     result = IntrinsicFeaturesStep().run_cli(
         [
             "--target-gene", str(target_input),
@@ -213,12 +227,17 @@ def test_run_cli_writes_metadata_with_site_keyed_results(tmp_path):
         ]
     )
 
-    payload = json.loads(output.read_text())
     assert result == 0
-    assert payload["analysis"] == "intrinsic-features"
-    assert payload["assembly"] == "GRCh38"
-    assert payload["target_id"] == "ENSG00000133703"
-    assert payload["k"] == 16
-    assert payload["region"] == "pre-mrna"
-    assert payload["results"]["site-1"]["GC_content"] == 0.75
-    assert payload["results"]["site-1"]["T_count"] == 1
+    assert IntrinsicFeaturesStep.intrinsic_features_output.file_type.read(
+        output
+    ) == [
+        {
+            "site_id": "site-1",
+            "GC_content": 0.75,
+            "AT_content": 0.25,
+            "T_count": 1,
+            "CpG_count": 1,
+            "T_content": 0.25,
+            "CpG_content": 0.25,
+        }
+    ]

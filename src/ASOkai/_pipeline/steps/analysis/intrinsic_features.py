@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from ASOkai._types import TargetRegion
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
-from ASOkai._pipeline.contracts.file_types import JsonFile
+from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
@@ -35,10 +35,22 @@ class IntrinsicFeaturesStep(AnalysisStep):
     )
     intrinsic_features_output = FileOutput(
         "intrinsic_features",
-        file_type=JsonFile(),
+        file_type=CsvFile(
+            index={
+                "site_id": str,
+            },
+            columns={
+                "GC_content": float,
+                "AT_content": float,
+                "T_count": int,
+                "CpG_count": int,
+                "T_content": float,
+                "CpG_content": float,
+            },
+        ),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/analysis/intrinsic/"
-            "{target}_k{k}_{region}_intrinsic.json",
+            "{target}_k{k}_{region}_intrinsic.csv",
             fields={
                 "target": TemplateField.first_of(
                     "target_id",

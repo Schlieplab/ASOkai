@@ -56,6 +56,27 @@ def build_json_schema(expected_type: Any) -> JsonSchema:
     }
 
 
+def json_schema_errors(
+    schema: JsonSchema,
+    data: Any,
+) -> list[str]:
+    """Return every validation issue in data as a readable JSON path."""
+    validator_class = validator_for(schema)
+    validator_class.check_schema(schema)
+    errors = sorted(
+        validator_class(schema).iter_errors(data),
+        key=lambda error: (
+            tuple(str(part) for part in error.absolute_path),
+            error.message,
+        ),
+    )
+    return [
+        f"{_json_path(error.absolute_path)}: "
+        f"{_schema_error_message(error)}"
+        for error in errors
+    ]
+
+
 def validate_json_data(
     expected_type: Any,
     json_data: JsonData,
@@ -63,19 +84,12 @@ def validate_json_data(
     """Raise one error containing every schema issue in a JSON document."""
     expected_type_name = json_file_type_name(expected_type)
     schema = build_json_schema(expected_type)
-    validator = validator_for(schema)(schema)
-    errors = sorted(
-        validator.iter_errors(json_data),
-        key=lambda error: (
-            tuple(str(part) for part in error.absolute_path),
-            error.message,
-        ),
-    )
+    errors = json_schema_errors(schema, json_data)
     if not errors:
         return
 
     details = "\n".join(
-        f"- {_json_path(error.absolute_path)}: {error.message}"
+        f"- {error}"
         for error in errors
     )
     raise ValueError(
@@ -352,3 +366,10 @@ def _json_path(parts: Iterable[str | int]) -> str:
         else:
             path += f".{part}"
     return path
+
+
+def _schema_error_message(error: Any) -> str:
+    """Return a schema-provided message or the validator's default."""
+    if isinstance(error.schema, Mapping):
+        return error.schema.get("x-error-message", error.message)
+    return error.message

@@ -9,10 +9,23 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
+from copy import deepcopy
+from functools import cache
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import yaml
+from jsonschema.exceptions import SchemaError
+
+from ASOkai._cwl.model import _UNSET
+from ASOkai._pipeline.contracts.json_schema import (
+    JsonSchema,
+    json_schema_errors,
+)
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+
+if TYPE_CHECKING:
+    from ASOkai._pipeline.steps.base import Step
 
 
 RESOURCE_N_PROCESSES_KEY = "n_processes"
@@ -22,28 +35,50 @@ DEFAULT_STEP_RESOURCES = {
     RESOURCE_N_PROCESSES_KEY: 1,
     RESOURCE_MEMORY_KEY: 4096,
 }
-SUPPORTED_RESOURCE_KEYS = frozenset(DEFAULT_STEP_RESOURCES)
+_CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
 
 
 def load(path: Path | str) -> dict:
-    """Load config.yaml from disk."""
-    with open(path) as f:
-        return yaml.safe_load(f)
+    """Load a YAML configuration whose root is a mapping."""
+    source = Path(path)
+    try:
+        data = yaml.safe_load(source.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise ValueError(
+            f"Invalid YAML configuration in {source}: {error}"
+        ) from error
+    if not isinstance(data, Mapping):
+        raise ValueError(
+            f"Configuration in {source} must contain a mapping at its root."
+        )
+    config = dict(data)
+    validate_config_schema(config)
+    return config
 
 
-def resolve(config: dict, dotted_key: str) -> Any:
+def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:
     """
     Resolve a dotted key against a config dict.
 
     Example:
         resolve(config, "genome.assembly_id")  →  config["genome"]["assembly_id"]
     """
-    value = config
-    for key in dotted_key.split("."):
-        try:
-            value = value[key]
-        except KeyError:
-            raise KeyError(f"Config key '{dotted_key}' not found (missing '{key}').")
+    keys = _dotted_key_parts(dotted_key)
+    value: Any = config
+    traversed: list[str] = []
+    for key in keys:
+        if not isinstance(value, Mapping):
+            parent = ".".join(traversed) or "<root>"
+            raise KeyError(
+                f"Config key '{dotted_key}' cannot be resolved because "
+                f"'{parent}' is not a mapping."
+            )
+        if key not in value:
+            raise KeyError(
+                f"Config key '{dotted_key}' not found (missing '{key}')."
+            )
+        value = value[key]
+        traversed.append(key)
     return value
 
 
@@ -55,12 +90,205 @@ def apply_overrides(config: dict, overrides: dict[str, Any]) -> dict:
         {"genome.ensembl_release": 115}  →  config["genome"]["ensembl_release"] = 115
     """
     for dotted_key, value in overrides.items():
-        keys = dotted_key.split(".")
+        keys = _dotted_key_parts(dotted_key)
         target = config
         for key in keys[:-1]:
-            target = target.setdefault(key, {})
+            existing = target.get(key)
+            if existing is None:
+                nested: dict[str, Any] = {}
+                target[key] = nested
+                target = nested
+                continue
+            if not isinstance(existing, dict):
+                raise ValueError(
+                    f"Config override '{dotted_key}' cannot descend through "
+                    f"non-mapping key '{key}'."
+                )
+            target = existing
         target[keys[-1]] = value
     return config
+
+
+def resolve_parameter_value(
+    config: Mapping[str, Any],
+    parameter: ScalarParam,
+) -> Any:
+    """Resolve one configured parameter, including its declared fallback."""
+    if parameter.config is None:
+        raise ValueError(
+            f"Parameter '{parameter.name}' does not declare a config path."
+        )
+    try:
+        return resolve(config, parameter.config)
+    except KeyError:
+        if parameter.default is not _UNSET:
+            return deepcopy(parameter.default)
+        if not parameter.parser_required():
+            return None
+        raise
+
+
+def validate_step_config(
+    config: Any,
+    steps: Sequence[Step],
+) -> None:
+    """Validate selected-step values, paths, and input file contents."""
+    errors: list[str] = []
+    datadir = Path(config["datadir"])
+    if datadir.exists() and not datadir.is_dir():
+        errors.append(f"$.datadir: {datadir} is not a directory")
+
+    for step in _unique_steps(steps):
+        missing_parameter = False
+        for parameter in step.spec.params:
+            if parameter.config is None:
+                continue
+            try:
+                resolve_parameter_value(config, parameter)
+            except KeyError:
+                errors.append(
+                    f"$.{parameter.config}: required by step "
+                    f"'{step.name}'"
+                )
+                missing_parameter = True
+
+        for file_input in step.spec.inputs:
+            try:
+                override_path = file_input.configured_override_path(config)
+            except (KeyError, TypeError, ValueError) as error:
+                errors.append(str(error))
+                continue
+            if override_path is None:
+                continue
+            if not override_path.exists():
+                errors.append(
+                    f"$.{file_input.override}: file does not exist: "
+                    f"{override_path}"
+                )
+                continue
+            if not override_path.is_file():
+                errors.append(
+                    f"$.{file_input.override}: path is not a file: "
+                    f"{override_path}"
+                )
+                continue
+            try:
+                file_input.read(override_path)
+            except (
+                OSError,
+                UnicodeError,
+                TypeError,
+                ValueError,
+            ) as error:
+                errors.append(f"$.{file_input.override}: {error}")
+
+        if not missing_parameter:
+            for output in step.spec.outputs:
+                try:
+                    step.output_relative_path(output.name, config)
+                except (KeyError, TypeError, ValueError) as error:
+                    errors.append(
+                        f"Step '{step.name}' output '{output.name}': {error}"
+                    )
+
+    if errors:
+        _raise_config_errors(errors)
+
+
+def validate_config_schema(
+    config: Any,
+) -> None:
+    """Validate data against ASOkai and installed-plugin config schemas."""
+    errors = _schema_errors("ASOkai", _load_config_schema(), config)
+
+    from ASOkai.Plugins._registry import get_config_schema_paths
+
+    for plugin_name, schema_path in get_config_schema_paths().items():
+        schema = _read_config_schema(
+            schema_path,
+            f"plugin '{plugin_name}'",
+        )
+        errors.extend(
+            _schema_errors(
+                f"Plugin '{plugin_name}'",
+                schema,
+                config,
+            )
+        )
+
+    if errors:
+        _raise_config_errors(errors)
+
+
+@cache
+def _load_config_schema() -> JsonSchema:
+    """Load ASOkai's checked-in configuration schema once."""
+    return _read_config_schema(_CONFIG_SCHEMA_PATH, "ASOkai")
+
+
+def _read_config_schema(
+    path: Path,
+    owner: str,
+) -> JsonSchema:
+    """Read one YAML configuration schema."""
+    try:
+        schema = yaml.safe_load(
+            path.read_text(encoding="utf-8")
+        )
+    except (OSError, yaml.YAMLError) as error:
+        raise ValueError(
+            f"Could not load {owner} configuration schema at "
+            f"{path}: {error}"
+        ) from error
+    if not isinstance(schema, Mapping):
+        raise ValueError(
+            f"{owner} configuration schema at {path} "
+            "must contain a mapping at its root."
+        )
+    return dict(schema)
+
+
+def _schema_errors(
+    owner: str,
+    schema: JsonSchema,
+    config: Any,
+) -> list[str]:
+    """Return readable errors from one configuration schema."""
+    try:
+        errors = json_schema_errors(schema, config)
+    except SchemaError as error:
+        raise ValueError(
+            f"{owner} configuration schema is invalid: {error.message}"
+        ) from error
+    if owner == "ASOkai":
+        return errors
+    return [f"{owner} schema: {error}" for error in errors]
+
+
+def _dotted_key_parts(dotted_key: str) -> tuple[str, ...]:
+    """Return validated components of a dotted configuration key."""
+    if type(dotted_key) is not str:
+        raise TypeError("Config keys must be strings.")
+    parts = tuple(dotted_key.split("."))
+    if not parts or any(not part.strip() for part in parts):
+        raise ValueError(
+            f"Invalid dotted config key: {dotted_key!r}."
+        )
+    return parts
+
+
+def _unique_steps(steps: Sequence[Step]) -> list[Step]:
+    """Return steps deduplicated by name while preserving their order."""
+    unique: dict[str, Step] = {}
+    for step in steps:
+        unique.setdefault(step.name, step)
+    return list(unique.values())
+
+
+def _raise_config_errors(errors: Sequence[str]) -> None:
+    """Raise one readable error containing every configuration issue."""
+    details = "\n".join(f"- {error}" for error in errors)
+    raise ValueError(f"Invalid configuration:\n{details}")
 
 
 def step_resources(config: Mapping[str, Any], step_name: str) -> dict[str, Any]:
@@ -77,45 +305,6 @@ def step_resource_overrides(
 ) -> dict[str, Any]:
     """Return configured values for one step without built-in defaults."""
     all_resources = config.get("resources", {})
-    if all_resources is None:
-        return {}
-    if not isinstance(all_resources, Mapping):
-        raise TypeError("Config key 'resources' must be a mapping of step names.")
-
     configured_defaults = all_resources.get(RESOURCE_DEFAULT_KEY, {})
-    if configured_defaults is None:
-        configured_defaults = {}
-    if not isinstance(configured_defaults, Mapping):
-        raise TypeError(
-            f"Config key 'resources.{RESOURCE_DEFAULT_KEY}' must be a mapping."
-        )
-
     step_overrides = all_resources.get(step_name, {})
-    if step_overrides is None:
-        step_overrides = {}
-    if not isinstance(step_overrides, Mapping):
-        raise TypeError(f"Config key 'resources.{step_name}' must be a mapping.")
-
-    _validate_resource_values(
-        configured_defaults,
-        f"resources.{RESOURCE_DEFAULT_KEY}",
-    )
-    _validate_resource_values(step_overrides, f"resources.{step_name}")
     return {**configured_defaults, **step_overrides}
-
-
-def _validate_resource_values(resources: Mapping[str, Any], path: str) -> None:
-    """Validate the resource fields currently understood by ASOkai."""
-    unsupported = set(resources) - SUPPORTED_RESOURCE_KEYS
-    if unsupported:
-        names = ", ".join(sorted(unsupported))
-        raise ValueError(f"Unsupported resource key(s) at '{path}': {names}.")
-
-    for key in SUPPORTED_RESOURCE_KEYS:
-        if key not in resources:
-            continue
-        value = resources[key]
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            raise ValueError(
-                f"Config key '{path}.{key}' must be a positive integer."
-            )

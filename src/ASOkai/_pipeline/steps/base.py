@@ -162,7 +162,10 @@ class Step(Runnable):
             if not param.config:
                 continue
             try:
-                values[param.name] = cfg.resolve(config, param.config)
+                values[param.name] = cfg.resolve_parameter_value(
+                    config,
+                    param,
+                )
             except KeyError:
                 pass
         return values

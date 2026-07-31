@@ -37,6 +37,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"ASOkai._pipeline" = ["config.schema.yaml"]
+
 [project.scripts]
 ASOkai = "ASOkai._cli.main:main"
 asokai = "ASOkai._cli.main:main"

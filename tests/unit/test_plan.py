@@ -17,6 +17,7 @@ from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     Runnable,
+    ScalarParam,
     Step,
     StepSpec,
 )
@@ -34,6 +35,7 @@ def _make_step(
     exists: bool = False,
     output_names: list[str] | None = None,
     input_override: str | None = None,
+    params: list[ScalarParam] | None = None,
 ) -> Step:
     """Return a minimal concrete Step for plan tests."""
     if output_names is None:
@@ -46,6 +48,7 @@ def _make_step(
         for key in output_names
     ]
     spec = StepSpec(
+        params=params or [],
         inputs=[
             FileInput(
                 dep.spec.outputs[0].name,
@@ -242,6 +245,28 @@ def test_nonrecursive_external_done_dep_goes_to_pre_resolved(cfg):
     assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
+def test_nonrecursive_external_dep_does_not_require_execution_config(cfg):
+    dep = _make_step(
+        "dep",
+        exists=True,
+        output_names=["dep_out"],
+        params=[
+            ScalarParam(
+                "execution_value",
+                str,
+                config="dep.execution_value",
+            )
+        ],
+    )
+    step = _make_step("step", deps=[dep])
+    registry = {"dep": dep, "step": step}
+
+    plan = build_plan([step], cfg, recursive=False, _registry=registry)
+
+    assert [planned.name for planned in plan.steps_to_run] == ["step"]
+    assert dep.spec.output("dep_out") in plan.pre_resolved
+
+
 def test_force_keeps_external_done_dep_pre_resolved(cfg):
     dep = _make_step("dep", exists=True, output_names=["dep_out"])
     step = _make_step("step", deps=[dep])
@@ -267,7 +292,9 @@ def test_nonrecursive_override_replaces_external_dependency(cfg, tmp_path):
         input_override="inputs.dep",
     )
     registry = {"dep": dep, "step": step}
-    cfg["inputs"] = {"dep": str(tmp_path / "override.txt")}
+    override = tmp_path / "override.txt"
+    override.touch()
+    cfg["inputs"] = {"dep": str(override)}
 
     plan = build_plan([step], cfg, recursive=False, _registry=registry)
 
@@ -283,7 +310,9 @@ def test_recursive_override_does_not_schedule_dependency(cfg, tmp_path):
         input_override="inputs.dep",
     )
     registry = {"dep": dep, "step": step}
-    cfg["inputs"] = {"dep": str(tmp_path / "override.txt")}
+    override = tmp_path / "override.txt"
+    override.touch()
+    cfg["inputs"] = {"dep": str(override)}
 
     plan = build_plan([step], cfg, recursive=True, _registry=registry)
 

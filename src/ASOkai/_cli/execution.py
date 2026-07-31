@@ -151,25 +151,27 @@ def run_command(
     config_overrides: tuple,
 ) -> None:
     """Run selected steps, tasks, or a workflow."""
-    config = cfg.load(config_path)
-
-    overrides = parse_config_overrides(config_overrides)
-    if overrides:
-        cfg.apply_overrides(config, overrides)
-
     runnables = _collect_runnables(
         step_names,
         task_names,
         workflow_name,
     )
-    runner.run_all(
-        runnables,
-        config,
-        force=force,
-        dry_run=dry_run,
-        recursive=recursive,
-        executor=runner.executor_from_name(executor_name),
-    )
+    try:
+        config = cfg.load(config_path)
+        overrides = parse_config_overrides(config_overrides)
+        if overrides:
+            cfg.apply_overrides(config, overrides)
+
+        runner.run_all(
+            runnables,
+            config,
+            force=force,
+            dry_run=dry_run,
+            recursive=recursive,
+            executor=runner.executor_from_name(executor_name),
+        )
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from error
 
 
 @click.command("export", context_settings=CONTEXT_SETTINGS)
@@ -252,18 +254,17 @@ def export_command(
     config_overrides: tuple,
 ) -> None:
     """Export selected pipeline units as a runnable CWL bundle."""
-    config = cfg.load(config_path)
-
-    overrides = parse_config_overrides(config_overrides)
-    if overrides:
-        cfg.apply_overrides(config, overrides)
-
     runnables = _collect_runnables(
         step_names,
         task_names,
         workflow_name,
     )
     try:
+        config = cfg.load(config_path)
+        overrides = parse_config_overrides(config_overrides)
+        if overrides:
+            cfg.apply_overrides(config, overrides)
+
         export_directory = runner.export_all(
             runnables,
             config,
@@ -271,7 +272,7 @@ def export_command(
             outdir=outdir,
             runner_name=runner.runner_name_from_name(executor_name),
         )
-    except RuntimeError as error:
+    except (OSError, RuntimeError, ValueError) as error:
         raise click.ClickException(str(error)) from error
 
     click.echo(

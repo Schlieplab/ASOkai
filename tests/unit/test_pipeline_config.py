@@ -1,8 +1,15 @@
 #!/usr/bin/env python
 """Tests for pipeline config loading and resolution."""
-import pytest
+
 from pathlib import Path
+
+import pytest
+
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
+    GenerateAntisenseCandidatesStep,
+)
 
 
 @pytest.fixture
@@ -22,6 +29,23 @@ def test_load(sample_config):
     config = cfg.load(sample_config)
     assert config["datadir"] == "./data"
     assert config["genome"]["assembly_id"] == "GRCh38"
+
+
+@pytest.mark.parametrize("content", ["", "- one\n- two\n"])
+def test_load_rejects_non_mapping_root(tmp_path, content):
+    path = tmp_path / "config.yaml"
+    path.write_text(content)
+
+    with pytest.raises(ValueError, match="mapping at its root"):
+        cfg.load(path)
+
+
+def test_load_rejects_invalid_yaml(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("genome: [")
+
+    with pytest.raises(ValueError, match="Invalid YAML configuration"):
+        cfg.load(path)
 
 
 def test_resolve_top_level(sample_config):
@@ -51,6 +75,216 @@ def test_apply_overrides_new_key(sample_config):
     config = cfg.load(sample_config)
     cfg.apply_overrides(config, {"genome.new_key": "value"})
     assert config["genome"]["new_key"] == "value"
+
+
+def test_apply_overrides_rejects_scalar_parent(sample_config):
+    config = cfg.load(sample_config)
+
+    with pytest.raises(ValueError, match="cannot descend.*assembly_id"):
+        cfg.apply_overrides(
+            config,
+            {"genome.assembly_id.version": 2},
+        )
+
+
+def test_load_validates_against_checked_in_schema(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "datadir: ./data\n"
+        "genome:\n"
+        "  source: ucsc\n"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"genome.source.*ensembl",
+    ):
+        cfg.load(path)
+
+
+def test_config_schema_allows_plugin_namespaces(tmp_path):
+    cfg.validate_config_schema(
+        {
+            "datadir": str(tmp_path),
+            "example_plugin": {
+                "threshold": 0.5,
+            },
+        }
+    )
+
+
+def test_config_schema_uses_installed_plugin_schemas(
+    tmp_path,
+    monkeypatch,
+):
+    schema_path = tmp_path / "config.schema.yaml"
+    schema_path.write_text(
+        "type: object\n"
+        "properties:\n"
+        "  example_plugin:\n"
+        "    type: object\n"
+        "    properties:\n"
+        "      threshold:\n"
+        "        type: number\n"
+        "        maximum: 1\n"
+    )
+    monkeypatch.setattr(
+        "ASOkai.Plugins._registry.get_config_schema_paths",
+        lambda: {"example": schema_path},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Plugin 'example' schema.*example_plugin.threshold",
+    ):
+        cfg.validate_config_schema(
+            {
+                "datadir": str(tmp_path),
+                "example_plugin": {
+                    "threshold": 2,
+                },
+            }
+        )
+
+
+def test_validate_step_config_uses_defaults_and_only_selected_steps(
+    sample_config,
+):
+    config = cfg.load(sample_config)
+    step = DownloadGenomeStep()
+
+    cfg.validate_step_config(config, [step])
+
+    assert step.output_relative_path("dna", config).parts[2] == "ensembl"
+
+
+def test_validate_step_config_requires_selected_step_parameters(tmp_path):
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_step_config(
+            {"datadir": str(tmp_path)},
+            [DownloadGenomeStep()],
+        )
+
+    message = str(raised.value)
+    assert "$.genome.assembly_id" in message
+    assert "$.genome.ensembl_release" in message
+    assert "$.genome.species" in message
+    assert "$.genome.source" not in message
+
+
+def test_config_schema_reports_all_errors(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {
+            "assembly_id": "",
+            "ensembl_release": 0,
+            "species": "Homo_sapiens",
+        },
+    }
+
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(config)
+
+    message = str(raised.value)
+    assert "$.genome.assembly_id" in message
+    assert "$.genome.ensembl_release" in message
+
+
+def test_config_schema_requires_one_target_identifier(
+    tmp_path,
+):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {
+            "assembly_id": "GRCh38",
+            "ensembl_release": 114,
+            "species": "Homo_sapiens",
+        },
+        "target": {
+            "k": 16,
+            "region": "pre-mrna",
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"target.target_id, target.target_name",
+    ):
+        cfg.validate_config_schema(config)
+
+
+def test_validate_step_config_rejects_missing_override_file(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+            "target_gene_path": str(tmp_path / "missing.json"),
+        },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "chemistry": {
+                "type": "gapmer",
+                "layout": "3-10-3",
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="file does not exist"):
+        cfg.validate_step_config(
+            config,
+            [GenerateAntisenseCandidatesStep()],
+        )
+
+
+def test_validate_step_config_checks_override_file_contents(tmp_path):
+    override = tmp_path / "target.json"
+    override.write_text("{not-json")
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+            "target_gene_path": str(override),
+        },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "chemistry": {
+                "type": "gapmer",
+                "layout": "3-10-3",
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        cfg.validate_step_config(
+            config,
+            [GenerateAntisenseCandidatesStep()],
+        )
+
+
+def test_validate_step_config_rejects_datadir_file(tmp_path):
+    datadir = tmp_path / "data"
+    datadir.touch()
+
+    with pytest.raises(ValueError, match="datadir.*not a directory"):
+        cfg.validate_step_config(
+            {
+                "datadir": str(datadir),
+                "genome": {
+                    "assembly_id": "GRCh38",
+                    "ensembl_release": 114,
+                    "species": "Homo_sapiens",
+                },
+            },
+            [DownloadGenomeStep()],
+        )
 
 
 def test_step_resources_returns_supported_fields():
@@ -97,28 +331,37 @@ def test_step_resources_merges_configured_defaults_and_step_overrides():
 
 
 @pytest.mark.parametrize("section", ["default", "analysis"])
-def test_step_resources_rejects_unsupported_fields(section):
-    config = {"resources": {section: {"nodes": 2}}}
+def test_config_schema_rejects_unsupported_resource_fields(section):
+    config = {
+        "datadir": ".",
+        "resources": {section: {"nodes": 2}},
+    }
 
     with pytest.raises(ValueError, match=rf"resources.{section}.*nodes"):
-        cfg.step_resources(config, "analysis")
+        cfg.validate_config_schema(config)
 
 
 @pytest.mark.parametrize("key", ["n_processes", "memory_mb"])
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "4"])
-def test_step_resources_rejects_invalid_supported_values(key, value):
-    config = {"resources": {"analysis": {key: value}}}
+def test_config_schema_rejects_invalid_resource_values(key, value):
+    config = {
+        "datadir": ".",
+        "resources": {"analysis": {key: value}},
+    }
 
     with pytest.raises(ValueError, match=rf"resources.analysis.{key}"):
-        cfg.step_resources(config, "analysis")
+        cfg.validate_config_schema(config)
 
 
-def test_step_resources_rejects_non_mapping_sections():
-    with pytest.raises(TypeError, match="resources.*mapping"):
-        cfg.step_resources({"resources": []}, "analysis")
-
-    with pytest.raises(TypeError, match="resources.analysis.*mapping"):
-        cfg.step_resources({"resources": {"analysis": 4}}, "analysis")
-
-    with pytest.raises(TypeError, match="resources.default.*mapping"):
-        cfg.step_resources({"resources": {"default": 4}}, "analysis")
+@pytest.mark.parametrize(
+    "resources",
+    [[], {"analysis": 4}, {"default": 4}],
+)
+def test_config_schema_rejects_non_mapping_resources(resources):
+    with pytest.raises(ValueError, match="resources"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
+                "resources": resources,
+            }
+        )

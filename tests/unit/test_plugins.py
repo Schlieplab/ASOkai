@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """Tests for extension authoring and discovery."""
 
+from pathlib import Path
+
 import pytest
 
 from ASOkai import Plugins
@@ -41,3 +43,31 @@ def test_plugin_steps_cannot_silently_replace_registered_names(monkeypatch):
 
     with pytest.raises(ValueError, match="Duplicate registered step name"):
         plugin_registry.get_steps()
+
+
+def test_plugin_config_schema_entry_points_expose_paths(
+    monkeypatch,
+    tmp_path,
+):
+    schema_path = tmp_path / "config.schema.yaml"
+
+    class ConfigSchemaEntryPoint:
+        name = "example"
+
+        @staticmethod
+        def load():
+            return schema_path
+
+    monkeypatch.setattr(
+        plugin_registry,
+        "entry_points",
+        lambda *, group: (
+            [ConfigSchemaEntryPoint()]
+            if group == "asokai.config_schemas"
+            else []
+        ),
+    )
+
+    assert plugin_registry.get_config_schema_paths() == {
+        "example": Path(schema_path),
+    }

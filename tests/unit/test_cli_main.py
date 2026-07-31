@@ -418,10 +418,75 @@ def test_run_config_rejects_malformed_override(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     runner = CliRunner()
-    result = runner.invoke(main, ["run", "--config", "target.k"])
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--steps",
+            "download-genome",
+            "--config",
+            "target.k",
+        ],
+    )
 
     assert result.exit_code != 0
     assert "KEY=VALUE format" in result.output
+
+
+def test_run_displays_configuration_errors_without_traceback(monkeypatch):
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path: {"datadir": "./data"},
+    )
+
+    def reject_config(*args, **kwargs):
+        raise ValueError(
+            "Invalid configuration:\n- $.target.k: 0 is less than 1"
+        )
+
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        reject_config,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--steps", "download-genome"],
+    )
+
+    assert result.exit_code != 0
+    assert "Error: Invalid configuration:" in result.output
+    assert "$.target.k" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_export_displays_configuration_errors_without_traceback(monkeypatch):
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path: {"datadir": "./data"},
+    )
+
+    def reject_config(*args, **kwargs):
+        raise ValueError(
+            "Invalid configuration:\n- $.target.region: invalid"
+        )
+
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.export_all",
+        reject_config,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["export", "--steps", "download-genome"],
+    )
+
+    assert result.exit_code != 0
+    assert "Error: Invalid configuration:" in result.output
+    assert "$.target.region" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_run_config_preserves_yaml_scalar_types(monkeypatch):

@@ -14,6 +14,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.steps.base import Step
@@ -209,12 +210,14 @@ def build_plan(
     Steps:
     1. Flatten each Runnable to Step objects.
     2. Deduplicate by name, preserving first-seen order.
-    3. Remove dependency edges replaced by configured file overrides.
-    4. If recursive=True, prepend any missing transitive dependencies from
+    3. Validate configuration against the checked-in JSON Schema.
+    4. Remove dependency edges replaced by configured file overrides.
+       If recursive=True, prepend any missing transitive dependencies from
        the step registry.
-    5. Validate external dependencies and reuse completed dep outputs.
-    6. Topologically sort (dep-first DFS).
-    7. Partition: steps whose outputs already exist (and force=False) go into
+    5. Validate configuration for selected steps and external producers.
+    6. Validate external dependencies and reuse completed dep outputs.
+    7. Topologically sort (dep-first DFS).
+    8. Partition: steps whose outputs already exist (and force=False) go into
        pre_resolved; the rest go into steps_to_run.
     """
     if _registry is None:
@@ -230,21 +233,27 @@ def build_plan(
                 seen_names.add(step.name)
                 flat.append(step)
 
-    # 3 + 4: remove overridden edges and collect active transitive deps
+    # 3: validate selected-step data before reading dependency overrides
+    cfg.validate_config_schema(config)
+
+    # 4: remove overridden edges and collect active transitive deps
     if recursive:
         flat = _collect_transitive_deps(flat, _registry, config)
 
-    # 5: validate deps not included in the plan and reuse completed outputs
+    # 5: validate configuration needed by the scheduled steps
+    cfg.validate_step_config(config, flat)
+
+    # 6: validate deps not included in the plan and reuse completed outputs
     pre_resolved = _resolve_external_deps(
         flat,
         _registry,
         config,
     )
 
-    # 6: topological sort
+    # 7: topological sort
     ordered = _topo_sort(flat, config)
 
-    # 7: partition
+    # 8: partition
     steps_to_run: list[Step] = []
 
     for step in ordered:

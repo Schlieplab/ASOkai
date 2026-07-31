@@ -138,14 +138,19 @@ def test_run_step_uses_config_download_source(config):
     assert inputs["source"] == "ensembl"
 
 
-def test_run_step_uses_configured_download_source(config):
+def test_run_step_rejects_unsupported_download_source(config):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
     config["genome"]["source"] = "ucsc"
 
-    runner.run_step("download-genome", config, force=True, executor=executor)
+    with pytest.raises(ValueError, match=r"genome.source.*ensembl"):
+        runner.run_step(
+            "download-genome",
+            config,
+            force=True,
+            executor=executor,
+        )
 
-    _, inputs, _ = executor.run.call_args.args
-    assert inputs["source"] == "ucsc"
+    executor.run.assert_not_called()
 
 
 def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):

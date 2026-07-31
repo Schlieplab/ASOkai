@@ -67,12 +67,17 @@ def resolve_step_inputs(
         steps_in_plan = set()
 
     resolved: dict[str, ResolvedInput] = {}
-    for cwl_key, config_path in step.config_map.items():
+    for parameter in step.spec.params:
+        if not parameter.cwl or parameter.config is None:
+            continue
         try:
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value=cfg.resolve(config, config_path),
+            resolved[parameter.name] = ResolvedInput(
+                cwl_value=cfg.resolve_parameter_value(
+                    config,
+                    parameter,
+                ),
                 source="scalar",
-                config_path=config_path,
+                config_path=parameter.config,
             )
         except KeyError:
             pass

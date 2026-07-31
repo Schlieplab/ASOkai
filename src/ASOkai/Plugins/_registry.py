@@ -10,6 +10,8 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from importlib.metadata import entry_points
+from os import PathLike
+from pathlib import Path
 
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
@@ -80,3 +82,22 @@ def get_workflows() -> dict[str, Workflow]:
         "workflow",
         [*_BUILTIN_WORKFLOWS, *_load_plugins("asokai.workflows")],
     )
+
+
+def get_config_schema_paths() -> dict[str, Path]:
+    """Return config schema files registered by installed plugins."""
+    schemas: dict[str, Path] = {}
+    for entry_point in entry_points(group="asokai.config_schemas"):
+        if entry_point.name in schemas:
+            raise ValueError(
+                "Duplicate registered config schema name: "
+                f"{entry_point.name!r}."
+            )
+        value = entry_point.load()
+        if not isinstance(value, (str, PathLike)):
+            raise ValueError(
+                f"Plugin config schema '{entry_point.name}' must expose "
+                "a file path."
+            )
+        schemas[entry_point.name] = Path(value)
+    return schemas

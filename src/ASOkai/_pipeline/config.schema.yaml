@@ -1,0 +1,135 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: ASOkai configuration
+type: object
+additionalProperties: true
+required:
+  - datadir
+properties:
+  datadir:
+    type: string
+    minLength: 1
+    description: Directory that receives ASOkai data.
+
+  genome:
+    type: object
+    additionalProperties: false
+    properties:
+      assembly_id:
+        type: string
+        minLength: 1
+        description: Genome assembly ID, such as GRCh38.
+      ensembl_release:
+        type: integer
+        minimum: 1
+        description: Ensembl release number.
+      source:
+        const: ensembl
+        default: ensembl
+        description: Genome data source.
+      species:
+        type: string
+        minLength: 1
+        description: Ensembl species name, such as Homo_sapiens.
+      dna_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional genomic DNA FASTA override.
+      cdna_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional cDNA FASTA override.
+      annotation_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional genome annotation override.
+      db_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional annotation database override.
+
+  target:
+    type: object
+    additionalProperties: false
+    properties:
+      target_id:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Ensembl gene ID. Takes priority over target_name.
+      target_name:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Gene name used when target_id is not provided.
+      k:
+        type: integer
+        minimum: 1
+        description: Antisense oligonucleotide length.
+      region:
+        enum:
+          - exonic_only
+          - pre-mrna
+          - transcriptomic
+        description: Target region type.
+      target_gene_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional serialized target-gene override.
+    allOf:
+      - anyOf:
+          - required:
+              - target_id
+            properties:
+              target_id:
+                type: string
+          - required:
+              - target_name
+            properties:
+              target_name:
+                type: string
+        x-error-message: >-
+          one of these config values is required:
+          target.target_id, target.target_name
+
+  antisense:
+    type: object
+    additionalProperties: false
+    properties:
+      modality:
+        const: aso
+      mechanism:
+        const: rnase-h1
+      chemistry:
+        type: object
+        additionalProperties: false
+        properties:
+          type:
+            const: gapmer
+          layout:
+            type: string
+            minLength: 1
+
+  resources:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        n_processes:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1

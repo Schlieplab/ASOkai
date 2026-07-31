@@ -12,6 +12,7 @@ dependencies:
   - requests>=2.32
   - tqdm>=4.67
   - pytest
+  - pre-commit
   - black
   - pip
   - pip:

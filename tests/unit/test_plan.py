@@ -17,11 +17,16 @@ from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     Runnable,
-    ScalarParam,
     Step,
     StepSpec,
 )
 from ASOkai._pipeline.plan import build_plan
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
+from ASOkai._pipeline.steps.core.create_target_gene import (
+    CreateTargetGeneStep,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +40,6 @@ def _make_step(
     exists: bool = False,
     output_names: list[str] | None = None,
     input_override: str | None = None,
-    params: list[ScalarParam] | None = None,
 ) -> Step:
     """Return a minimal concrete Step for plan tests."""
     if output_names is None:
@@ -48,7 +52,6 @@ def _make_step(
         for key in output_names
     ]
     spec = StepSpec(
-        params=params or [],
         inputs=[
             FileInput(
                 dep.spec.outputs[0].name,
@@ -245,26 +248,32 @@ def test_nonrecursive_external_done_dep_goes_to_pre_resolved(cfg):
     assert dep.spec.output("dep_out") in plan.pre_resolved
 
 
-def test_nonrecursive_external_dep_does_not_require_execution_config(cfg):
-    dep = _make_step(
-        "dep",
-        exists=True,
-        output_names=["dep_out"],
-        params=[
-            ScalarParam(
-                "execution_value",
-                str,
-                config="dep.execution_value",
-            )
-        ],
+def test_nonrecursive_analysis_uses_existing_output_for_its_config(cfg):
+    cfg["genome"] = {"assembly_id": "GRCh38"}
+    cfg["target"] = {
+        "target_id": "ENSG00000133703",
+        "k": 16,
+        "region": "pre-mrna",
+    }
+    producer = CreateTargetGeneStep()
+    analysis = IntrinsicFeaturesStep()
+    target_gene_path = producer.output_paths(cfg)["target_gene"]
+    target_gene_path.parent.mkdir(parents=True)
+    target_gene_path.touch()
+    registry = {
+        producer.name: producer,
+        analysis.name: analysis,
+    }
+
+    plan = build_plan(
+        [analysis],
+        cfg,
+        recursive=False,
+        _registry=registry,
     )
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
 
-    plan = build_plan([step], cfg, recursive=False, _registry=registry)
-
-    assert [planned.name for planned in plan.steps_to_run] == ["step"]
-    assert dep.spec.output("dep_out") in plan.pre_resolved
+    assert [step.name for step in plan.steps_to_run] == [analysis.name]
+    assert producer.target_gene_output in plan.pre_resolved
 
 
 def test_force_keeps_external_done_dep_pre_resolved(cfg):

@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: validate-asokai-contributions
+        name: Validate ASOkai analysis-step contracts
+        entry: python -m pytest -q tests/contributor/test_analysis_steps.py
+        language: system
+        pass_filenames: false
+        files: '^(src/ASOkai/|examples/contributor_steps/|examples/config\.example\.yaml$|tests/contributor/test_analysis_steps\.py$|pyproject\.toml$|\.pre-commit-config\.yaml$)'

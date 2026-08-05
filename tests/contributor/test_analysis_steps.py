@@ -50,20 +50,6 @@ CONTRIBUTOR_STEPS = (*BUILTIN_STEPS, TEMPLATE_STEP)
 REGISTERED_STEPS = {step.name: step for step in BUILTIN_STEPS}
 
 
-def _schema_declares(dotted_path: str) -> bool:
-    current: Any = CORE_SCHEMA
-    for name in dotted_path.split("."):
-        properties = (
-            current.get("properties")
-            if isinstance(current, Mapping)
-            else None
-        )
-        if not isinstance(properties, Mapping) or name not in properties:
-            return False
-        current = properties[name]
-    return True
-
-
 def _concrete_step_classes() -> set[type[Step]]:
     classes: set[type[Step]] = set()
     for module_info in pkgutil.walk_packages(
@@ -110,21 +96,7 @@ def test_every_concrete_step_is_registered_once() -> None:
 
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_config_paths_exist_in_core_schema(step: Step) -> None:
-    paths = [
-        parameter.config
-        for parameter in step.spec.params
-        if parameter.config is not None
-    ]
-    paths.extend(
-        file_input.override
-        for file_input in step.spec.inputs
-        if file_input.override is not None
-    )
-    for path in paths:
-        assert _schema_declares(path), (
-            f"{type(step).__name__} references {path!r}, which is missing "
-            "from config.schema.yaml."
-        )
+    config_module.validate_step_config_paths([step])
 
 
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)

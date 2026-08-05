@@ -3,7 +3,8 @@
 To add an analysis step:
 
 1. Copy this file and replace the example analysis, names, and declarations.
-2. Add any new configuration fields to ``config.schema.yaml`` and
+2. Add any new configuration fields to
+   ``src/ASOkai/_pipeline/config.schema.yaml`` and
    ``examples/config.example.yaml``.
 3. Register the step in ``ASOkai.Plugins._registry``.
 4. Run the contributor contract test, or let pre-commit run it.
@@ -17,15 +18,13 @@ from ASOkai.Analysis import SiteSpecificAnalysis
 from ASOkai.Plugins import (
     AnalysisStep,
     CsvFile,
+    CreateTargetGeneStep,
     FileInput,
     FileOutput,
     OutputPathTemplate,
     ScalarParam,
     StepSpec,
     TemplateField,
-)
-from ASOkai._pipeline.steps.core.create_target_gene import (
-    CreateTargetGeneStep,
 )
 
 

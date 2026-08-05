@@ -195,6 +195,45 @@ def validate_step_config(
         _raise_config_errors(errors)
 
 
+def validate_step_config_paths(
+    steps: Sequence[Step],
+    plugin_schema_paths: Mapping[str, Path] | None = None,
+) -> None:
+    """Require every step config path to exist in a registered schema."""
+    schemas = {"ASOkai": _load_config_schema()}
+    for plugin_name, schema_path in (plugin_schema_paths or {}).items():
+        owner = f"Plugin '{plugin_name}'"
+        schema = _read_config_schema(schema_path, owner)
+        schemas[owner] = schema
+
+    errors: list[str] = []
+    for step in _unique_steps(steps):
+        paths = [
+            parameter.config
+            for parameter in step.spec.params
+            if parameter.config is not None
+        ]
+        paths.extend(
+            file_input.override
+            for file_input in step.spec.inputs
+            if file_input.override is not None
+        )
+        for path in paths:
+            if any(
+                _schema_declares_path(schema, path)
+                for schema in schemas.values()
+            ):
+                continue
+            errors.append(
+                f"Step '{step.name}' uses '{path}', but no registered "
+                "configuration schema declares it."
+            )
+
+    if errors:
+        details = "\n".join(f"- {error}" for error in errors)
+        raise ValueError(f"Invalid step configuration contract:\n{details}")
+
+
 def validate_config_schema(
     config: Any,
 ) -> None:
@@ -263,6 +302,24 @@ def _schema_errors(
     if owner == "ASOkai":
         return errors
     return [f"{owner} schema: {error}" for error in errors]
+
+
+def _schema_declares_path(
+    schema: Mapping[str, Any],
+    dotted_path: str,
+) -> bool:
+    """Return whether nested schema properties declare a dotted path."""
+    current: Any = schema
+    for name in _dotted_key_parts(dotted_path):
+        properties = (
+            current.get("properties")
+            if isinstance(current, Mapping)
+            else None
+        )
+        if not isinstance(properties, Mapping) or name not in properties:
+            return False
+        current = properties[name]
+    return True
 
 
 def _dotted_key_parts(dotted_key: str) -> tuple[str, ...]:

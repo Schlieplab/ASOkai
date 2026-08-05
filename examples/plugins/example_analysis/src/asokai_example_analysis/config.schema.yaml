@@ -1,0 +1,15 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Example analysis plugin configuration
+type: object
+additionalProperties: true
+properties:
+  example_analysis:
+    type: object
+    additionalProperties: false
+    required:
+      - minimum_length
+    properties:
+      minimum_length:
+        type: integer
+        minimum: 1
+        description: Minimum site length reported as passing the example check.

@@ -213,6 +213,16 @@ External programs used by some workflows are not installed via `pip` with the AS
 
 [KMC](https://github.com/refresh-bio/KMC) is GPLv3-only; see the upstream repository for the license text.
 
+## Contributor setup
+
+Create the Conda environment so binary dependencies such as KMC are managed by
+Conda, then install ASOkai and its contributor tools into that environment:
+
+```bash
+conda env create -f environment.yaml
+conda activate ASOkai
+python -m pip install -e ".[dev]"
+```
 
 ## Documentation
 

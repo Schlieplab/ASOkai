@@ -208,9 +208,47 @@ def test_config_schema_requires_one_target_identifier(
 
     with pytest.raises(
         ValueError,
-        match=r"target.target_id, target.target_name",
+        match=r"exactly one.*target.target_id, target.target_name",
     ):
         cfg.validate_config_schema(config)
+
+
+def test_config_schema_rejects_two_target_identifiers(tmp_path):
+    with pytest.raises(
+        ValueError,
+        match=r"exactly one.*target.target_id, target.target_name",
+    ):
+        cfg.validate_config_schema(
+            {
+                "datadir": str(tmp_path),
+                "target": {
+                    "target_id": "ENSG1",
+                    "target_name": "KRAS",
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize("layout", ["", "16", "3-10", "3-10-3-1", "0-16-0", "a-b-c"])
+def test_config_schema_rejects_invalid_chemistry_layout(layout):
+    with pytest.raises(ValueError, match="antisense.chemistry.layout"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
+                "antisense": {"chemistry": {"layout": layout}},
+            }
+        )
+
+
+def test_config_schema_requires_layout_to_match_target_length():
+    with pytest.raises(ValueError, match=r"segment lengths must sum to target.k \(18\)"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
+                "target": {"target_id": "ENSG1", "k": 18},
+                "antisense": {"chemistry": {"layout": "3-10-3"}},
+            }
+        )
 
 
 def test_validate_step_config_rejects_missing_override_file(tmp_path):

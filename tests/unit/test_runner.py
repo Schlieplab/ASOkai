@@ -222,7 +222,6 @@ def workflow_config(tmp_path):
         },
         "target": {
             "target_id": "ENSG00000133703",
-            "target_name": "KRAS",
             "k": 16,
             "region": "pre-mrna",
         },

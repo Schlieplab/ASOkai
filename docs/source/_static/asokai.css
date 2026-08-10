@@ -1,0 +1,58 @@
+/* Generated contract tables favor vertical space over horizontal scrolling. */
+.wy-nav-content {
+  max-width: 1000px;
+}
+
+.rst-content table.asokai-reference-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.rst-content table.asokai-reference-table th,
+.rst-content table.asokai-reference-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  word-break: normal;
+}
+
+.rst-content table.asokai-reference-table code.literal,
+.rst-content table.asokai-reference-table code.literal span.pre {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.rst-content table.asokai-step-configuration th:first-child {
+  width: 45%;
+}
+
+.rst-content table.asokai-step-configuration td:first-child code.literal,
+.rst-content table.asokai-step-configuration td:first-child code.literal span.pre {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.rst-content table.asokai-json-class-contract th:first-child {
+  width: 30%;
+}
+
+.rst-content table.asokai-step-inputs th:first-child,
+.rst-content table.asokai-step-resources th:first-child,
+.rst-content table.asokai-step-file-outputs th:first-child {
+  width: 25%;
+}
+
+.rst-content table.asokai-step-scalar-outputs th:first-child {
+  width: 30%;
+}
+
+.rst-content table.asokai-analysis-output-columns th:first-child {
+  width: 30%;
+}
+
+.rst-content .asokai-reference-details p {
+  margin-bottom: 0.5rem;
+}
+
+.rst-content .asokai-reference-details p:last-child {
+  margin-bottom: 0;
+}

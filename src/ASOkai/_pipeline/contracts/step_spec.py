@@ -29,7 +29,6 @@ class StepSpec:
     inputs: Sequence[FileInput] = field(default_factory=tuple)
     outputs: Sequence[FileOutput] = field(default_factory=tuple)
     base_command: list[str] | None = None
-    doc: str | None = None
     requirements: dict[str, Any] = field(default_factory=dict)
     arguments: Sequence[CwlToolArgument] = field(default_factory=tuple)
     extra: dict[str, Any] = field(default_factory=dict)
@@ -110,7 +109,6 @@ class StepSpec:
         )
         return CwlCommandLineToolSpec(
             base_command=self.base_command,
-            doc=self.doc,
             requirements=deepcopy(self.requirements),
             arguments=[
                 *self.arguments,

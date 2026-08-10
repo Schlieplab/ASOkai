@@ -25,6 +25,15 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
         mechanism: MechanismOfAction,
         **kwargs,
     ):
+        """Initialize an ASO.
+
+        Args:
+            id: Unique therapeutic identifier.
+            sequence: Antisense-strand sequence in the 5' to 3' direction.
+            chemistry: Chemistry applied to the oligonucleotide.
+            mechanism: Mechanism through which the ASO acts.
+            kwargs: Additional scalar values retained during serialization.
+        """
         super().__init__(
             id=id,
             sequence=sequence,

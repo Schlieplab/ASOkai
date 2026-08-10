@@ -88,6 +88,7 @@ class JsonFile(FileType):
         if value_type is not None:
             json_file_type_name(value_type)
         object.__setattr__(self, "media_type", "application/json")
+        object.__setattr__(self, "format_name", "JSON")
         object.__setattr__(self, "value_type", value_type)
 
     @staticmethod

@@ -40,7 +40,8 @@ class TranscriptSite(Site):
             t_start: 0-based inclusive start position on the transcript.
             t_end: 0-based exclusive end position on the transcript.
             sequence: Spliced sequence of the site.
-            id: The ID of the site.
+            id: Stable site identifier. Constructors derive it from the
+                transcript coordinates when omitted.
             kwargs: Additional keyword arguments.
         """
         self.transcript_id = transcript_id
@@ -73,4 +74,3 @@ class TranscriptSite(Site):
             and self.t_start == other.t_start
             and self.t_end == other.t_end
         )
-

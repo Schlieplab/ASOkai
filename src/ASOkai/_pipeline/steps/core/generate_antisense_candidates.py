@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ASOkai.Antisense import AntisenseTherapeutic, Binding
+from ASOkai.Antisense import ASO, Binding
 from ASOkai._types import TargetRegion
 from ASOkai._pipeline.contracts.file_types import JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
@@ -37,7 +37,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
     )
     therapeutics_output = FileOutput(
         "therapeutics",
-        file_type=JsonFile(list[AntisenseTherapeutic]),
+        file_type=JsonFile(list[ASO]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
@@ -46,7 +46,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
         ),
-        doc="Serialized antisense therapeutic candidates.",
+        doc="Serialized ASO candidates, one for each input target site.",
     )
     bindings_output = FileOutput(
         "bindings",
@@ -59,7 +59,10 @@ class GenerateAntisenseCandidatesStep(CoreStep):
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
         ),
-        doc="Serialized therapeutic-to-site bindings.",
+        doc=(
+            "Serialized relationships between therapeutic IDs and input "
+            "target-site IDs."
+        ),
     )
     spec = StepSpec(
         requirements={"WorkReuse": {"enableReuse": True}},

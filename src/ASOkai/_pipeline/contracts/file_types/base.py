@@ -20,10 +20,13 @@ class FileType:
     """An opaque file whose step argument remains a filesystem path."""
 
     media_type: str = "application/octet-stream"
+    format_name: str = "Opaque file"
 
     def __post_init__(self) -> None:
         if type(self.media_type) is not str or not self.media_type.strip():
             raise ValueError("FileType.media_type must be a non-blank string.")
+        if type(self.format_name) is not str or not self.format_name.strip():
+            raise ValueError("FileType.format_name must be a non-blank string.")
 
     def read(self, path: str | Path) -> Any:
         """Return an opaque input as a path without interpreting its contents."""

@@ -31,7 +31,10 @@ class DownloadGenomeStep(CoreStep):
     description = "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
     dna_output = FileOutput(
         "dna",
-        file_type=FileType(media_type="application/gzip"),
+        file_type=FileType(
+            media_type="application/gzip",
+            format_name="gzip-compressed DNA FASTA",
+        ),
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.dna.primary_assembly.fa.gz",
@@ -42,11 +45,14 @@ class DownloadGenomeStep(CoreStep):
                 ),
             },
         ),
-        doc="Primary assembly DNA FASTA ({Species}.{Assembly}.dna.primary_assembly.fa.gz)",
+        doc="Primary assembly DNA FASTA.",
     )
     cdna_output = FileOutput(
         "cdna",
-        file_type=FileType(media_type="application/gzip"),
+        file_type=FileType(
+            media_type="application/gzip",
+            format_name="gzip-compressed cDNA FASTA",
+        ),
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.cdna.all.fa.gz",
@@ -57,11 +63,14 @@ class DownloadGenomeStep(CoreStep):
                 ),
             },
         ),
-        doc="cDNA FASTA ({Species}.{Assembly}.cdna.all.fa.gz)",
+        doc="All-transcript cDNA FASTA.",
     )
     annotation_output = FileOutput(
         "annotation",
-        file_type=FileType(media_type="application/gzip"),
+        file_type=FileType(
+            media_type="application/gzip",
+            format_name="gzip-compressed GTF",
+        ),
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.{release}.gtf.gz",
@@ -72,11 +81,14 @@ class DownloadGenomeStep(CoreStep):
                 ),
             },
         ),
-        doc="Gene annotation GTF ({Species}.{Assembly}.{release}.gtf.gz)",
+        doc="Gene annotation GTF.",
     )
     db_output = FileOutput(
         "db",
-        file_type=FileType(media_type="application/vnd.sqlite3"),
+        file_type=FileType(
+            media_type="application/vnd.sqlite3",
+            format_name="SQLite gffutils database",
+        ),
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.{release}.gtf.db",
@@ -87,15 +99,9 @@ class DownloadGenomeStep(CoreStep):
                 ),
             },
         ),
-        doc="Reusable gffutils annotation database.",
+        doc="Reusable annotation database built by gffutils.",
     )
     spec = StepSpec(
-        doc=(
-            "Download genome DNA (primary assembly FASTA), cDNA (FASTA), and "
-            "annotation (GTF) from a configured genome source, then build a "
-            "reusable annotation database.\nFiles are written "
-            "to:\n  {source}/{assembly}/{release}/"
-        ),
         requirements={
             "NetworkAccess": {"networkAccess": True},
             "WorkReuse": {"enableReuse": True},

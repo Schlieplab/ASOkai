@@ -16,7 +16,7 @@ genome:
   # db_path: /path/to/genome.annotation.db
 
 target:
-  # Set target_id or target_name. target_id takes priority when both are set.
+  # Set exactly one of target_id or target_name.
   target_id: ENSG00000133703
   # target_name: KRAS
   k: 16

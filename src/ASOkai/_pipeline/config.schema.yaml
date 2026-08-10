@@ -64,13 +64,13 @@ properties:
           - string
           - "null"
         minLength: 1
-        description: Ensembl gene ID. Takes priority over target_name.
+        description: Ensembl gene ID; use this or target_name, but not both.
       target_name:
         type:
           - string
           - "null"
         minLength: 1
-        description: Gene name used when target_id is not provided.
+        description: Gene name; use this or target_id, but not both.
       k:
         type: integer
         minimum: 1
@@ -88,7 +88,7 @@ properties:
         minLength: 1
         description: Optional serialized target-gene override.
     allOf:
-      - anyOf:
+      - oneOf:
           - required:
               - target_id
             properties:
@@ -100,7 +100,7 @@ properties:
               target_name:
                 type: string
         x-error-message: >-
-          one of these config values is required:
+          exactly one of these config values is required:
           target.target_id, target.target_name
 
   antisense:
@@ -109,20 +109,39 @@ properties:
     properties:
       modality:
         const: aso
+        description: Antisense therapeutic modality.
       mechanism:
         const: rnase-h1
+        description: Therapeutic mechanism of action.
       chemistry:
         type: object
         additionalProperties: false
         properties:
           type:
             const: gapmer
+            description: Antisense oligonucleotide chemistry.
           layout:
             type: string
-            minLength: 1
+            pattern: ^[1-9][0-9]*-[1-9][0-9]*-[1-9][0-9]*$
+            description: >-
+              Positive left-wing, gap, and right-wing lengths, such as
+              3-10-3. The three lengths must sum to target.k.
 
   resources:
     type: object
+    properties:
+      default:
+        type: object
+        additionalProperties: false
+        properties:
+          n_processes:
+            type: integer
+            minimum: 1
+            description: Default number of processes for every step.
+          memory_mb:
+            type: integer
+            minimum: 1
+            description: Default memory in mebibytes for every step.
     additionalProperties:
       type: object
       additionalProperties: false
@@ -130,6 +149,8 @@ properties:
         n_processes:
           type: integer
           minimum: 1
+          description: Number of processes allocated to this step.
         memory_mb:
           type: integer
           minimum: 1
+          description: Memory in mebibytes allocated to this step.

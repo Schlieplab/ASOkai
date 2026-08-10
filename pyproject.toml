@@ -31,6 +31,16 @@ dependencies = [
     "jsonschema>=4,<5",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pre-commit",
+    "pyright",
+    "pytest",
+    "sphinx>=8,<9",
+    "sphinx-rtd-theme>=3,<4",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
@@ -39,6 +49,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ASOkai._pipeline" = ["config.schema.yaml"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+extraPaths = ["src", "docs/source/_extensions"]
 
 [project.scripts]
 ASOkai = "ASOkai._cli.main:main"

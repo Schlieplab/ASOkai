@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: This file defines the Oligonucleotide class.
 License: LGPL-3.0-or-later
 """
+
 from Bio.Seq import Seq
 
 from ..Biochemistry import Chemistry
@@ -20,6 +21,13 @@ class Oligonucleotide(Serializable):
     _chemistry: Chemistry
 
     def __init__(self, sequence: Seq, chemistry: Chemistry, **kwargs):
+        """Initialize one oligonucleotide strand.
+
+        Args:
+            sequence: Nucleotide sequence stored in the 5' to 3' direction.
+            chemistry: Chemistry applied to this strand.
+            kwargs: Additional scalar values retained during serialization.
+        """
         self._sequence = sequence
         self._chemistry = chemistry
         super().__init__(**kwargs)

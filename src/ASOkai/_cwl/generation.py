@@ -48,7 +48,7 @@ class StepCwlGenerator(BaseCwlGenerator):
             "cwlVersion": self.cwl_version,
             "class": "CommandLineTool",
             "baseCommand": spec.command_for_step(step.name),
-            "doc": spec.doc_for_step(step.description),
+            "doc": step.description,
         }
         requirements = deepcopy(spec.requirements)
         if resource_requirement:

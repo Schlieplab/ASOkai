@@ -11,9 +11,6 @@ dependencies:
   - pyyaml>=6.0
   - requests>=2.32
   - tqdm>=4.67
-  - pytest
-  - pre-commit
-  - black
   - pip
   - pip:
     - "toil[cwl]"

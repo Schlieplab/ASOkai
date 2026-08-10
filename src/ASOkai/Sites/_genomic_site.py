@@ -38,7 +38,8 @@ class GenomicSite(Site, GenomeElement):
             end: The end position of the site (1-based inclusive).
             strand: The strand of the site.
             sequence: The sequence of the site.
-            id: The ID of the site. Optional, defaults to None.
+            id: Stable site identifier. Constructors derive it from the locus
+                when omitted.
             genome: The genome of the site. Optional, defaults to None.
             kwargs: Additional keyword arguments.
         """

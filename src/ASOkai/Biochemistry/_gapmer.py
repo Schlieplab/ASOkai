@@ -17,6 +17,13 @@ class GapmerChemistry(Chemistry):
     layout: str
 
     def __init__(self, layout: str = "3-10-3", **kwargs):
+        """Initialize a gapmer chemistry.
+
+        Args:
+            layout: Three positive lengths formatted as
+                '<left wing>-<gap>-<right wing>', for example '3-10-3'.
+            kwargs: Additional scalar values retained during serialization.
+        """
         try:
             lengths = tuple(int(part) for part in layout.split("-"))
         except (AttributeError, ValueError) as error:

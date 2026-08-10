@@ -25,7 +25,10 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 class IntrinsicFeaturesStep(AnalysisStep):
     name = "intrinsic-features"
-    description = "Computes intrinsic features (GC content, T-runs, AT-runs) for each ASO target site."
+    description = (
+        "Computes nucleotide composition and CpG features for each ASO "
+        "target site."
+    )
     analysis_cls = IntrinsicFeaturesAnalysis
     target_gene_input = FileInput(
         "target_gene",
@@ -58,7 +61,7 @@ class IntrinsicFeaturesStep(AnalysisStep):
                 ),
             },
         ),
-        doc="Intrinsic features per ASO target site.",
+        doc="Intrinsic features per target site.",
     )
     spec = StepSpec(
         requirements={
@@ -70,13 +73,13 @@ class IntrinsicFeaturesStep(AnalysisStep):
                 "target_id",
                 str | None,
                 config="target.target_id",
-                doc="Ensembl gene ID. Takes priority over target_name.",
+                doc="Ensembl gene ID. Use this or target_name.",
             ),
             ScalarParam(
                 "target_name",
                 str | None,
                 config="target.target_name",
-                doc="Gene name. Used if target_id is not provided.",
+                doc="Gene name. Use this or target_id.",
             ),
             ScalarParam("k", int, config="target.k", doc="ASO length."),
             ScalarParam(

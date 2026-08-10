@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+from abc import ABC
 from collections.abc import Iterable, Mapping, Sequence
 from types import NoneType, SimpleNamespace, UnionType
 from typing import (
@@ -99,8 +100,6 @@ def validate_json_data(
 
 def _build_schema(
     expected_type: Any,
-    *,
-    allow_subclasses: bool = False,
 ) -> JsonSchema:
     """Return the JSON representation of one annotated Python type."""
     origin = get_origin(expected_type)
@@ -111,10 +110,7 @@ def _build_schema(
             raise TypeError("JSON list annotations require one item type.")
         return {
             "type": "array",
-            "items": _build_schema(
-                arguments[0],
-                allow_subclasses=True,
-            ),
+            "items": _build_schema(arguments[0]),
         }
 
     if origin in (dict, Mapping):
@@ -125,10 +121,7 @@ def _build_schema(
             )
         return {
             "type": "object",
-            "additionalProperties": _build_schema(
-                arguments[1],
-                allow_subclasses=True,
-            ),
+            "additionalProperties": _build_schema(arguments[1]),
         }
 
     if origin is Literal:
@@ -137,10 +130,7 @@ def _build_schema(
     if origin in (Union, UnionType):
         return {
             "anyOf": [
-                _build_schema(
-                    argument,
-                    allow_subclasses=allow_subclasses,
-                )
+                _build_schema(argument)
                 for argument in arguments
             ]
         }
@@ -151,10 +141,14 @@ def _build_schema(
         float: "number",
         bool: "boolean",
         NoneType: "null",
-        Seq: "string",
     }
     if expected_type in scalar_types:
         return {"type": scalar_types[expected_type]}
+    if expected_type is Seq:
+        return {
+            "type": "string",
+            "examples": ["ACGT"],
+        }
 
     if isinstance(expected_type, type) and issubclass(
         expected_type,
@@ -162,7 +156,7 @@ def _build_schema(
     ):
         allowed_types = (
             _concrete_serializable_types(expected_type)
-            if allow_subclasses or inspect.isabstract(expected_type)
+            if _is_abstract_serializable(expected_type)
             else [expected_type]
         )
         schemas = [
@@ -184,10 +178,10 @@ def _build_object_schema(
     properties = {
         field_name: _build_schema(
             field_type,
-            allow_subclasses=True,
         )
         for field_name, field_type in serialized_fields.items()
     }
+    _add_constructor_defaults(serializable_type, properties)
     schema: JsonSchema = {
         "type": "object",
         "additionalProperties": (
@@ -215,6 +209,51 @@ def _build_object_schema(
             "not": {"enum": constructor_only_parameters},
         }
     return schema
+
+
+def _add_constructor_defaults(
+    serializable_type: type[Serializable],
+    properties: Mapping[str, JsonSchema],
+) -> None:
+    """Add compatible constructor defaults as schema examples."""
+    parameters = inspect.signature(serializable_type.__init__).parameters
+    for field_name, field_schema in properties.items():
+        parameter = parameters.get(field_name)
+        if parameter is None or parameter.default is inspect.Parameter.empty:
+            continue
+        if _schema_accepts_default(field_schema, parameter.default):
+            field_schema["default"] = parameter.default
+
+
+def _schema_accepts_default(schema: Mapping[str, Any], value: Any) -> bool:
+    """Return whether a JSON-compatible default matches a field schema."""
+    alternatives = schema.get("oneOf", schema.get("anyOf"))
+    if isinstance(alternatives, list):
+        return any(
+            isinstance(alternative, Mapping)
+            and _schema_accepts_default(alternative, value)
+            for alternative in alternatives
+        )
+    if "const" in schema:
+        return value == schema["const"]
+    if isinstance(schema.get("enum"), list):
+        return value in schema["enum"]
+
+    declared_type = schema.get("type")
+    accepted_types = {
+        "null": value is None,
+        "boolean": type(value) is bool,
+        "integer": type(value) is int,
+        "number": type(value) in (int, float) and type(value) is not bool,
+        "string": type(value) is str,
+        "array": type(value) is list,
+        "object": type(value) is dict,
+    }
+    if isinstance(declared_type, str):
+        return accepted_types.get(declared_type, False)
+    if isinstance(declared_type, list):
+        return any(accepted_types.get(item, False) for item in declared_type)
+    return False
 
 
 def _serialized_fields(
@@ -316,15 +355,23 @@ def _constructor_only_parameters(
 def _concrete_serializable_types(
     declared_type: type[Serializable],
 ) -> list[type[Serializable]]:
-    """Return every concrete Serializable allowed by a declaration."""
+    """Return concrete implementations owned by the declaration's package."""
+    package_name = declared_type.__module__.partition(".")[0]
+
+    def is_supported_implementation(candidate: type[Serializable]) -> bool:
+        return (
+            not _is_abstract_serializable(candidate)
+            and candidate.__module__.partition(".")[0] == package_name
+        )
+
     allowed_types: set[type[Serializable]] = set()
-    if not inspect.isabstract(declared_type):
+    if is_supported_implementation(declared_type):
         allowed_types.add(declared_type)
     subclasses_to_check = list(declared_type.__subclasses__())
     while subclasses_to_check:
         subclass = subclasses_to_check.pop()
         subclasses_to_check.extend(subclass.__subclasses__())
-        if not inspect.isabstract(subclass):
+        if is_supported_implementation(subclass):
             allowed_types.add(subclass)
     if not allowed_types:
         raise TypeError(
@@ -337,6 +384,16 @@ def _concrete_serializable_types(
             subclass.__module__,
             subclass.__qualname__,
         ),
+    )
+
+
+def _is_abstract_serializable(
+    serializable_type: type[Serializable],
+) -> bool:
+    """Return whether a Serializable is a declaration, not a file value."""
+    return (
+        inspect.isabstract(serializable_type)
+        or ABC in serializable_type.__bases__
     )
 
 

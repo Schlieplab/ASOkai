@@ -54,13 +54,13 @@ class CreateTargetGeneStep(CoreStep):
                 "target_id",
                 str | None,
                 config="target.target_id",
-                doc="Ensembl gene ID (e.g. ENSG00000133703). Takes priority over target_name.",
+                doc="Ensembl gene ID (e.g. ENSG00000133703). Use this or target_name.",
             ),
             ScalarParam(
                 "target_name",
                 str | None,
                 config="target.target_name",
-                doc="Gene name (e.g. KRAS). Used if target_id is not provided.",
+                doc="Gene name (e.g. KRAS). Use this or target_id.",
             ),
             ScalarParam("k", int, config="target.k", doc="ASO length."),
             ScalarParam(

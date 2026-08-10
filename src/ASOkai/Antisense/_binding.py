@@ -17,6 +17,12 @@ class Binding(Serializable):
     site_id: str
 
     def __init__(self, therapeutic_id: str, site_id: str):
+        """Initialize a therapeutic-to-site relationship.
+
+        Args:
+            therapeutic_id: ID of a therapeutic in the paired output.
+            site_id: ID of a site in the input target gene.
+        """
         self.therapeutic_id = therapeutic_id
         self.site_id = site_id
         super().__init__()

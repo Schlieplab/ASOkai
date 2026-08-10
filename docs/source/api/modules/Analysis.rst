@@ -1,36 +1,23 @@
 Analysis
 ========
 
-The :mod:`ASOkai.Analysis` module defines the base classes used to implement
-computational analyses in ASOkai.
+The :mod:`ASOkai.Analysis` module contains the base classes for computations
+performed over target sites.
 
-:class:`Analysis` is an abstract base class and is not used directly.
-Every concrete analysis must inherit from one of its three scope-specific
-subclasses:
+Choose the narrowest scope that provides the context the calculation needs:
 
-- :class:`SiteSpecificAnalysis`: use when the analysis only needs information
-  available from an individual site.
-- :class:`TargetSpecificAnalysis`: use when the analysis needs access to the
-  associated target as well as its sites.
-- :class:`GenomeWideAnalysis`: use when the analysis needs access to the
-  genome, target, and sites.
+- :class:`~ASOkai.Analysis.SiteSpecificAnalysis` receives individual sites.
+- :class:`~ASOkai.Analysis.TargetSpecificAnalysis` also has access to the
+  associated target.
+- :class:`~ASOkai.Analysis.GenomeWideAnalysis` also has access to the genome.
 
-The classes primarily communicate the scope and context required by an
-analysis. For example, :class:`IntrinsicFeaturesAnalysis` inherits from
-:class:`SiteSpecificAnalysis` because it computes sequence-derived values for
-one site at a time:
-
-.. code-block:: python
-
-   class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
-       ...
+Concrete analyses implement :meth:`~ASOkai.Analysis.Analysis.analyze` and
+return named scalar values for each site. The inherited
+:meth:`~ASOkai.Analysis.Analysis.run` method handles iteration and optional
+multiprocessing.
 
 API reference
 -------------
-
-.. currentmodule:: ASOkai.Analysis
-
-.. rubric:: Classes
 
 .. automodule:: ASOkai.Analysis
    :members:

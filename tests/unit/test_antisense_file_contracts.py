@@ -9,7 +9,7 @@ from typing import Any, cast
 from Bio.Seq import Seq
 import pytest
 
-from ASOkai.Antisense import ASO, AntisenseTherapeutic, Binding
+from ASOkai.Antisense import ASO, Binding
 from ASOkai.Biochemistry import GapmerChemistry, RNaseH1Mechanism
 from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
@@ -35,7 +35,7 @@ def test_step_declares_typed_antisense_collections():
 
     assert isinstance(therapeutics_file, JsonFile)
     assert isinstance(bindings_file, JsonFile)
-    assert therapeutics_file.value_type == list[AntisenseTherapeutic]
+    assert therapeutics_file.value_type == list[ASO]
     assert bindings_file.value_type == list[Binding]
 
 

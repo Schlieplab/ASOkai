@@ -41,6 +41,7 @@ class CsvFile(FileType):
         columns: Mapping[str, type[Scalar]],
     ) -> None:
         object.__setattr__(self, "media_type", "text/csv")
+        object.__setattr__(self, "format_name", "CSV")
         object.__setattr__(
             self,
             "index",

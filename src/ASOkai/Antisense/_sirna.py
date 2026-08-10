@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: This file defines the SiRNA class.
 License: LGPL-3.0-or-later
 """
+
 from ..Biochemistry import MechanismOfAction
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._oligonucleotide import Oligonucleotide
@@ -26,6 +27,15 @@ class SiRNA(AntisenseTherapeutic):
         mechanism: MechanismOfAction,
         **kwargs,
     ):
+        """Initialize a small interfering RNA duplex.
+
+        Args:
+            id: Unique therapeutic identifier.
+            antisense_strand: Guide strand stored in the 5' to 3' direction.
+            sense_strand: Passenger strand stored in the 5' to 3' direction.
+            mechanism: Mechanism through which the siRNA acts.
+            kwargs: Additional scalar values retained during serialization.
+        """
         self._antisense_strand = antisense_strand
         self._sense_strand = sense_strand
         super().__init__(id=id, mechanism=mechanism, **kwargs)

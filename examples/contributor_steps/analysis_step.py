@@ -15,6 +15,11 @@ needed.
 The first declared output is the primary analysis CSV. A step may declare more
 CSV or JSON outputs after it and return their values from
 ``additional_output_values``.
+
+Use ``StepSpec.compatible_with`` only when the analysis is biologically
+restricted, for example
+``compatible_with={"antisense.mechanism": ["rnase-h1"]}``. Omit it for an
+analysis that applies regardless of modality, mechanism, or chemistry.
 """
 
 from ASOkai import Types

@@ -45,6 +45,7 @@ from contract_docs.rendering import (  # noqa: E402
     section,
 )
 from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
+from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
 from ASOkai.Antisense import ASO, Oligonucleotide, SiRNA  # noqa: E402
@@ -173,6 +174,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     assert "asokai-step-scalar-outputs" in table_classes
     assert "asokai-step-file-outputs" in table_classes
     assert "asokai-step-resources" in table_classes
+    assert "asokai-step-applicability" not in table_classes
     assert "asokai-analysis-output-columns" in table_classes
     assert "Step override" in reference
     assert "Shared default" in reference
@@ -182,10 +184,45 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     assert "Output columns" in reference
     assert "first row is a header" in reference
     assert "Rows: Intrinsic features per target site" in reference
+    assert "Applicability" not in reference
     assert not any(
         isinstance(node, nodes.section) and node[0].astext() == "File contracts"
         for node in generated_nodes
     )
+
+
+def test_step_reference_renders_only_declared_applicability() -> None:
+    class RestrictedStep(CoreStep):
+        name = "restricted-example"
+        description = "Example step with an explicit biological restriction."
+        spec = StepSpec(
+            compatible_with={
+                "antisense.mechanism": ["rnase-h1"],
+            }
+        )
+
+    step = RestrictedStep()
+    generated_nodes = build_step_reference(step, _config_schema())
+    reference = "\n".join(node.astext() for node in generated_nodes)
+    table_classes = {
+        css_class
+        for node in generated_nodes
+        for generated_table in node.findall(nodes.table)
+        for css_class in generated_table["classes"]
+    }
+
+    assert "asokai-step-applicability" in table_classes
+    assert "antisense.mechanism" in reference
+    assert "rnase-h1" in reference
+
+
+def test_candidate_generation_has_no_assumed_applicability() -> None:
+    step = get_built_in_step("generate-antisense-candidates")
+    generated_nodes = build_step_reference(step, _config_schema())
+    reference = "\n".join(node.astext() for node in generated_nodes)
+
+    assert step.spec.compatible_with == {}
+    assert "Applicability" not in reference
 
 
 def test_json_file_contract_maps_to_its_serializable_class() -> None:

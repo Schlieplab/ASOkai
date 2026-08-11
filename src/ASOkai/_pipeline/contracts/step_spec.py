@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
+from ASOkai._types import Scalar
 from ASOkai._cwl.model import CwlCommandLineToolSpec, CwlToolArgument
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -28,6 +29,7 @@ class StepSpec:
     params: Sequence[ScalarParam] = field(default_factory=tuple)
     inputs: Sequence[FileInput] = field(default_factory=tuple)
     outputs: Sequence[FileOutput] = field(default_factory=tuple)
+    compatible_with: Mapping[str, Sequence[Scalar]] = field(default_factory=dict)
     base_command: list[str] | None = None
     requirements: dict[str, Any] = field(default_factory=dict)
     arguments: Sequence[CwlToolArgument] = field(default_factory=tuple)
@@ -39,6 +41,11 @@ class StepSpec:
         object.__setattr__(self, "inputs", tuple(self.inputs))
         object.__setattr__(self, "outputs", tuple(self.outputs))
         object.__setattr__(self, "arguments", tuple(self.arguments))
+        object.__setattr__(
+            self,
+            "compatible_with",
+            self._normalized_compatibility(),
+        )
 
         self._require_unique("parameter", [param.name for param in self.params])
         self._require_unique("input", [item.name for item in self.inputs])
@@ -79,6 +86,42 @@ class StepSpec:
         if conflicting_extra:
             names = ", ".join(sorted(conflicting_extra))
             raise ValueError(f"StepSpec.extra cannot replace reserved keys: {names}.")
+
+    def _normalized_compatibility(self) -> dict[str, tuple[Scalar, ...]]:
+        """Validate and normalize declared step compatibility."""
+        if not isinstance(self.compatible_with, Mapping):
+            raise TypeError("StepSpec.compatible_with must be a mapping.")
+
+        compatible_with: dict[str, tuple[Scalar, ...]] = {}
+        for path, values in self.compatible_with.items():
+            if (
+                type(path) is not str
+                or not path.strip()
+                or any(not part.strip() for part in path.split("."))
+            ):
+                raise ValueError(
+                    "StepSpec.compatible_with keys must be dotted config paths."
+                )
+            if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+                raise TypeError(
+                    f"StepSpec.compatible_with[{path!r}] must be a sequence "
+                    "of values."
+                )
+            if not values:
+                raise ValueError(
+                    f"StepSpec.compatible_with[{path!r}] must not be empty."
+                )
+            if any(
+                value is not None
+                and type(value) not in (str, int, float, bool)
+                for value in values
+            ):
+                raise TypeError(
+                    f"StepSpec.compatible_with[{path!r}] must contain only "
+                    "scalar configuration values."
+                )
+            compatible_with[path] = tuple(values)
+        return compatible_with
 
     @staticmethod
     def _require_unique(label: str, names: list[str]) -> None:

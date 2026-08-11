@@ -132,7 +132,7 @@ def validate_step_config(
     config: Any,
     steps: Sequence[Step],
 ) -> None:
-    """Validate selected-step values, paths, and input file contents."""
+    """Validate selected-step values, compatibility, paths, and input files."""
     errors: list[str] = []
     datadir = Path(config["datadir"])
     if datadir.exists() and not datadir.is_dir():
@@ -140,6 +140,11 @@ def validate_step_config(
 
     for step in _unique_steps(steps):
         missing_parameter = False
+        parameters_by_path = {
+            parameter.config: parameter
+            for parameter in step.spec.params
+            if parameter.config is not None
+        }
         for parameter in step.spec.params:
             if parameter.config is None:
                 continue
@@ -151,6 +156,37 @@ def validate_step_config(
                     f"'{step.name}'"
                 )
                 missing_parameter = True
+
+        for path, supported_values in step.spec.compatible_with.items():
+            parameter = parameters_by_path.get(path)
+            try:
+                configured_value = (
+                    resolve_parameter_value(config, parameter)
+                    if parameter is not None
+                    else resolve(config, path)
+                )
+            except KeyError:
+                if parameter is None:
+                    errors.append(
+                        f"$.{path}: required to determine whether step "
+                        f"'{step.name}' is compatible"
+                    )
+                continue
+
+            is_supported = any(
+                type(configured_value) is type(supported_value)
+                and configured_value == supported_value
+                for supported_value in supported_values
+            )
+            if not is_supported:
+                supported = ", ".join(
+                    repr(value) for value in supported_values
+                )
+                errors.append(
+                    f"$.{path}: configured value {configured_value!r} is "
+                    f"incompatible with step '{step.name}'; supported "
+                    f"values: {supported}"
+                )
 
         for file_input in step.spec.inputs:
             try:
@@ -218,7 +254,8 @@ def validate_step_config_paths(
             for file_input in step.spec.inputs
             if file_input.override is not None
         )
-        for path in paths:
+        paths.extend(step.spec.compatible_with)
+        for path in dict.fromkeys(paths):
             if any(
                 _schema_declares_path(schema, path)
                 for schema in schemas.values()
@@ -270,6 +307,8 @@ def _semantic_config_errors(config: Mapping[str, Any]) -> list[str]:
 
     chemistry = antisense.get("chemistry")
     if not isinstance(chemistry, Mapping):
+        return []
+    if chemistry.get("type") != "gapmer":
         return []
     layout = chemistry.get("layout")
     oligonucleotide_length = target.get("k")

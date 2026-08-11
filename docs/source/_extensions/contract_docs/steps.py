@@ -372,6 +372,7 @@ def _example_step_config(
             for parameter in included_step.spec.params
             if parameter.config is not None
         )
+        configured_paths.extend(included_step.spec.compatible_with)
     for path in dict.fromkeys(configured_paths):
         value = _resolve_optional(complete_config, path)
         if value is not None:
@@ -411,6 +412,38 @@ def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.
             nodes.paragraph(text=explanation),
             nodes.paragraph(text=example_description),
             nodes.literal_block(example_config, example_config),
+        ],
+    )
+
+
+def _applicability_section(step: Any) -> nodes.section | None:
+    """Describe the configured values supported by one step."""
+    if not step.spec.compatible_with:
+        return None
+
+    rows = [
+        (
+            (path, True),
+            (", ".join(str(value) for value in supported_values), True),
+        )
+        for path, supported_values in step.spec.compatible_with.items()
+    ]
+    return section(
+        "Applicability",
+        [
+            nodes.paragraph(
+                text=(
+                    "This step can run only when each configured value is "
+                    "listed below. Incompatible selections are rejected "
+                    "before execution."
+                )
+            ),
+            table(
+                ("Configuration path", "Supported values"),
+                rows,
+                (40, 60),
+                css_class="asokai-step-applicability",
+            ),
         ],
     )
 
@@ -558,9 +591,16 @@ def build_step_reference(
     result: list[nodes.Node] = [
         nodes.paragraph(text=step.description),
         identity,
-        _invocation_section(step, example_config),
-        _dependency_section(step, refdoc=refdoc),
     ]
+    applicability = _applicability_section(step)
+    if applicability is not None:
+        result.append(applicability)
+    result.extend(
+        (
+            _invocation_section(step, example_config),
+            _dependency_section(step, refdoc=refdoc),
+        )
+    )
 
     step_config_fields = collect_step_config_fields(step, schema)
     ordinary_config_fields = [

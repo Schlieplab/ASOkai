@@ -214,7 +214,7 @@ def build_plan(
     4. Remove dependency edges replaced by configured file overrides.
        If recursive=True, prepend any missing transitive dependencies from
        the step registry.
-    5. Validate configuration for selected steps and external producers.
+    5. Validate configuration and compatibility for every scheduled step.
     6. Validate external dependencies and reuse completed dep outputs.
     7. Topologically sort (dep-first DFS).
     8. Partition: steps whose outputs already exist (and force=False) go into

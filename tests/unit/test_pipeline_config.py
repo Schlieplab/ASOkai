@@ -92,14 +92,27 @@ def test_load_validates_against_checked_in_schema(tmp_path):
     path.write_text(
         "datadir: ./data\n"
         "genome:\n"
-        "  source: ucsc\n"
+        "  source: ''\n"
     )
 
     with pytest.raises(
         ValueError,
-        match=r"genome.source.*ensembl",
+        match=r"genome.source",
     ):
         cfg.load(path)
+
+
+def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
+    cfg.validate_config_schema(
+        {
+            "datadir": str(tmp_path),
+            "antisense": {
+                "modality": "sirna",
+                "mechanism": "risc",
+                "chemistry": {"type": "custom"},
+            },
+        }
+    )
 
 
 def test_config_schema_allows_plugin_namespaces(tmp_path):
@@ -246,7 +259,12 @@ def test_config_schema_requires_layout_to_match_target_length():
             {
                 "datadir": ".",
                 "target": {"target_id": "ENSG1", "k": 18},
-                "antisense": {"chemistry": {"layout": "3-10-3"}},
+                "antisense": {
+                    "chemistry": {
+                        "type": "gapmer",
+                        "layout": "3-10-3",
+                    }
+                },
             }
         )
 

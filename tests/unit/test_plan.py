@@ -40,6 +40,7 @@ def _make_step(
     exists: bool = False,
     output_names: list[str] | None = None,
     input_override: str | None = None,
+    compatible_with: dict[str, list[str]] | None = None,
 ) -> Step:
     """Return a minimal concrete Step for plan tests."""
     if output_names is None:
@@ -61,6 +62,7 @@ def _make_step(
             for dep in deps or []
         ],
         outputs=outputs,
+        compatible_with=compatible_with or {},
     )
 
     def outputs_exist(self, config: dict) -> bool:
@@ -112,6 +114,34 @@ def test_force_keeps_done_step_in_steps_to_run(cfg):
     plan = build_plan([step], cfg, force=True)
     assert [s.name for s in plan.steps_to_run] == ["alpha"]
     assert plan.pre_resolved == {}
+
+
+@pytest.mark.parametrize("outputs_exist", [False, True])
+def test_incompatible_step_is_rejected_before_execution(cfg, outputs_exist):
+    step = _make_step(
+        "restricted",
+        exists=outputs_exist,
+        compatible_with={"analysis.mode": ["supported"]},
+    )
+    cfg["analysis"] = {"mode": "unsupported"}
+
+    with pytest.raises(
+        ValueError,
+        match=r"analysis\.mode.*incompatible.*restricted.*supported",
+    ):
+        build_plan([step], cfg)
+
+
+def test_compatible_step_is_scheduled(cfg):
+    step = _make_step(
+        "restricted",
+        compatible_with={"analysis.mode": ["supported"]},
+    )
+    cfg["analysis"] = {"mode": "supported"}
+
+    plan = build_plan([step], cfg)
+
+    assert plan.steps_to_run == [step]
 
 
 def test_dep_done_goes_to_pre_resolved(cfg):
@@ -236,6 +266,22 @@ def test_recursive_unknown_dep_raises(cfg):
     step = _make_step("step", deps=[ghost])
     registry = {"step": step}
     with pytest.raises(ValueError, match="unknown step 'ghost'"):
+        build_plan([step], cfg, recursive=True, _registry=registry)
+
+
+def test_recursive_dependency_must_be_compatible(cfg):
+    dependency = _make_step(
+        "restricted-dependency",
+        compatible_with={"analysis.mode": ["supported"]},
+    )
+    step = _make_step("step", deps=[dependency])
+    registry = {dependency.name: dependency, step.name: step}
+    cfg["analysis"] = {"mode": "unsupported"}
+
+    with pytest.raises(
+        ValueError,
+        match=r"incompatible.*restricted-dependency",
+    ):
         build_plan([step], cfg, recursive=True, _registry=registry)
 
 
@@ -367,6 +413,35 @@ def test_workflow_flattened_to_steps(cfg):
     plan = build_plan([cast(Runnable, FakeWorkflow())], cfg)
     names = [s.name for s in plan.steps_to_run]
     assert names == ["s1", "s2"]
+
+
+def test_workflow_rejects_an_incompatible_task_step(cfg):
+    restricted = _make_step(
+        "restricted",
+        compatible_with={"analysis.mode": ["supported"]},
+    )
+    cfg["analysis"] = {"mode": "unsupported"}
+
+    class FakeTask:
+        name = "task"
+        description = ""
+        steps = [restricted]
+
+        def output_paths(self, c): return {}
+        def outputs_exist(self, c): return False
+        def cleanup(self, c): pass
+
+    class FakeWorkflow:
+        name = "workflow"
+        description = ""
+        members = [cast(Runnable, FakeTask())]
+
+        def output_paths(self, c): return {}
+        def outputs_exist(self, c): return False
+        def cleanup(self, c): pass
+
+    with pytest.raises(ValueError, match=r"incompatible.*restricted"):
+        build_plan([cast(Runnable, FakeWorkflow())], cfg)
 
 
 def test_mixed_step_and_task_deduplicated(cfg):

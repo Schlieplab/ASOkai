@@ -149,6 +149,30 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
     assert cwl_spec.input_types()["file_input"] == "File"
 
 
+def test_step_spec_uses_only_declared_compatibility():
+    spec = StepSpec(
+        params=[
+            ScalarParam(
+                "mode",
+                Literal["fast", "careful"],
+                config="analysis.mode",
+            ),
+        ],
+        compatible_with={
+            "antisense.mechanism": ["rnase-h1"],
+        },
+    )
+
+    assert spec.compatible_with == {
+        "antisense.mechanism": ("rnase-h1",),
+    }
+
+
+def test_step_spec_rejects_empty_compatibility_values():
+    with pytest.raises(ValueError, match="must not be empty"):
+        StepSpec(compatible_with={"analysis.mode": []})
+
+
 def test_step_spec_builds_argparse_parser_from_params(tmp_path):
     parser = StepSpec(
         params=[

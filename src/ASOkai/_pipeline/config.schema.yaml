@@ -108,17 +108,20 @@ properties:
     additionalProperties: false
     properties:
       modality:
-        const: aso
+        type: string
+        minLength: 1
         description: Antisense therapeutic modality.
       mechanism:
-        const: rnase-h1
+        type: string
+        minLength: 1
         description: Therapeutic mechanism of action.
       chemistry:
         type: object
         additionalProperties: false
         properties:
           type:
-            const: gapmer
+            type: string
+            minLength: 1
             description: Antisense oligonucleotide chemistry.
           layout:
             type: string

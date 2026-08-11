@@ -367,6 +367,16 @@ def collect_step_config_fields(
             requirement = "Required"
         add(replace(field, requirement=requirement))
 
+    for path in step.spec.compatible_with:
+        if path in added_paths:
+            continue
+        add(
+            replace(
+                all_fields[path],
+                requirement="Required to determine step compatibility",
+            )
+        )
+
     for file_input in step.spec.inputs:
         if file_input.override is not None:
             add(
@@ -412,6 +422,7 @@ def collect_step_schema_rules(
         for file_input in step.spec.inputs
         if file_input.override is not None
     )
+    paths.update(step.spec.compatible_with)
     return [
         message
         for rule_path, message in _collect_schema_rules(schema)

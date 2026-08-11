@@ -84,6 +84,9 @@ class UndeclaredConfigStep(Step):
                 config="undeclared.threshold",
             ),
         ],
+        compatible_with={
+            "undeclared.mode": ["fast"],
+        },
     )
 
     def run_from_args(self, args) -> int:
@@ -315,11 +318,13 @@ def test_plugin_config_paths_require_a_registered_schema(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(
-        ValueError,
-        match=r"undeclared\.threshold.*no registered configuration schema",
-    ):
+    with pytest.raises(ValueError) as raised:
         plugin_registry.get_steps()
+
+    message = str(raised.value)
+    assert "undeclared.threshold" in message
+    assert "undeclared.mode" in message
+    assert "no registered configuration schema" in message
 
 
 def test_plugin_config_schema_must_come_from_the_same_package(

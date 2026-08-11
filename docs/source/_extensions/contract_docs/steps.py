@@ -476,15 +476,22 @@ def _analysis_output_section(
     output: Any,
     descriptions: Mapping[str, str],
     *,
+    is_primary: bool,
     include_output_name: bool,
 ) -> nodes.section:
     """Describe the rows and columns of one analysis CSV output."""
     title = f"{output.name} output columns" if include_output_name else "Output columns"
+    output_role = (
+        "primary analysis table"
+        if is_primary
+        else "additional analysis table"
+    )
     format_description = nodes.paragraph()
     format_description += nodes.Text("The ")
     format_description += nodes.literal(output.name, output.name)
     format_description += nodes.Text(
-        " output is a UTF-8, comma-separated table. Its first row is a "
+        f" output is the {output_role}"
+        ". It is UTF-8 and comma-separated. Its first row is a "
         "header containing exactly the columns below, in the declared order."
     )
     row_description = nodes.paragraph()
@@ -517,13 +524,16 @@ def _analysis_section(step: Any) -> nodes.section | None:
         analysis = section("Analysis", [])
 
     csv_outputs = [
-        output for output in step.spec.outputs if isinstance(output.file_type, CsvFile)
+        (index, output)
+        for index, output in enumerate(step.spec.outputs)
+        if isinstance(output.file_type, CsvFile)
     ]
     descriptions = documented_items(analysis_type)
-    for output in csv_outputs:
+    for output_index, output in csv_outputs:
         analysis += _analysis_output_section(
             output,
             descriptions,
+            is_primary=output_index == 0,
             include_output_name=len(csv_outputs) > 1,
         )
     return analysis

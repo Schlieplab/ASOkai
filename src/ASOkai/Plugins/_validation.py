@@ -6,7 +6,7 @@ import inspect
 
 from ASOkai.Analysis import Analysis
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.contracts.file_types import CsvFile
+from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
@@ -55,15 +55,30 @@ def _validate_analysis_step(step: AnalysisStep) -> None:
         or inspect.isabstract(analysis_class)
     ):
         raise TypeError("analysis_cls must be a concrete Analysis subclass.")
-    if len(step.spec.outputs) != 1:
-        raise ValueError("an analysis step must declare exactly one output.")
-    output = step.spec.outputs[0]
-    if not isinstance(output.file_type, CsvFile):
-        raise TypeError("an analysis step output must use CsvFile.")
-    if len(output.file_type.index) != 1:
+    if not step.spec.outputs:
+        raise ValueError("an analysis step must declare a primary CSV output.")
+    primary_output = step.spec.outputs[0]
+    if not isinstance(primary_output.file_type, CsvFile):
+        raise TypeError("an analysis step's first output must use CsvFile.")
+    if len(primary_output.file_type.index) != 1:
         raise ValueError(
-            "an analysis step CSV output must declare exactly one index."
+            "an analysis step's primary CSV output must declare exactly one index."
         )
+
+    additional_outputs = step.spec.outputs[1:]
+    if (
+        additional_outputs
+        and type(step).additional_output_values is AnalysisStep.additional_output_values
+    ):
+        raise TypeError(
+            "an analysis step with additional outputs must implement "
+            "additional_output_values()."
+        )
+    for output in additional_outputs:
+        if type(output.file_type).write is FileType.write:
+            raise TypeError(
+                f"analysis output {output.name!r} must use a writable file contract."
+            )
 
 
 def validate_step_dependencies(

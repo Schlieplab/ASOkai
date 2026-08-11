@@ -1,4 +1,8 @@
-"""Example external site-specific analysis and its pipeline declaration."""
+"""Example external site-specific analysis and its pipeline declaration.
+
+The first declared output is the primary analysis CSV. Additional CSV or JSON
+outputs can follow it and receive values from ``additional_output_values``.
+"""
 
 from ASOkai import Types
 from ASOkai.Analysis import SiteSpecificAnalysis

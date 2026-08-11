@@ -11,6 +11,10 @@ To add an analysis step:
 
 The declared ``StepSpec`` is the step's schema; no second contributor schema is
 needed.
+
+The first declared output is the primary analysis CSV. A step may declare more
+CSV or JSON outputs after it and return their values from
+``additional_output_values``.
 """
 
 from ASOkai import Types

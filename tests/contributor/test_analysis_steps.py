@@ -13,9 +13,9 @@ from typing import Any, Mapping, cast
 import pytest
 import yaml
 
-from ASOkai.Analysis import Analysis
-from ASOkai.Plugins import AnalysisStep, CsvFile, JsonFile, Step
+from ASOkai.Plugins import AnalysisStep, JsonFile, Step
 from ASOkai.Plugins import _registry as registry
+from ASOkai.Plugins._validation import validate_plugin_instance
 from ASOkai._pipeline import config as config_module
 from ASOkai._pipeline import steps as steps_package
 from ASOkai._pipeline.contracts.json_schema import (
@@ -129,18 +129,4 @@ def test_step_contract_builds_from_example_config(step: Step) -> None:
     ids=_step_name,
 )
 def test_analysis_step_contract(step: AnalysisStep) -> None:
-    name = type(step).__name__
-    assert step.analysis_cls is not None, f"{name} must declare analysis_cls."
-    assert issubclass(step.analysis_cls, Analysis), (
-        f"{name}.analysis_cls must inherit Analysis."
-    )
-    assert len(step.spec.outputs) == 1, (
-        f"{name} must declare exactly one output."
-    )
-    output = step.spec.outputs[0]
-    assert isinstance(output.file_type, CsvFile), (
-        f"{name}.{output.name} must use CsvFile."
-    )
-    assert len(output.file_type.index) == 1, (
-        f"{name}.{output.name} must declare one CSV index."
-    )
+    validate_plugin_instance("analysis step", step)

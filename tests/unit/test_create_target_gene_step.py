@@ -157,15 +157,13 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
         sites={},
     )
 
-    class FakeTargetGeneCreator:
-        @classmethod
-        def from_genome(cls, genome, **kwargs):
-            captured["genome"] = genome
-            captured["creator_kwargs"] = kwargs
-            return target_gene
+    def fake_create_target_gene(genome, **kwargs):
+        captured["genome"] = genome
+        captured["creator_kwargs"] = kwargs
+        return target_gene
 
     monkeypatch.setattr(genome_mod, "GenomeBuilder", FakeGenomeBuilder)
-    monkeypatch.setattr(targets_mod, "TargetGeneCreator", FakeTargetGeneCreator)
+    monkeypatch.setattr(targets_mod, "create_target_gene", fake_create_target_gene)
 
     result = CreateTargetGeneStep().run_cli(
         [
@@ -200,4 +198,4 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
     assert captured["db"] == tmp_path / "annotation.gtf.db"
     assert captured["creator_kwargs"]["target_id"] is None
     assert captured["creator_kwargs"]["target_name"] == "KRAS"
-    assert captured["creator_kwargs"]["k"] == 16
+    assert captured["creator_kwargs"]["site_length"] == 16

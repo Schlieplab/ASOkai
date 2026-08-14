@@ -48,7 +48,7 @@ from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E40
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
-from ASOkai.Antisense import ASO, Oligonucleotide, SiRNA  # noqa: E402
+from ASOkai.Antisense import ASO, Oligonucleotide, siRNA  # noqa: E402
 from ASOkai.Biochemistry import GapmerChemistry  # noqa: E402
 from ASOkai.Sites import Site  # noqa: E402
 from ASOkai.Targets import TargetGene  # noqa: E402
@@ -281,7 +281,7 @@ def test_nested_classes_own_their_json_details() -> None:
     assert '"3-10-3"' in gapmer_reference
 
 
-@pytest.mark.parametrize("serializable_type", [Oligonucleotide, SiRNA])
+@pytest.mark.parametrize("serializable_type", [Oligonucleotide, siRNA])
 def test_serializable_contract_describes_every_field(serializable_type: type) -> None:
     reference = "\n".join(
         node.astext()

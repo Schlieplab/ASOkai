@@ -12,7 +12,7 @@ from multiprocessing import get_context
 from typing import ClassVar
 
 from .._types import Scalar
-from ..Targets import Target
+from ..Targets import TargetGene
 from GenomeUtils.Genome import Genome
 
 
@@ -59,7 +59,13 @@ class TargetSpecificAnalysis(Analysis):
 
     scope_label: ClassVar[str | None] = "Target-specific"
 
-    def __init__(self, target: Target, sites: list, n_processes: int = 1, **kwargs):
+    def __init__(
+        self,
+        target: TargetGene,
+        sites: list,
+        n_processes: int = 1,
+        **kwargs,
+    ):
         super().__init__(sites, n_processes=n_processes, **kwargs)
         self.target = target
 
@@ -72,7 +78,7 @@ class GenomeWideAnalysis(Analysis):
     def __init__(
         self,
         genome: Genome,
-        target: Target,
+        target: TargetGene,
         sites: list,
         n_processes: int = 1,
         **kwargs,

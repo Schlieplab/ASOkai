@@ -104,7 +104,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
             chemistry=chemistry,
             mechanism=mechanism,
         )
-        therapeutics, bindings = generator.generate(args.target_gene)
+        therapeutics, bindings = generator.generate(args.target_gene.sites)
 
         self.therapeutics_output.write(
             args.therapeutics_output,

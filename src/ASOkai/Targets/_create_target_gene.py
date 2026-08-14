@@ -1,0 +1,159 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/Targets/_create_target_gene.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Target-gene construction and target-site extraction.
+License: LGPL-3.0-or-later
+"""
+
+from collections.abc import Iterator
+from typing import cast
+
+from GenomeUtils.Genome import Exon, Gene, Genome, Locus
+
+from .._types import Strand, TargetRegion
+from ..Sites import GenomicSite, TranscriptSite
+from ._target_gene import TargetGene
+
+
+def _validated_strand(value: str) -> Strand:
+    if value not in ("+", "-"):
+        raise ValueError(f"Invalid strand: {value!r}")
+    return cast(Strand, value)
+
+
+def _site_ids(target: str, region: str) -> Iterator[str]:
+    number = 1
+    while True:
+        yield f"ASOkai-{target}-{region}-S{number:05d}"
+        number += 1
+
+
+def _extract_exonic_sites(
+    gene: Gene,
+    genome: Genome,
+    site_length: int,
+    site_ids: Iterator[str],
+) -> dict[str, GenomicSite]:
+    """Extract every target site wholly contained in an exon."""
+    exons: set[Exon] = {
+        exon
+        for transcript in gene.transcripts
+        for exon in transcript.exons
+    }
+    sites: dict[str, GenomicSite] = {}
+    for exon in sorted(exons, key=lambda item: item.start):
+        for offset in range(len(exon) - site_length + 1):
+            site_id = next(site_ids)
+            start = exon.start + offset
+            end = start + site_length - 1
+            strand = _validated_strand(exon.strand)
+            site = GenomicSite(
+                id=site_id,
+                chr=exon.chr,
+                start=start,
+                end=end,
+                strand=strand,
+                sequence=genome.get_sequence_by_locus(
+                    Locus(exon.chr, start, end, strand)
+                ),
+            )
+            sites[site_id] = site
+    return sites
+
+
+def _extract_pre_mrna_sites(
+    gene: Gene,
+    genome: Genome,
+    site_length: int,
+    site_ids: Iterator[str],
+) -> dict[str, GenomicSite]:
+    """Extract every target site from the gene's genomic span."""
+    sites: dict[str, GenomicSite] = {}
+    for offset in range(len(gene.sequence) - site_length + 1):
+        site_id = next(site_ids)
+        start = gene.start + offset
+        end = start + site_length - 1
+        strand = _validated_strand(gene.strand)
+        site = GenomicSite(
+            id=site_id,
+            chr=gene.chr,
+            start=start,
+            end=end,
+            strand=strand,
+            sequence=genome.get_sequence_by_locus(
+                Locus(gene.chr, start, end, strand)
+            ),
+        )
+        sites[site_id] = site
+    return sites
+
+
+def _extract_transcript_sites(
+    gene: Gene,
+    site_length: int,
+    site_ids: Iterator[str],
+) -> dict[str, TranscriptSite]:
+    """Extract target sites from each spliced transcript."""
+    raise NotImplementedError(
+        "Transcriptomic target-site extraction is not implemented yet."
+    )
+
+
+def create_target_gene(
+    genome: Genome,
+    target_id: str | None = None,
+    target_name: str | None = None,
+    *,
+    site_length: int,
+    region: TargetRegion = "exonic_only",
+) -> TargetGene:
+    """Create a target gene and extract its target sites from a genome."""
+    if (target_id is None) == (target_name is None):
+        raise ValueError("Provide exactly one of target_id or target_name")
+
+    if target_id is not None:
+        gene = genome.gene_by_id(target_id)
+        target_label = target_id
+    else:
+        assert target_name is not None
+        gene = genome.gene_by_name(target_name)
+        target_label = target_name
+
+    if region == "exonic_only":
+        sites = _extract_exonic_sites(
+            gene,
+            genome,
+            site_length,
+            _site_ids(target_label, "Exon"),
+        )
+    elif region == "pre-mrna":
+        sites = _extract_pre_mrna_sites(
+            gene,
+            genome,
+            site_length,
+            _site_ids(target_label, "Premrna"),
+        )
+    elif region == "transcriptomic":
+        sites = _extract_transcript_sites(
+            gene,
+            site_length,
+            _site_ids(target_label, "Transcript"),
+        )
+    else:
+        raise ValueError(f"Invalid region: {region}")
+
+    return TargetGene(
+        id=gene.id,
+        name=gene.name,
+        chr=gene.chr,
+        start=gene.start,
+        end=gene.end,
+        strand=_validated_strand(gene.strand),
+        sequence=gene.sequence,
+        sites=sites,
+        genome=genome,
+        chromosome=gene.get_chromosome(),
+    )

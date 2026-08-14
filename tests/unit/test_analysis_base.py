@@ -20,7 +20,7 @@ from ASOkai.Analysis import (
     SiteSpecificAnalysis,
     TargetSpecificAnalysis,
 )
-from ASOkai.Targets import Target
+from ASOkai.Targets import TargetGene
 
 
 class FakeSite:
@@ -89,7 +89,7 @@ def test_analysis_rejects_invalid_process_count():
 
 
 def test_target_specific_run_exposes_target_context():
-    target = cast(Target, FakeTarget("target-1"))
+    target = cast(TargetGene, FakeTarget("target-1"))
     analysis = ContextTargetAnalysis(target=target, sites=[FakeSite("site-1")])
 
     assert analysis.run() == {
@@ -99,7 +99,7 @@ def test_target_specific_run_exposes_target_context():
 
 def test_genome_wide_run_exposes_genome_and_target_context():
     genome = cast(Genome, FakeGenome("genome-1"))
-    target = cast(Target, FakeTarget("target-1"))
+    target = cast(TargetGene, FakeTarget("target-1"))
     analysis = ContextGenomeAnalysis(
         genome=genome,
         target=target,

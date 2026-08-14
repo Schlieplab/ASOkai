@@ -16,7 +16,9 @@ from ._site import Site
 
 class GenomicSite(Site, GenomeElement):
     """Base class for genomic sites."""
-    
+
+    locus: Locus
+
     # Attributes to exclude from serialization (references to large/circular objects)
     _non_serializable_attrs = {'_genome', '_parent', '_children'}
     

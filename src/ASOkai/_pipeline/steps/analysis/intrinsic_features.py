@@ -26,7 +26,7 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 class IntrinsicFeaturesStep(AnalysisStep):
     name = "intrinsic-features"
     description = (
-        "Computes nucleotide composition and CpG features for each ASO "
+        "Computes nucleotide composition and CpG features for each "
         "target site."
     )
     analysis_cls = IntrinsicFeaturesAnalysis
@@ -81,7 +81,7 @@ class IntrinsicFeaturesStep(AnalysisStep):
                 config="target.target_name",
                 doc="Gene name. Use this or target_id.",
             ),
-            ScalarParam("k", int, config="target.k", doc="ASO length."),
+            ScalarParam("k", int, config="target.k", doc="Target-site length."),
             ScalarParam(
                 "region",
                 TargetRegion,

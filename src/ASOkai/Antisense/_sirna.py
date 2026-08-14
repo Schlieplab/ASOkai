@@ -4,7 +4,7 @@ Filename: src/ASOkai/Antisense/_sirna.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: This file defines the SiRNA class.
+Description: This file defines the siRNA class.
 License: LGPL-3.0-or-later
 """
 
@@ -13,7 +13,7 @@ from ._antisense_therapeutic import AntisenseTherapeutic
 from ._oligonucleotide import Oligonucleotide
 
 
-class SiRNA(AntisenseTherapeutic):
+class siRNA(AntisenseTherapeutic):
     """An antiparallel duplex whose two strands are each stored 5' to 3'."""
 
     _antisense_strand: Oligonucleotide

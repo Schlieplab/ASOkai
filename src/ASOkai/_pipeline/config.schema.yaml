@@ -74,7 +74,7 @@ properties:
       k:
         type: integer
         minimum: 1
-        description: Antisense oligonucleotide length.
+        description: Target-site length.
       region:
         enum:
           - exonic_only

@@ -12,7 +12,7 @@ import inspect
 
 from Bio.Seq import Seq
 
-from ASOkai.Antisense import ASO, AntisenseTherapeutic, Oligonucleotide, SiRNA
+from ASOkai.Antisense import ASO, AntisenseTherapeutic, Oligonucleotide, siRNA
 from ASOkai.Biochemistry import Chemistry, MechanismOfAction
 
 
@@ -71,7 +71,7 @@ def test_sirna_sequence_is_the_antisense_sequence():
         sequence=Seq("GCAT"),
         chemistry=make_chemistry(),
     )
-    sirna = SiRNA(
+    sirna = siRNA(
         id="sirna-1",
         antisense_strand=antisense,
         sense_strand=sense,
@@ -100,7 +100,7 @@ def test_aso_serialization_roundtrip():
 
 
 def test_sirna_serialization_roundtrip():
-    sirna = SiRNA(
+    sirna = siRNA(
         id="sirna-1",
         antisense_strand=Oligonucleotide(
             sequence=Seq("ATGC"),
@@ -114,7 +114,7 @@ def test_sirna_serialization_roundtrip():
     )
 
     data = sirna.to_dict()
-    reconstructed = SiRNA.from_dict(data)
+    reconstructed = siRNA.from_dict(data)
 
     assert "antisense_strand" in data
     assert "sense_strand" in data
@@ -122,7 +122,7 @@ def test_sirna_serialization_roundtrip():
     assert "_sense_strand" not in data
     assert "id" not in data["antisense_strand"]
     assert "id" not in data["sense_strand"]
-    assert isinstance(reconstructed, SiRNA)
+    assert isinstance(reconstructed, siRNA)
     assert reconstructed.sequence == sirna.sequence
     assert reconstructed.sense_strand.sequence == sirna.sense_strand.sequence
     assert isinstance(reconstructed.antisense_strand.chemistry, ExampleChemistry)

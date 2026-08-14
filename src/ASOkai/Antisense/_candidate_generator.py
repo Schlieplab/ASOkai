@@ -9,10 +9,10 @@ License: LGPL-3.0-or-later
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 
 from ..Biochemistry import Chemistry, MechanismOfAction
 from ..Sites import Site
-from ..Targets import Target
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._aso import ASO
 from ._binding import Binding
@@ -28,11 +28,11 @@ class AntisenseCandidateGenerator(ABC):
 
     def generate(
         self,
-        target: Target,
+        sites: Iterable[Site],
     ) -> tuple[list[AntisenseTherapeutic], list[Binding]]:
         therapeutics: list[AntisenseTherapeutic] = []
         bindings: list[Binding] = []
-        for site in target.sites:
+        for site in sites:
             for candidate in self.candidates_for_site(site):
                 therapeutics.append(candidate)
                 bindings.append(Binding(candidate.id, site.id))

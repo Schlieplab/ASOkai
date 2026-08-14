@@ -18,7 +18,6 @@ from ASOkai.Antisense import (
 )
 from ASOkai.Biochemistry import GapmerChemistry, RNaseH1Mechanism
 from ASOkai.Sites import Site, TranscriptSite
-from ASOkai.Targets import Target
 
 
 class TwoCandidateGenerator(AntisenseCandidateGenerator):
@@ -52,13 +51,12 @@ def test_aso_generator_creates_a_therapeutic_and_binding_for_each_site():
         t_end=12,
         sequence=Seq("ATGCCCAAAAAT"),
     )
-    target = Target(id="target", sites={site.id: site})
     generator = ASOCandidateGenerator(
         chemistry=GapmerChemistry("3-6-3"),
         mechanism=RNaseH1Mechanism(),
     )
 
-    therapeutics, bindings = generator.generate(target)
+    therapeutics, bindings = generator.generate([site])
 
     assert len(therapeutics) == 1
     assert len(bindings) == 1
@@ -76,9 +74,7 @@ def test_generator_supports_multiple_candidates_for_one_site():
         t_end=12,
         sequence=Seq("ATGCCCAAAAAT"),
     )
-    target = Target(id="target", sites={site.id: site})
-
-    therapeutics, bindings = TwoCandidateGenerator().generate(target)
+    therapeutics, bindings = TwoCandidateGenerator().generate([site])
 
     assert [therapeutic.id for therapeutic in therapeutics] == [
         "target-S00001-ASO-1",
@@ -106,16 +102,12 @@ def test_aso_generator_preserves_the_site_for_each_binding():
         t_end=24,
         sequence=Seq("CCCCAAAATTTT"),
     )
-    target = Target(
-        id="target",
-        sites={first_site.id: first_site, second_site.id: second_site},
-    )
     generator = ASOCandidateGenerator(
         chemistry=GapmerChemistry("3-6-3"),
         mechanism=RNaseH1Mechanism(),
     )
 
-    therapeutics, bindings = generator.generate(target)
+    therapeutics, bindings = generator.generate([first_site, second_site])
 
     assert len(therapeutics) == 2
     assert [
@@ -126,14 +118,13 @@ def test_aso_generator_preserves_the_site_for_each_binding():
     ]
 
 
-def test_generator_returns_empty_collections_for_target_without_sites():
-    target = Target(id="target", sites={})
+def test_generator_returns_empty_collections_without_sites():
     generator = ASOCandidateGenerator(
         chemistry=GapmerChemistry("3-6-3"),
         mechanism=RNaseH1Mechanism(),
     )
 
-    therapeutics, bindings = generator.generate(target)
+    therapeutics, bindings = generator.generate([])
 
     assert therapeutics == []
     assert bindings == []

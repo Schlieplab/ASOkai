@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class CreateTargetGeneStep(CoreStep):
     name = "create-target-gene"
-    description = "Creates a target gene object from genome data and extracts ASO target sites."
+    description = "Creates a target gene object from genome data and extracts target sites."
     target_gene_output = FileOutput(
         "target_gene",
         file_type=JsonFile(TargetGene),
@@ -62,7 +62,7 @@ class CreateTargetGeneStep(CoreStep):
                 config="target.target_name",
                 doc="Gene name (e.g. KRAS). Use this or target_id.",
             ),
-            ScalarParam("k", int, config="target.k", doc="ASO length."),
+            ScalarParam("k", int, config="target.k", doc="Target-site length."),
             ScalarParam(
                 "region",
                 TargetRegion,
@@ -105,7 +105,7 @@ class CreateTargetGeneStep(CoreStep):
     def run_from_args(self, args) -> int:
         """Create and serialize the configured target gene."""
         from GenomeUtils.Genome import GenomeBuilder
-        from ASOkai.Targets import TargetGeneCreator
+        from ASOkai.Targets import create_target_gene
 
         logger.info("create-target-gene: loading DNA FASTA from %s", args.dna)
         builder = GenomeBuilder(
@@ -136,11 +136,11 @@ class CreateTargetGeneStep(CoreStep):
             args.target_name,
             args.k,
         )
-        target_gene = TargetGeneCreator.from_genome(
+        target_gene = create_target_gene(
             genome,
             target_id=args.target_id,
             target_name=args.target_name,
-            k=args.k,
+            site_length=args.k,
             region=args.region,
         )
 

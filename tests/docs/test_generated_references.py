@@ -140,6 +140,23 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     ]
 
 
+def test_single_process_step_documents_fixed_process_count() -> None:
+    step = get_built_in_step("download-genome")
+    fields = {
+        field.path
+        for field in collect_step_config_fields(step, _config_schema())
+    }
+    reference = "\n".join(
+        node.astext()
+        for node in build_step_reference(step, _config_schema())
+    )
+
+    assert "resources.default.n_processes" not in fields
+    assert "resources.download-genome.n_processes" not in fields
+    assert "n_processes\n\nFixed value: 1" in reference
+    assert "This step always runs with one process." in reference
+
+
 def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     step = get_built_in_step("intrinsic-features")
     generated_nodes = build_step_reference(

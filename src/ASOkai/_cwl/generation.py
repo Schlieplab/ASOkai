@@ -248,11 +248,12 @@ class JobCwlGenerator(BaseCwlGenerator):
         for step in step_objs:
             in_map: dict[str, str | dict] = {}
 
-            in_map[cfg.RESOURCE_N_PROCESSES_KEY] = {
-                "default": cfg.step_resources(config, step.name)[
-                    cfg.RESOURCE_N_PROCESSES_KEY
-                ]
-            }
+            if step.supports_multiple_processes:
+                in_map[cfg.RESOURCE_N_PROCESSES_KEY] = {
+                    "default": cfg.step_resources(config, step)[
+                        cfg.RESOURCE_N_PROCESSES_KEY
+                    ]
+                }
 
             for cwl_key in step.config_map:
                 in_map[cwl_key] = cwl_key
@@ -396,7 +397,7 @@ def generate_cwl_bundle(
         )
         resource_requirement = cwl_resource_requirement(
             config,
-            step.name,
+            step,
             authored_requirement,
         )
         step_cwls[step_cwl_filename(step)] = step_generator.render(

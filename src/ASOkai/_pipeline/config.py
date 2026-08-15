@@ -142,6 +142,18 @@ def validate_step_config(
         missing_parameter = False
         parameters_are_valid = True
         parameter_values: dict[str, object] = {}
+        configured_step_resources = config.get("resources", {}).get(
+            step.name,
+            {},
+        )
+        if isinstance(configured_step_resources, Mapping):
+            supported_resources = set(step_resource_names(step))
+            for resource_name in configured_step_resources:
+                if resource_name not in supported_resources:
+                    errors.append(
+                        f"$.resources.{step.name}.{resource_name}: step "
+                        f"'{step.name}' does not support this resource setting"
+                    )
         parameters_by_path = {
             parameter.config: parameter
             for parameter in step.spec.params
@@ -411,11 +423,27 @@ def _raise_config_errors(errors: Sequence[str]) -> None:
     raise ValueError(f"Invalid configuration:\n{details}")
 
 
-def step_resources(config: Mapping[str, Any], step_name: str) -> dict[str, Any]:
+def step_resource_names(step: Step) -> tuple[str, ...]:
+    """Return resource settings that may be configured for a step."""
+    return tuple(
+        resource_name
+        for resource_name in DEFAULT_STEP_RESOURCES
+        if (
+            resource_name != RESOURCE_N_PROCESSES_KEY
+            or step.supports_multiple_processes
+        )
+    )
+
+
+def step_resources(config: Mapping[str, Any], step: Step) -> dict[str, Any]:
     """Return resolved resource settings for one step."""
+    configured = step_resource_overrides(config, step.name)
     return {
-        **DEFAULT_STEP_RESOURCES,
-        **step_resource_overrides(config, step_name),
+        resource_name: configured.get(
+            resource_name,
+            DEFAULT_STEP_RESOURCES[resource_name],
+        )
+        for resource_name in step_resource_names(step)
     }
 
 

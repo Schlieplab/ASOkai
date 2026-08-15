@@ -27,6 +27,7 @@ class AnalysisStep(Step):
     """
 
     analysis_cls: ClassVar[type | None] = None
+    supports_multiple_processes = True
 
     def analysis_kwargs(self, args) -> dict[str, Any]:
         """Build analysis arguments from the inputs already parsed by the step."""

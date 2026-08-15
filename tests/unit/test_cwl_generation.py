@@ -23,6 +23,9 @@ from ASOkai.Plugins import (
     StepSpec,
 )
 from ASOkai.Plugins._registry import get_steps
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
@@ -236,10 +239,10 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     }
 
 
-def test_generate_cwl_adds_each_steps_configured_resources(workflow_config):
+def test_generate_cwl_keeps_single_process_steps_at_one_core(workflow_config):
     workflow_config["resources"] = {
-        "download-genome": {"n_processes": 2, "memory_mb": 4096},
-        "create-target-gene": {"n_processes": 8, "memory_mb": 16384},
+        "download-genome": {"memory_mb": 8192},
+        "create-target-gene": {"memory_mb": 16384},
     }
 
     generated = generate_cwl_bundle(
@@ -251,25 +254,45 @@ def test_generate_cwl_adds_each_steps_configured_resources(workflow_config):
     workflow = yaml.safe_load(generated.run_cwl)
 
     assert download["requirements"]["ResourceRequirement"] == {
-        "coresMin": 2,
-        "ramMin": 4096,
+        "coresMin": 1,
+        "ramMin": 8192,
     }
     assert create["requirements"]["ResourceRequirement"] == {
-        "coresMin": 8,
+        "coresMin": 1,
         "ramMin": 16384,
     }
-    assert download["inputs"]["n_processes"] == {
+    assert "n_processes" not in download["inputs"]
+    assert "n_processes" not in create["inputs"]
+    assert "n_processes" not in workflow["steps"]["step_download_genome"]["in"]
+    assert "n_processes" not in workflow["steps"]["step_create_target_gene"]["in"]
+
+
+def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
+    workflow_config["resources"] = {
+        "intrinsic-features": {"n_processes": 4, "memory_mb": 8192},
+    }
+
+    generated = generate_cwl_bundle(
+        [IntrinsicFeaturesStep()],
+        workflow_config,
+    )
+    intrinsic = yaml.safe_load(
+        generated.step_cwls["intrinsic-features.cwl"]
+    )
+    workflow = yaml.safe_load(generated.run_cwl)
+
+    assert intrinsic["requirements"]["ResourceRequirement"] == {
+        "coresMin": 4,
+        "ramMin": 8192,
+    }
+    assert intrinsic["inputs"]["n_processes"] == {
         "type": "int",
         "doc": "Number of processes allocated to this step.",
         "default": 1,
         "inputBinding": {"prefix": "--n-processes"},
     }
-    assert create["inputs"]["n_processes"] == download["inputs"]["n_processes"]
-    assert workflow["steps"]["step_download_genome"]["in"]["n_processes"] == {
-        "default": 2,
-    }
-    assert workflow["steps"]["step_create_target_gene"]["in"]["n_processes"] == {
-        "default": 8,
+    assert workflow["steps"]["step_intrinsic_features"]["in"]["n_processes"] == {
+        "default": 4,
     }
     assert "n_processes" not in workflow["inputs"]
 

@@ -189,11 +189,34 @@ def _file_outputs_table(
 
 def _resources_table(step: Any, config_fields: list[Any]) -> nodes.table:
     """Show each resource once, together with its resolution order."""
-    from ASOkai._pipeline.config import DEFAULT_STEP_RESOURCES
+    from ASOkai._pipeline.config import (
+        DEFAULT_STEP_RESOURCES,
+        RESOURCE_N_PROCESSES_KEY,
+        step_resource_names,
+    )
 
     fields_by_path = {field.path: field for field in config_fields}
+    configurable_resources = set(step_resource_names(step))
     rows = []
     for resource_name, fallback in DEFAULT_STEP_RESOURCES.items():
+        if resource_name not in configurable_resources:
+            if resource_name == RESOURCE_N_PROCESSES_KEY:
+                rows.append(
+                    (
+                        (resource_name, True),
+                        details(
+                            (
+                                ("Fixed value", str(fallback), False),
+                                (
+                                    "Description",
+                                    "This step always runs with one process.",
+                                    False,
+                                ),
+                            )
+                        ),
+                    )
+                )
+            continue
         default_field = fields_by_path[f"resources.default.{resource_name}"]
         step_field = fields_by_path[f"resources.{step.name}.{resource_name}"]
         accepted_value = step_field.value_type
@@ -214,7 +237,7 @@ def _resources_table(step: Any, config_fields: list[Any]) -> nodes.table:
             )
         )
     return table(
-        ("Resource setting", "Resolution order"),
+        ("Resource setting", "Details"),
         rows,
         (25, 75),
         css_class="asokai-step-resources",
@@ -617,8 +640,8 @@ def build_step_reference(
                 [
                     nodes.paragraph(
                         text=(
-                            "For each resource, ASOkai uses the first configured "
-                            "value in the order shown below."
+                            "Configurable resources use the first value in the "
+                            "resolution order shown below."
                         )
                     ),
                     _resources_table(step, resource_config_fields),

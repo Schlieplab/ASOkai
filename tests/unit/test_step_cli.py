@@ -37,3 +37,7 @@ def test_run_cli_parses_and_prepares_every_output(tmp_path):
     assert result == 3
     assert first.parent.is_dir()
     assert second.parent.is_dir()
+
+
+def test_single_process_step_has_no_process_argument():
+    assert "--n-processes" not in CliLifecycleStep().build_parser().format_help()

@@ -13,11 +13,12 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.steps.base import Step
 
 
 def cwl_resource_requirement(
     config: Mapping[str, Any],
-    step_name: str,
+    step: Step,
     authored_requirement: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the CWL resource requirement for one pipeline step."""
@@ -32,9 +33,11 @@ def cwl_resource_requirement(
             cfg.DEFAULT_STEP_RESOURCES[cfg.RESOURCE_MEMORY_KEY],
         ),
     }
-    configured = cfg.step_resource_overrides(config, step_name)
-    if cfg.RESOURCE_N_PROCESSES_KEY in configured:
-        requirement["coresMin"] = configured[cfg.RESOURCE_N_PROCESSES_KEY]
+    configured = cfg.step_resource_overrides(config, step.name)
+    if step.supports_multiple_processes:
+        requirement["coresMin"] = cfg.step_resources(config, step)[
+            cfg.RESOURCE_N_PROCESSES_KEY
+        ]
     if cfg.RESOURCE_MEMORY_KEY in configured:
         requirement["ramMin"] = configured[cfg.RESOURCE_MEMORY_KEY]
     return requirement

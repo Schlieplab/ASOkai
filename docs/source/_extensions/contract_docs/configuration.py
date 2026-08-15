@@ -386,9 +386,13 @@ def collect_step_config_fields(
                 )
             )
 
-    from ASOkai._pipeline.config import DEFAULT_STEP_RESOURCES
+    from ASOkai._pipeline.config import (
+        DEFAULT_STEP_RESOURCES,
+        step_resource_names,
+    )
 
-    for resource_name, default in DEFAULT_STEP_RESOURCES.items():
+    for resource_name in step_resource_names(step):
+        default = DEFAULT_STEP_RESOURCES[resource_name]
         default_path = f"resources.default.{resource_name}"
         add(
             replace(

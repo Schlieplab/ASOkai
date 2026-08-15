@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
@@ -464,45 +467,85 @@ def test_validate_step_config_rejects_datadir_file(tmp_path):
 
 
 def test_step_resources_returns_supported_fields():
+    step = IntrinsicFeaturesStep()
     config = {
         "resources": {
-            "analysis": {
+            step.name: {
                 "n_processes": 4,
                 "memory_mb": 8192,
             }
         }
     }
 
-    assert cfg.step_resources(config, "analysis") == {
+    assert cfg.step_resources(config, step) == {
         "n_processes": 4,
         "memory_mb": 8192,
     }
 
 
 def test_step_resources_uses_builtin_defaults_without_configuration():
-    expected = {"n_processes": 1, "memory_mb": 4096}
-    assert cfg.step_resources({}, "analysis") == expected
-    assert cfg.step_resources({"resources": {}}, "analysis") == expected
+    analysis = IntrinsicFeaturesStep()
+    download = DownloadGenomeStep()
+
+    assert cfg.step_resources({}, analysis) == {
+        "n_processes": 1,
+        "memory_mb": 4096,
+    }
+    assert cfg.step_resources({"resources": {}}, download) == {
+        "memory_mb": 4096,
+    }
 
 
 def test_step_resources_merges_configured_defaults_and_step_overrides():
+    analysis = IntrinsicFeaturesStep()
+    download = DownloadGenomeStep()
     config = {
         "resources": {
             "default": {
                 "n_processes": 2,
                 "memory_mb": 2048,
             },
-            "analysis": {"n_processes": 8},
+            analysis.name: {"n_processes": 8},
         }
     }
 
-    assert cfg.step_resources(config, "analysis") == {
+    assert cfg.step_resources(config, analysis) == {
         "n_processes": 8,
         "memory_mb": 2048,
     }
-    assert cfg.step_resources(config, "unconfigured") == {
-        "n_processes": 2,
+    assert cfg.step_resources(config, download) == {
         "memory_mb": 2048,
+    }
+
+
+def test_selected_step_rejects_unsupported_process_setting(
+    sample_config,
+):
+    config = cfg.load(sample_config)
+    config["resources"] = {
+        "download-genome": {"n_processes": 2},
+    }
+    cfg.validate_config_schema(config)
+
+    with pytest.raises(
+        ValueError,
+        match=r"resources.download-genome.n_processes.*does not support",
+    ):
+        cfg.validate_step_config(config, [DownloadGenomeStep()])
+
+
+def test_default_process_setting_is_only_applied_to_supported_steps(
+    sample_config,
+):
+    config = cfg.load(sample_config)
+    config["resources"] = {
+        "default": {"n_processes": 4},
+    }
+
+    cfg.validate_config_schema(config)
+    cfg.validate_step_config(config, [DownloadGenomeStep()])
+    assert cfg.step_resources(config, DownloadGenomeStep()) == {
+        "memory_mb": 4096,
     }
 
 

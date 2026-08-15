@@ -31,11 +31,17 @@ _N_PROCESSES_PARAM = ScalarParam(
 
 
 class Step(Runnable):
-    """Atomic pipeline unit backed by a generated CWL command-line tool."""
+    """Atomic pipeline unit backed by a generated CWL command-line tool.
+
+    Core steps may set ``supports_multiple_processes`` only when their runtime
+    consumes the automatically supplied ``args.n_processes`` value. Analysis
+    steps support it through their shared base class.
+    """
 
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
+    supports_multiple_processes: ClassVar[bool] = False
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""
@@ -53,6 +59,10 @@ class Step(Runnable):
             raise TypeError(f"Step '{cls.__name__}.spec' must be a StepSpec.")
         if type(cls.name) is not str or not cls.name.strip():
             raise TypeError(f"Step class '{cls.__name__}' requires a name.")
+        if type(cls.supports_multiple_processes) is not bool:
+            raise TypeError(
+                f"Step '{cls.name}' supports_multiple_processes must be a boolean."
+            )
 
         output_attributes = {
             attribute_name: value
@@ -122,6 +132,8 @@ class Step(Runnable):
         spec = self.spec.to_cwl_tool_spec(
             self._output_template_values(config),
         )
+        if not self.supports_multiple_processes:
+            return spec
         n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
         if n_processes_input is None:
             raise RuntimeError("The standard n_processes parameter must be a CWL input.")
@@ -131,7 +143,8 @@ class Step(Runnable):
         """Build an argparse parser from this step's parameter spec."""
         self._validate_standard_parameters()
         parser = self.spec.build_parser(description=description or self.description)
-        _N_PROCESSES_PARAM.add_to_parser(parser)
+        if self.supports_multiple_processes:
+            _N_PROCESSES_PARAM.add_to_parser(parser)
         return parser
 
     def prepare_output_directories(self, args: argparse.Namespace) -> None:

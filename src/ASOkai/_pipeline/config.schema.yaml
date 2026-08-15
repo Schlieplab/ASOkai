@@ -189,7 +189,9 @@ properties:
           n_processes:
             type: integer
             minimum: 1
-            description: Default number of processes for every step.
+            description: >-
+              Default number of processes for steps that support multiple
+              processes.
           memory_mb:
             type: integer
             minimum: 1
@@ -201,7 +203,9 @@ properties:
         n_processes:
           type: integer
           minimum: 1
-          description: Number of processes allocated to this step.
+          description: >-
+            Number of processes allocated to a step that supports multiple
+            processes.
         memory_mb:
           type: integer
           minimum: 1

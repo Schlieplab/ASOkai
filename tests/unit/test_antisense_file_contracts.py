@@ -30,7 +30,9 @@ def gapmer() -> Gapmer:
         id="gapmer-1",
         sequence=Seq("ACGT"),
         mechanism=RNaseH1Mechanism(),
-        layout="1-2-1",
+        left_wing_length=1,
+        gap_length=2,
+        right_wing_length=1,
     )
 
 
@@ -112,12 +114,12 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
     assert restored[0].site_id == binding.site_id
 
 
-def test_gapmer_collection_rejects_invalid_layout(gapmer):
+def test_gapmer_collection_rejects_invalid_segment_length(gapmer):
     file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([gapmer]))
-    document[0]["layout"] = "invalid"
+    document[0]["gap_length"] = 0
 
-    with pytest.raises(ValueError, match="Gapmer layout must have the form"):
+    with pytest.raises(ValueError, match="Gapmer gap_length"):
         file_type.loads(json.dumps(document))
 
 

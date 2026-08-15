@@ -85,7 +85,12 @@ def workflow_config(tmp_path):
         "antisense": {
             "modality": "aso",
             "mechanism": "rnase-h1",
-            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+            "design": {
+                "type": "gapmer",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
+            },
         },
     }
 

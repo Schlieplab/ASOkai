@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+from abc import ABC
 from typing import Any, Mapping
 
 from docutils import nodes
@@ -478,7 +479,11 @@ def serializable_contract_nodes(
     from ASOkai._pipeline.contracts.file_types import JsonFile
     from ASOkai._pipeline.contracts.json_schema import build_json_schema
 
-    if serializable_type is Serializable:
+    if (
+        serializable_type is Serializable
+        or inspect.isabstract(serializable_type)
+        or ABC in serializable_type.__bases__
+    ):
         return []
     schema = build_json_schema(serializable_type)
     if _serializable_type(schema) is not serializable_type:

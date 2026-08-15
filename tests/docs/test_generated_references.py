@@ -55,6 +55,7 @@ from ASOkai.Antisense import (  # noqa: E402
     Oligonucleotide,
     siRNA,
 )
+from ASOkai.Biochemistry import Chemistry  # noqa: E402
 from ASOkai.Sites import Site  # noqa: E402
 from ASOkai.Targets import TargetGene  # noqa: E402
 
@@ -132,7 +133,7 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     assert fields["resources.default.n_processes"].requirement == (
         "Built-in fallback: 1"
     )
-    assert "antisense.chemistry.layout" not in fields
+    assert "antisense.design.gap_length" not in fields
     assert collect_step_schema_rules(step, _config_schema()) == [
         "exactly one of these config values is required: "
         "target.target_id, target.target_name"
@@ -230,6 +231,33 @@ def test_candidate_generation_has_no_assumed_applicability() -> None:
     assert "Applicability" not in reference
 
 
+def test_candidate_generation_documents_conditional_design_fields() -> None:
+    step = get_built_in_step("generate-antisense-candidates")
+    fields = {
+        field.path: field
+        for field in collect_step_config_fields(step, _config_schema())
+    }
+    rules = collect_step_schema_rules(step, _config_schema())
+
+    assert fields["antisense.design.type"].requirement == "Required"
+    for field_name in (
+        "left_wing_length",
+        "gap_length",
+        "right_wing_length",
+    ):
+        field = fields[f"antisense.design.{field_name}"]
+        assert field.requirement == "Optional"
+        assert "Required for a gapmer design" in field.description
+        assert field.constraints == "minimum: 1"
+    assert (
+        "A gapmer design requires left_wing_length, gap_length, and "
+        "right_wing_length."
+    ) in rules
+    assert (
+        "An unmodified design must not define gapmer segment lengths."
+    ) in rules
+
+
 def test_json_file_contract_maps_to_its_serializable_class() -> None:
     target_step = get_built_in_step("create-target-gene")
     candidate_step = get_built_in_step("generate-antisense-candidates")
@@ -292,10 +320,13 @@ def test_nested_classes_own_their_json_details() -> None:
     )
 
     assert "chemistry" not in aso_fields
-    assert "layout" not in aso_fields
+    assert "left_wing_length" not in aso_fields
+    assert "gap_length" not in aso_fields
+    assert "right_wing_length" not in aso_fields
     assert "chemistry" not in gapmer_fields
-    assert "layout" in gapmer_fields
-    assert '"3-10-3"' in "\n".join(node.astext() for node in gapmer_contract)
+    assert "left_wing_length" in gapmer_fields
+    assert "gap_length" in gapmer_fields
+    assert "right_wing_length" in gapmer_fields
 
 
 @pytest.mark.parametrize("serializable_type", [Oligonucleotide, siRNA])
@@ -311,10 +342,13 @@ def test_serializable_contract_describes_every_field(serializable_type: type) ->
     assert "Meaning: —" not in reference
 
 
-def test_abstract_serializable_class_has_no_json_contract() -> None:
+@pytest.mark.parametrize("serializable_type", [Chemistry, Site])
+def test_abstract_serializable_class_has_no_json_contract(
+    serializable_type: type,
+) -> None:
     assert not serializable_contract_nodes(
-        Site,
-        refdoc="api/modules/Sites",
+        serializable_type,
+        refdoc=f"api/modules/{serializable_type.__module__.split('.')[1]}",
     )
 
 

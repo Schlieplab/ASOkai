@@ -59,9 +59,17 @@ class ASOCandidateGenerator(AntisenseCandidateGenerator):
 class GapmerCandidateGenerator(ASOCandidateGenerator):
     """Generate one wing-gap-wing ASO for each target site."""
 
-    def __init__(self, mechanism: MechanismOfAction, layout: str):
+    def __init__(
+        self,
+        mechanism: MechanismOfAction,
+        left_wing_length: int,
+        gap_length: int,
+        right_wing_length: int,
+    ):
         super().__init__(mechanism=mechanism)
-        self.layout = layout
+        self.left_wing_length = left_wing_length
+        self.gap_length = gap_length
+        self.right_wing_length = right_wing_length
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
         return [
@@ -69,6 +77,8 @@ class GapmerCandidateGenerator(ASOCandidateGenerator):
                 id=f"{site.id}-Gapmer",
                 sequence=site.sequence.reverse_complement(),
                 mechanism=self.mechanism,
-                layout=self.layout,
+                left_wing_length=self.left_wing_length,
+                gap_length=self.gap_length,
+                right_wing_length=self.right_wing_length,
             )
         ]

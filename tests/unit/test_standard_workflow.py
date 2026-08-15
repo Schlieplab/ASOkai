@@ -33,7 +33,12 @@ def config(tmp_path):
         "antisense": {
             "modality": "aso",
             "mechanism": "rnase-h1",
-            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+            "design": {
+                "type": "gapmer",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
+            },
         },
     }
 
@@ -85,11 +90,11 @@ def test_output_paths(workflow, config, tmp_path):
     assert paths["target_gene"] == target_base / "ENSG00000133703_k16_pre-mrna.json"
     assert paths["therapeutics"] == (
         target_base / "antisense"
-        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_therapeutics.json"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_therapeutics.json"
     )
     assert paths["bindings"] == (
         target_base / "antisense"
-        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_bindings.json"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_bindings.json"
     )
     assert paths["intrinsic_features"] == (
         target_base / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"

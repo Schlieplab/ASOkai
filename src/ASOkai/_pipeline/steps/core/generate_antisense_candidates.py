@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Mapping
 
 from ASOkai.Antisense import AntisenseTherapeutic, Binding
 from ASOkai._types import TargetRegion
@@ -40,8 +40,8 @@ class GenerateAntisenseCandidatesStep(CoreStep):
         file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
-            "{mechanism}_therapeutics.json",
+            "{target}_k{k}_{region}_{modality}_{design}_{mechanism}_"
+            "therapeutics.json",
             fields={
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
@@ -53,8 +53,8 @@ class GenerateAntisenseCandidatesStep(CoreStep):
         file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
-            "{mechanism}_bindings.json",
+            "{target}_k{k}_{region}_{modality}_{design}_{mechanism}_"
+            "bindings.json",
             fields={
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
@@ -74,14 +74,27 @@ class GenerateAntisenseCandidatesStep(CoreStep):
             ScalarParam("region", TargetRegion, config="target.region"),
             ScalarParam("modality", Literal["aso"], config="antisense.modality"),
             ScalarParam(
-                "chemistry",
-                Literal["gapmer"],
-                config="antisense.chemistry.type",
+                "design",
+                Literal["unmodified", "gapmer"],
+                config="antisense.design.type",
             ),
             ScalarParam(
-                "layout",
-                str,
-                config="antisense.chemistry.layout",
+                "left_wing_length",
+                int | None,
+                config="antisense.design.left_wing_length",
+                default=None,
+            ),
+            ScalarParam(
+                "gap_length",
+                int | None,
+                config="antisense.design.gap_length",
+                default=None,
+            ),
+            ScalarParam(
+                "right_wing_length",
+                int | None,
+                config="antisense.design.right_wing_length",
+                default=None,
             ),
             ScalarParam(
                 "mechanism",
@@ -93,16 +106,50 @@ class GenerateAntisenseCandidatesStep(CoreStep):
         outputs=[therapeutics_output, bindings_output],
     )
 
+    def validate_parameters(self, values: Mapping[str, object]) -> None:
+        """Require gapmer segment lengths to match the target-site length."""
+        if values.get("design") != "gapmer":
+            return
+
+        left_wing_length = values.get("left_wing_length")
+        gap_length = values.get("gap_length")
+        right_wing_length = values.get("right_wing_length")
+        target_site_length = values.get("k")
+        if (
+            type(left_wing_length) is not int
+            or type(gap_length) is not int
+            or type(right_wing_length) is not int
+            or type(target_site_length) is not int
+        ):
+            return
+
+        design_length = left_wing_length + gap_length + right_wing_length
+        if design_length != target_site_length:
+            raise ValueError(
+                "gapmer segment lengths must equal the target-site length "
+                f"({target_site_length}); received {design_length}"
+            )
+
     def run_from_args(self, args) -> int:
         """Generate and serialize antisense candidates and their bindings."""
-        from ASOkai.Antisense import GapmerCandidateGenerator
+        from ASOkai.Antisense import (
+            ASOCandidateGenerator,
+            GapmerCandidateGenerator,
+        )
         from ASOkai.Biochemistry import RNaseH1Mechanism
 
         mechanism = RNaseH1Mechanism()
-        generator = GapmerCandidateGenerator(
-            mechanism=mechanism,
-            layout=args.layout,
-        )
+        if args.design == "unmodified":
+            generator = ASOCandidateGenerator(mechanism=mechanism)
+        elif args.design == "gapmer":
+            generator = GapmerCandidateGenerator(
+                mechanism=mechanism,
+                left_wing_length=args.left_wing_length,
+                gap_length=args.gap_length,
+                right_wing_length=args.right_wing_length,
+            )
+        else:
+            raise ValueError(f"Unsupported ASO design: {args.design!r}.")
         therapeutics, bindings = generator.generate(args.target_gene.sites)
 
         self.therapeutics_output.write(

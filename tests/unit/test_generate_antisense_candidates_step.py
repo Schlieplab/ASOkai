@@ -35,7 +35,12 @@ def config(tmp_path):
         "antisense": {
             "modality": "aso",
             "mechanism": "rnase-h1",
-            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+            "design": {
+                "type": "gapmer",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
+            },
         },
     }
 
@@ -67,14 +72,16 @@ def test_config_and_override_mapping(step):
         "k": "target.k",
         "region": "target.region",
         "modality": "antisense.modality",
-        "chemistry": "antisense.chemistry.type",
-        "layout": "antisense.chemistry.layout",
+        "design": "antisense.design.type",
+        "left_wing_length": "antisense.design.left_wing_length",
+        "gap_length": "antisense.design.gap_length",
+        "right_wing_length": "antisense.design.right_wing_length",
         "mechanism": "antisense.mechanism",
     }
     assert step.input_overrides == {"target_gene": "target.target_gene_path"}
 
 
-def test_output_path_identifies_every_candidate_setting(step, config, tmp_path):
+def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
     paths = step.output_paths(config)
     assert paths["therapeutics"] == (
         tmp_path
@@ -82,7 +89,7 @@ def test_output_path_identifies_every_candidate_setting(step, config, tmp_path):
         / "targets"
         / "ENSG00000133703"
         / "antisense"
-        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_therapeutics.json"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_therapeutics.json"
     )
     assert paths["bindings"] == (
         tmp_path
@@ -90,7 +97,7 @@ def test_output_path_identifies_every_candidate_setting(step, config, tmp_path):
         / "targets"
         / "ENSG00000133703"
         / "antisense"
-        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_bindings.json"
+        / "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_bindings.json"
     )
 
 
@@ -100,12 +107,27 @@ def test_output_path_uses_supplied_target_name(step, config, tmp_path):
     paths = step.output_paths(config)
 
     assert paths["therapeutics"].name == (
-        "KRAS_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_therapeutics.json"
+        "KRAS_k16_pre-mrna_aso_gapmer_rnase-h1_therapeutics.json"
     )
     assert paths["bindings"].name == (
-        "KRAS_k16_pre-mrna_aso_gapmer_3-10-3_rnase-h1_bindings.json"
+        "KRAS_k16_pre-mrna_aso_gapmer_rnase-h1_bindings.json"
     )
     assert paths["therapeutics"].parent.parent.name == "KRAS"
+
+
+def test_output_path_supports_unmodified_asos(step, config):
+    config["antisense"]["design"] = {"type": "unmodified"}
+
+    paths = step.output_paths(config)
+
+    assert paths["therapeutics"].name == (
+        "ENSG00000133703_k16_pre-mrna_aso_unmodified_"
+        "rnase-h1_therapeutics.json"
+    )
+    assert paths["bindings"].name == (
+        "ENSG00000133703_k16_pre-mrna_aso_unmodified_"
+        "rnase-h1_bindings.json"
+    )
 
 
 def test_cwl_contains_scalar_configuration_and_file_io(step, config):
@@ -117,17 +139,18 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config):
         "generate-antisense-candidates",
     ]
     assert document["inputs"]["modality"]["type"]["type"] == "enum"
-    assert document["inputs"]["chemistry"]["type"]["type"] == "enum"
+    assert document["inputs"]["design"]["type"]["type"] == "enum"
     assert document["inputs"]["mechanism"]["type"]["type"] == "enum"
-    assert document["inputs"]["layout"]["type"] == "string"
+    assert document["inputs"]["left_wing_length"]["type"] == "int?"
+    assert document["inputs"]["gap_length"]["type"] == "int?"
+    assert document["inputs"]["right_wing_length"]["type"] == "int?"
     assert document["inputs"]["target_gene"]["type"] == "File"
     assert document["outputs"]["therapeutics"]["outputBinding"]["glob"] == (
-        "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_"
-        "rnase-h1_therapeutics.json"
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_"
+        "therapeutics.json"
     )
     assert document["outputs"]["bindings"]["outputBinding"]["glob"] == (
-        "ENSG00000133703_k16_pre-mrna_aso_gapmer_3-10-3_"
-        "rnase-h1_bindings.json"
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_rnase-h1_bindings.json"
     )
 
 
@@ -168,10 +191,14 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
             "pre-mrna",
             "--modality",
             "aso",
-            "--chemistry",
+            "--design",
             "gapmer",
-            "--layout",
-            "3-10-3",
+            "--left-wing-length",
+            "3",
+            "--gap-length",
+            "10",
+            "--right-wing-length",
+            "3",
             "--mechanism",
             "rnase-h1",
             "--target-gene",
@@ -187,9 +214,68 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
     bindings = json.loads(bindings_output.read_text())
     assert result == 0
     assert therapeutics[0]["id"] == "ENSG00000133703-S00001-Gapmer"
-    assert therapeutics[0]["layout"] == "3-10-3"
+    assert therapeutics[0]["left_wing_length"] == 3
+    assert therapeutics[0]["gap_length"] == 10
+    assert therapeutics[0]["right_wing_length"] == 3
     assert bindings[0]["therapeutic_id"] == therapeutics[0]["id"]
     assert bindings[0]["site_id"] == "ENSG00000133703-S00001"
+
+
+def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
+    site = TranscriptSite(
+        id="ENSG00000133703-S00001",
+        transcript_id="transcript-1",
+        t_start=0,
+        t_end=4,
+        sequence=Seq("ACGT"),
+    )
+    target = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=4,
+        strand="+",
+        sequence=Seq("ACGT"),
+        sites={site.id: site},
+    )
+    target_input = tmp_path / "target.json"
+    _write_target_gene(target_input, target)
+    therapeutics_output = tmp_path / "therapeutics.json"
+    bindings_output = tmp_path / "bindings.json"
+
+    result = GenerateAntisenseCandidatesStep().run_cli(
+        [
+            "--assembly",
+            "GRCh38",
+            "--target-id",
+            "ENSG00000133703",
+            "--k",
+            "4",
+            "--region",
+            "pre-mrna",
+            "--modality",
+            "aso",
+            "--design",
+            "unmodified",
+            "--mechanism",
+            "rnase-h1",
+            "--target-gene",
+            str(target_input),
+            "--therapeutics-output",
+            str(therapeutics_output),
+            "--bindings-output",
+            str(bindings_output),
+        ]
+    )
+
+    therapeutic = json.loads(therapeutics_output.read_text())[0]
+    assert result == 0
+    assert therapeutic["__class__"] == "ASO"
+    assert therapeutic["id"] == "ENSG00000133703-S00001-ASO"
+    assert "left_wing_length" not in therapeutic
+    assert "gap_length" not in therapeutic
+    assert "right_wing_length" not in therapeutic
 
 
 def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
@@ -222,10 +308,8 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
             "pre-mrna",
             "--modality",
             "aso",
-            "--chemistry",
-            "gapmer",
-            "--layout",
-            "3-10-3",
+            "--design",
+            "unmodified",
             "--mechanism",
             "rnase-h1",
             "--target-gene",
@@ -267,10 +351,8 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
                 "pre-mrna",
                 "--modality",
                 "aso",
-                "--chemistry",
-                "gapmer",
-                "--layout",
-                "3-10-3",
+                "--design",
+                "unmodified",
                 "--mechanism",
                 "rnase-h1",
                 "--target-gene",

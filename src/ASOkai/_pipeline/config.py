@@ -140,6 +140,8 @@ def validate_step_config(
 
     for step in _unique_steps(steps):
         missing_parameter = False
+        parameters_are_valid = True
+        parameter_values: dict[str, object] = {}
         parameters_by_path = {
             parameter.config: parameter
             for parameter in step.spec.params
@@ -149,13 +151,38 @@ def validate_step_config(
             if parameter.config is None:
                 continue
             try:
-                resolve_parameter_value(config, parameter)
+                configured_value = resolve_parameter_value(config, parameter)
             except KeyError:
                 errors.append(
                     f"$.{parameter.config}: required by step "
                     f"'{step.name}'"
                 )
                 missing_parameter = True
+                parameters_are_valid = False
+                continue
+
+            parameter_values[parameter.name] = configured_value
+
+            accepted_values = parameter.parser_choices()
+            if accepted_values is None or any(
+                type(configured_value) is type(accepted_value)
+                and configured_value == accepted_value
+                for accepted_value in accepted_values
+            ):
+                continue
+            accepted = ", ".join(repr(value) for value in accepted_values)
+            errors.append(
+                f"$.{parameter.config}: configured value "
+                f"{configured_value!r} is not accepted by step "
+                f"'{step.name}'; accepted values: {accepted}"
+            )
+            parameters_are_valid = False
+
+        if parameters_are_valid:
+            try:
+                step.validate_parameters(parameter_values)
+            except ValueError as error:
+                errors.append(f"Step '{step.name}' parameters: {error}")
 
         for path, supported_values in step.spec.compatible_with.items():
             parameter = parameters_by_path.get(path)
@@ -276,8 +303,6 @@ def validate_config_schema(
 ) -> None:
     """Validate data against ASOkai and installed-plugin config schemas."""
     errors = _schema_errors("ASOkai", _load_config_schema(), config)
-    if not errors:
-        errors.extend(_semantic_config_errors(config))
 
     from ASOkai.Plugins._registry import get_config_schema_paths
 
@@ -296,36 +321,6 @@ def validate_config_schema(
 
     if errors:
         _raise_config_errors(errors)
-
-
-def _semantic_config_errors(config: Mapping[str, Any]) -> list[str]:
-    """Return cross-field errors that JSON Schema cannot express."""
-    target = config.get("target")
-    antisense = config.get("antisense")
-    if not isinstance(target, Mapping) or not isinstance(antisense, Mapping):
-        return []
-
-    chemistry = antisense.get("chemistry")
-    if not isinstance(chemistry, Mapping):
-        return []
-    if chemistry.get("type") != "gapmer":
-        return []
-    layout = chemistry.get("layout")
-    oligonucleotide_length = target.get("k")
-    if not isinstance(layout, str) or type(oligonucleotide_length) is not int:
-        return []
-
-    layout_parts = layout.split("-")
-    if len(layout_parts) != 3 or not all(part.isdigit() for part in layout_parts):
-        return []
-    layout_length = sum(int(part) for part in layout_parts)
-    if layout_length == oligonucleotide_length:
-        return []
-    return [
-        "$.antisense.chemistry.layout: segment lengths must sum to "
-        f"target.k ({oligonucleotide_length}); received {layout_length}"
-    ]
-
 
 @cache
 def _load_config_schema() -> JsonSchema:

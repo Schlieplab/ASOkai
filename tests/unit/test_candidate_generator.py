@@ -52,7 +52,9 @@ def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
     )
     generator = GapmerCandidateGenerator(
         mechanism=RNaseH1Mechanism(),
-        layout="3-6-3",
+        left_wing_length=3,
+        gap_length=6,
+        right_wing_length=3,
     )
 
     therapeutics, bindings = generator.generate([site])

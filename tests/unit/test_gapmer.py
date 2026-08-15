@@ -15,30 +15,47 @@ from ASOkai.Antisense import ASO, Gapmer
 from ASOkai.Biochemistry import RNaseH1Mechanism
 
 
-def make_gapmer(layout: str = "3-10-3") -> Gapmer:
+def make_gapmer(
+    left_wing_length: int = 3,
+    gap_length: int = 10,
+    right_wing_length: int = 3,
+) -> Gapmer:
     return Gapmer(
         id="gapmer-1",
         sequence=Seq("A" * 16),
         mechanism=RNaseH1Mechanism(),
-        layout=layout,
+        left_wing_length=left_wing_length,
+        gap_length=gap_length,
+        right_wing_length=right_wing_length,
     )
 
 
 def test_gapmer_stores_its_layout():
-    gapmer = make_gapmer("3-6-3")
+    gapmer = make_gapmer(3, 6, 3)
 
     assert isinstance(gapmer, ASO)
     assert gapmer.layout == "3-6-3"
 
 
-@pytest.mark.parametrize("layout", ["3-0-3", "3--1-3", "3-10", "invalid"])
-def test_gapmer_rejects_invalid_layouts(layout):
-    with pytest.raises(ValueError, match="Gapmer layout"):
-        make_gapmer(layout)
+@pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
+@pytest.mark.parametrize(
+    "field",
+    ["left_wing_length", "gap_length", "right_wing_length"],
+)
+def test_gapmer_rejects_invalid_segment_lengths(field, value):
+    lengths = {
+        "left_wing_length": 3,
+        "gap_length": 10,
+        "right_wing_length": 3,
+    }
+    lengths[field] = value
+
+    with pytest.raises(ValueError, match=rf"Gapmer {field}"):
+        make_gapmer(**lengths)
 
 
 def test_gapmer_supports_asymmetric_layouts():
-    gapmer = make_gapmer("3-10-5")
+    gapmer = make_gapmer(3, 10, 5)
 
     assert gapmer.lengths == (3, 10, 5)
     assert gapmer.left_wing_length == 3
@@ -47,9 +64,10 @@ def test_gapmer_supports_asymmetric_layouts():
 
 
 def test_gapmer_serialization_roundtrip():
-    reconstructed = Gapmer.from_dict(make_gapmer("3-10-5").to_dict())
+    reconstructed = Gapmer.from_dict(make_gapmer(3, 10, 5).to_dict())
 
     assert isinstance(reconstructed, Gapmer)
     assert reconstructed.layout == "3-10-5"
+    assert reconstructed.lengths == (3, 10, 5)
     assert reconstructed.sequence == Seq("A" * 16)
     assert isinstance(reconstructed.mechanism, RNaseH1Mechanism)

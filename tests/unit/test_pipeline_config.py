@@ -109,9 +109,58 @@ def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
             "antisense": {
                 "modality": "sirna",
                 "mechanism": "risc",
-                "chemistry": {"type": "custom"},
+                "design": {"type": "custom"},
             },
         }
+    )
+
+
+def test_selected_step_rejects_an_unsupported_design(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+        },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "design": {"type": "custom"},
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"antisense.design.type.*unmodified.*gapmer",
+    ):
+        cfg.validate_step_config(
+            config,
+            [GenerateAntisenseCandidatesStep()],
+        )
+
+
+def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+        },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "design": {"type": "unmodified"},
+        },
+    }
+
+    cfg.validate_config_schema(config)
+    cfg.validate_step_config(
+        config,
+        [GenerateAntisenseCandidatesStep()],
     )
 
 
@@ -242,30 +291,97 @@ def test_config_schema_rejects_two_target_identifiers(tmp_path):
         )
 
 
-@pytest.mark.parametrize("layout", ["", "16", "3-10", "3-10-3-1", "0-16-0", "a-b-c"])
-def test_config_schema_rejects_invalid_chemistry_layout(layout):
-    with pytest.raises(ValueError, match="antisense.chemistry.layout"):
+@pytest.mark.parametrize(
+    "field",
+    ["left_wing_length", "gap_length", "right_wing_length"],
+)
+@pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
+def test_config_schema_rejects_invalid_gapmer_segment_lengths(field, value):
+    with pytest.raises(ValueError, match=rf"antisense.design.{field}"):
         cfg.validate_config_schema(
             {
                 "datadir": ".",
-                "antisense": {"chemistry": {"layout": layout}},
+                "antisense": {
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                        field: value,
+                    }
+                },
             }
         )
 
 
-def test_config_schema_requires_layout_to_match_target_length():
-    with pytest.raises(ValueError, match=r"segment lengths must sum to target.k \(18\)"):
+@pytest.mark.parametrize(
+    "missing_field",
+    ["left_wing_length", "gap_length", "right_wing_length"],
+)
+def test_config_schema_requires_every_gapmer_segment_length(missing_field):
+    design = {
+        "type": "gapmer",
+        "left_wing_length": 3,
+        "gap_length": 10,
+        "right_wing_length": 3,
+    }
+    del design[missing_field]
+
+    with pytest.raises(ValueError, match=rf"antisense.design.*{missing_field}"):
         cfg.validate_config_schema(
             {
                 "datadir": ".",
-                "target": {"target_id": "ENSG1", "k": 18},
+                "antisense": {"design": design},
+            }
+        )
+
+
+def test_config_schema_rejects_gapmer_lengths_for_unmodified_aso():
+    with pytest.raises(ValueError, match="antisense.design"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
                 "antisense": {
-                    "chemistry": {
-                        "type": "gapmer",
-                        "layout": "3-10-3",
+                    "design": {
+                        "type": "unmodified",
+                        "gap_length": 10,
                     }
                 },
             }
+        )
+
+
+def test_selected_step_requires_gapmer_segments_to_match_target_length(
+    tmp_path,
+):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 18,
+            "region": "pre-mrna",
+        },
+        "antisense": {
+            "modality": "aso",
+            "mechanism": "rnase-h1",
+            "design": {
+                "type": "gapmer",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
+            },
+        },
+    }
+
+    cfg.validate_config_schema(config)
+    with pytest.raises(
+        ValueError,
+        match=r"generate-antisense-candidates.*target-site length \(18\)",
+    ):
+        cfg.validate_step_config(
+            config,
+            [GenerateAntisenseCandidatesStep()],
         )
 
 
@@ -282,9 +398,11 @@ def test_validate_step_config_rejects_missing_override_file(tmp_path):
         "antisense": {
             "modality": "aso",
             "mechanism": "rnase-h1",
-            "chemistry": {
+            "design": {
                 "type": "gapmer",
-                "layout": "3-10-3",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
             },
         },
     }
@@ -311,9 +429,11 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
         "antisense": {
             "modality": "aso",
             "mechanism": "rnase-h1",
-            "chemistry": {
+            "design": {
                 "type": "gapmer",
-                "layout": "3-10-3",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
             },
         },
     }

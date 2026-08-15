@@ -115,20 +115,69 @@ properties:
         type: string
         minLength: 1
         description: Therapeutic mechanism of action.
-      chemistry:
+      design:
         type: object
         additionalProperties: false
         properties:
           type:
             type: string
             minLength: 1
-            description: Antisense oligonucleotide chemistry.
-          layout:
-            type: string
-            pattern: ^[1-9][0-9]*-[1-9][0-9]*-[1-9][0-9]*$
+            description: Structural design of the antisense therapeutic.
+          left_wing_length:
+            type: integer
+            minimum: 1
             description: >-
-              Positive left-wing, gap, and right-wing lengths, such as
-              3-10-3. The three lengths must sum to target.k.
+              Number of nucleotides in the left gapmer wing. Required for a
+              gapmer design and not used by an unmodified design.
+          gap_length:
+            type: integer
+            minimum: 1
+            description: >-
+              Number of nucleotides in the central gapmer gap. Required for a
+              gapmer design and not used by an unmodified design.
+          right_wing_length:
+            type: integer
+            minimum: 1
+            description: >-
+              Number of nucleotides in the right gapmer wing. Required for a
+              gapmer design and not used by an unmodified design.
+        allOf:
+          - x-error-message: >-
+              A gapmer design requires left_wing_length, gap_length, and
+              right_wing_length.
+            if:
+              required:
+                - type
+              properties:
+                type:
+                  const: gapmer
+            then:
+              x-error-message: >-
+                A gapmer design requires left_wing_length, gap_length, and
+                right_wing_length.
+              required:
+                - left_wing_length
+                - gap_length
+                - right_wing_length
+          - x-error-message: >-
+              An unmodified design must not define gapmer segment lengths.
+            if:
+              required:
+                - type
+              properties:
+                type:
+                  const: unmodified
+            then:
+              x-error-message: >-
+                An unmodified design must not define gapmer segment lengths.
+              not:
+                anyOf:
+                  - required:
+                      - left_wing_length
+                  - required:
+                      - gap_length
+                  - required:
+                      - right_wing_length
 
   resources:
     type: object

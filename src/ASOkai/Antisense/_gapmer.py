@@ -17,14 +17,18 @@ from ._aso import ASO
 class Gapmer(ASO):
     """An ASO with a wing-gap-wing design."""
 
-    layout: str
+    left_wing_length: int
+    gap_length: int
+    right_wing_length: int
 
     def __init__(
         self,
         id: str,
         sequence: Seq,
         mechanism: MechanismOfAction,
-        layout: str = "3-10-3",
+        left_wing_length: int,
+        gap_length: int,
+        right_wing_length: int,
         **kwargs,
     ):
         """Initialize a gapmer.
@@ -33,23 +37,20 @@ class Gapmer(ASO):
             id: Unique therapeutic identifier.
             sequence: Antisense-strand sequence in the 5' to 3' direction.
             mechanism: Mechanism through which the gapmer acts.
-            layout: Positive left-wing, gap, and right-wing lengths formatted
-                as ``<left wing>-<gap>-<right wing>``.
+            left_wing_length: Number of nucleotides in the left wing.
+            gap_length: Number of nucleotides in the central gap.
+            right_wing_length: Number of nucleotides in the right wing.
             kwargs: Additional scalar values retained during serialization.
         """
-        try:
-            lengths = tuple(int(part) for part in layout.split("-"))
-        except (AttributeError, ValueError) as error:
-            raise ValueError(
-                "Gapmer layout must have the form "
-                "'<left wing>-<gap>-<right wing>'."
-            ) from error
-        if len(lengths) != 3 or any(length < 1 for length in lengths):
-            raise ValueError(
-                "Gapmer layout must contain three positive lengths, "
-                "for example '3-10-3'."
-            )
-        self.layout = "-".join(str(length) for length in lengths)
+        self.left_wing_length = _positive_length(
+            "left_wing_length",
+            left_wing_length,
+        )
+        self.gap_length = _positive_length("gap_length", gap_length)
+        self.right_wing_length = _positive_length(
+            "right_wing_length",
+            right_wing_length,
+        )
         super().__init__(
             id=id,
             sequence=sequence,
@@ -60,22 +61,20 @@ class Gapmer(ASO):
     @property
     def lengths(self) -> tuple[int, int, int]:
         """Return the left-wing, gap, and right-wing lengths."""
-        left_wing, gap, right_wing = (
-            int(part) for part in self.layout.split("-")
+        return (
+            self.left_wing_length,
+            self.gap_length,
+            self.right_wing_length,
         )
-        return left_wing, gap, right_wing
 
     @property
-    def left_wing_length(self) -> int:
-        """Return the length of the left wing."""
-        return self.lengths[0]
+    def layout(self) -> str:
+        """Return the compact wing-gap-wing representation."""
+        return "-".join(str(length) for length in self.lengths)
 
-    @property
-    def gap_length(self) -> int:
-        """Return the length of the central gap."""
-        return self.lengths[1]
 
-    @property
-    def right_wing_length(self) -> int:
-        """Return the length of the right wing."""
-        return self.lengths[2]
+def _positive_length(name: str, value: int) -> int:
+    """Return one validated gapmer segment length."""
+    if type(value) is not int or value < 1:
+        raise ValueError(f"Gapmer {name} must be a positive integer.")
+    return value

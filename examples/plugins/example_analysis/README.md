@@ -31,4 +31,6 @@ ASOkai run --steps example-sequence-length --config-file config.yaml
 
 The `StepSpec` in `analysis_step.py` is the step contract. The YAML schema only
 describes the plugin-owned configuration values, and `pyproject.toml` makes the
-step and schema discoverable after installation.
+step and schema discoverable after installation. A step may override
+`validate_parameters` when it needs a relationship between scalar parameters
+that the YAML schema cannot express.

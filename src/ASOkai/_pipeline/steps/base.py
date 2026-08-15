@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Mapping
 
 from ASOkai._cwl.model import CwlCommandLineToolSpec
 from ASOkai._pipeline.base import Runnable
@@ -139,6 +139,9 @@ class Step(Runnable):
         for output in self.spec.outputs:
             path = getattr(args, output.argument_name)
             path.parent.mkdir(parents=True, exist_ok=True)
+
+    def validate_parameters(self, values: Mapping[str, object]) -> None:
+        """Validate relationships between resolved scalar parameters."""
 
     def run_from_args(self, args: argparse.Namespace) -> int:
         """Execute the step using parsed arguments."""

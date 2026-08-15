@@ -13,16 +13,7 @@ import inspect
 from Bio.Seq import Seq
 
 from ASOkai.Antisense import ASO, AntisenseTherapeutic, Oligonucleotide, siRNA
-from ASOkai.Biochemistry import Chemistry, MechanismOfAction
-
-
-class ExampleChemistry(Chemistry):
-    def __init__(self, smiles: str):
-        self.smiles = smiles
-
-    @property
-    def id(self) -> str:
-        return "example"
+from ASOkai.Biochemistry import MechanismOfAction
 
 
 class ExampleMechanism(MechanismOfAction):
@@ -31,10 +22,6 @@ class ExampleMechanism(MechanismOfAction):
 
 def make_mechanism():
     return ExampleMechanism(name="RNA degradation")
-
-
-def make_chemistry():
-    return ExampleChemistry(smiles="example")
 
 
 def test_aso_is_an_oligonucleotide():
@@ -53,23 +40,19 @@ def test_aso_is_its_own_antisense_strand():
     aso = ASO(
         id="aso-1",
         sequence=Seq("ATGC"),
-        chemistry=make_chemistry(),
         mechanism=make_mechanism(),
     )
 
     assert aso.antisense_strand is aso
     assert aso.sequence == Seq("ATGC")
-    assert aso.chemistry.id == "example"
 
 
 def test_sirna_sequence_is_the_antisense_sequence():
     antisense = Oligonucleotide(
         sequence=Seq("ATGC"),
-        chemistry=make_chemistry(),
     )
     sense = Oligonucleotide(
         sequence=Seq("GCAT"),
-        chemistry=make_chemistry(),
     )
     sirna = siRNA(
         id="sirna-1",
@@ -86,7 +69,6 @@ def test_aso_serialization_roundtrip():
     aso = ASO(
         id="aso-1",
         sequence=Seq("ATGC"),
-        chemistry=make_chemistry(),
         mechanism=make_mechanism(),
     )
 
@@ -95,7 +77,6 @@ def test_aso_serialization_roundtrip():
     assert isinstance(reconstructed, ASO)
     assert reconstructed.id == aso.id
     assert reconstructed.sequence == aso.sequence
-    assert isinstance(reconstructed.chemistry, ExampleChemistry)
     assert isinstance(reconstructed.mechanism, ExampleMechanism)
 
 
@@ -104,11 +85,9 @@ def test_sirna_serialization_roundtrip():
         id="sirna-1",
         antisense_strand=Oligonucleotide(
             sequence=Seq("ATGC"),
-            chemistry=make_chemistry(),
         ),
         sense_strand=Oligonucleotide(
             sequence=Seq("GCAT"),
-            chemistry=make_chemistry(),
         ),
         mechanism=make_mechanism(),
     )
@@ -125,6 +104,4 @@ def test_sirna_serialization_roundtrip():
     assert isinstance(reconstructed, siRNA)
     assert reconstructed.sequence == sirna.sequence
     assert reconstructed.sense_strand.sequence == sirna.sense_strand.sequence
-    assert isinstance(reconstructed.antisense_strand.chemistry, ExampleChemistry)
-    assert isinstance(reconstructed.sense_strand.chemistry, ExampleChemistry)
     assert isinstance(reconstructed.mechanism, ExampleMechanism)

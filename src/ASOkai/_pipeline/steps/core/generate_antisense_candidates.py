@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ASOkai.Antisense import ASO, Binding
+from ASOkai.Antisense import AntisenseTherapeutic, Binding
 from ASOkai._types import TargetRegion
 from ASOkai._pipeline.contracts.file_types import JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
@@ -37,7 +37,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
     )
     therapeutics_output = FileOutput(
         "therapeutics",
-        file_type=JsonFile(list[ASO]),
+        file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_{modality}_{chemistry}_{layout}_"
@@ -46,7 +46,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
         ),
-        doc="Serialized ASO candidates, one for each input target site.",
+        doc="Serialized antisense therapeutic candidates.",
     )
     bindings_output = FileOutput(
         "bindings",
@@ -95,14 +95,13 @@ class GenerateAntisenseCandidatesStep(CoreStep):
 
     def run_from_args(self, args) -> int:
         """Generate and serialize antisense candidates and their bindings."""
-        from ASOkai.Antisense import ASOCandidateGenerator
-        from ASOkai.Biochemistry import GapmerChemistry, RNaseH1Mechanism
+        from ASOkai.Antisense import GapmerCandidateGenerator
+        from ASOkai.Biochemistry import RNaseH1Mechanism
 
-        chemistry = GapmerChemistry(layout=args.layout)
         mechanism = RNaseH1Mechanism()
-        generator = ASOCandidateGenerator(
-            chemistry=chemistry,
+        generator = GapmerCandidateGenerator(
             mechanism=mechanism,
+            layout=args.layout,
         )
         therapeutics, bindings = generator.generate(args.target_gene.sites)
 

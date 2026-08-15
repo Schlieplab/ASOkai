@@ -186,9 +186,8 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
     therapeutics = json.loads(therapeutics_output.read_text())
     bindings = json.loads(bindings_output.read_text())
     assert result == 0
-    assert therapeutics[0]["id"] == (
-        "ENSG00000133703-S00001-ASO-gapmer-3-10-3"
-    )
+    assert therapeutics[0]["id"] == "ENSG00000133703-S00001-Gapmer"
+    assert therapeutics[0]["layout"] == "3-10-3"
     assert bindings[0]["therapeutic_id"] == therapeutics[0]["id"]
     assert bindings[0]["site_id"] == "ENSG00000133703-S00001"
 

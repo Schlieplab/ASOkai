@@ -8,16 +8,15 @@ Description: This file defines the base Chemistry class.
 License: LGPL-3.0-or-later
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from ..Utils import Serializable
 
 
 class Chemistry(Serializable, ABC):
-    """Abstract base class for oligonucleotide chemistry."""
+    """Base class for future nucleotide-level chemistry models.
 
-    @property
-    @abstractmethod
-    def id(self) -> str:
-        """Return a stable identifier suitable for candidate IDs."""
-        raise NotImplementedError
+    Chemistry is intentionally not attached to oligonucleotides yet. Its
+    representation will be defined when per-nucleotide modifications are
+    implemented.
+    """

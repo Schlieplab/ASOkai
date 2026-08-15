@@ -11,11 +11,12 @@ License: LGPL-3.0-or-later
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from ..Biochemistry import Chemistry, MechanismOfAction
+from ..Biochemistry import MechanismOfAction
 from ..Sites import Site
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._aso import ASO
 from ._binding import Binding
+from ._gapmer import Gapmer
 
 
 class AntisenseCandidateGenerator(ABC):
@@ -42,16 +43,32 @@ class AntisenseCandidateGenerator(ABC):
 class ASOCandidateGenerator(AntisenseCandidateGenerator):
     """Generate one 5'-to-3' reverse-complement ASO for each target site."""
 
-    def __init__(self, chemistry: Chemistry, mechanism: MechanismOfAction):
-        self.chemistry = chemistry
+    def __init__(self, mechanism: MechanismOfAction):
         self.mechanism = mechanism
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
         return [
             ASO(
-                id=f"{site.id}-ASO-{self.chemistry.id}",
+                id=f"{site.id}-ASO",
                 sequence=site.sequence.reverse_complement(),
-                chemistry=self.chemistry,
                 mechanism=self.mechanism,
+            )
+        ]
+
+
+class GapmerCandidateGenerator(ASOCandidateGenerator):
+    """Generate one wing-gap-wing ASO for each target site."""
+
+    def __init__(self, mechanism: MechanismOfAction, layout: str):
+        super().__init__(mechanism=mechanism)
+        self.layout = layout
+
+    def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
+        return [
+            Gapmer(
+                id=f"{site.id}-Gapmer",
+                sequence=site.sequence.reverse_complement(),
+                mechanism=self.mechanism,
+                layout=self.layout,
             )
         ]

@@ -11,15 +11,22 @@ from ._antisense_therapeutic import AntisenseTherapeutic
 from ._binding import Binding
 from ._oligonucleotide import Oligonucleotide
 from ._aso import ASO
+from ._gapmer import Gapmer
 from ._sirna import siRNA
-from ._candidate_generator import AntisenseCandidateGenerator, ASOCandidateGenerator
+from ._candidate_generator import (
+    ASOCandidateGenerator,
+    AntisenseCandidateGenerator,
+    GapmerCandidateGenerator,
+)
 
 __all__ = [
     "ASO",
     "AntisenseTherapeutic",
     "Binding",
+    "Gapmer",
     "Oligonucleotide",
     "siRNA",
     "AntisenseCandidateGenerator",
     "ASOCandidateGenerator",
+    "GapmerCandidateGenerator",
 ]

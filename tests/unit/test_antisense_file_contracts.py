@@ -9,8 +9,15 @@ from typing import Any, cast
 from Bio.Seq import Seq
 import pytest
 
-from ASOkai.Antisense import ASO, Binding
-from ASOkai.Biochemistry import GapmerChemistry, RNaseH1Mechanism
+from ASOkai.Antisense import (
+    ASO,
+    AntisenseTherapeutic,
+    Binding,
+    Gapmer,
+    Oligonucleotide,
+    siRNA,
+)
+from ASOkai.Biochemistry import RNaseH1Mechanism
 from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
@@ -18,11 +25,30 @@ from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
 
 
 @pytest.fixture
+def gapmer() -> Gapmer:
+    return Gapmer(
+        id="gapmer-1",
+        sequence=Seq("ACGT"),
+        mechanism=RNaseH1Mechanism(),
+        layout="1-2-1",
+    )
+
+
+@pytest.fixture
 def aso() -> ASO:
     return ASO(
         id="aso-1",
         sequence=Seq("ACGT"),
-        chemistry=GapmerChemistry("1-2-1"),
+        mechanism=RNaseH1Mechanism(),
+    )
+
+
+@pytest.fixture
+def sirna() -> siRNA:
+    return siRNA(
+        id="sirna-1",
+        antisense_strand=Oligonucleotide(sequence=Seq("ACGT")),
+        sense_strand=Oligonucleotide(sequence=Seq("TGCA")),
         mechanism=RNaseH1Mechanism(),
     )
 
@@ -35,21 +61,43 @@ def test_step_declares_typed_antisense_collections():
 
     assert isinstance(therapeutics_file, JsonFile)
     assert isinstance(bindings_file, JsonFile)
-    assert therapeutics_file.value_type == list[ASO]
+    assert therapeutics_file.value_type == list[AntisenseTherapeutic]
     assert bindings_file.value_type == list[Binding]
 
 
-def test_aso_collection_roundtrip_reconstructs_domain_values(aso):
+def _assert_therapeutic_roundtrip(therapeutic: AntisenseTherapeutic) -> None:
     file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
 
-    restored = file_type.loads(file_type.dumps([aso]))
+    restored = file_type.loads(file_type.dumps([therapeutic]))
 
     assert len(restored) == 1
-    assert isinstance(restored[0], ASO)
-    assert restored[0].id == aso.id
-    assert str(restored[0].sequence) == str(aso.sequence)
-    assert isinstance(restored[0].chemistry, GapmerChemistry)
+    assert type(restored[0]) is type(therapeutic)
+    assert restored[0].id == therapeutic.id
+    assert str(restored[0].sequence) == str(therapeutic.sequence)
     assert isinstance(restored[0].mechanism, RNaseH1Mechanism)
+
+
+def test_aso_collection_roundtrip_reconstructs_domain_values(aso):
+    _assert_therapeutic_roundtrip(aso)
+
+
+def test_gapmer_collection_roundtrip_reconstructs_domain_values(gapmer):
+    _assert_therapeutic_roundtrip(gapmer)
+    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+
+    restored = file_type.loads(file_type.dumps([gapmer]))
+
+    assert restored[0].layout == gapmer.layout
+
+
+def test_sirna_collection_roundtrip_reconstructs_domain_values(sirna):
+    _assert_therapeutic_roundtrip(sirna)
+    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+
+    restored = file_type.loads(file_type.dumps([sirna]))
+
+    assert restored[0].antisense_strand.sequence == Seq("ACGT")
+    assert restored[0].sense_strand.sequence == Seq("TGCA")
 
 
 def test_binding_collection_roundtrip_reconstructs_domain_values():
@@ -64,10 +112,10 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
     assert restored[0].site_id == binding.site_id
 
 
-def test_aso_collection_rejects_invalid_nested_chemistry(aso):
+def test_gapmer_collection_rejects_invalid_layout(gapmer):
     file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
-    document = json.loads(file_type.dumps([aso]))
-    document[0]["chemistry"]["layout"] = "invalid"
+    document = json.loads(file_type.dumps([gapmer]))
+    document[0]["layout"] = "invalid"
 
     with pytest.raises(ValueError, match="Gapmer layout must have the form"):
         file_type.loads(json.dumps(document))

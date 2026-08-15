@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from Bio.Seq import Seq
 
-from ..Biochemistry import Chemistry, MechanismOfAction
+from ..Biochemistry import MechanismOfAction
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._oligonucleotide import Oligonucleotide
 
@@ -21,7 +21,6 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
         self,
         id: str,
         sequence: Seq,
-        chemistry: Chemistry,
         mechanism: MechanismOfAction,
         **kwargs,
     ):
@@ -30,14 +29,12 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
         Args:
             id: Unique therapeutic identifier.
             sequence: Antisense-strand sequence in the 5' to 3' direction.
-            chemistry: Chemistry applied to the oligonucleotide.
             mechanism: Mechanism through which the ASO acts.
             kwargs: Additional scalar values retained during serialization.
         """
         super().__init__(
             id=id,
             sequence=sequence,
-            chemistry=chemistry,
             mechanism=mechanism,
             **kwargs,
         )

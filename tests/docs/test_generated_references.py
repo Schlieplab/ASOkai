@@ -48,8 +48,13 @@ from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E40
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
-from ASOkai.Antisense import ASO, Oligonucleotide, siRNA  # noqa: E402
-from ASOkai.Biochemistry import GapmerChemistry  # noqa: E402
+from ASOkai.Antisense import (  # noqa: E402
+    ASO,
+    AntisenseTherapeutic,
+    Gapmer,
+    Oligonucleotide,
+    siRNA,
+)
 from ASOkai.Sites import Site  # noqa: E402
 from ASOkai.Targets import TargetGene  # noqa: E402
 
@@ -232,7 +237,14 @@ def test_json_file_contract_maps_to_its_serializable_class() -> None:
     assert json_contract_types(target_step.target_gene_output.file_type) == (
         TargetGene,
     )
-    assert json_contract_types(candidate_step.therapeutics_output.file_type) == (ASO,)
+    assert json_contract_types(candidate_step.therapeutics_output.file_type) == (
+        ASO,
+        Gapmer,
+        siRNA,
+    )
+    assert candidate_step.therapeutics_output.file_type.value_type == list[
+        AntisenseTherapeutic
+    ]
 
 
 def test_class_json_contract_owns_only_its_direct_fields() -> None:
@@ -264,21 +276,26 @@ def test_nested_classes_own_their_json_details() -> None:
         ASO,
         refdoc="api/modules/Antisense",
     )
-    aso_fields = next(
-        table.astext() for node in aso_contract for table in node.findall(nodes.table)
+    gapmer_contract = serializable_contract_nodes(
+        Gapmer,
+        refdoc="api/modules/Antisense",
     )
-    gapmer_reference = "\n".join(
-        node.astext()
-        for node in serializable_contract_nodes(
-            GapmerChemistry,
-            refdoc="api/modules/Biochemistry",
-        )
+    aso_fields = next(
+        table.astext()
+        for node in aso_contract
+        for table in node.findall(nodes.table)
+    )
+    gapmer_fields = next(
+        table.astext()
+        for node in gapmer_contract
+        for table in node.findall(nodes.table)
     )
 
-    assert "chemistry" in aso_fields
+    assert "chemistry" not in aso_fields
     assert "layout" not in aso_fields
-    assert "layout" in gapmer_reference
-    assert '"3-10-3"' in gapmer_reference
+    assert "chemistry" not in gapmer_fields
+    assert "layout" in gapmer_fields
+    assert '"3-10-3"' in "\n".join(node.astext() for node in gapmer_contract)
 
 
 @pytest.mark.parametrize("serializable_type", [Oligonucleotide, siRNA])

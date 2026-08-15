@@ -11,7 +11,7 @@ from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
 
 from ._serializer import Serializable
-from ..Antisense import Oligonucleotide, siRNA
+from ..Antisense import siRNA
 from ..Targets import TargetGene
 
 
@@ -32,12 +32,6 @@ def register_attributes() -> None:
         '_sites',
         'sites',
         serialize=lambda sites: {k: (v.to_dict() if isinstance(v, Serializable) else v) for k, v in sites.items()},
-    )
-
-    Oligonucleotide.register_attribute(
-        "_chemistry",
-        "chemistry",
-        serialize=lambda chemistry: chemistry.to_dict(),
     )
 
     siRNA.register_attribute(

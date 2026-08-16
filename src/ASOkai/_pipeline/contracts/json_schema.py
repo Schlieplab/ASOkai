@@ -14,6 +14,7 @@ import inspect
 import sys
 from abc import ABC
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import fields, is_dataclass
 from types import NoneType, SimpleNamespace, UnionType
 from typing import (
     Any,
@@ -150,6 +151,9 @@ def _build_schema(
             "examples": ["ACGT"],
         }
 
+    if isinstance(expected_type, type) and is_dataclass(expected_type):
+        return _build_dataclass_schema(expected_type)
+
     if isinstance(expected_type, type) and issubclass(
         expected_type,
         Serializable,
@@ -168,6 +172,26 @@ def _build_schema(
     raise TypeError(
         f"{expected_type!r} has no JSON representation."
     )
+
+
+def _build_dataclass_schema(dataclass_type: type[Any]) -> JsonSchema:
+    """Build the object schema for a JSON-compatible dataclass."""
+    field_types = get_type_hints(dataclass_type)
+    serialized_fields = [
+        field
+        for field in fields(dataclass_type)
+        if field.init
+    ]
+    properties = {
+        field.name: _build_schema(field_types.get(field.name, field.type))
+        for field in serialized_fields
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(properties),
+        "properties": properties,
+    }
 
 
 def _build_object_schema(

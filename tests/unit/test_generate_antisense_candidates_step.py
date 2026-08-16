@@ -4,6 +4,7 @@
 import json
 
 from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
 import pytest
 import yaml
 
@@ -159,9 +160,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
 
     site = TranscriptSite(
         id="ENSG00000133703-S00001",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=16,
+        loci=[TranscriptLocus("transcript-1", 0, 16)],
         sequence=Seq("AAA" + "C" * 10 + "TTT"),
     )
     target = TargetGene(
@@ -224,9 +223,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
 def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
     site = TranscriptSite(
         id="ENSG00000133703-S00001",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=4,
+        loci=[TranscriptLocus("transcript-1", 0, 4)],
         sequence=Seq("ACGT"),
     )
     target = TargetGene(

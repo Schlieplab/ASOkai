@@ -2,6 +2,7 @@
 """Tests for IntrinsicFeaturesStep."""
 
 from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
 import pytest
 import yaml
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
@@ -194,9 +195,7 @@ def test_intrinsic_features_analysis_analyzes_one_site():
 def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
     site = TranscriptSite(
         id="site-1",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=4,
+        loci=[TranscriptLocus("transcript-1", 0, 4)],
         sequence=Seq("GCGT"),
     )
     target = TargetGene(

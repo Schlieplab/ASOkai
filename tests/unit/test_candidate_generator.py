@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 """
 
 from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
 
 from ASOkai.Antisense import (
     ASO,
@@ -45,9 +46,7 @@ class TwoCandidateGenerator(AntisenseCandidateGenerator):
 def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
     site = TranscriptSite(
         id="target-S00001",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=12,
+        loci=[TranscriptLocus("transcript-1", 0, 12)],
         sequence=Seq("ATGCCCAAAAAT"),
     )
     generator = GapmerCandidateGenerator(
@@ -72,9 +71,7 @@ def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
 def test_generator_supports_multiple_candidates_for_one_site():
     site = TranscriptSite(
         id="target-S00001",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=12,
+        loci=[TranscriptLocus("transcript-1", 0, 12)],
         sequence=Seq("ATGCCCAAAAAT"),
     )
     therapeutics, bindings = TwoCandidateGenerator().generate([site])
@@ -93,16 +90,12 @@ def test_generator_supports_multiple_candidates_for_one_site():
 def test_aso_generator_preserves_the_site_for_each_binding():
     first_site = TranscriptSite(
         id="target-S00001",
-        transcript_id="transcript-1",
-        t_start=0,
-        t_end=12,
+        loci=[TranscriptLocus("transcript-1", 0, 12)],
         sequence=Seq("ATGCCCAAAAAT"),
     )
     second_site = TranscriptSite(
         id="target-S00002",
-        transcript_id="transcript-1",
-        t_start=12,
-        t_end=24,
+        loci=[TranscriptLocus("transcript-1", 12, 24)],
         sequence=Seq("CCCCAAAATTTT"),
     )
     generator = ASOCandidateGenerator(mechanism=RNaseH1Mechanism())

@@ -8,6 +8,7 @@ import json
 from typing import Any, cast
 
 from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
 import pytest
 
 from ASOkai.Sites import GenomicSite, TranscriptSite
@@ -41,9 +42,7 @@ def target_gene() -> TargetGene:
     )
     transcript = TranscriptSite(
         id="transcript-site",
-        transcript_id="ENST00000001",
-        t_start=4,
-        t_end=8,
+        loci=[TranscriptLocus("ENST00000001", 4, 8)],
         sequence=Seq("TGCA"),
     )
     return TargetGene(
@@ -212,27 +211,29 @@ def test_target_gene_input_rejects_invalid_runtime_references(
     assert field in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    ("site_id", "field", "value"),
-    [
-        ("genomic-site", "end", 5),
-        ("transcript-site", "t_end", 9),
-    ],
-)
-def test_target_gene_schema_does_not_enforce_coordinate_relationships(
+def test_target_gene_schema_does_not_enforce_genomic_coordinate_relationships(
     output,
     input_contract,
     target_gene,
-    site_id,
-    field,
-    value,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["sites"][site_id][field] = value
+    payload["sites"]["genomic-site"]["end"] = 5
 
     restored = input_contract.loads(json.dumps(payload))
 
-    assert getattr(restored.site_by_id(site_id), field) == value
+    assert restored.site_by_id("genomic-site").end == 5
+
+
+def test_target_gene_input_rejects_a_locus_with_the_wrong_site_length(
+    output,
+    input_contract,
+    target_gene,
+):
+    payload = json.loads(output.dumps(target_gene))
+    payload["sites"]["transcript-site"]["loci"][0]["end"] = 9
+
+    with pytest.raises(ValueError, match="same length as the site sequence"):
+        input_contract.loads(json.dumps(payload))
 
 
 @pytest.mark.parametrize(

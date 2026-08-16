@@ -4,73 +4,64 @@ Filename: src/ASOkai/Sites/_transcript_site.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: This file defines the TranscriptSite class for representing transcript-anchored sites.
+Description: Defines sites located on one or more transcript sequences.
 License: LGPL-3.0-or-later
 """
-from typing import TYPE_CHECKING
-from Bio.Seq import Seq
-from ._site import Site
-from ._genomic_site import GenomicSite
 
-if TYPE_CHECKING:
-    from GenomeUtils.Genome import Transcript  # type: ignore
+from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
+
+from ._site import Site
+
 
 class TranscriptSite(Site):
-    """Transcript-anchored site defined in cDNA coordinates.
+    """A sequence occurring at one or more transcript loci."""
 
-    Represents a region on a specific spliced transcript
-    """
+    loci: list[TranscriptLocus]
 
-    transcript_id: str
-    t_start: int
-    t_end: int
-
-    def __init__(self,
-                 transcript_id: str,
-                 t_start: int,
-                 t_end: int,
-                 sequence: Seq,
-                 id: str | None = None,
-                 **kwargs):
-        """
-        Initializes a TranscriptSite object.
+    def __init__(
+        self,
+        loci: list[TranscriptLocus],
+        sequence: Seq,
+        id: str | None = None,
+        **kwargs,
+    ):
+        """Initialize a transcript site.
 
         Args:
-            transcript_id: Identifier of the transcript this site belongs to.
-            t_start: 0-based inclusive start position on the transcript.
-            t_end: 0-based exclusive end position on the transcript.
-            sequence: Spliced sequence of the site.
-            id: Stable site identifier. Constructors derive it from the
-                transcript coordinates when omitted.
-            kwargs: Additional keyword arguments.
+            loci: Locations of this sequence on spliced transcripts.
+            sequence: Site sequence in the 5'-to-3' direction.
+            id: Stable site identifier. When omitted, it is derived from the
+                first transcript locus.
+            kwargs: Additional scalar attributes.
         """
-        self.transcript_id = transcript_id
-        
-        if id is None:
-            id = f"{transcript_id}:{t_start}-{t_end}"
-        self.id = id
-        
-        self.t_start = t_start
-        self.t_end = t_end
-        
-        Site.__init__(self, sequence=sequence, id=id, **kwargs)
-    
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(id='{self.id}', transcript_id='{self.transcript_id}', t_start={self.t_start}, t_end={self.t_end})"
+        if not loci:
+            raise ValueError("A transcript site requires at least one locus.")
+        if len(loci) != len(set(loci)):
+            raise ValueError("A transcript site cannot contain duplicate loci.")
+        if any(len(locus) != len(sequence) for locus in loci):
+            raise ValueError(
+                "Every transcript locus must have the same length as the "
+                "site sequence."
+            )
 
-    def to_genomic_coordinates(
-        self,
-        t_start: int,
-        t_end: int,
-    ) -> list[GenomicSite]:
-        raise NotImplementedError
-    
+        self.loci = sorted(loci)
+        if id is None:
+            first_locus = self.loci[0]
+            id = (
+                f"{first_locus.transcript_id}:"
+                f"{first_locus.start}-{first_locus.end}"
+            )
+
+        Site.__init__(self, sequence=sequence, id=id, **kwargs)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(id={self.id!r}, "
+            f"loci={self.loci!r})"
+        )
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TranscriptSite):
             return NotImplemented
-        return (
-            self.id == other.id
-            and self.transcript_id == other.transcript_id
-            and self.t_start == other.t_start
-            and self.t_end == other.t_end
-        )
+        return self.id == other.id and self.loci == other.loci

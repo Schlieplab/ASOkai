@@ -10,8 +10,21 @@ License: LGPL-3.0-or-later
 
 import pytest
 import json
+from dataclasses import dataclass
+
 from Bio.Seq import Seq
+
 from ASOkai.Utils import Serializable
+from ASOkai._pipeline.contracts.json_schema import build_json_schema
+
+
+@dataclass(frozen=True)
+class ExternalLocation:
+    """Test value type that does not depend on Serializable."""
+
+    reference_id: str
+    start: int
+    end: int
 
 
 class SimpleSerializable(Serializable):
@@ -47,6 +60,16 @@ class SerializableWithMapping(Serializable):
     def __init__(self, sequence: Seq, **kwargs):
         self._sequence = sequence
         super().__init__(**kwargs)
+
+
+class SerializableWithLocations(Serializable):
+    """Test class containing external dataclass values."""
+
+    locations: list[ExternalLocation]
+
+    def __init__(self, locations: list[ExternalLocation]):
+        self.locations = locations
+        super().__init__()
     
 
 @pytest.mark.unit
@@ -220,3 +243,37 @@ class TestSerializableComplexTypes:
         
         with pytest.raises(TypeError, match="Cannot serialize type Seq"):
             obj.to_dict()
+
+    def test_dataclass_values_roundtrip_from_constructor_annotations(self):
+        original = SerializableWithLocations(
+            locations=[ExternalLocation("reference-1", 10, 20)]
+        )
+
+        serialized = original.to_dict()
+        reconstructed = SerializableWithLocations.from_dict(serialized)
+
+        assert serialized["locations"] == [
+            {
+                "reference_id": "reference-1",
+                "start": 10,
+                "end": 20,
+            }
+        ]
+        assert reconstructed.locations == original.locations
+
+    def test_dataclass_annotations_produce_recursive_json_schema(self):
+        schema = build_json_schema(SerializableWithLocations)
+
+        assert schema["properties"]["locations"] == {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["reference_id", "start", "end"],
+                "properties": {
+                    "reference_id": {"type": "string"},
+                    "start": {"type": "integer"},
+                    "end": {"type": "integer"},
+                },
+            },
+        }

@@ -4,7 +4,16 @@
 from unittest.mock import MagicMock
 
 from Bio.Seq import Seq
-from GenomeUtils.Genome import Exon, Strand, Transcript, TranscriptLocus
+from Bio.SeqRecord import SeqRecord
+from GenomeUtils.Genome import (
+    Chromosome,
+    Exon,
+    Gene,
+    Genome,
+    Strand,
+    Transcript,
+    TranscriptLocus,
+)
 import pytest
 
 from ASOkai.Sites import TranscriptSite
@@ -116,6 +125,97 @@ def test_creates_gene_and_sites_by_gene_name(genome_and_gene):
     genome.gene_by_id.assert_not_called()
     assert result.id == gene.id
     assert result.sites[0].id == "ASOkai-KRAS-Premrna-S00001"
+
+
+def test_exonic_extraction_creates_one_site_per_unique_genomic_locus(
+    genome_and_gene,
+):
+    genome, gene = genome_and_gene
+    gene.transcripts = [
+        _transcript("ENST00000002", "A" * 7, [(103, 109)]),
+        _transcript("ENST00000001", "A" * 7, [(100, 106)]),
+    ]
+    genome.get_sequence_by_locus.side_effect = (
+        lambda locus: Seq("A" * len(locus))
+    )
+
+    result = create_target_gene(
+        genome,
+        target_id="ENSG00000133703",
+        site_length=4,
+        region="exonic_only",
+    )
+
+    assert [site.start for site in result.sites] == list(range(100, 107))
+    assert [site.id for site in result.sites] == [
+        f"ASOkai-ENSG00000133703-Exon-S{number:05d}"
+        for number in range(1, 8)
+    ]
+    assert genome.get_sequence_by_locus.call_count == 7
+
+
+def test_negative_strand_exonic_sites_use_reference_order_and_site_orientation():
+    genome = Genome(id="test", species="test", name="test")
+    chromosome = Chromosome(
+        id="12",
+        seq_index={
+            "12": SeqRecord(
+                Seq("N" * 99 + "AACGTA" + "N" * 5),
+                id="12",
+            )
+        },
+        genome=genome,
+    )
+    gene = Gene(
+        id="gene-1",
+        name="GENE",
+        chr="12",
+        start=100,
+        end=105,
+        strand="-",
+        chromosome=chromosome,
+        genome=genome,
+    )
+    transcript = Transcript(
+        id="transcript-1",
+        chr="12",
+        start=100,
+        end=105,
+        strand="-",
+        sequence=Seq("TACGTT"),
+        gene=gene,
+        genome=genome,
+    )
+    exon = Exon(
+        id="exon-1",
+        chr="12",
+        start=100,
+        end=105,
+        strand="-",
+        gene=gene,
+        genome=genome,
+    )
+    genome.add_chromosome(chromosome)
+    chromosome.add_gene(gene)
+    gene.add_transcript(transcript)
+    transcript.add_exon(exon)
+    exon.add_transcript(transcript)
+    genome.index()
+
+    result = create_target_gene(
+        genome,
+        target_id="gene-1",
+        site_length=4,
+        region="exonic_only",
+    )
+
+    assert [site.start for site in result.sites] == [100, 101, 102]
+    assert [site.strand for site in result.sites] == ["-", "-", "-"]
+    assert [str(site.sequence) for site in result.sites] == [
+        "CGTT",
+        "ACGT",
+        "TACG",
+    ]
 
 
 def test_transcriptomic_extraction_without_transcripts_is_empty(

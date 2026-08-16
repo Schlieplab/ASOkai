@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from typing import cast
 
 from Bio.Seq import Seq
-from GenomeUtils.Genome import Exon, Gene, Genome, Locus, TranscriptLocus
+from GenomeUtils.Genome import Gene, Genome, Locus, TranscriptLocus
 
 from .._types import Strand, TargetRegion
 from ..Sites import GenomicSite, TranscriptSite
@@ -39,29 +39,28 @@ def _extract_exonic_sites(
     site_ids: Iterator[str],
 ) -> dict[str, GenomicSite]:
     """Extract every target site wholly contained in an exon."""
-    exons: set[Exon] = {
-        exon
+    site_loci = {
+        Locus(
+            exon.chr,
+            exon.start + offset,
+            exon.start + offset + site_length - 1,
+            _validated_strand(exon.strand),
+        )
         for transcript in gene.transcripts
         for exon in transcript.exons
+        for offset in range(len(exon) - site_length + 1)
     }
     sites: dict[str, GenomicSite] = {}
-    for exon in sorted(exons, key=lambda item: item.start):
-        for offset in range(len(exon) - site_length + 1):
-            site_id = next(site_ids)
-            start = exon.start + offset
-            end = start + site_length - 1
-            strand = _validated_strand(exon.strand)
-            site = GenomicSite(
-                id=site_id,
-                chr=exon.chr,
-                start=start,
-                end=end,
-                strand=strand,
-                sequence=genome.get_sequence_by_locus(
-                    Locus(exon.chr, start, end, strand)
-                ),
-            )
-            sites[site_id] = site
+    for locus in sorted(site_loci):
+        site_id = next(site_ids)
+        sites[site_id] = GenomicSite(
+            id=site_id,
+            chr=locus.chr,
+            start=locus.start,
+            end=locus.end,
+            strand=locus.strand,
+            sequence=genome.get_sequence_by_locus(locus),
+        )
     return sites
 
 

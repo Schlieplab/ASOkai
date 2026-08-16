@@ -11,7 +11,8 @@ License: LGPL-3.0-or-later
 from collections.abc import Iterator
 from typing import cast
 
-from GenomeUtils.Genome import Exon, Gene, Genome, Locus
+from Bio.Seq import Seq
+from GenomeUtils.Genome import Exon, Gene, Genome, Locus, TranscriptLocus
 
 from .._types import Strand, TargetRegion
 from ..Sites import GenomicSite, TranscriptSite
@@ -97,9 +98,44 @@ def _extract_transcript_sites(
     site_ids: Iterator[str],
 ) -> dict[str, TranscriptSite]:
     """Extract target sites from each spliced transcript."""
-    raise NotImplementedError(
-        "Transcriptomic target-site extraction is not implemented yet."
-    )
+    occurrences_by_genomic_loci: dict[
+        tuple[Locus, ...],
+        list[tuple[Seq, TranscriptLocus]],
+    ] = {}
+
+    for transcript in sorted(gene.transcripts, key=lambda item: item.id):
+        for start in range(len(transcript.sequence) - site_length + 1):
+            transcript_locus = TranscriptLocus(
+                transcript.id,
+                start,
+                start + site_length,
+            )
+            genomic_loci = tuple(
+                transcript.to_genomic_loci(transcript_locus)
+            )
+            sequence = transcript.sequence[
+                transcript_locus.start:transcript_locus.end
+            ]
+            occurrences_by_genomic_loci.setdefault(
+                genomic_loci,
+                [],
+            ).append((sequence, transcript_locus))
+
+    sites: dict[str, TranscriptSite] = {}
+    for genomic_loci, occurrences in occurrences_by_genomic_loci.items():
+        sequence = occurrences[0][0]
+        if any(other_sequence != sequence for other_sequence, _ in occurrences):
+            raise ValueError(
+                "Transcripts disagree on the sequence at shared genomic "
+                f"loci {genomic_loci!r}."
+            )
+        site_id = next(site_ids)
+        sites[site_id] = TranscriptSite(
+            id=site_id,
+            loci=[locus for _, locus in occurrences],
+            sequence=sequence,
+        )
+    return sites
 
 
 def create_target_gene(

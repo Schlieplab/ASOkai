@@ -56,7 +56,7 @@ from ASOkai.Antisense import (  # noqa: E402
     siRNA,
 )
 from ASOkai.Biochemistry import Chemistry  # noqa: E402
-from ASOkai.Sites import Site  # noqa: E402
+from ASOkai.Sites import Site, TranscriptSite  # noqa: E402
 from ASOkai.Targets import TargetGene  # noqa: E402
 
 
@@ -405,6 +405,18 @@ def test_json_contract_generates_valid_examples() -> None:
             content = json_example(output.file_type)
             assert content
             output.file_type.loads(content, source="documentation test")
+
+
+def test_class_contract_omits_an_invalid_schema_derived_example() -> None:
+    contract = serializable_contract_nodes(
+        TranscriptSite,
+        refdoc="api/modules/Sites",
+    )
+    reference = "\n".join(node.astext() for node in contract)
+
+    assert "File contract" in reference
+    assert "Fields" in reference
+    assert "Example object" not in reference
 
 
 def test_local_contents_uses_internal_page_links() -> None:

@@ -440,6 +440,14 @@ def json_example(file_type: Any) -> str:
     return content
 
 
+def _try_json_example(file_type: Any) -> str | None:
+    """Return a valid generated example when structure alone is sufficient."""
+    try:
+        return json_example(file_type)
+    except (TypeError, ValueError):
+        return None
+
+
 def json_contract_types(file_type: Any) -> tuple[type, ...]:
     """Return the classes that own a JsonFile's root value contracts."""
     from ASOkai._pipeline.contracts.json_schema import build_json_schema
@@ -493,12 +501,7 @@ def serializable_contract_nodes(
     contract_id = nodes.make_id(
         f"{_public_class_path(serializable_type)}-json-contract"
     )
-    example = json_example(JsonFile(serializable_type))
-    example_section = section(
-        "Example object",
-        [code_block(example, "json")],
-    )
-    example_section["ids"] = [f"{contract_id}-example"]
+    example = _try_json_example(JsonFile(serializable_type))
     fields_section = section(
         "Fields",
         [_json_property_table(schema, refdoc=refdoc)],
@@ -506,27 +509,29 @@ def serializable_contract_nodes(
     fields_section["ids"] = [f"{contract_id}-fields"]
     contract = nodes.section(ids=[contract_id])
     contract += nodes.title(text="File contract")
-    contract.extend(
-        [
-            nodes.paragraph(
-                text=(
-                    f"This is how ASOkai stores {class_name} in JSON. If a file "
-                    "contains a list, every list item follows this contract. "
-                    "Fields containing another ASOkai class link to that class's "
-                    "own contract."
-                )
-            ),
-            nodes.paragraph(
-                text=(
-                    "The __class__ and __module__ fields identify the object "
-                    "type. ASOkai adds them when writing JSON; keep the fixed "
-                    "values shown below when supplying an input file yourself."
-                )
-            ),
-            example_section,
-            fields_section,
-        ]
+    contract += nodes.paragraph(
+        text=(
+            f"This is how ASOkai stores {class_name} in JSON. If a file "
+            "contains a list, every list item follows this contract. "
+            "Fields containing another ASOkai class link to that class's "
+            "own contract."
+        )
     )
+    contract += nodes.paragraph(
+        text=(
+            "The __class__ and __module__ fields identify the object "
+            "type. ASOkai adds them when writing JSON; keep the fixed "
+            "values shown below when supplying an input file yourself."
+        )
+    )
+    if example is not None:
+        example_section = section(
+            "Example object",
+            [code_block(example, "json")],
+        )
+        example_section["ids"] = [f"{contract_id}-example"]
+        contract += example_section
+    contract += fields_section
     return [contract]
 
 

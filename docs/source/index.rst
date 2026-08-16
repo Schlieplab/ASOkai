@@ -21,13 +21,7 @@ public Python interface.
    steps/index
 
 .. toctree::
-   :maxdepth: 3
-   :caption: Contributor Guide
-
-   contributor-guide/index
-
-.. toctree::
-   :maxdepth: 4
+   :maxdepth: 2
    :caption: API Reference
 
    api/index

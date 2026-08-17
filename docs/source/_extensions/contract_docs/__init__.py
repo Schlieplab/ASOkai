@@ -24,27 +24,43 @@ from .steps import (
     build_step_list,
     build_step_reference,
 )
+from .runnables import (
+    ASOkaiRunnableList,
+    ASOkaiRunnableReference,
+    build_runnable_list,
+    build_runnable_reference,
+    get_built_in_runnable,
+    get_built_in_runnables,
+)
 
 __all__ = [
+    "ASOkaiRunnableList",
+    "ASOkaiRunnableReference",
     "ASOkaiStepList",
     "ASOkaiStepReference",
+    "build_runnable_list",
+    "build_runnable_reference",
     "build_step_list",
     "build_step_reference",
     "collect_step_config_fields",
     "collect_step_schema_rules",
     "get_built_in_step",
     "get_built_in_steps",
+    "get_built_in_runnable",
+    "get_built_in_runnables",
     "serializable_contract_nodes",
 ]
 
 
 def setup(app):
     """Register ASOkai's generated reference directives with Sphinx."""
+    app.add_directive("asokai-runnable-list", ASOkaiRunnableList)
+    app.add_directive("asokai-runnable-reference", ASOkaiRunnableReference)
     app.add_directive("asokai-step-list", ASOkaiStepList)
     app.add_directive("asokai-step-reference", ASOkaiStepReference)
     app.connect("doctree-read", append_serializable_contracts)
     return {
-        "version": "0.4",
+        "version": "0.5",
         "parallel_read_safe": True,
         "parallel_write_safe": True,
     }

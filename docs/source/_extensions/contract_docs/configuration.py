@@ -451,7 +451,7 @@ def config_table(fields: list[ConfigField]) -> nodes.table:
     return table(
         ("Configuration path", "Details"),
         rows,
-        (30, 70),
+        (35, 65),
         css_class="asokai-step-configuration",
     )
 

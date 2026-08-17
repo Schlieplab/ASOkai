@@ -140,7 +140,7 @@ def _scalar_outputs_table() -> nodes.table:
                 ("This step does not produce scalar outputs.", False),
             )
         ],
-        (30, 70),
+        (25, 75),
         css_class="asokai-step-scalar-outputs",
     )
 
@@ -464,7 +464,7 @@ def _applicability_section(step: Any) -> nodes.section | None:
             table(
                 ("Configuration path", "Supported values"),
                 rows,
-                (40, 60),
+                (35, 65),
                 css_class="asokai-step-applicability",
             ),
         ],
@@ -523,7 +523,7 @@ def _analysis_output_columns_table(
     return table(
         ("Output column", "Details"),
         rows,
-        (30, 70),
+        (25, 75),
         css_class="asokai-analysis-output-columns",
     )
 

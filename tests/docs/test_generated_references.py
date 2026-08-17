@@ -27,12 +27,16 @@ sys.path.insert(
 )
 
 from contract_docs import (  # noqa: E402
+    build_runnable_list,
+    build_runnable_reference,
     build_step_list,
     build_step_reference,
     collect_step_config_fields,
     collect_step_schema_rules,
     get_built_in_step,
     get_built_in_steps,
+    get_built_in_runnable,
+    get_built_in_runnables,
     serializable_contract_nodes,
 )
 from contract_docs.file_contracts import (  # noqa: E402
@@ -115,6 +119,78 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
             for link in generated_list.findall(addnodes.pending_xref)
         ]
         assert generated_targets == expected_targets
+
+
+@pytest.mark.parametrize("kind", ["task", "workflow"])
+def test_every_built_in_runnable_has_generated_documentation(kind: str) -> None:
+    for runnable in get_built_in_runnables(kind):
+        assert get_built_in_runnable(kind, runnable.name) is runnable
+        assert build_runnable_reference(runnable, kind)
+        assert (
+            ROOT / f"docs/source/{kind}s/{runnable.name}.rst"
+        ).is_file()
+
+
+@pytest.mark.parametrize("kind", ["task", "workflow"])
+def test_runnable_indexes_are_generated_from_the_registry(kind: str) -> None:
+    runnable_list = build_runnable_list(kind)
+    assert [
+        link["reftarget"]
+        for link in runnable_list.findall(addnodes.pending_xref)
+    ] == [
+        f"/{kind}s/{runnable.name}"
+        for runnable in get_built_in_runnables(kind)
+    ]
+
+
+def test_task_reference_links_to_its_steps() -> None:
+    task = get_built_in_runnable("task", "instantiate-target-gene")
+    generated = build_runnable_reference(
+        task,
+        "task",
+        refdoc="tasks/instantiate-target-gene",
+    )
+    reference = "\n".join(node.astext() for node in generated)
+    link_targets = {
+        link["reftarget"]
+        for node in generated
+        for link in node.findall(addnodes.pending_xref)
+    }
+
+    assert "ASOkai run --tasks instantiate-target-gene" in reference
+    assert "Expanded steps" not in reference
+    assert "Contracts" not in reference
+    assert link_targets == {
+        "/steps/download-genome",
+        "/steps/create-target-gene",
+    }
+
+
+def test_workflow_reference_links_members_and_expanded_steps() -> None:
+    workflow = get_built_in_runnable("workflow", "standard")
+    generated = build_runnable_reference(
+        workflow,
+        "workflow",
+        refdoc="workflows/standard",
+    )
+    reference = "\n".join(node.astext() for node in generated)
+    link_targets = {
+        link["reftarget"]
+        for node in generated
+        for link in node.findall(addnodes.pending_xref)
+    }
+
+    assert "ASOkai run --workflows standard" in reference
+    assert "Direct members" in reference
+    assert "Expanded steps" in reference
+    assert "Contracts" not in reference
+    assert link_targets == {
+        "/tasks/instantiate-target-gene",
+        "/steps/download-genome",
+        "/steps/create-target-gene",
+        "/steps/generate-antisense-candidates",
+        "/steps/intrinsic-features",
+    }
 
 
 def test_step_config_contains_only_fields_used_by_that_step() -> None:

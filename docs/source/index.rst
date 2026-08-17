@@ -19,6 +19,8 @@ public Python interface.
    :caption: Pipeline Reference
 
    steps/index
+   tasks/index
+   workflows/index
 
 .. toctree::
    :maxdepth: 2

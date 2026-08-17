@@ -4,8 +4,8 @@ Adding an analysis step
 An analysis contribution has two parts:
 
 1. an analysis class containing the scientific calculation; and
-2. an :class:`~ASOkai.Plugins.AnalysisStep` describing how that calculation
-   participates in the pipeline.
+2. an ``AnalysisStep`` describing how that calculation participates in the
+   pipeline.
 
 The step declaration supplies the command-line interface, configuration
 mapping, file validation, dependencies, output paths, and generated
@@ -45,11 +45,13 @@ it.
 Declare the pipeline contract
 -----------------------------
 
-An analysis step inherits from :class:`~ASOkai.Plugins.AnalysisStep` and
-declares ``name``, ``description``, ``analysis_cls``, and ``spec``. Import
-contributor-facing pipeline types from :mod:`ASOkai.Plugins`.
+An analysis step inherits from ``AnalysisStep`` and declares ``name``,
+``description``, ``analysis_cls``, and ``spec``. A built-in step imports each
+contract from its owning ``ASOkai._pipeline`` module, as shown in the template.
+An independently installed plugin imports the public equivalents from
+:mod:`ASOkai.Plugins`.
 
-The :class:`~ASOkai.Plugins.StepSpec` contains three kinds of declarations:
+``StepSpec`` contains three kinds of declarations:
 
 ``ScalarParam``
    A scalar command-line argument, optionally populated from a dotted
@@ -93,7 +95,7 @@ their inherited file contracts. For example, a target-gene JSON input is
 available as ``args.target_gene`` containing a ``TargetGene`` object; the
 contributor should not open or deserialize it again.
 
-The :class:`~ASOkai.Plugins.AnalysisStep` base class then:
+The ``AnalysisStep`` base class then:
 
 1. constructs the analysis;
 2. supplies the configured process count;

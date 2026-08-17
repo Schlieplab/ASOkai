@@ -1,9 +1,10 @@
 Pipeline components
 ===================
 
-ASOkai models execution as steps collected into tasks and workflows. The
-public contributor contracts are exported from :mod:`ASOkai.Plugins`; code
-outside ASOkai should not import their private ``_pipeline`` implementations.
+ASOkai models execution as steps collected into tasks and workflows. External
+packages import the stable extension contracts from :mod:`ASOkai.Plugins`.
+Built-in ASOkai modules import contracts directly from the internal module
+that owns them.
 
 Component hierarchy
 -------------------

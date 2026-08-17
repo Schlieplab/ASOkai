@@ -360,7 +360,7 @@ def _json_property_table(
     return table(
         ("JSON field", "Details"),
         rows,
-        (30, 70),
+        (25, 75),
         css_class="asokai-json-class-contract",
     )
 

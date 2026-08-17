@@ -26,25 +26,24 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
-from ASOkai import Types
+from ASOkai._types import Scalar, TargetRegion
 from ASOkai.Analysis import SiteSpecificAnalysis
-from ASOkai.Plugins import (
-    AnalysisStep,
-    CsvFile,
-    CreateTargetGeneStep,
-    FileInput,
-    FileOutput,
+from ASOkai._pipeline.contracts.file_types import CsvFile
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import (
     OutputPathTemplate,
-    ScalarParam,
-    StepSpec,
     TemplateField,
 )
+from ASOkai._pipeline.contracts.step_spec import StepSpec
+from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
 class ExampleAnalysis(SiteSpecificAnalysis):
     """Replace this calculation with the new site-specific analysis."""
 
-    def analyze(self, site) -> dict[str, Types.Scalar]:
+    def analyze(self, site) -> dict[str, Scalar]:
         sequence = str(site.sequence or "")
         return {
             "example_value": float(len(sequence)),
@@ -100,7 +99,7 @@ class ExampleAnalysisStep(AnalysisStep):
             ScalarParam("k", int, config="target.k"),
             ScalarParam(
                 "region",
-                Types.TargetRegion,
+                TargetRegion,
                 config="target.region",
             ),
         ],

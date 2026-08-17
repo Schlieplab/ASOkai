@@ -10,8 +10,8 @@ Component hierarchy
 -------------------
 
 ``Runnable``
-   The shared protocol for named pipeline components. A runnable reports its
-   outputs, whether they exist, and how to clean them up.
+   The shared protocol providing a name and description for pipeline
+   components.
 
 ``Step``
    One atomic command-line operation. A step owns a ``StepSpec`` and the

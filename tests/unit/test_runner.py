@@ -402,28 +402,10 @@ def test_flatten_workflow_expands_task_then_step():
         description: ClassVar[str] = ""
         steps: list[Step] = [download]
 
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
     class MiniWorkflow:
         name: ClassVar[str] = "mw"
         description: ClassVar[str] = ""
         members: list[Runnable] = [MiniTask(), create]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
 
     from ASOkai._pipeline.plan import _flatten_runnable
 
@@ -441,28 +423,10 @@ def test_flatten_workflow_expands_nested_workflow():
         description: ClassVar[str] = ""
         members: list[Runnable] = [download]
 
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
     class Outer:
         name: ClassVar[str] = "outer"
         description: ClassVar[str] = ""
         members: list[Runnable] = [Inner(), create]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
 
     from ASOkai._pipeline.plan import _flatten_runnable
 
@@ -476,15 +440,6 @@ def test_flatten_workflow_cycle_raises():
         name: ClassVar[str] = "loop"
         description: ClassVar[str] = ""
         members: list[Runnable] = []
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
 
     w = SelfRef()
     w.members = [w]

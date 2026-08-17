@@ -388,10 +388,6 @@ def test_task_flattened_to_steps(cfg):
         description = ""
         steps = [s1, s2]
 
-        def output_paths(self, c): return {}
-        def outputs_exist(self, c): return False
-        def cleanup(self, c): pass
-
     plan = build_plan([cast(Runnable, FakeTask())], cfg)
     names = [s.name for s in plan.steps_to_run]
     assert names == ["s1", "s2"]
@@ -405,10 +401,6 @@ def test_workflow_flattened_to_steps(cfg):
         name = "wf"
         description = ""
         members = [s1, s2]
-
-        def output_paths(self, c): return {}
-        def outputs_exist(self, c): return False
-        def cleanup(self, c): pass
 
     plan = build_plan([cast(Runnable, FakeWorkflow())], cfg)
     names = [s.name for s in plan.steps_to_run]
@@ -427,18 +419,10 @@ def test_workflow_rejects_an_incompatible_task_step(cfg):
         description = ""
         steps = [restricted]
 
-        def output_paths(self, c): return {}
-        def outputs_exist(self, c): return False
-        def cleanup(self, c): pass
-
     class FakeWorkflow:
         name = "workflow"
         description = ""
         members = [cast(Runnable, FakeTask())]
-
-        def output_paths(self, c): return {}
-        def outputs_exist(self, c): return False
-        def cleanup(self, c): pass
 
     with pytest.raises(ValueError, match=r"incompatible.*restricted"):
         build_plan([cast(Runnable, FakeWorkflow())], cfg)
@@ -451,10 +435,6 @@ def test_mixed_step_and_task_deduplicated(cfg):
         name = "task"
         description = ""
         steps = [shared]
-
-        def output_paths(self, c): return {}
-        def outputs_exist(self, c): return False
-        def cleanup(self, c): pass
 
     plan = build_plan([shared, cast(Runnable, FakeTask())], cfg)
     assert sum(1 for s in plan.steps_to_run if s.name == "shared") == 1

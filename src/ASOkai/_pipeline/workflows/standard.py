@@ -9,7 +9,6 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
 from ASOkai._pipeline.base import Runnable
@@ -33,18 +32,3 @@ class StandardWorkflow:
         GenerateAntisenseCandidatesStep(),
         IntrinsicFeaturesStep(),
     ]
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        paths = {}
-        paths.update(InstantiateTargetGeneTask().output_paths(config))
-        paths.update(GenerateAntisenseCandidatesStep().output_paths(config))
-        paths.update(IntrinsicFeaturesStep().output_paths(config))
-        return paths
-
-    def outputs_exist(self, config: dict) -> bool:
-        return all(p.exists() for p in self.output_paths(config).values())
-
-    def cleanup(self, config: dict) -> None:
-        for p in self.output_paths(config).values():
-            if p.exists():
-                p.unlink()

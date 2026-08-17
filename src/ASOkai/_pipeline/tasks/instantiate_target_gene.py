@@ -9,7 +9,6 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
 from ASOkai._pipeline.steps.base import Step
@@ -26,16 +25,3 @@ class InstantiateTargetGeneTask:
         DownloadGenomeStep(),
         CreateTargetGeneStep(),
     ]
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        paths = {}
-        paths.update(DownloadGenomeStep().output_paths(config))
-        paths.update(CreateTargetGeneStep().output_paths(config))
-        return paths
-
-    def outputs_exist(self, config: dict) -> bool:
-        return all(p.exists() for p in self.output_paths(config).values())
-
-    def cleanup(self, config: dict) -> None:
-        for step in self.steps:
-            step.cleanup(config)

@@ -130,29 +130,11 @@ class PluginTaskWithUnregisteredStep:
     description = "Contains a step that was not registered."
     steps = [UnregisteredProducerStep()]
 
-    def output_paths(self, config: dict) -> dict:
-        return {}
-
-    def outputs_exist(self, config: dict) -> bool:
-        return False
-
-    def cleanup(self, config: dict) -> None:
-        return None
-
 
 class PluginWorkflowWithUnregisteredTask:
     name = "unregistered-workflow"
     description = "Contains a task that was not registered."
     members = [PluginTaskWithUnregisteredStep()]
-
-    def output_paths(self, config: dict) -> dict:
-        return {}
-
-    def outputs_exist(self, config: dict) -> bool:
-        return False
-
-    def cleanup(self, config: dict) -> None:
-        return None
 
 
 def test_step_authoring_contracts_are_public() -> None:

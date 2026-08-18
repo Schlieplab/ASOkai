@@ -1,11 +1,30 @@
 #!/usr/bin/env python
 """
-Unit tests for the Serializable base class.
+Filename: tests/unit/test_serializer.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Unit tests for the Serializable base class.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 import json
+from dataclasses import dataclass
+
 from Bio.Seq import Seq
+
 from ASOkai.Utils import Serializable
+from ASOkai._pipeline.contracts.json_schema import build_json_schema
+
+
+@dataclass(frozen=True)
+class ExternalLocation:
+    """Test value type that does not depend on Serializable."""
+
+    reference_id: str
+    start: int
+    end: int
 
 
 class SimpleSerializable(Serializable):
@@ -22,7 +41,13 @@ class SerializableWithExclusions(Serializable):
     
     _non_serializable_attrs = {'private_data', 'cache'}
     
-    def __init__(self, public: str, private_data: str = None, cache: dict = None, **kwargs):
+    def __init__(
+        self,
+        public: str,
+        private_data: str | None = None,
+        cache: dict | None = None,
+        **kwargs,
+    ):
         self.public = public
         self.private_data = private_data
         self.cache = cache
@@ -35,6 +60,16 @@ class SerializableWithMapping(Serializable):
     def __init__(self, sequence: Seq, **kwargs):
         self._sequence = sequence
         super().__init__(**kwargs)
+
+
+class SerializableWithLocations(Serializable):
+    """Test class containing external dataclass values."""
+
+    locations: list[ExternalLocation]
+
+    def __init__(self, locations: list[ExternalLocation]):
+        self.locations = locations
+        super().__init__()
     
 
 @pytest.mark.unit
@@ -186,7 +221,7 @@ class TestSerializableComplexTypes:
     def test_nested_dict_serialization(self):
         """Test serialization of nested dictionaries."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.data = {"nested": {"key": "value"}}
+        setattr(obj, "data", {"nested": {"key": "value"}})
         
         data = obj.to_dict()
         
@@ -195,7 +230,7 @@ class TestSerializableComplexTypes:
     def test_list_serialization(self):
         """Test serialization of lists."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.items = [1, 2, 3, "four"]
+        setattr(obj, "items", [1, 2, 3, "four"])
         
         data = obj.to_dict()
         
@@ -204,7 +239,41 @@ class TestSerializableComplexTypes:
     def test_registered_type_in_dict(self, sample_sequence):
         """External types in nested dicts are not supported by default."""
         obj = SimpleSerializable(name="test", value=42)
-        obj.sequences = {"seq1": sample_sequence}
+        setattr(obj, "sequences", {"seq1": sample_sequence})
         
         with pytest.raises(TypeError, match="Cannot serialize type Seq"):
             obj.to_dict()
+
+    def test_dataclass_values_roundtrip_from_constructor_annotations(self):
+        original = SerializableWithLocations(
+            locations=[ExternalLocation("reference-1", 10, 20)]
+        )
+
+        serialized = original.to_dict()
+        reconstructed = SerializableWithLocations.from_dict(serialized)
+
+        assert serialized["locations"] == [
+            {
+                "reference_id": "reference-1",
+                "start": 10,
+                "end": 20,
+            }
+        ]
+        assert reconstructed.locations == original.locations
+
+    def test_dataclass_annotations_produce_recursive_json_schema(self):
+        schema = build_json_schema(SerializableWithLocations)
+
+        assert schema["properties"]["locations"] == {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["reference_id", "start", "end"],
+                "properties": {
+                    "reference_id": {"type": "string"},
+                    "start": {"type": "integer"},
+                    "end": {"type": "integer"},
+                },
+            },
+        }

@@ -11,7 +11,8 @@ from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
 
 from ._serializer import Serializable
-from ..Targets import Target
+from ..Antisense import siRNA
+from ..Targets import TargetGene
 
 
 def register_attributes() -> None:
@@ -27,13 +28,23 @@ def register_attributes() -> None:
         deserialize=lambda d: Seq(d),
     )
     
-    # Target: register attribute mapping for cleaner serialization.
-    # Import lazily to avoid circular imports.
-    Target.register_attribute(
+    TargetGene.register_attribute(
         '_sites',
         'sites',
         serialize=lambda sites: {k: (v.to_dict() if isinstance(v, Serializable) else v) for k, v in sites.items()},
     )
+
+    siRNA.register_attribute(
+        "_antisense_strand",
+        "antisense_strand",
+        serialize=lambda strand: strand.to_dict(),
+    )
+    siRNA.register_attribute(
+        "_sense_strand",
+        "sense_strand",
+        serialize=lambda strand: strand.to_dict(),
+    )
+
     # Register GenomeUtils.Locus with flatten=True
     # Components (chr, start, end, strand) merge directly into parent dict
     Serializable.register_attribute(

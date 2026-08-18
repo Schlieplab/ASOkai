@@ -1,0 +1,212 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: ASOkai configuration
+type: object
+additionalProperties: true
+required:
+  - datadir
+properties:
+  datadir:
+    type: string
+    minLength: 1
+    description: Directory that receives ASOkai data.
+
+  genome:
+    type: object
+    additionalProperties: false
+    properties:
+      assembly_id:
+        type: string
+        minLength: 1
+        description: Genome assembly ID, such as GRCh38.
+      ensembl_release:
+        type: integer
+        minimum: 1
+        description: Ensembl release number.
+      source:
+        const: ensembl
+        default: ensembl
+        description: Genome data source.
+      species:
+        type: string
+        minLength: 1
+        description: Ensembl species name, such as Homo_sapiens.
+      dna_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional genomic DNA FASTA override.
+      cdna_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional cDNA FASTA override.
+      annotation_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional genome annotation override.
+      db_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional annotation database override.
+
+  target:
+    type: object
+    additionalProperties: false
+    properties:
+      target_id:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Ensembl gene ID; use this or target_name, but not both.
+      target_name:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Gene name; use this or target_id, but not both.
+      k:
+        type: integer
+        minimum: 1
+        description: Target-site length.
+      region:
+        enum:
+          - exonic_only
+          - pre-mrna
+          - transcriptomic
+        description: Target region type.
+      target_gene_path:
+        type:
+          - string
+          - "null"
+        minLength: 1
+        description: Optional serialized target-gene override.
+    allOf:
+      - oneOf:
+          - required:
+              - target_id
+            properties:
+              target_id:
+                type: string
+          - required:
+              - target_name
+            properties:
+              target_name:
+                type: string
+        x-error-message: >-
+          exactly one of these config values is required:
+          target.target_id, target.target_name
+
+  antisense:
+    type: object
+    additionalProperties: false
+    properties:
+      modality:
+        type: string
+        minLength: 1
+        description: Antisense therapeutic modality.
+      mechanism:
+        type: string
+        minLength: 1
+        description: Therapeutic mechanism of action.
+      design:
+        type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            minLength: 1
+            description: Structural design of the antisense therapeutic.
+          left_wing_length:
+            type: integer
+            minimum: 1
+            description: >-
+              Number of nucleotides in the left gapmer wing. Required for a
+              gapmer design and not used by an unmodified design.
+          gap_length:
+            type: integer
+            minimum: 1
+            description: >-
+              Number of nucleotides in the central gapmer gap. Required for a
+              gapmer design and not used by an unmodified design.
+          right_wing_length:
+            type: integer
+            minimum: 1
+            description: >-
+              Number of nucleotides in the right gapmer wing. Required for a
+              gapmer design and not used by an unmodified design.
+        allOf:
+          - x-error-message: >-
+              A gapmer design requires left_wing_length, gap_length, and
+              right_wing_length.
+            if:
+              required:
+                - type
+              properties:
+                type:
+                  const: gapmer
+            then:
+              x-error-message: >-
+                A gapmer design requires left_wing_length, gap_length, and
+                right_wing_length.
+              required:
+                - left_wing_length
+                - gap_length
+                - right_wing_length
+          - x-error-message: >-
+              An unmodified design must not define gapmer segment lengths.
+            if:
+              required:
+                - type
+              properties:
+                type:
+                  const: unmodified
+            then:
+              x-error-message: >-
+                An unmodified design must not define gapmer segment lengths.
+              not:
+                anyOf:
+                  - required:
+                      - left_wing_length
+                  - required:
+                      - gap_length
+                  - required:
+                      - right_wing_length
+
+  resources:
+    type: object
+    properties:
+      default:
+        type: object
+        additionalProperties: false
+        properties:
+          n_processes:
+            type: integer
+            minimum: 1
+            description: >-
+              Default number of processes for steps that support multiple
+              processes.
+          memory_mb:
+            type: integer
+            minimum: 1
+            description: Default memory in mebibytes for every step.
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        n_processes:
+          type: integer
+          minimum: 1
+          description: >-
+            Number of processes allocated to a step that supports multiple
+            processes.
+        memory_mb:
+          type: integer
+          minimum: 1
+          description: Memory in mebibytes allocated to this step.

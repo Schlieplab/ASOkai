@@ -4,66 +4,18 @@ Filename: src/ASOkai/_pipeline/base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Base protocols that steps, tasks, and workflows must implement.
+Description: Shared protocol for named pipeline units.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 
 @runtime_checkable
 class Runnable(Protocol):
-    """
-    Shared contract for every named pipeline unit (step, task, or workflow).
-    """
+    """Shared identity for every named pipeline unit or CLI collection."""
 
-    name: str
-    description: str
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        ...
-
-    def outputs_exist(self, config: dict) -> bool:
-        ...
-
-    def cleanup(self, config: dict) -> None:
-        ...
-
-
-@runtime_checkable
-class Step(Runnable, Protocol):
-    """Atomic pipeline unit backed by a static CWL file."""
-
-    dependencies: list[str]
-    config_map: dict[str, str]
-    input_overrides: dict[str, str]
-    cli_module: str
-
-    @property
-    def cwl_path(self) -> str:
-        """Path to the static CWL file for this step."""
-        ...
-
-    def outdir(self, config: dict) -> Path:
-        """Directory passed to the CWL executor for this step's outputs."""
-        ...
-
-
-@runtime_checkable
-class Task(Runnable, Protocol):
-    """Ordered composition of Steps."""
-
-    steps: list[Step]
-
-
-@runtime_checkable
-class Workflow(Runnable, Protocol):
-    """
-    Ordered composition of Runnables (Steps, Tasks, or nested Workflows).
-
-    CWL is generated at runtime by recursively flattening ``members`` to Steps.
-    """
-
-    members: list[Runnable]
+    name: ClassVar[str]
+    description: ClassVar[str]

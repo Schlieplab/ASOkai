@@ -7,16 +7,16 @@ Version: 0.1.1
 Description: This file defines the base Chemistry class.
 License: LGPL-3.0-or-later
 """
-from abc import ABC, abstractmethod
+
+from abc import ABC
+
+from ..Utils import Serializable
 
 
-class Chemistry(ABC):
-    """Abstract base class for antisense construct chemistry."""
+class Chemistry(Serializable, ABC):
+    """Base class for future nucleotide-level chemistry models.
 
-    @property
-    @abstractmethod
-    def Smiles(self) -> str:
-        """Return the chemistry SMILES"""
-        pass
-
-
+    Chemistry is intentionally not attached to oligonucleotides yet. Its
+    representation will be defined when per-nucleotide modifications are
+    implemented.
+    """

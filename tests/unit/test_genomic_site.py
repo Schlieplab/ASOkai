@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Unit tests for GenomicSite serialization/deserialization.
+Filename: tests/unit/test_genomic_site.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Unit tests for GenomicSite serialization/deserialization.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Locus
@@ -179,9 +185,9 @@ class TestGenomicSiteRoundtrip:
         data = site.to_dict()
         reconstructed = GenomicSite.from_dict(data)
         
-        assert reconstructed.custom_attr == "custom_value"
-        assert reconstructed.score == 0.95
-        assert reconstructed.metadata == {"key": "value"}
+        assert getattr(reconstructed, "custom_attr") == "custom_value"
+        assert getattr(reconstructed, "score") == 0.95
+        assert getattr(reconstructed, "metadata") == {"key": "value"}
         
     def test_file_roundtrip(self, sample_genomic_site, temp_json_file):
         """Test roundtrip through file I/O."""

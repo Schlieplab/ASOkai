@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/contracts/file_types/json.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Contract for JSON files.
+License: LGPL-3.0-or-later
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast, get_args, get_origin
+
+from ASOkai.Utils._serializer import Serializable
+from ASOkai._pipeline.contracts.json_schema import (
+    json_file_type_name,
+    validate_json_data,
+)
+
+from .base import FileType
+
+
+def _to_json_data(
+    expected_type: Any,
+    value: object,
+    *,
+    path: str = "$",
+) -> Any:
+    """Convert domain values into JSON data following a JsonFile declaration."""
+    if get_origin(expected_type) is list:
+        if type(value) is not list:
+            raise TypeError(
+                f"JsonFile requires {json_file_type_name(expected_type)} "
+                f"at {path}; received {type(value).__name__}."
+            )
+        expected_item_type = get_args(expected_type)[0]
+        return [
+            _to_json_data(
+                expected_item_type,
+                item,
+                path=f"{path}[{index}]",
+            )
+            for index, item in enumerate(value)
+        ]
+
+    expected_type_name = json_file_type_name(expected_type)
+    if not isinstance(value, Serializable):
+        raise TypeError(
+            f"JsonFile requires {expected_type_name} at {path}; "
+            f"received {type(value).__name__}."
+        )
+    json_data = value.to_dict()
+    if not isinstance(json_data, dict):
+        raise TypeError("Serializable.to_dict() must return a dictionary.")
+    return json_data
+
+
+def _from_json_data(
+    expected_type: Any,
+    json_data: object,
+) -> Any:
+    """Reconstruct domain values from validated JSON data."""
+    if get_origin(expected_type) is list:
+        expected_item_type = get_args(expected_type)[0]
+        return [
+            _from_json_data(expected_item_type, item)
+            for item in cast(list[object], json_data)
+        ]
+
+    serializable_type = cast(type[Serializable], expected_type)
+    return serializable_type.from_dict(cast(dict[str, Any], json_data))
+
+
+@dataclass(frozen=True, init=False)
+class JsonFile(FileType):
+    """A JSON file optionally constrained to domain values or a domain list."""
+
+    value_type: Any
+
+    def __init__(
+        self,
+        value_type: Any = None,
+    ) -> None:
+        if value_type is not None:
+            json_file_type_name(value_type)
+        object.__setattr__(self, "media_type", "application/json")
+        object.__setattr__(self, "format_name", "JSON")
+        object.__setattr__(self, "value_type", value_type)
+
+    @staticmethod
+    def _object_without_duplicate_keys(
+        pairs: list[tuple[str, Any]],
+    ) -> dict[str, Any]:
+        """Build a JSON object while rejecting ambiguous duplicate keys."""
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"Duplicate JSON key: {key!r}.")
+            result[key] = value
+        return result
+
+    @staticmethod
+    def _reject_non_finite_number(value: str) -> None:
+        """Reject NaN and infinities, which are not valid JSON numbers."""
+        raise ValueError(f"Non-finite JSON number: {value}.")
+
+    def loads(
+        self,
+        content: str,
+        *,
+        source: str = "<string>",
+    ) -> Any:
+        """Parse JSON and reconstruct a configured domain value when required."""
+        try:
+            json_data = json.loads(
+                content,
+                object_pairs_hook=self._object_without_duplicate_keys,
+                parse_constant=self._reject_non_finite_number,
+            )
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError(f"Invalid JSON from {source}: {error}") from error
+
+        expected_type = self.value_type
+        if expected_type is None:
+            return json_data
+        expected_type_name = json_file_type_name(expected_type)
+
+        try:
+            validate_json_data(expected_type, json_data)
+            value = _from_json_data(expected_type, json_data)
+        except (ImportError, AttributeError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"Invalid {expected_type_name} from {source}: {error}"
+            ) from error
+        return value
+
+    def dumps(self, value: Any) -> str:
+        """Validate and serialize a JSON-compatible or domain value."""
+        expected_type = self.value_type
+        if expected_type is not None:
+            expected_type_name = json_file_type_name(expected_type)
+            try:
+                json_data = _to_json_data(expected_type, value)
+                validate_json_data(expected_type, json_data)
+            except ValueError as error:
+                raise ValueError(
+                    f"Cannot serialize {expected_type_name}: {error}"
+                ) from error
+        else:
+            json_data = value
+
+        try:
+            return json.dumps(
+                json_data,
+                indent=4,
+                ensure_ascii=False,
+                allow_nan=False,
+            ) + "\n"
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Cannot serialize JSON: {error}") from error
+
+    def read(self, path: str | Path) -> Any:
+        """Read, parse, and validate a JSON file."""
+        source = Path(path)
+        return self.loads(
+            source.read_text(encoding="utf-8"),
+            source=str(source),
+        )
+
+    def write(self, path: str | Path, value: Any) -> None:
+        """Validate and write a JSON file."""
+        Path(path).write_text(
+            self.dumps(value),
+            encoding="utf-8",
+        )

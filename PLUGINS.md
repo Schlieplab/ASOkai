@@ -6,7 +6,7 @@ ASOkai supports external plugins to add custom steps, tasks, and workflows witho
 
 The internal registry loads plugins at runtime using `importlib.metadata.entry_points`. Your external package just needs to:
 
-1. Implement a class that follows the `Step` protocol (importable from `ASOkai.plugin_api`)
+1. Implement a step using the contracts exported by `ASOkai.Plugins`
 2. Declare an entry point in your `pyproject.toml`
 
 ASOkai will automatically discover and instantiate your plugin when the CLI runs.
@@ -21,7 +21,7 @@ Create a file in your external package, e.g. `my_plugin/steps/my_step.py`:
 """my_plugin/steps/my_step.py"""
 from pathlib import Path
 from importlib.resources import files
-from ASOkai.plugin_api import Step
+from ASOkai.Plugins import Step
 
 class MyCustomStep:
     name = "my-custom-step"
@@ -152,10 +152,10 @@ ASOkai run my-custom-step --config config.yaml
 
 Tasks and workflows do **not** ship static CWL files. ASOkai generates workflow CWL at runtime from your step definitions.
 
-- **Runnable** (`ASOkai.plugin_api.Runnable`): shared protocol — `name`, `description`, `output_paths`, `outputs_exist`, and `cleanup`.
-- **Step** (`ASOkai.plugin_api.Step`): atomic CWL-backed pipeline unit.
-- **Task** (`ASOkai.plugin_api.Task`): ordered list of `Step` objects.
-- **Workflow** (`ASOkai.plugin_api.Workflow`): ordered list of runnable members, including steps, tasks, or nested workflows.
+- **Runnable** (`ASOkai.Plugins.Runnable`): shared runnable contract.
+- **Step** (`ASOkai.Plugins.Step`): atomic pipeline unit.
+- **Task** (`ASOkai.Plugins.Task`): named collection of steps.
+- **Workflow** (`ASOkai.Plugins.Workflow`): collection of runnable members.
 
 The process is the same—use entry points `asokai.tasks` and `asokai.workflows` respectively:
 

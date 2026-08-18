@@ -51,4 +51,4 @@ class Filter(KMCTool):
         self._argv.extend(self._build_cli_args({"-ci": read_ci, "-cx": read_cx, "-f": read_f}))
         self._argv.append(self._resolve_path(output_read_set_path))
         self._argv.extend(self._build_cli_args({"-f": output_f}))
-        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
+        return self._execute(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)

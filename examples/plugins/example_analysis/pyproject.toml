@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asokai-example-analysis"
+version = "0.1.0"
+description = "Minimal external analysis plugin for ASOkai."
+requires-python = ">=3.10,<3.13"
+dependencies = ["ASOkai>=0.1.1,<0.2"]
+
+[project.entry-points."asokai.steps"]
+example-sequence-length = "asokai_example_analysis.analysis_step:ExampleAnalysisStep"
+
+[project.entry-points."asokai.config_schemas"]
+example-analysis = "asokai_example_analysis:CONFIG_SCHEMA_PATH"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+asokai_example_analysis = ["config.schema.yaml"]

@@ -7,12 +7,10 @@ Version: 0.1.1
 Description: This file defines the base MechanismOfAction class.
 License: LGPL-3.0-or-later
 """
-from abc import ABC, abstractmethod
+from abc import ABC
+
+from ..Utils import Serializable
 
 
-class MechanismOfAction(ABC):
+class MechanismOfAction(Serializable, ABC):
     """Abstract base class for antisense mechanisms of action."""
-
-
-
-

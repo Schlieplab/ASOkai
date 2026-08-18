@@ -165,3 +165,4 @@ submit_job.sh
 *.ipynb
 
 .vscode/*
+.DS_Store

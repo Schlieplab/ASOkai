@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 """Tests for CreateTargetGeneStep."""
+import json
+
+from Bio.Seq import Seq
 import pytest
-from pathlib import Path
-from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-from ASOkai._pipeline.base import Step
+import yaml
+from ASOkai.Targets import TargetGene
+from ASOkai._cwl.generation import StepCwlGenerator
+from ASOkai.Plugins import CoreStep, FileOutput, JsonFile, Step
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
 @pytest.fixture
@@ -31,6 +37,7 @@ def step():
 
 def test_implements_protocol(step):
     assert isinstance(step, Step)
+    assert isinstance(step, CoreStep)
 
 
 def test_name(step):
@@ -38,7 +45,8 @@ def test_name(step):
 
 
 def test_dependencies(step):
-    assert "download-genome" in step.dependencies
+    assert step.dependencies == ["download-genome"]
+    assert step.spec.input("dna").source is DownloadGenomeStep.dna_output
 
 
 def test_config_map_keys(step):
@@ -65,10 +73,6 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     assert paths["target_gene"] == expected
 
 
-def test_outdir(step, config, tmp_path):
-    assert step.outdir(config) == tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
-
-
 def test_outputs_do_not_exist(step, config):
     assert step.outputs_exist(config) is False
 
@@ -90,33 +94,32 @@ def test_cleanup(step, config, tmp_path):
     assert step.outputs_exist(config) is False
 
 
-def test_cwl_path_is_file(step):
-    assert Path(step.cwl_path).exists(), f"CWL file not found: {step.cwl_path}"
+def test_cwl_spec_generates_command_line_tool(step, config):
+    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
+    output = step.spec.output("target_gene")
+
+    assert isinstance(output, FileOutput)
+    assert isinstance(output.file_type, JsonFile)
+    assert output.file_type.value_type is TargetGene
+    assert doc["class"] == "CommandLineTool"
+    assert doc["baseCommand"] == ["ASOkai", "step", "create-target-gene"]
+    assert doc["inputs"]["k"]["type"] == "int"
+    assert doc["inputs"]["region"]["type"]["type"] == "enum"
+    assert "target_gene_output" not in doc["inputs"]
+    assert "target_gene_filename" not in doc["inputs"]
+    assert {
+        "prefix": "--target-gene-output",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna.json",
+    } in doc["arguments"]
+    assert doc["outputs"]["target_gene"]["outputBinding"]["glob"] == (
+        "ENSG00000133703_k16_pre-mrna.json"
+    )
 
 
-def test_main_rejects_missing_target_identifier(tmp_path):
-    from ASOkai._pipeline.steps import create_target_gene
-
-    with pytest.raises(SystemExit) as excinfo:
-        create_target_gene.main(
-            [
-                "--k", "16",
-                "--region", "pre-mrna",
-                "--dna", str(tmp_path / "dna.fa.gz"),
-                "--cdna", str(tmp_path / "cdna.fa.gz"),
-                "--annotation", str(tmp_path / "annotation.gtf.gz"),
-                "--assembly", "GRCh38",
-                "--release", "114",
-                "--species", "Homo_sapiens",
-                "--output", str(tmp_path / "target.json"),
-            ]
-        )
-
-    assert excinfo.value.code == 2
-
-
-def test_main_accepts_target_name_only_with_mocked_genome_creation(monkeypatch, tmp_path):
-    from ASOkai._pipeline.steps import create_target_gene
+def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
+    monkeypatch,
+    tmp_path,
+):
     import ASOkai.Targets as targets_mod
     import GenomeUtils.Genome as genome_mod
 
@@ -135,29 +138,34 @@ def test_main_accepts_target_name_only_with_mocked_genome_creation(monkeypatch, 
             captured["cdna"] = path
             return self
 
-        def with_gtf_file(self, path):
+        def with_gtf_file(self, path, db_path=None):
             captured["annotation"] = path
+            captured["db"] = db_path
             return self
 
         def build(self):
             return "genome", None
 
-    class FakeTargetGene:
-        def to_file(self, path):
-            captured["output"] = path
-            Path(path).write_text("{}")
+    target_gene = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=4,
+        strand="+",
+        sequence=Seq("ACGT"),
+        sites={},
+    )
 
-    class FakeTargetGeneCreator:
-        @classmethod
-        def from_genome(cls, genome, **kwargs):
-            captured["genome"] = genome
-            captured["creator_kwargs"] = kwargs
-            return FakeTargetGene()
+    def fake_create_target_gene(genome, **kwargs):
+        captured["genome"] = genome
+        captured["creator_kwargs"] = kwargs
+        return target_gene
 
     monkeypatch.setattr(genome_mod, "GenomeBuilder", FakeGenomeBuilder)
-    monkeypatch.setattr(targets_mod, "TargetGeneCreator", FakeTargetGeneCreator)
+    monkeypatch.setattr(targets_mod, "create_target_gene", fake_create_target_gene)
 
-    result = create_target_gene.main(
+    result = CreateTargetGeneStep().run_cli(
         [
             "--target-name", "KRAS",
             "--k", "16",
@@ -165,16 +173,29 @@ def test_main_accepts_target_name_only_with_mocked_genome_creation(monkeypatch, 
             "--dna", str(tmp_path / "dna.fa.gz"),
             "--cdna", str(tmp_path / "cdna.fa.gz"),
             "--annotation", str(tmp_path / "annotation.gtf.gz"),
+            "--db", str(tmp_path / "annotation.gtf.db"),
             "--assembly", "GRCh38",
             "--release", "114",
             "--species", "Homo_sapiens",
-            "--output", str(output),
+            "--target-gene-output", str(output),
         ]
     )
 
     assert result == 0
     assert output.exists()
+    payload = json.loads(output.read_text())
+    assert payload["__class__"] == "TargetGene"
+    assert payload["__module__"] == "ASOkai.Targets._target_gene"
+    assert payload["id"] == "ENSG00000133703"
+    assert payload["name"] == "KRAS"
+    assert payload["chr"] == "12"
+    assert payload["start"] == 1
+    assert payload["end"] == 4
+    assert payload["strand"] == "+"
+    assert payload["sequence"] == "ACGT"
+    assert payload["sites"] == {}
     assert captured["builder_kwargs"]["species"] == "Homo sapiens"
+    assert captured["db"] == tmp_path / "annotation.gtf.db"
     assert captured["creator_kwargs"]["target_id"] is None
     assert captured["creator_kwargs"]["target_name"] == "KRAS"
-    assert captured["creator_kwargs"]["k"] == 16
+    assert captured["creator_kwargs"]["site_length"] == 16

@@ -7,13 +7,24 @@ Version: 0.1.1
 Description: This file defines the Serializable class for serializing and deserializing objects.
 License: LGPL-3.0-or-later
 """
-from typing import Dict, Any, Type, TypeVar, Callable, Optional
 import json
 import importlib
 import inspect
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Self,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
-T = TypeVar('T', bound='Serializable')
-
+from .._types import Scalar
 
 class Serializable:
     """
@@ -37,7 +48,6 @@ class Serializable:
         """
         for key, value in kwargs.items():
             setattr(self, key, value)
-
 
     @classmethod
     def register_attribute(
@@ -100,10 +110,16 @@ class Serializable:
         """
         Default method to serialize a value to a dictionary.
         """
-        if isinstance(value, (str, int, float, bool, type(None))):
+        if isinstance(value, Scalar):
             return value
         elif isinstance(value, Serializable):
             return value.to_dict()
+        elif is_dataclass(value) and not isinstance(value, type):
+            return {
+                field.name: self._serialize_value(getattr(value, field.name))
+                for field in fields(value)
+                if field.init
+            }
         elif isinstance(value, dict):
             return {k: self._serialize_value(v) for k, v in value.items()}
         elif isinstance(value, (list, tuple)):
@@ -119,10 +135,47 @@ class Serializable:
             json.dump(self.to_dict(), f, indent=4)
 
     @classmethod
-    def _deserialize_value(cls, value_data: Any) -> Any:
+    def _deserialize_value(
+        cls,
+        value_data: Any,
+        expected_type: Any = Any,
+    ) -> Any:
         """
         Default method to deserialize a value from a dictionary.
         """
+        origin = get_origin(expected_type)
+        type_arguments = get_args(expected_type)
+
+        if origin is list and isinstance(value_data, list):
+            item_type = type_arguments[0] if type_arguments else Any
+            return [
+                cls._deserialize_value(item, item_type)
+                for item in value_data
+            ]
+
+        if origin in (dict, Mapping) and isinstance(value_data, dict):
+            value_type = type_arguments[1] if len(type_arguments) == 2 else Any
+            return {
+                key: cls._deserialize_value(value, value_type)
+                for key, value in value_data.items()
+            }
+
+        if (
+            isinstance(expected_type, type)
+            and is_dataclass(expected_type)
+            and isinstance(value_data, dict)
+        ):
+            field_types = get_type_hints(expected_type)
+            constructor_values = {
+                field.name: cls._deserialize_value(
+                    value_data[field.name],
+                    field_types.get(field.name, Any),
+                )
+                for field in fields(expected_type)
+                if field.init and field.name in value_data
+            }
+            return expected_type(**constructor_values)
+
         if isinstance(value_data, list):
             return [cls._deserialize_value(item) for item in value_data]
         elif isinstance(value_data, dict):
@@ -138,7 +191,12 @@ class Serializable:
         return value_data
 
     @classmethod
-    def _deserialize_attribute(cls, attribute_name: str, value: Any) -> Any:
+    def _deserialize_attribute(
+        cls,
+        attribute_name: str,
+        value: Any,
+        expected_type: Any = Any,
+    ) -> Any:
         """
         Deserialize an attribute from a dictionary.
         """
@@ -146,10 +204,15 @@ class Serializable:
             deserialize_attribute_name, deserialize_func = cls._attribute_deserializers[attribute_name]
             return {deserialize_attribute_name: deserialize_func(value)}
 
-        return {attribute_name: cls._deserialize_value(value)}
+        return {
+            attribute_name: cls._deserialize_value(value, expected_type)
+        }
 
     @classmethod
-    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+    ) -> Self:
         """
         Create an object from a dictionary.
         """
@@ -170,13 +233,20 @@ class Serializable:
             raise TypeError(f"Data is for class {class_name}, which is not a subclass of {cls.__name__}")
 
         sig = inspect.signature(cls_from_data.__init__)
+        constructor_types = get_type_hints(cls_from_data.__init__)
         init_args: Dict[str, Any] = {}
 
 
         for param_name in sig.parameters:
             if param_name in data:
                 value = data.pop(param_name)
-                init_args.update(cls._deserialize_attribute(param_name, value))
+                init_args.update(
+                    cls._deserialize_attribute(
+                        param_name,
+                        value,
+                        constructor_types.get(param_name, Any),
+                    )
+                )
 
         # Pass any leftover data as kwargs, if __init__ accepts them
         for param in sig.parameters.values():
@@ -185,11 +255,14 @@ class Serializable:
                 init_args.update(deserialized_kwargs)
                 break
 
-        return cls_from_data(**init_args)
+        return cast(Self, cls_from_data(**init_args))
 
 
     @classmethod
-    def from_file(cls: Type[T], file_path: str) -> T:
+    def from_file(
+        cls,
+        file_path: str,
+    ) -> Self:
         """
         Create an object from a JSON file.
         """

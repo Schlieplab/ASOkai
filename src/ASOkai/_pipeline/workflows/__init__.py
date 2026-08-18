@@ -7,3 +7,6 @@ Version: 0.1.1
 Description: This file initializes the ASOkai workflows package.
 License: LGPL-3.0-or-later
 """
+from .base import Workflow
+
+__all__ = ["Workflow"]

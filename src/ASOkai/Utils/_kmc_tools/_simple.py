@@ -76,4 +76,4 @@ class Simple(KMCTool):
         self._argv.append(self._resolve_path(input2_path))
         self._argv.extend(self._build_cli_args({"-ci": input2_ci, "-cx": input2_cx}))
         self._argv.extend(operations)
-        return super().run(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)
+        return self._execute(t=t, v=v, hp=hp, debug=debug, check=check, cwd=cwd)

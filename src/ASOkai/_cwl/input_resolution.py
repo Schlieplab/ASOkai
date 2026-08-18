@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from ASOkai._cwl.utils import step_input_names
 from ASOkai._pipeline import config as cfg
-from ASOkai._pipeline.base import Step
-from ASOkai._pipeline.registry import get_steps
+from ASOkai._pipeline.contracts.files import FileOutput
+from ASOkai._pipeline.steps.base import Step
+from ASOkai.Plugins._registry import get_steps
 
 
 InputSource = Literal[
@@ -24,7 +24,6 @@ InputSource = Literal[
     "dep_wired",
     "dep_disk",
     "input_override",
-    "output_path",
 ]
 
 
@@ -34,7 +33,7 @@ class ResolvedInput:
     An input value annotated with its resolution source.
 
     ``cwl_value`` is what gets passed to the executor. It is ``None`` for inputs
-    that are wired internally between steps in a generated CWL workflow and
+    that are wired internally between steps in a generated CWL job and
     therefore do not appear in the top-level inputs JSON.
     """
 
@@ -42,6 +41,7 @@ class ResolvedInput:
     source: InputSource
     path: Path | None = None
     dep_name: str | None = None
+    source_output: FileOutput | None = None
     config_path: str | None = None
 
 
@@ -49,8 +49,9 @@ def resolve_step_inputs(
     step: Step,
     config: dict,
     *,
-    pre_resolved: dict[str, Path] | None = None,
+    pre_resolved: dict[FileOutput, Path] | None = None,
     steps_in_plan: set[str] | None = None,
+    step_registry: dict[str, Step] | None = None,
 ) -> dict[str, ResolvedInput]:
     """
     Resolve all inputs for *step* and return them annotated with their source.
@@ -66,72 +67,76 @@ def resolve_step_inputs(
         steps_in_plan = set()
 
     resolved: dict[str, ResolvedInput] = {}
-
-    for cwl_key, config_path in step.config_map.items():
-        try:
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value=cfg.resolve(config, config_path),
-                source="scalar",
-                config_path=config_path,
-            )
-        except KeyError:
-            pass
-
-    registry = get_steps()
-    for dep_name in step.dependencies:
-        dep = registry.get(dep_name)
-        if dep is None:
+    for parameter in step.spec.params:
+        if not parameter.cwl or parameter.config is None:
             continue
-        for out_key, disk_path in dep.output_paths(config).items():
-            if dep_name in steps_in_plan:
-                resolved[out_key] = ResolvedInput(
-                    cwl_value=None,
-                    source="dep_wired",
-                    dep_name=dep_name,
-                )
-            elif out_key in pre_resolved:
-                p = pre_resolved[out_key]
-                resolved[out_key] = ResolvedInput(
-                    cwl_value={"class": "File", "path": str(p.resolve())},
-                    source="dep_disk",
-                    path=p,
-                    dep_name=dep_name,
-                )
-            else:
-                resolved[out_key] = ResolvedInput(
-                    cwl_value={"class": "File", "path": str(disk_path.resolve())},
-                    source="dep_disk",
-                    path=disk_path,
-                    dep_name=dep_name,
-                )
-
-    for cwl_key, config_path in getattr(step, "input_overrides", {}).items():
         try:
-            p = Path(cfg.resolve(config, config_path)).resolve()
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value={"class": "File", "path": str(p)},
-                source="input_override",
-                path=p,
-                config_path=config_path,
+            resolved[parameter.name] = ResolvedInput(
+                cwl_value=cfg.resolve_parameter_value(
+                    config,
+                    parameter,
+                ),
+                source="scalar",
+                config_path=parameter.config,
             )
         except KeyError:
             pass
 
-    try:
-        declared_inputs = step_input_names(step.cwl_path)
-    except FileNotFoundError:
-        declared_inputs = None
-    for out_key, path in step.output_paths(config).items():
-        cwl_key = f"{out_key}_output"
-        if declared_inputs is not None:
-            should_inject = cwl_key in declared_inputs
+    registry = step_registry
+    for file_input in step.spec.inputs:
+        override_path = file_input.configured_override_path(config)
+        if override_path is not None:
+            resolved[file_input.name] = ResolvedInput(
+                cwl_value={
+                    "class": "File",
+                    "path": str(override_path),
+                },
+                source="input_override",
+                path=override_path,
+                config_path=file_input.override,
+            )
+            continue
+
+        if registry is None:
+            registry = get_steps()
+        source = file_input.source
+        producer = source.producer
+        dep = registry.get(producer)
+        if dep is None:
+            raise ValueError(
+                f"Step '{step.name}' input '{file_input.name}' references "
+                f"unknown producer '{producer}'."
+            )
+        try:
+            declared = dep.spec.output(source.name)
+        except KeyError as error:
+            raise ValueError(
+                f"Step '{step.name}' input '{file_input.name}' references "
+                f"unknown output '{source.name}' on step '{producer}'."
+            ) from error
+        if declared is not source:
+            raise ValueError(
+                f"Step '{step.name}' input '{file_input.name}' references "
+                f"an output declaration that does not belong to '{producer}'."
+            )
+
+        if producer in steps_in_plan:
+            resolved[file_input.name] = ResolvedInput(
+                cwl_value=None,
+                source="dep_wired",
+                dep_name=producer,
+                source_output=source,
+            )
         else:
-            should_inject = getattr(step, "output_inputs", None) != {}
-        if should_inject:
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value=path.name,
-                source="output_path",
+            path = pre_resolved.get(source)
+            if path is None:
+                path = dep.validated_output_paths(config)[source.name]
+            resolved[file_input.name] = ResolvedInput(
+                cwl_value={"class": "File", "path": str(path.resolve())},
+                source="dep_disk",
                 path=path,
+                dep_name=producer,
+                source_output=source,
             )
 
     return resolved
@@ -145,14 +150,15 @@ def to_cwl_inputs(resolved: dict[str, ResolvedInput]) -> dict[str, Any]:
 def resolve_step_sequence_inputs(
     step_objs: list[Step],
     config: dict,
-    pre_resolved: dict[str, Path],
+    pre_resolved: dict[FileOutput, Path],
 ) -> dict[str, Any]:
     """
-    Collect top-level inputs for a generated multi-step CWL workflow.
+    Collect top-level inputs for a generated multi-step CWL job.
 
     Internally wired inputs are excluded.
     """
     steps_in_plan = {s.name for s in step_objs}
+    step_registry = {**get_steps(), **{step.name: step for step in step_objs}}
     merged: dict[str, Any] = {}
     for step in step_objs:
         resolved = resolve_step_inputs(
@@ -160,8 +166,15 @@ def resolve_step_sequence_inputs(
             config,
             pre_resolved=pre_resolved,
             steps_in_plan=steps_in_plan,
+            step_registry=step_registry,
         )
         for key, ri in resolved.items():
-            if key not in merged and ri.cwl_value is not None:
-                merged[key] = ri.cwl_value
+            if ri.cwl_value is None:
+                continue
+            if key in merged and merged[key] != ri.cwl_value:
+                raise ValueError(
+                    f"Workflow input '{key}' resolves to conflicting values. "
+                    "Use distinct parameter names for unrelated step inputs."
+                )
+            merged.setdefault(key, ri.cwl_value)
     return merged

@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""Tests for ASOkai.Utils.kmc (KMC, KMCDatabase, KMCExecutionError)."""
+"""
+Filename: tests/unit/test_kmc.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Tests for ASOkai.Utils.kmc (KMC, KMCDatabase, KMCExecutionError).
+License: LGPL-3.0-or-later
+"""
+
 from __future__ import annotations
 
 import subprocess
@@ -280,7 +288,12 @@ def test_build_keeps_explicit_working_directory(kmc: KMC, tmp_path: Path) -> Non
     work.mkdir()
     completed = subprocess.CompletedProcess(args=["kmc"], returncode=0, stdout="", stderr="")
 
-    def fake_run(ip: object, op: object, wd: object, **kw: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        ip: str | Path,
+        op: str | Path,
+        wd: str | Path,
+        **kw: object,
+    ) -> subprocess.CompletedProcess[str]:
         assert Path(wd).resolve() == work.resolve()
         p = Path(str(op)).resolve()
         Path(f"{p}.kmc_pre").write_text("p")

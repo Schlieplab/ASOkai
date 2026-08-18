@@ -1,284 +1,109 @@
 #!/usr/bin/env python
 """
-Unit tests for TranscriptSite serialization/deserialization.
+Filename: tests/unit/test_transcript_site.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Serialization tests for TranscriptSite.
+License: LGPL-3.0-or-later
 """
-import pytest
+
 from Bio.Seq import Seq
+from GenomeUtils.Genome import TranscriptLocus
+import pytest
+
 from ASOkai.Sites import TranscriptSite
 
 
 @pytest.fixture
-def sample_transcript_site(sample_sequence):
-    """Create a sample TranscriptSite for testing."""
+def transcript_site() -> TranscriptSite:
     return TranscriptSite(
-        transcript_id="ENST00000001",
-        t_start=10,
-        t_end=26,
-        sequence=sample_sequence,
-        id="test_transcript_site"
+        id="shared-site",
+        loci=[
+            TranscriptLocus("ENST00000001", 10, 14),
+            TranscriptLocus("ENST00000002", 30, 34),
+        ],
+        sequence=Seq("ACGT"),
     )
 
 
 @pytest.mark.unit
 @pytest.mark.serialization
-class TestTranscriptSiteSerialization:
-    """Test TranscriptSite serialization."""
-    
-    def test_transcript_id_serialized(self, sample_transcript_site):
-        """Test that transcript_id is serialized."""
-        data = sample_transcript_site.to_dict()
-        
-        assert 'transcript_id' in data
-        assert data['transcript_id'] == "ENST00000001"
-        
-    def test_coordinates_serialized(self, sample_transcript_site):
-        """Test that transcript coordinates are serialized."""
-        data = sample_transcript_site.to_dict()
-        
-        assert 't_start' in data
-        assert 't_end' in data
-        assert data['t_start'] == 10
-        assert data['t_end'] == 26
-        
-    def test_sequence_serialized(self, sample_transcript_site, sample_sequence):
-        """Test that sequence is flattened in serialization."""
-        data = sample_transcript_site.to_dict()
-        
-        assert 'sequence' in data
-        assert data['sequence'] == str(sample_sequence)
-        assert '_sequence' not in data
-        
-    def test_id_serialized(self, sample_transcript_site):
-        """Test that id is serialized."""
-        data = sample_transcript_site.to_dict()
-        
-        assert data['id'] == 'test_transcript_site'
-        
-    def test_metadata_present(self, sample_transcript_site):
-        """Test that class metadata is present."""
-        data = sample_transcript_site.to_dict()
-        
-        assert data['__class__'] == 'TranscriptSite'
-        assert data['__module__'] == 'ASOkai.Sites._transcript_site'
-        
-    def test_auto_generated_id_serialized(self, sample_sequence):
-        """Test serialization with auto-generated ID."""
-        site = TranscriptSite(
-            transcript_id="ENST00000002",
-            t_start=0,
-            t_end=16,
-            sequence=sample_sequence
-        )
-        
-        data = site.to_dict()
-        
-        assert data['id'] == "ENST00000002:0-16"
+def test_transcript_site_serializes_loci_as_plain_json(transcript_site):
+    data = transcript_site.to_dict()
+
+    assert data == {
+        "__class__": "TranscriptSite",
+        "__module__": "ASOkai.Sites._transcript_site",
+        "id": "shared-site",
+        "loci": [
+            {
+                "transcript_id": "ENST00000001",
+                "start": 10,
+                "end": 14,
+            },
+            {
+                "transcript_id": "ENST00000002",
+                "start": 30,
+                "end": 34,
+            },
+        ],
+        "sequence": "ACGT",
+    }
 
 
 @pytest.mark.unit
 @pytest.mark.serialization
-class TestTranscriptSiteDeserialization:
-    """Test TranscriptSite deserialization."""
-    
-    def test_from_dict_basic(self, sample_sequence):
-        """Test basic deserialization from dict."""
-        data = {
-            '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites._transcript_site',
-            'id': 'test_site',
-            'transcript_id': 'ENST00000001',
-            't_start': 10,
-            't_end': 26,
-            'sequence': str(sample_sequence)
+def test_transcript_site_reconstructs_transcript_loci():
+    site = TranscriptSite.from_dict(
+        {
+            "__class__": "TranscriptSite",
+            "__module__": "ASOkai.Sites._transcript_site",
+            "id": "site",
+            "loci": [
+                {
+                    "transcript_id": "ENST00000001",
+                    "start": 10,
+                    "end": 14,
+                }
+            ],
+            "sequence": "ACGT",
         }
-        
-        obj = TranscriptSite.from_dict(data)
-        
-        assert isinstance(obj, TranscriptSite)
-        assert obj.id == 'test_site'
-        assert obj.transcript_id == 'ENST00000001'
-        assert obj.t_start == 10
-        assert obj.t_end == 26
-        
-    def test_sequence_reconstructed(self, sample_sequence):
-        """Test that Seq object is reconstructed correctly."""
-        data = {
-            '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites._transcript_site',
-            'id': 'test_site',
-            'transcript_id': 'ENST00000001',
-            't_start': 10,
-            't_end': 26,
-            'sequence': str(sample_sequence)
-        }
-        
-        obj = TranscriptSite.from_dict(data)
-        
-        assert isinstance(obj.sequence, Seq)
-        assert str(obj.sequence) == str(sample_sequence)
-        
-    def test_coordinates_reconstructed(self, sample_sequence):
-        """Test that coordinates are reconstructed correctly."""
-        data = {
-            '__class__': 'TranscriptSite',
-            '__module__': 'ASOkai.Sites._transcript_site',
-            'id': 'test_site',
-            'transcript_id': 'ENST00000001',
-            't_start': 0,
-            't_end': 16,
-            'sequence': str(sample_sequence)
-        }
-        
-        obj = TranscriptSite.from_dict(data)
-        
-        assert obj.t_start == 0
-        assert obj.t_end == 16
-        assert obj.t_end - obj.t_start == 16
+    )
+
+    assert site.loci == [TranscriptLocus("ENST00000001", 10, 14)]
+    assert isinstance(site.loci[0], TranscriptLocus)
 
 
 @pytest.mark.unit
 @pytest.mark.serialization
-class TestTranscriptSiteRoundtrip:
-    """Test complete serialization/deserialization roundtrip."""
-    
-    def test_roundtrip_preserves_data(self, sample_transcript_site):
-        """Test that all data is preserved through roundtrip."""
-        data = sample_transcript_site.to_dict()
-        reconstructed = TranscriptSite.from_dict(data)
-        
-        assert reconstructed.id == sample_transcript_site.id
-        assert reconstructed.transcript_id == sample_transcript_site.transcript_id
-        assert reconstructed.t_start == sample_transcript_site.t_start
-        assert reconstructed.t_end == sample_transcript_site.t_end
-        assert str(reconstructed.sequence) == str(sample_transcript_site.sequence)
+def test_transcript_site_roundtrip_preserves_shared_loci(transcript_site):
+    reconstructed = TranscriptSite.from_dict(transcript_site.to_dict())
+
+    assert reconstructed == transcript_site
+    assert reconstructed.sequence == transcript_site.sequence
 
 
 @pytest.mark.unit
-class TestTranscriptSiteEquality:
-    """Test TranscriptSite equality semantics."""
+@pytest.mark.serialization
+def test_transcript_site_file_roundtrip(transcript_site, temp_json_file):
+    transcript_site.to_file(temp_json_file)
 
-    def test_equality_true_for_same_fields(self, sample_sequence):
-        a = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=26,
-            sequence=sample_sequence,
-            id="test_site",
-        )
-        b = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=26,
-            sequence=sample_sequence,
-            id="test_site",
-        )
+    reconstructed = TranscriptSite.from_file(temp_json_file)
 
-        assert a == b
-        assert not (a != b)
+    assert reconstructed == transcript_site
 
-    def test_equality_false_when_any_field_differs(self, sample_sequence):
-        a = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=26,
-            sequence=sample_sequence,
-            id="test_site",
-        )
-        b = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=27,
-            sequence=sample_sequence,
-            id="test_site",
-        )
 
-        assert a != b
+@pytest.mark.unit
+@pytest.mark.serialization
+def test_transcript_site_roundtrip_preserves_extra_scalars():
+    site = TranscriptSite(
+        id="site",
+        loci=[TranscriptLocus("ENST00000001", 10, 14)],
+        sequence=Seq("ACGT"),
+        score=0.75,
+    )
 
-    def test_equality_with_other_type_is_false(self, sample_transcript_site):
-        assert (sample_transcript_site == "not_a_site") is False
-    
-    def test_roundtrip_with_kwargs(self, sample_sequence):
-        """Test that kwargs are preserved through roundtrip."""
-        site = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=26,
-            sequence=sample_sequence,
-            id="test_site",
-            custom_attr="custom_value",
-            score=0.85,
-            annotation={"type": "exonic"}
-        )
-        
-        data = site.to_dict()
-        reconstructed = TranscriptSite.from_dict(data)
-        
-        assert reconstructed.custom_attr == "custom_value"
-        assert reconstructed.score == 0.85
-        assert reconstructed.annotation == {"type": "exonic"}
-        
-    def test_file_roundtrip(self, sample_transcript_site, temp_json_file):
-        """Test roundtrip through file I/O."""
-        sample_transcript_site.to_file(temp_json_file)
-        reconstructed = TranscriptSite.from_file(temp_json_file)
-        
-        assert reconstructed.id == sample_transcript_site.id
-        assert reconstructed.transcript_id == sample_transcript_site.transcript_id
-        assert reconstructed.t_start == sample_transcript_site.t_start
-        assert reconstructed.t_end == sample_transcript_site.t_end
-        assert str(reconstructed.sequence) == str(sample_transcript_site.sequence)
-        
-    def test_multiple_sites_in_dict(self, sample_sequence):
-        """Test serialization of multiple sites in a dictionary."""
-        site1 = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=10,
-            t_end=26,
-            sequence=sample_sequence,
-            id="site1"
-        )
-        site2 = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=50,
-            t_end=66,
-            sequence=sample_sequence,
-            id="site2"
-        )
-        
-        sites_dict = {"site1": site1, "site2": site2}
-        
-        from ASOkai.Utils import Serializable
-        serialized = Serializable()._serialize_value(sites_dict)
-        deserialized = Serializable._deserialize_value(serialized)
-        
-        assert isinstance(deserialized['site1'], TranscriptSite)
-        assert isinstance(deserialized['site2'], TranscriptSite)
-        assert deserialized['site1'].id == 'site1'
-        assert deserialized['site2'].id == 'site2'
-        assert deserialized['site1'].transcript_id == 'ENST00000001'
-        assert deserialized['site2'].transcript_id == 'ENST00000001'
-        
-    def test_roundtrip_with_different_transcripts(self, sample_sequence):
-        """Test roundtrip with sites from different transcripts."""
-        site1 = TranscriptSite(
-            transcript_id="ENST00000001",
-            t_start=0,
-            t_end=16,
-            sequence=sample_sequence
-        )
-        site2 = TranscriptSite(
-            transcript_id="ENST00000002",
-            t_start=0,
-            t_end=16,
-            sequence=sample_sequence
-        )
-        
-        data1 = site1.to_dict()
-        data2 = site2.to_dict()
-        
-        reconstructed1 = TranscriptSite.from_dict(data1)
-        reconstructed2 = TranscriptSite.from_dict(data2)
-        
-        assert reconstructed1.transcript_id == "ENST00000001"
-        assert reconstructed2.transcript_id == "ENST00000002"
-        assert reconstructed1.id != reconstructed2.id
+    reconstructed = TranscriptSite.from_dict(site.to_dict())
+
+    assert getattr(reconstructed, "score") == 0.75

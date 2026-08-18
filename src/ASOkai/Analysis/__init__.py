@@ -8,7 +8,12 @@ Description: This file initializes the analysis module.
 License: LGPL-3.0-or-later
 """
 from ._intrinsic_features import IntrinsicFeaturesAnalysis
+from ._base import Analysis, GenomeWideAnalysis, SiteSpecificAnalysis, TargetSpecificAnalysis
 
 __all__ = [
+    "Analysis",
+    "GenomeWideAnalysis",
     "IntrinsicFeaturesAnalysis",
+    "SiteSpecificAnalysis",
+    "TargetSpecificAnalysis",
 ]

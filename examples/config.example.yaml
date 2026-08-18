@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=./src/ASOkai/_pipeline/config.schema.yaml
+# Copy this file to config.yaml and adjust the values for your run.
+
+datadir: ./data
+
+genome:
+  assembly_id: GRCh38
+  ensembl_release: 114
+  source: ensembl
+  species: Homo_sapiens
+
+  # Existing files can replace outputs from download-genome.
+  # dna_path: /path/to/genome.dna.fa.gz
+  # cdna_path: /path/to/genome.cdna.fa.gz
+  # annotation_path: /path/to/genome.annotation.gtf.gz
+  # db_path: /path/to/genome.annotation.db
+
+target:
+  # Set exactly one of target_id or target_name.
+  target_id: ENSG00000133703
+  # target_name: KRAS
+  k: 16
+  region: pre-mrna  # exonic_only | pre-mrna | transcriptomic
+
+  # An existing serialized target gene can replace create-target-gene.
+  # target_gene_path: /path/to/target_gene.json
+
+antisense:
+  modality: aso
+  mechanism: rnase-h1
+  design:
+    type: gapmer
+    left_wing_length: 3
+    gap_length: 10
+    right_wing_length: 3
+  # To generate unmodified DNA ASOs instead, use only:
+  # design:
+  #   type: unmodified
+
+resources:
+  default:
+    n_processes: 1
+    memory_mb: 4096
+  intrinsic-features:
+    n_processes: 4

@@ -14,7 +14,6 @@ import os
 import shlex
 import shutil
 import subprocess
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,7 +41,7 @@ class KMCToolsExecutionError(RuntimeError):
         self.stderr = stderr
 
 
-class KMCTool(ABC):
+class KMCTool:
     def __init__(self, kmc_tools_executable: str = "kmc_tools") -> None:
         self._kmc_tools = self._resolve_executable(kmc_tools_executable)
         self._argv: list[str] = []
@@ -76,8 +75,7 @@ class KMCTool(ABC):
                 flags.append(f"{prefix}{value}")
         return flags
 
-    @abstractmethod
-    def run(
+    def _execute(
         self,
         *,
         t: int | None = None,

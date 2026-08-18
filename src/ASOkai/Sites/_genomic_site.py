@@ -7,19 +7,18 @@ Version: 0.1.1
 Description: This file defines the GenomicSite class for representing genomic sites.
 License: LGPL-3.0-or-later
 """
-from GenomeUtils.Genome import Locus
-from GenomeUtils.Genome import GenomeElement
-from typing import TYPE_CHECKING, Literal
+from GenomeUtils.Genome import Genome, GenomeElement, Locus
+from typing import cast
 from Bio.Seq import Seq
+from .._types import Strand
 from ._site import Site
-
-if TYPE_CHECKING:
-    from GenomeUtils.Genome import Genome
 
 
 class GenomicSite(Site, GenomeElement):
     """Base class for genomic sites."""
-    
+
+    locus: Locus
+
     # Attributes to exclude from serialization (references to large/circular objects)
     _non_serializable_attrs = {'_genome', '_parent', '_children'}
     
@@ -27,10 +26,10 @@ class GenomicSite(Site, GenomeElement):
                  chr: str, 
                  start: int, 
                  end: int, 
-                 strand: Literal["+", "-"], 
+                 strand: Strand,
                  sequence: Seq,
-                 id: str = None,
-                 genome: "Genome" = None,
+                 id: str | None = None,
+                 genome: Genome | None = None,
                  **kwargs):
         """
         Initializes a GenomicSite object.
@@ -41,7 +40,8 @@ class GenomicSite(Site, GenomeElement):
             end: The end position of the site (1-based inclusive).
             strand: The strand of the site.
             sequence: The sequence of the site.
-            id: The ID of the site. Optional, defaults to None.
+            id: Stable site identifier. Constructors derive it from the locus
+                when omitted.
             genome: The genome of the site. Optional, defaults to None.
             kwargs: Additional keyword arguments.
         """
@@ -51,8 +51,7 @@ class GenomicSite(Site, GenomeElement):
             id = str(locus)
             
         Site.__init__(self, id=id, sequence=sequence, **kwargs)
-        GenomeElement.__init__(self, id=id, locus=locus, genome=genome)
+        GenomeElement.__init__(self, id=id, locus=locus, genome=cast("Genome", genome))
         
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', locus={self.locus!r}), sequence={self.sequence!r})"
-    

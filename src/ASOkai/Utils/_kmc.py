@@ -110,32 +110,32 @@ class KMCDatabase:
             force (bool, optional): If True, forces a rebuild even if the database shards already exist. Defaults to False.
 
         Keyword Args (KMC Parameters):
-            k (int): K-mer length, 1-256. Defaults to 25.
-            m (int): Max RAM limit in GB, 1-1024. Defaults to 12.
-            f (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
-            t (int | None): Number of threads. Defaults to all CPU cores.
-            sm (bool): Enforce strict RAM limit. Defaults to False.
-            hc (bool): Compress homopolymer runs. Defaults to False.
-            p (int | None): Signature length, 5-11. Defaults to 9.
-            ci (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
-            cs (int | None): Maximum counter value. Defaults to 255.
-            cx (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
-            b (bool): If True, passes KMC ``-b`` (disable canonical k-mers).
-            r (bool): Keep all data in RAM. Defaults to False.
-            n (int | None): Number of bins.
-            sf (int | None): FASTQ reading threads.
-            sp (int | None): Splitting threads.
-            sr (int | None): 2nd-stage threads.
-            j (str | Path | None): Write JSON summary to this file.
-            w (bool): Skip writing database shards (`-w`). Defaults to False.
-            o (OutputKind | None): Output format ('kmc' or 'kff').
-            hp (bool): Suppress progress percentage output. Defaults to False.
-            e (bool): Estimate histogram without counting (`-e`). Defaults to False.
-            opt_out_size (bool): Reduce output file size. Defaults to False.
-            v (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
-            debug (bool): Log cwd and full command at DEBUG; stream subprocess stdout/stderr to the terminal. Defaults to True.
-            check (bool): Raise `KMCExecutionError` if `kmc` exits non-zero. Defaults to True.
-            additional_args (Sequence[str] | None): Extra command-line arguments passed verbatim to `kmc`.
+            - **k** (int): K-mer length, 1-256. Defaults to 25.
+            - **m** (int): Max RAM limit in GB, 1-1024. Defaults to 12.
+            - **f** (InputFormat): Sequence format ('fa', 'fq', 'fm', 'fbam', 'fkmc'). Defaults to 'fm'.
+            - **t** (int | None): Number of threads. Defaults to all CPU cores.
+            - **sm** (bool): Enforce strict RAM limit. Defaults to False.
+            - **hc** (bool): Compress homopolymer runs. Defaults to False.
+            - **p** (int | None): Signature length, 5-11. Defaults to 9.
+            - **ci** (int | None): Exclude k-mers occurring fewer times than this. Defaults to 2.
+            - **cs** (int | None): Maximum counter value. Defaults to 255.
+            - **cx** (int | None): Exclude k-mers occurring more times than this. Defaults to 1_000_000_000.
+            - **b** (bool): If True, passes KMC ``-b`` (disable canonical k-mers).
+            - **r** (bool): Keep all data in RAM. Defaults to False.
+            - **n** (int | None): Number of bins.
+            - **sf** (int | None): FASTQ reading threads.
+            - **sp** (int | None): Splitting threads.
+            - **sr** (int | None): 2nd-stage threads.
+            - **j** (str | Path | None): Write JSON summary to this file.
+            - **w** (bool): Skip writing database shards (`-w`). Defaults to False.
+            - **o** (OutputKind | None): Output format ('kmc' or 'kff').
+            - **hp** (bool): Suppress progress percentage output. Defaults to False.
+            - **e** (bool): Estimate histogram without counting (`-e`). Defaults to False.
+            - **opt_out_size** (bool): Reduce output file size. Defaults to False.
+            - **v** (bool): Pass `-v` to `kmc` for binary-level diagnostics. Defaults to False.
+            - **debug** (bool): Log cwd and full command at DEBUG; stream subprocess stdout/stderr to the terminal. Defaults to True.
+            - **check** (bool): Raise `KMCExecutionError` if `kmc` exits non-zero. Defaults to True.
+            - **additional_args** (Sequence[str] | None): Extra command-line arguments passed verbatim to `kmc`.
 
         Returns:
             KMCDatabase | None: The database handle if successful, or None if `w` or 

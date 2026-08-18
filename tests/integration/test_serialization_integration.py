@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 """
-Integration tests for complete serialization workflows.
+Filename: tests/integration/test_serialization_integration.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Version: 0.1.1
+Description: Integration tests for complete serialization workflows.
+License: LGPL-3.0-or-later
 """
+
 import pytest
 import json
 from Bio.Seq import Seq
@@ -68,6 +74,8 @@ class TestCompleteWorkflow:
         assert set(recon_by_id.keys()) == set(orig_by_id.keys())
         for site_id, orig in orig_by_id.items():
             recon = recon_by_id[site_id]
+            assert isinstance(orig, GenomicSite)
+            assert isinstance(recon, GenomicSite)
             assert recon.id == orig.id
             assert recon.chr == orig.chr
             assert recon.start == orig.start

@@ -3,6 +3,32 @@
 ASOkai is designed to provide analytical features from different aspects around ASO drug design, commonly used attributes like GC content as well as attributes usually requiring human experts. In particular, our focus is on extensive analysis of specific and unspecific off-targets and their impact on potential target knockdown evaluated through kinetic simulations.
 While the pipeline can be utilised as a ready-to-use workflow, its modularity enables the user to use any individual analytical step individually and integrate them in already existing user-defined drug design workflows. The frame work is open-source.
 
+## Antisense therapeutic sequences
+
+ASOkai represents nucleotide sequences with `T`, not `U`.
+
+For every `AntisenseTherapeutic`, the `sequence` property returns the
+antisense-strand sequence used for target recognition. For a multi-stranded
+therapeutic such as siRNA, it does not combine the antisense and sense strands;
+the sense-strand sequence is available separately as `sense_strand.sequence`.
+
+Candidate generation writes therapeutics and their site bindings to separate
+files. Each binding stores a therapeutic ID and a site ID.
+
+The candidate-generation step supports unmodified DNA ASOs and wing-gap-wing
+gapmer ASOs. The standard configuration selects an RNase-H1 gapmer:
+
+```yaml
+antisense:
+  modality: aso
+  mechanism: rnase-h1
+  design:
+    type: gapmer
+    left_wing_length: 3
+    gap_length: 10
+    right_wing_length: 3
+```
+
 image
 
 Intrinsic Attributes:
@@ -32,6 +58,23 @@ Target attributes:
 ### Configuration
 
 The `ASOkai` CLI is primarily driven by the configuration file (`config.yaml`). This file contains all the necessary parameters for the different workflows, tasks, and steps. Commands allow you to override specific configuration settings directly via command-line arguments.
+
+Configure single-node execution resource requests under `resources`:
+
+```yaml
+resources:
+  default:
+    n_processes: 1
+    memory_mb: 4096
+  intrinsic-features:
+    n_processes: 4
+```
+
+Missing per-step fields inherit from `resources.default`; if the entire section
+is omitted, ASOkai uses 4096 MiB and one process where multiprocessing is
+supported. Single-process steps always request one core and reject a step-level
+`n_processes` setting. `memory_mb` is measured in MiB. ASOkai translates these
+values to the CWL `ResourceRequirement` fields `coresMin` and `ramMin`.
 
 ### Reporting
 
@@ -167,6 +210,22 @@ External programs used by some workflows are not installed via `pip` with the AS
 ### KMC
 
 [KMC](https://github.com/refresh-bio/KMC) is GPLv3-only; see the upstream repository for the license text.
+
+## Contributor setup
+
+Create the Conda environment so binary dependencies such as KMC are managed by
+Conda, then install ASOkai and its contributor tools into that environment:
+
+```bash
+conda env create -f environment.yaml
+conda activate ASOkai
+python -m pip install -e ".[dev]"
+```
+
+## Documentation
+
+To build the document using sphinx, run:
+`sphinx-build -M html docs/source docs/build`
 
 ## License
 

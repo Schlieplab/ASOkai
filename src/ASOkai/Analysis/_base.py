@@ -8,77 +8,81 @@ Description: This file defines the base classes for different analysis types.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from multiprocessing import get_context
+from typing import ClassVar
 
-from ..Targets import Target
+from .._types import Scalar
+from ..Targets import TargetGene
 from GenomeUtils.Genome import Genome
 
 
-class AnalysisStep(ABC):
-    """Abstract base class for an analysis step."""
+class Analysis(ABC):
+    """Abstract base class for computational analysis logic."""
 
-    def __init__(self, **kwargs):
+    scope_label: ClassVar[str | None] = None
+
+    def __init__(self, sites: list, n_processes: int = 1, **kwargs):
+        if n_processes < 1:
+            raise ValueError("n_processes must be >= 1.")
+        self.sites = list(sites)
+        self.n_processes = n_processes
         self.kwargs = kwargs
 
+    def run(self) -> dict[str, dict[str, Scalar]]:
+        """Execute this analysis over all configured sites."""
+        if self.n_processes == 1:
+            return dict(self._analyze_site(site) for site in self.sites)
+
+        with get_context("spawn").Pool(processes=self.n_processes) as pool:
+            return dict(pool.map(self._analyze_site, self.sites))
+
+    def _analyze_site(self, site) -> tuple[str, dict[str, Scalar]]:
+        return site.id, self.analyze(site)
+
     @abstractmethod
-    def run(self) -> Any:
-        """Executes the analysis step."""
-        pass
+    def analyze(self, site) -> dict[str, Scalar]:
+        """Analyze one site and return CSV-compatible scalar values."""
+        ...
 
     def __call__(self, *args, **kwargs):
         return self.run(*args, **kwargs)
 
 
-class SiteWideAnalysis(AnalysisStep):
-    """Base class for analyses that produce results for each site in a target."""
+class SiteSpecificAnalysis(Analysis):
+    """Base class for analyses that produce value dictionaries per site."""
 
-    def __init__(self, target: Target, **kwargs):
-        super().__init__(**kwargs)
-        self.target = target
-
-    @abstractmethod
-    def run(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Executes the site-wide analysis.
-
-        Returns:
-            A dictionary of analysis results.
-        """
-        pass
+    scope_label: ClassVar[str | None] = "Site-specific"
 
 
-class TargetWideAnalysis(AnalysisStep):
+class TargetSpecificAnalysis(Analysis):
     """Base class for analyses that produce results for an entire target."""
 
-    def __init__(self, target: Target, **kwargs):
-        super().__init__(**kwargs)
+    scope_label: ClassVar[str | None] = "Target-specific"
+
+    def __init__(
+        self,
+        target: TargetGene,
+        sites: list,
+        n_processes: int = 1,
+        **kwargs,
+    ):
+        super().__init__(sites, n_processes=n_processes, **kwargs)
         self.target = target
 
-    @abstractmethod
-    def run(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Executes the target-wide analysis.
 
-        Returns:
-            A dictionary of analysis results.
-        """
-        pass
-
-
-class GenomeWideAnalysis(AnalysisStep):
+class GenomeWideAnalysis(Analysis):
     """Base class for analyses that produce results for an entire genome."""
 
-    def __init__(self, genome: Genome, target: Target = None, **kwargs):
-        super().__init__(**kwargs)
+    scope_label: ClassVar[str | None] = "Genome-wide"
+
+    def __init__(
+        self,
+        genome: Genome,
+        target: TargetGene,
+        sites: list,
+        n_processes: int = 1,
+        **kwargs,
+    ):
+        super().__init__(sites, n_processes=n_processes, **kwargs)
         self.genome = genome
         self.target = target
-
-    @abstractmethod
-    def run(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Executes the genome-wide analysis.
-
-        Returns:
-            A dictionary of analysis results.
-        """
-        pass

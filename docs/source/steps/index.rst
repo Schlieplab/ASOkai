@@ -20,10 +20,4 @@ Analysis steps calculate properties of pipeline data and write typed result
 tables. Built-in analysis steps are listed below.
 
 .. asokai-step-list:: analysis
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :glob:
-
-   *
+   :descriptions:

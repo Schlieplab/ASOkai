@@ -16,6 +16,7 @@ from typing import Any, Mapping, cast, get_origin
 import yaml
 from docutils import nodes
 from docutils.parsers.rst import directives
+from sphinx import addnodes
 from sphinx.util.docutils import SphinxDirective
 
 from .configuration import (
@@ -191,7 +192,6 @@ def _resources_table(step: Any, config_fields: list[Any]) -> nodes.table:
     """Show each resource once, together with its resolution order."""
     from ASOkai._pipeline.config import (
         DEFAULT_STEP_RESOURCES,
-        RESOURCE_N_PROCESSES_KEY,
         step_resource_names,
     )
 
@@ -200,22 +200,6 @@ def _resources_table(step: Any, config_fields: list[Any]) -> nodes.table:
     rows = []
     for resource_name, fallback in DEFAULT_STEP_RESOURCES.items():
         if resource_name not in configurable_resources:
-            if resource_name == RESOURCE_N_PROCESSES_KEY:
-                rows.append(
-                    (
-                        (resource_name, True),
-                        details(
-                            (
-                                ("Fixed value", str(fallback), False),
-                                (
-                                    "Description",
-                                    "This step always runs with one process.",
-                                    False,
-                                ),
-                            )
-                        ),
-                    )
-                )
             continue
         default_field = fields_by_path[f"resources.default.{resource_name}"]
         step_field = fields_by_path[f"resources.{step.name}.{resource_name}"]
@@ -250,13 +234,8 @@ def _step_kind(step: Any) -> str:
     return "Analysis step" if isinstance(step, AnalysisStep) else "Core step"
 
 
-def build_step_list(
-    step_kind: str,
-    *,
-    include_descriptions: bool = False,
-    refdoc: str = "",
-) -> nodes.bullet_list:
-    """Build a linked list of registered built-in steps of one kind."""
+def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
+    """Return registered built-in steps of one kind."""
     from ASOkai._pipeline.steps.analysis.base import AnalysisStep
     from ASOkai._pipeline.steps.core.base import CoreStep
 
@@ -271,11 +250,23 @@ def build_step_list(
         raise ValueError(
             f"Unknown step kind {step_kind!r}; expected one of: {expected}."
         ) from error
+    return tuple(
+        step
+        for step in get_built_in_steps()
+        if isinstance(step, step_type)
+    )
+
+
+def build_step_list(
+    step_kind: str,
+    *,
+    include_descriptions: bool = False,
+    refdoc: str = "",
+) -> nodes.bullet_list:
+    """Build a linked list of registered built-in steps of one kind."""
 
     step_list = nodes.bullet_list()
-    for step in get_built_in_steps():
-        if not isinstance(step, step_type):
-            continue
+    for step in _built_in_steps_of_kind(step_kind):
         item = nodes.list_item()
         paragraph = nodes.paragraph()
         paragraph += document_link(
@@ -290,11 +281,40 @@ def build_step_list(
     return step_list
 
 
+def _step_toctree(step_kind: str, *, parent: str) -> nodes.compound:
+    """Build hidden sidebar navigation for one category of steps."""
+    docnames = [
+        f"steps/{step.name}"
+        for step in _built_in_steps_of_kind(step_kind)
+    ]
+    toctree = addnodes.toctree()
+    toctree["parent"] = parent
+    toctree["entries"] = [(None, docname) for docname in docnames]
+    toctree["includefiles"] = docnames
+    toctree["maxdepth"] = 1
+    toctree["caption"] = None
+    toctree["glob"] = False
+    toctree["hidden"] = True
+    toctree["includehidden"] = False
+    toctree["numbered"] = 0
+    toctree["titlesonly"] = False
+    wrapper = nodes.compound(classes=["toctree-wrapper"])
+    wrapper += toctree
+    return wrapper
+
+
 def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
     if not step.spec.inputs:
         return section(
             "Dependencies",
-            [nodes.paragraph(text="This step has no step dependencies.")],
+            [
+                nodes.paragraph(
+                    text=(
+                        "This step can run directly because it has no step "
+                        "dependencies."
+                    )
+                )
+            ],
         )
 
     grouped: dict[str, list[Any]] = {}
@@ -340,7 +360,19 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
             paragraph += nodes.Text(" is always required.")
         item += paragraph
         dependency_list += item
-    return section("Dependencies", [dependency_list])
+    return section(
+        "Dependencies",
+        [
+            nodes.paragraph(
+                text=(
+                    "The recursive flag schedules missing dependencies. Omit "
+                    "it when all dependency outputs already exist or input "
+                    "overrides are configured."
+                )
+            ),
+            dependency_list,
+        ],
+    )
 
 
 def _transitive_steps(step: Any) -> list[Any]:
@@ -410,12 +442,6 @@ def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.
         command += " --recursive"
     command_block = nodes.literal_block(command, command)
 
-    explanation = (
-        "The recursive flag schedules missing dependencies. Omit it when all "
-        "dependency outputs already exist or input overrides are configured."
-        if has_dependencies
-        else "This step can run directly because it has no step dependencies."
-    )
     example_config = cast(
         str,
         yaml.safe_dump(
@@ -432,7 +458,6 @@ def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.
         "Run this step",
         [
             command_block,
-            nodes.paragraph(text=explanation),
             nodes.paragraph(text=example_description),
             nodes.literal_block(example_config, example_config),
         ],
@@ -729,11 +754,17 @@ class ASOkaiStepList(SphinxDirective):
 
     def run(self) -> list[nodes.Node]:
         try:
+            step_kind = self.arguments[0]
             step_list = build_step_list(
-                self.arguments[0],
+                step_kind,
                 include_descriptions="descriptions" in self.options,
                 refdoc=self.env.docname,
             )
+            step_toctree = _step_toctree(
+                step_kind,
+                parent=self.env.docname,
+            )
         except ValueError as error:
             raise self.error(str(error)) from error
-        return [step_list]
+        self.set_source_info(step_toctree)
+        return [step_list, step_toctree]

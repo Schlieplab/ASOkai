@@ -43,7 +43,12 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 class ExampleAnalysis(SiteSpecificAnalysis):
     """Replace this calculation with the new site-specific analysis."""
 
+    def __init__(self, sites: list, **kwargs) -> None:
+        super().__init__(sites, **kwargs)
+        # Add analysis-specific initialization here.
+
     def analyze(self, site) -> dict[str, Scalar]:
+        # Add per-site analysis code here.
         sequence = str(site.sequence or "")
         return {
             "example_value": float(len(sequence)),
@@ -69,8 +74,10 @@ class ExampleAnalysisStep(AnalysisStep):
             columns={"example_value": float},
         ),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/analysis/example/"
-            "{target}_k{k}_{region}_example.csv",
+            template=(
+                "{assembly}/targets/{target}/analysis/example/"
+                "{target}_k{k}_{region}_example.csv"
+            ),
             fields={
                 "target": TemplateField.first_of(
                     "target_id",

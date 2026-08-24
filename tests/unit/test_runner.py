@@ -112,7 +112,7 @@ def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
     assert (export_dirs[0] / "publish.cwl").exists()
     assert (export_dirs[0] / "output-layout.yml").exists()
     assert (export_dirs[0] / "steps" / "download-genome.cwl").exists()
-    assert inputs["assembly"] == "GRCh38"
+    assert inputs["download-genome.assembly"] == "GRCh38"
     assert all(DownloadGenomeStep().output_paths(config)[name].exists() for name in (
         "dna", "cdna", "annotation", "db"
     ))
@@ -135,7 +135,7 @@ def test_run_step_uses_config_download_source(config):
     runner.run_step("download-genome", config, force=True, executor=executor)
 
     _, inputs, _ = executor.run.call_args.args
-    assert inputs["source"] == "ensembl"
+    assert inputs["download-genome.source"] == "ensembl"
 
 
 def test_run_step_rejects_unsupported_download_source(config):
@@ -262,8 +262,8 @@ def test_export_all_single_step_writes_job_bundle(config, tmp_path):
     assert "step_download_genome:" in job_text
     assert (export_dir / "steps" / "download-genome.cwl").exists()
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["assembly"] == "GRCh38"
-    assert job["source"] == "ensembl"
+    assert job["download-genome.assembly"] == "GRCh38"
+    assert job["download-genome.source"] == "ensembl"
 
 
 def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
@@ -292,10 +292,10 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert "Alternative runner" not in readme
 
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["assembly"] == "GRCh38"
-    assert job["release"] == 114
-    assert job["target_id"] == "ENSG00000133703"
-    assert "target_gene_output" not in job
+    assert job["download-genome.assembly"] == "GRCh38"
+    assert job["download-genome.release"] == 114
+    assert job["create-target-gene.target_id"] == "ENSG00000133703"
+    assert "create-target-gene.target_gene_output" not in job
 
 
 def test_export_all_readme_uses_toil_runner(workflow_config, tmp_path):

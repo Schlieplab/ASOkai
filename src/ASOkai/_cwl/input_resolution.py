@@ -123,26 +123,26 @@ def to_cwl_inputs(resolved: dict[str, ResolvedInput]) -> dict[str, Any]:
     }
 
 
+def workflow_input_id(run: StepRun, input_name: str) -> str:
+    """Qualify a top-level CWL input by its concrete run."""
+    return f"{run.run_id}.{input_name}"
+
+
 def resolve_run_sequence_inputs(
     runs: list[StepRun] | tuple[StepRun, ...],
     resolved_outputs: dict[StepRunOutput, Path],
 ) -> dict[str, Any]:
     """Collect top-level inputs for a generated multi-run CWL workflow."""
     run_ids_to_execute = {run.run_id for run in runs}
-    merged: dict[str, Any] = {}
+    workflow_inputs: dict[str, Any] = {}
     for run in runs:
         resolved = resolve_run_inputs(
             run,
             resolved_outputs=resolved_outputs,
             run_ids_to_execute=run_ids_to_execute,
         )
-        for name, item in resolved.items():
+        for input_name, item in resolved.items():
             if item.cwl_value is None:
                 continue
-            if name in merged and merged[name] != item.cwl_value:
-                raise ValueError(
-                    f"Workflow input '{name}' resolves to conflicting values. "
-                    "Use distinct parameter names for unrelated step inputs."
-                )
-            merged.setdefault(name, item.cwl_value)
-    return merged
+            workflow_inputs[workflow_input_id(run, input_name)] = item.cwl_value
+    return workflow_inputs

@@ -95,6 +95,12 @@ Output destinations use values from declared scalar parameters. A
 ``TemplateField`` can define how one placeholder is selected or transformed
 without adding path-building logic to the step implementation.
 
+Every parameter that can change an output's contents must be represented in
+that output's ``OutputPathTemplate``. Distinct parameter configurations must
+resolve to distinct destination paths so that one run cannot overwrite or be
+mistaken for another run's output. Parameters that only affect execution,
+such as resource allocation, do not belong in the destination.
+
 Shared step lifecycle
 ---------------------
 

@@ -96,6 +96,30 @@ def _run(
     )
 
 
+def test_step_run_accepts_dotted_context_paths(tmp_path):
+    step = _fake_step("producer")
+
+    run = StepRun(
+        run_id="consumer.producer",
+        step=step,
+        config={"datadir": str(tmp_path)},
+    )
+
+    assert run.run_id == "consumer.producer"
+
+
+@pytest.mark.parametrize("run_id", ["consumer..producer", "consumer/producer"])
+def test_step_run_rejects_malformed_context_paths(tmp_path, run_id):
+    step = _fake_step("producer")
+
+    with pytest.raises(ValueError, match="dot-separated names"):
+        StepRun(
+            run_id=run_id,
+            step=step,
+            config={"datadir": str(tmp_path)},
+        )
+
+
 def test_path_binding_is_resolved_as_input_override(tmp_path):
     config = {"datadir": str(tmp_path)}
     producer = _fake_step("producer", output_names=["shared"])
@@ -190,7 +214,7 @@ def test_resolution_does_not_inject_output_filenames(tmp_path):
     assert "result_filename" not in resolved
 
 
-def test_sequence_rejects_conflicting_shared_inputs(tmp_path):
+def test_sequence_qualifies_different_values_by_run(tmp_path):
     first_config = {
         "datadir": str(tmp_path),
         "first": {"mode": "fast"},
@@ -208,11 +232,15 @@ def test_sequence_rejects_conflicting_shared_inputs(tmp_path):
         scalar_parameters={"mode": "second.mode"},
     )
 
-    with pytest.raises(ValueError, match="input 'mode'.*conflicting values"):
-        resolve_run_sequence_inputs(
-            [_run(first, first_config), _run(second, second_config)],
-            {},
-        )
+    resolved = resolve_run_sequence_inputs(
+        [_run(first, first_config), _run(second, second_config)],
+        {},
+    )
+
+    assert resolved == {
+        "first.mode": "fast",
+        "second.mode": "careful",
+    }
 
 
 def test_sequence_merges_matching_shared_inputs(tmp_path):
@@ -234,4 +262,7 @@ def test_sequence_merges_matching_shared_inputs(tmp_path):
         {},
     )
 
-    assert resolved["mode"] == "fast"
+    assert resolved == {
+        "first.mode": "fast",
+        "second.mode": "fast",
+    }

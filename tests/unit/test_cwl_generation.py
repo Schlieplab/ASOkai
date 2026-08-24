@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ASOkai._cwl.generation import StepCwlGenerator, generate_cwl_bundle
+from ASOkai._cwl.generation import GeneratedCwlBundle, generate_cwl_bundle
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
@@ -115,6 +115,61 @@ def _generate_bundle(steps: list[Step], config: dict):
     return generate_cwl_bundle(_step_runs(steps, config))
 
 
+def _configured_run_bundle(tmp_path: Path) -> GeneratedCwlBundle:
+    """Generate two differently configured runs of one step class."""
+    step = _spec_step(
+        "producer",
+        StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[FileOutput("result", destination="{mode}/result.txt")],
+        ),
+    )
+    main_run = StepRun(
+        run_id="producer",
+        step=step,
+        config={
+            "datadir": str(tmp_path),
+            "producer": {"mode": "main"},
+        },
+    )
+    configured_run = StepRun(
+        run_id="consumer.producer",
+        step=step,
+        config={
+            "datadir": str(tmp_path),
+            "producer": {"mode": "configured"},
+        },
+    )
+    return generate_cwl_bundle([main_run, configured_run])
+
+
+def _validate_bundle_with_cwltool(
+    generated: GeneratedCwlBundle,
+    directory: Path,
+) -> None:
+    """Write and validate one complete generated bundle."""
+    executable = shutil.which("cwltool")
+    if executable is None:
+        pytest.skip("cwltool is not installed")
+
+    steps_dir = directory / "steps"
+    steps_dir.mkdir()
+    for filename, contents in generated.step_cwls.items():
+        (steps_dir / filename).write_text(contents)
+    run_path = directory / "run.cwl"
+    run_path.write_text(generated.run_cwl)
+    (directory / "publish.cwl").write_text(generated.publish_cwl)
+    (directory / "output-layout.yml").write_text(generated.output_layout)
+
+    result = subprocess.run(
+        [executable, "--validate", str(run_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.fixture
 def workflow_config(tmp_path):
     return {
@@ -173,7 +228,7 @@ def test_generate_cwl_does_not_expose_derived_output_filenames_as_inputs(
     assert "dna_output" not in download_inputs
     assert "cdna_output" not in download_inputs
     assert "annotation_output" not in download_inputs
-    assert "dna_output" not in doc["inputs"]
+    assert "download-genome.dna_output" not in doc["inputs"]
 
 
 def test_generate_cwl_uses_declared_step_input_types(workflow_config):
@@ -184,9 +239,9 @@ def test_generate_cwl_uses_declared_step_input_types(workflow_config):
         )
     )
 
-    assert doc["inputs"]["release"] == "int"
-    assert doc["inputs"]["k"] == "int"
-    assert doc["inputs"]["region"]["type"]["type"] == "enum"
+    assert doc["inputs"]["download-genome.release"] == "int"
+    assert doc["inputs"]["create-target-gene.k"] == "int"
+    assert doc["inputs"]["create-target-gene.region"]["type"]["type"] == "enum"
 
 
 def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
@@ -213,19 +268,23 @@ def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
         )
     )
 
-    assert doc["inputs"]["dna"] == "File"
-    assert doc["inputs"]["cdna"] == "File"
-    assert doc["steps"]["step_create_target_gene"]["in"]["dna"] == "dna"
-    assert doc["steps"]["step_create_target_gene"]["in"]["cdna"] == "cdna"
+    assert doc["inputs"]["create-target-gene.dna"] == "File"
+    assert doc["inputs"]["create-target-gene.cdna"] == "File"
+    assert doc["steps"]["step_create_target_gene"]["in"]["dna"] == (
+        "create-target-gene.dna"
+    )
+    assert doc["steps"]["step_create_target_gene"]["in"]["cdna"] == (
+        "create-target-gene.cdna"
+    )
 
 
 def test_generate_cwl_file_inputs_keep_declared_types_when_not_wired(workflow_config):
     doc = yaml.safe_load(_generate_run_cwl([CreateTargetGeneStep()], workflow_config))
 
-    assert doc["inputs"]["dna"] == "File"
-    assert doc["inputs"]["cdna"] == "File"
-    assert doc["inputs"]["annotation"] == "File"
-    assert doc["inputs"]["db"] == "File"
+    assert doc["inputs"]["create-target-gene.dna"] == "File"
+    assert doc["inputs"]["create-target-gene.cdna"] == "File"
+    assert doc["inputs"]["create-target-gene.annotation"] == "File"
+    assert doc["inputs"]["create-target-gene.db"] == "File"
 
 
 def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_config):
@@ -429,6 +488,30 @@ def test_generate_cwl_references_generated_step_files(workflow_config):
     assert doc["steps"]["step_create_target_gene"]["run"] == "steps/create-target-gene.cwl"
 
 
+def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
+    generated = _configured_run_bundle(tmp_path)
+    document = yaml.safe_load(generated.run_cwl)
+
+    assert set(generated.step_cwls) == {
+        "producer.cwl",
+        "consumer.producer.cwl",
+    }
+    assert document["inputs"] == {
+        "producer.mode": "string",
+        "consumer.producer.mode": "string",
+    }
+    assert document["steps"]["step_producer"] == {
+        "run": "steps/producer.cwl",
+        "in": {"mode": "producer.mode"},
+        "out": ["result"],
+    }
+    assert document["steps"]["step_consumer.producer"] == {
+        "run": "steps/consumer.producer.cwl",
+        "in": {"mode": "consumer.producer.mode"},
+        "out": ["result"],
+    }
+
+
 def test_registered_step_output_paths_define_names(workflow_config):
     for step in get_steps().values():
         assert tuple(step.output_paths(workflow_config).keys())
@@ -444,7 +527,7 @@ def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
         assert set(step.output_paths(workflow_config)) == output_names
 
 
-def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
+def test_generate_cwl_qualifies_same_named_inputs_by_run(tmp_path):
     first = _spec_step(
         "first",
         StepSpec(
@@ -464,8 +547,12 @@ def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
         ),
     )
 
-    with pytest.raises(ValueError, match="conflicting CWL types"):
+    document = yaml.safe_load(
         _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
+    )
+
+    assert document["inputs"]["first.shared"] == "string"
+    assert document["inputs"]["second.shared"] == "int"
 
 
 def test_generate_cwl_does_not_wire_undeclared_dependency_outputs(tmp_path):
@@ -588,31 +675,15 @@ def test_generate_cwl_rejects_matching_work_filenames_within_one_step(tmp_path):
         _generate_run_cwl([step], {"datadir": str(tmp_path)})
 
 
-@pytest.mark.skipif(shutil.which("cwltool") is None, reason="cwltool is not installed")
 def test_generated_registered_tools_and_workflow_validate_with_cwltool(
     workflow_config,
     tmp_path,
 ):
     steps = list(get_steps().values())
-    steps_dir = tmp_path / "steps"
-    steps_dir.mkdir()
-    generator = StepCwlGenerator()
-    for step in steps:
-        (steps_dir / f"{step.name}.cwl").write_text(
-            generator.render(step, workflow_config)
-        )
-
     generated = _generate_bundle(steps, workflow_config)
-    run_path = tmp_path / "run.cwl"
-    run_path.write_text(generated.run_cwl)
-    (tmp_path / "publish.cwl").write_text(generated.publish_cwl)
-    (tmp_path / "output-layout.yml").write_text(generated.output_layout)
+    _validate_bundle_with_cwltool(generated, tmp_path)
 
-    result = subprocess.run(
-        ["cwltool", "--validate", str(run_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
 
-    assert result.returncode == 0, result.stderr
+def test_generated_dotted_run_ids_validate_with_cwltool(tmp_path):
+    generated = _configured_run_bundle(tmp_path)
+    _validate_bundle_with_cwltool(generated, tmp_path)

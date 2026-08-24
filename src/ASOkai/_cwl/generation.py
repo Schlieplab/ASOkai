@@ -17,6 +17,7 @@ from typing import Any
 
 import yaml
 
+from ASOkai._cwl.input_resolution import workflow_input_id
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._pipeline import config as cfg
@@ -87,14 +88,14 @@ class StepCwlGenerator(BaseCwlGenerator):
         return text
 
 
-def step_cwl_filename(step) -> str:
-    """Return the generated CommandLineTool filename for a step."""
-    return f"{step.name}.cwl"
+def step_cwl_filename(run: StepRun) -> str:
+    """Return the generated CommandLineTool filename for one concrete run."""
+    return f"{run.run_id}.cwl"
 
 
-def step_cwl_run_path(step) -> str:
+def step_cwl_run_path(run: StepRun) -> str:
     """Return the relative run path used inside generated jobs."""
-    return f"steps/{step_cwl_filename(step)}"
+    return f"steps/{step_cwl_filename(run)}"
 
 
 def _cwl_step_id(step_name: str) -> str:
@@ -197,12 +198,12 @@ def _declare_workflow_input(
     name: str,
     cwl_type: Any,
 ) -> None:
-    """Declare a shared workflow input, rejecting incompatible reuse."""
+    """Declare one run-qualified workflow input."""
     cwl_type = _workflow_input_type(cwl_type)
     if name in all_inputs and all_inputs[name] != cwl_type:
         raise ValueError(
             f"Workflow input '{name}' is declared with conflicting CWL types. "
-            "Use distinct parameter names for unrelated step inputs."
+            "A concrete run cannot declare one input with multiple types."
         )
     all_inputs.setdefault(name, deepcopy(cwl_type))
 
@@ -242,7 +243,7 @@ class JobCwlGenerator(BaseCwlGenerator):
                 ):
                     _declare_workflow_input(
                         all_inputs,
-                        file_input.name,
+                        workflow_input_id(run, file_input.name),
                         input_types[file_input.name],
                     )
 
@@ -251,7 +252,11 @@ class JobCwlGenerator(BaseCwlGenerator):
             config = dict(run.config)
             input_types = step.cwl_spec(config).input_types()
             for cwl_key in step.config_map:
-                _declare_workflow_input(all_inputs, cwl_key, input_types[cwl_key])
+                _declare_workflow_input(
+                    all_inputs,
+                    workflow_input_id(run, cwl_key),
+                    input_types[cwl_key],
+                )
 
         cwl_steps = {}
         for run in runs:
@@ -267,7 +272,7 @@ class JobCwlGenerator(BaseCwlGenerator):
                 }
 
             for cwl_key in step.config_map:
-                in_map[cwl_key] = cwl_key
+                in_map[cwl_key] = workflow_input_id(run, cwl_key)
 
             for binding in run.inputs:
                 file_input = binding.file_input
@@ -276,14 +281,17 @@ class JobCwlGenerator(BaseCwlGenerator):
                     not isinstance(source, StepRunOutput)
                     or source.run.run_id not in run_ids_to_execute
                 ):
-                    in_map[file_input.name] = file_input.name
+                    in_map[file_input.name] = workflow_input_id(
+                        run,
+                        file_input.name,
+                    )
                 else:
                     in_map[file_input.name] = (
                         f"{_cwl_step_id(source.run.run_id)}/{source.output.name}"
                     )
 
             cwl_steps[_cwl_step_id(run.run_id)] = {
-                "run": step_cwl_run_path(step),
+                "run": step_cwl_run_path(run),
                 "in": in_map,
                 "out": list(_output_names(step)),
             }
@@ -410,7 +418,7 @@ def generate_cwl_bundle(
             step,
             authored_requirement,
         )
-        step_cwls[step_cwl_filename(step)] = step_generator.render(
+        step_cwls[step_cwl_filename(run)] = step_generator.render(
             step,
             config,
             resource_requirement=resource_requirement,

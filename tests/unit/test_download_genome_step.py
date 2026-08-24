@@ -74,16 +74,17 @@ def test_output_paths_structure(step, config, tmp_path):
     assert paths["db"] == base / "Homo_sapiens.GRCh38.114.gtf.db"
 
 
-def test_outputs_do_not_exist(step, config):
-    assert step.outputs_exist(config) is False
+def test_validate_output_files(step, config, tmp_path):
+    with pytest.raises(FileNotFoundError, match="download-genome/dna"):
+        step.validate_output_files(config)
 
-
-def test_outputs_exist(step, config, tmp_path):
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
-    for p in step.output_paths(config).values():
-        p.touch()
-    assert step.outputs_exist(config) is True
+    paths = step.output_paths(config)
+    for path in paths.values():
+        path.touch()
+
+    assert step.validate_output_files(config) == paths
 
 
 def test_cleanup(step, config, tmp_path):
@@ -91,9 +92,9 @@ def test_cleanup(step, config, tmp_path):
     base.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
-    assert step.outputs_exist(config) is True
+    assert all(path.exists() for path in step.output_paths(config).values())
     step.cleanup(config)
-    assert step.outputs_exist(config) is False
+    assert all(not path.exists() for path in step.output_paths(config).values())
 
 
 def test_cwl_spec_generates_command_line_tool(step, config):

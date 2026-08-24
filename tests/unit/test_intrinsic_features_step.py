@@ -104,25 +104,13 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     assert paths["intrinsic_features"] == expected
 
 
-def test_outputs_do_not_exist(step, config):
-    assert step.outputs_exist(config) is False
-
-
-def test_outputs_exist(step, config, tmp_path):
-    out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
-    out.mkdir(parents=True)
-    for p in step.output_paths(config).values():
-        p.touch()
-    assert step.outputs_exist(config) is True
-
-
 def test_cleanup(step, config, tmp_path):
     out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
     out.mkdir(parents=True)
     for p in step.output_paths(config).values():
         p.touch()
     step.cleanup(config)
-    assert step.outputs_exist(config) is False
+    assert all(not path.exists() for path in step.output_paths(config).values())
 
 
 def test_cwl_spec_generates_command_line_tool(step, config):

@@ -31,6 +31,8 @@ def test_run_help_uses_configfile_and_config_override_options():
     assert "--configfile, --config-file PATH" in result.output
     assert "--executor [toil|cwltool]" in result.output
     assert "--config KEY=VALUE [KEY=VALUE ...]" in result.output
+    assert "--non-recursive" in result.output
+    assert "--recursive" not in result.output
     assert "--set" not in result.output
 
 
@@ -110,9 +112,9 @@ def test_describe_task_expands_step_names():
 
     assert result.exit_code == 0
     assert "Name        : instantiate-target-gene" in result.output
-    assert "Steps       : download-genome, create-target-gene" in result.output
+    assert "Goals       : create-target-gene" in result.output
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
-    assert "Steps: download-genome, create-target-gene" in result.output
+    assert "Goals: create-target-gene" in result.output
 
 
 def test_describe_workflow_shows_members_and_expanded_steps():
@@ -123,13 +125,12 @@ def test_describe_workflow_shows_members_and_expanded_steps():
     assert result.exit_code == 0
     assert "Name        : standard" in result.output
     assert (
-        "Members     : instantiate-target-gene, generate-antisense-candidates, "
-        "intrinsic-features" in result.output
+        "Members     : generate-antisense-candidates, intrinsic-features"
+        in result.output
     )
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert (
-        "Steps (expanded): download-genome, create-target-gene, "
-        "generate-antisense-candidates, intrinsic-features"
+        "Goals (expanded): generate-antisense-candidates, intrinsic-features"
         in result.output
     )
 
@@ -461,6 +462,33 @@ def test_run_displays_configuration_errors_without_traceback(monkeypatch):
     assert result.exit_code != 0
     assert "Error: Invalid configuration:" in result.output
     assert "$.target.k" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_run_displays_missing_dependency_errors_without_traceback(monkeypatch):
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path: {"datadir": "./data"},
+    )
+
+    def reject_plan(*args, **kwargs):
+        raise RuntimeError(
+            "Step 'download-genome' is required, but its outputs are missing."
+        )
+
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        reject_plan,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--steps", "create-target-gene", "--non-recursive"],
+    )
+
+    assert result.exit_code != 0
+    assert "Error: Step 'download-genome' is required" in result.output
     assert "Traceback" not in result.output
 
 

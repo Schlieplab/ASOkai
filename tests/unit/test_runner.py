@@ -23,7 +23,7 @@ from ASOkai.Plugins import (
 )
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
-from ASOkai._pipeline.plan import ExecutionPlan
+from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
@@ -163,7 +163,7 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run"):
         runner.run_step("download-genome", config, force=True, dry_run=True)
 
-    assert step.outputs_exist(config) is True
+    assert all(path.exists() for path in step.output_paths(config).values())
 
 
 def test_run_step_missing_dependency_raises(config, monkeypatch):
@@ -177,9 +177,6 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
             destination="genome/genome.txt",
         )
         spec = StepSpec(outputs=[genome_output])
-
-        def outputs_exist(self, c):
-            return False
 
         def cleanup(self, c):
             return None
@@ -206,8 +203,12 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
     }
     with patch("ASOkai._pipeline.runner.get_steps", return_value=registry), \
          patch("ASOkai.Plugins._registry.get_steps", return_value=registry):
-        with pytest.raises(RuntimeError, match="requires 'build-genome'"):
-            runner.run_step("download-genome", config, recursive=False)
+        with pytest.raises(RuntimeError, match="'build-genome'.*required"):
+            runner.run_step(
+                "download-genome",
+                config,
+                non_recursive=True,
+            )
 
 
 @pytest.fixture
@@ -375,9 +376,12 @@ def test_run_all_empty_runnables_raises(workflow_config):
 
 def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
     executor = MagicMock()
-    plan = ExecutionPlan(
-        steps_to_run=[DownloadGenomeStep(), CreateTargetGeneStep()],
-        pre_resolved={},
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    plan = build_plan(
+        [create],
+        workflow_config,
+        _registry={download.name: download, create.name: create},
     )
 
     result = runner.run_plan(
@@ -407,9 +411,9 @@ def test_flatten_workflow_expands_task_then_step():
         description: ClassVar[str] = ""
         members: list[Runnable] = [MiniTask(), create]
 
-    from ASOkai._pipeline.plan import _flatten_runnable
+    from ASOkai._pipeline.plan import _flatten_goals
 
-    objs = _flatten_runnable(MiniWorkflow())
+    objs = _flatten_goals(MiniWorkflow())
     assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
 
 
@@ -428,9 +432,9 @@ def test_flatten_workflow_expands_nested_workflow():
         description: ClassVar[str] = ""
         members: list[Runnable] = [Inner(), create]
 
-    from ASOkai._pipeline.plan import _flatten_runnable
+    from ASOkai._pipeline.plan import _flatten_goals
 
-    objs = _flatten_runnable(Outer())
+    objs = _flatten_goals(Outer())
     assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
 
 
@@ -443,7 +447,7 @@ def test_flatten_workflow_cycle_raises():
 
     w = SelfRef()
     w.members = [w]
-    from ASOkai._pipeline.plan import _flatten_runnable
+    from ASOkai._pipeline.plan import _flatten_goals
 
     with pytest.raises(ValueError, match="cycle"):
-        _flatten_runnable(w)
+        _flatten_goals(w)

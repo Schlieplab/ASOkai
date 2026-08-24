@@ -216,9 +216,18 @@ class Step(Runnable):
             for output in self.spec.outputs
         }
 
-    def outputs_exist(self, config: dict) -> bool:
-        """Return whether every declared output currently exists."""
-        return all(path.exists() for path in self.output_paths(config).values())
+    def validate_output_files(self, config: dict) -> dict[str, Path]:
+        """Return output paths after validating every declared file contract."""
+        paths = self.validated_output_paths(config)
+        for output in self.spec.outputs:
+            path = paths[output.name]
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Output '{self.name}/{output.name}' was not written to "
+                    f"{path}."
+                )
+            output.file_type.read(path)
+        return paths
 
     def cleanup(self, config: dict) -> None:
         """Remove all declared output files that currently exist."""

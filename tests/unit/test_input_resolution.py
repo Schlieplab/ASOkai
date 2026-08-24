@@ -4,229 +4,235 @@ Filename: tests/unit/test_input_resolution.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Tests for pipeline input resolution.
+Description: Tests for concrete step-run input resolution.
 License: LGPL-3.0-or-later
 """
 
-from unittest.mock import patch
+from pathlib import Path
 
 import pytest
 
-from ASOkai.Plugins import (
-    FileInput,
-    FileOutput,
-    ScalarParam,
-    Step,
-    StepSpec,
-)
+from ASOkai.Plugins import FileInput, FileOutput, ScalarParam, Step, StepSpec
 from ASOkai._cwl.input_resolution import (
-    resolve_step_inputs,
-    resolve_step_sequence_inputs,
+    resolve_run_inputs,
+    resolve_run_sequence_inputs,
     to_cwl_inputs,
 )
-
-
-class _FakeStep(Step):
-    name = "fake-step"
-    description = ""
-    spec = StepSpec()
-
-    def __init__(self, *, exists: bool = False) -> None:
-        self._exists = exists
-
-    def outputs_exist(self, config):
-        return self._exists
-
-    def cleanup(self, config):
-        pass
+from ASOkai._pipeline.plan import StepInputBinding, StepRun
 
 
 def _fake_step(
     name: str,
     *,
-    deps: list[Step] | None = None,
-    config_map: dict[str, str] | None = None,
-    input_overrides: dict[str, str] | None = None,
-    input_names: list[str] | None = None,
+    producer: Step | None = None,
+    scalar_parameters: dict[str, str] | None = None,
+    input_override: str | None = None,
+    input_name: str | None = None,
     output_names: list[str] | None = None,
-    exists: bool = False,
 ) -> Step:
-    """Return an isolated fake Step with class-level declaration metadata."""
-    output_names = output_names or [f"{name}_out"]
+    """Return an isolated fake step with class-level contract metadata."""
     outputs = [
         FileOutput(
-            key,
-            destination=f"{name}/{key}.txt",
+            output_name,
+            destination=f"{name}/{output_name}.txt",
         )
-        for key in output_names
+        for output_name in output_names or [f"{name}_out"]
     ]
-    file_input_names = set(input_overrides or {}) | set(input_names or {})
-    if file_input_names and len(deps or []) != 1:
-        raise ValueError("Test file inputs require exactly one producer.")
-    producer = (deps or [None])[0]
+    inputs = []
+    if input_name is not None:
+        if producer is None:
+            raise ValueError("A test file input requires a producer.")
+        inputs.append(
+            FileInput(
+                input_name,
+                source=producer.spec.output(input_name),
+                override=input_override,
+            )
+        )
     spec = StepSpec(
         params=[
-            ScalarParam(
-                key,
-                str,
-                config=(config_map or {}).get(key),
-            )
-            for key in set(config_map or {}) - set(input_overrides or {})
+            ScalarParam(parameter_name, str, config=config_path)
+            for parameter_name, config_path in (scalar_parameters or {}).items()
         ],
-        inputs=[
-            FileInput(
-                key,
-                source=producer.spec.output(key),
-                override=(input_overrides or {}).get(key),
-            )
-            for key in sorted(file_input_names)
-            if producer is not None
-        ],
+        inputs=inputs,
         outputs=outputs,
     )
-    configured_fake_step = type(
-        "ConfiguredFakeStep",
-        (_FakeStep,),
+    step_type = type(
+        f"_{name.replace('-', '_').title()}Step",
+        (Step,),
         {
             "name": name,
+            "description": "",
             "spec": spec,
             **{f"{output.name}_output": output for output in outputs},
         },
     )
-    return configured_fake_step(exists=exists)
+    return step_type()
 
 
-def test_resolve_step_inputs_input_override_beats_dep_output_and_scalar(tmp_path):
-    config = {
-        "datadir": str(tmp_path),
-        "shared": {
-            "scalar": "from-config",
-            "override": str(tmp_path / "override.fa"),
-        },
-    }
-    dep = _fake_step("dep", output_names=["shared"])
-    step = _fake_step(
-        "consumer",
-        deps=[dep],
-        config_map={"shared": "shared.scalar"},
-        input_overrides={"shared": "shared.override"},
+def _run(
+    step: Step,
+    config: dict,
+    *,
+    producer_run: StepRun | None = None,
+    override: Path | None = None,
+) -> StepRun:
+    bindings = []
+    if step.spec.inputs:
+        file_input = step.spec.inputs[0]
+        source = (
+            override
+            if override is not None
+            else producer_run.output(file_input.source)
+            if producer_run is not None
+            else None
+        )
+        if source is None:
+            raise ValueError("A test run with a file input requires a source.")
+        bindings.append(StepInputBinding(file_input, source))
+    return StepRun(
+        run_id=step.name,
+        name=step.name,
+        step=step,
+        config=config,
+        inputs=tuple(bindings),
     )
 
-    with patch(
-        "ASOkai._cwl.input_resolution.get_steps",
-        side_effect=AssertionError("override should bypass producer resolution"),
-    ):
-        resolved = resolve_step_inputs(
-            step,
-            config,
-        )
+
+def test_path_binding_is_resolved_as_input_override(tmp_path):
+    config = {"datadir": str(tmp_path)}
+    producer = _fake_step("producer", output_names=["shared"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="shared",
+        input_override="shared.override",
+    )
+    override = tmp_path / "override.fa"
+    run = _run(consumer, config, override=override)
+
+    resolved = resolve_run_inputs(run)
 
     assert resolved["shared"].source == "input_override"
     assert resolved["shared"].cwl_value == {
         "class": "File",
-        "path": str((tmp_path / "override.fa").resolve()),
+        "path": str(override.resolve()),
     }
 
 
-def test_resolve_step_inputs_wires_in_plan_dependency_outputs(tmp_path):
+def test_scheduled_producer_output_is_wired(tmp_path):
     config = {"datadir": str(tmp_path)}
-    dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
+    producer = _fake_step("producer", output_names=["result"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="result",
+    )
+    producer_run = _run(producer, config)
+    consumer_run = _run(consumer, config, producer_run=producer_run)
 
-    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
-        resolved = resolve_step_inputs(
-            step,
-            config,
-            steps_in_plan={"dep", "consumer"},
-        )
+    resolved = resolve_run_inputs(
+        consumer_run,
+        run_ids_to_execute={producer_run.run_id, consumer_run.run_id},
+    )
 
-    assert resolved["dep_file"].source == "dep_wired"
-    assert resolved["dep_file"].cwl_value is None
-    assert resolved["dep_file"].source_output is dep.spec.output("dep_file")
-    assert "dep_file" not in to_cwl_inputs(resolved)
+    assert resolved["result"].source == "dep_wired"
+    assert resolved["result"].cwl_value is None
+    assert resolved["result"].source_output is producer.spec.output("result")
+    assert "result" not in to_cwl_inputs(resolved)
 
 
-def test_resolve_step_inputs_uses_pre_resolved_dependency_file(tmp_path):
+def test_reused_producer_output_is_read_from_disk(tmp_path):
     config = {"datadir": str(tmp_path)}
-    dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
-    path = tmp_path / "dep-output.txt"
+    producer = _fake_step("producer", output_names=["result"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="result",
+    )
+    producer_run = _run(producer, config)
+    consumer_run = _run(consumer, config, producer_run=producer_run)
+    producer_output = producer_run.output(producer.spec.output("result"))
+    path = tmp_path / "producer-result.txt"
 
-    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
-        resolved = resolve_step_inputs(
-            step,
-            config,
-            pre_resolved={dep.spec.output("dep_file"): path},
-        )
+    resolved = resolve_run_inputs(
+        consumer_run,
+        resolved_outputs={producer_output: path},
+    )
 
-    assert resolved["dep_file"].source == "dep_disk"
-    assert resolved["dep_file"].cwl_value == {
+    assert resolved["result"].source == "dep_disk"
+    assert resolved["result"].cwl_value == {
         "class": "File",
         "path": str(path.resolve()),
     }
-    assert resolved["dep_file"].source_output is dep.spec.output("dep_file")
 
 
-def test_resolve_step_inputs_uses_dependency_output_path_without_pre_resolution(
-    tmp_path,
-):
+def test_missing_reused_output_is_rejected(tmp_path):
     config = {"datadir": str(tmp_path)}
-    dep = _fake_step("dep", output_names=["dep_file"])
-    step = _fake_step("consumer", deps=[dep], input_names=["dep_file"])
+    producer = _fake_step("producer", output_names=["result"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="result",
+    )
+    producer_run = _run(producer, config)
+    consumer_run = _run(consumer, config, producer_run=producer_run)
 
-    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
-        resolved = resolve_step_inputs(step, config)
-
-    expected = dep.output_paths(config)["dep_file"]
-    assert resolved["dep_file"].source == "dep_disk"
-    assert resolved["dep_file"].cwl_value == {
-        "class": "File",
-        "path": str(expected.resolve()),
-    }
+    with pytest.raises(RuntimeError, match="requires resolved output"):
+        resolve_run_inputs(consumer_run)
 
 
-def test_resolve_step_inputs_does_not_inject_output_filenames(tmp_path):
-    config = {"datadir": str(tmp_path)}
+def test_resolution_does_not_inject_output_filenames(tmp_path):
     step = _fake_step("producer", output_names=["result"])
 
-    resolved = resolve_step_inputs(step, config)
+    resolved = resolve_run_inputs(_run(step, {"datadir": str(tmp_path)}))
 
     assert "result_output" not in resolved
     assert "result_filename" not in resolved
 
 
-def test_resolve_step_inputs_ignores_undeclared_dependency_outputs(tmp_path):
-    config = {"datadir": str(tmp_path)}
-    dep = _fake_step("dep", output_names=["unused"])
-    step = _fake_step("consumer", deps=[dep])
-
-    with patch("ASOkai._cwl.input_resolution.get_steps", return_value={"dep": dep}):
-        resolved = resolve_step_inputs(step, config, steps_in_plan={"dep", "consumer"})
-
-    assert "unused" not in resolved
-
-
-def test_resolve_step_sequence_rejects_conflicting_shared_inputs(tmp_path):
-    config = {
+def test_sequence_rejects_conflicting_shared_inputs(tmp_path):
+    first_config = {
         "datadir": str(tmp_path),
         "first": {"mode": "fast"},
+    }
+    second_config = {
+        "datadir": str(tmp_path),
         "second": {"mode": "careful"},
     }
-    first = _fake_step("first", config_map={"mode": "first.mode"})
-    second = _fake_step("second", config_map={"mode": "second.mode"})
+    first = _fake_step(
+        "first",
+        scalar_parameters={"mode": "first.mode"},
+    )
+    second = _fake_step(
+        "second",
+        scalar_parameters={"mode": "second.mode"},
+    )
 
     with pytest.raises(ValueError, match="input 'mode'.*conflicting values"):
-        resolve_step_sequence_inputs([first, second], config, {})
+        resolve_run_sequence_inputs(
+            [_run(first, first_config), _run(second, second_config)],
+            {},
+        )
 
 
-def test_resolve_step_sequence_merges_matching_shared_inputs(tmp_path):
+def test_sequence_merges_matching_shared_inputs(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "shared": {"mode": "fast"},
     }
-    first = _fake_step("first", config_map={"mode": "shared.mode"})
-    second = _fake_step("second", config_map={"mode": "shared.mode"})
+    first = _fake_step(
+        "first",
+        scalar_parameters={"mode": "shared.mode"},
+    )
+    second = _fake_step(
+        "second",
+        scalar_parameters={"mode": "shared.mode"},
+    )
 
-    resolved = resolve_step_sequence_inputs([first, second], config, {})
+    resolved = resolve_run_sequence_inputs(
+        [_run(first, config), _run(second, config)],
+        {},
+    )
 
     assert resolved["mode"] == "fast"

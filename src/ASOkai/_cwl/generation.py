@@ -21,6 +21,7 @@ from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPl
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.contracts.files import FileInput
+from ASOkai._pipeline.plan import StepRun, StepRunOutput
 from ASOkai._pipeline.steps.base import Step
 
 
@@ -106,38 +107,39 @@ def _output_names(step: Step) -> tuple[str, ...]:
     return step.spec.output_names()
 
 
-def _validate_planned_connections(step_objs: list[Step]) -> None:
-    """Validate direct output identities before rendering workflow wiring."""
-    by_name: dict[str, Step] = {}
-    for step in step_objs:
-        if step.name in by_name:
-            raise ValueError(f"Duplicate planned step name: {step.name!r}.")
-        by_name[step.name] = step
+def _validate_planned_connections(runs: list[StepRun]) -> None:
+    """Validate run identities and direct producer-output bindings."""
+    by_id: dict[str, StepRun] = {}
+    for run in runs:
+        if run.run_id in by_id:
+            raise ValueError(f"Duplicate planned run id: {run.run_id!r}.")
+        by_id[run.run_id] = run
 
-    for step in step_objs:
-        for file_input in step.spec.inputs:
-            source = file_input.source
-            producer = by_name.get(source.producer)
-            if producer is None:
+    for run in runs:
+        for binding in run.inputs:
+            source = binding.source
+            if not isinstance(source, StepRunOutput):
                 continue
+            producer = source.run
             try:
-                declared = producer.spec.output(source.name)
+                declared = producer.step.spec.output(source.output.name)
             except KeyError as error:
                 raise ValueError(
-                    f"Step '{step.name}' input '{file_input.name}' references "
-                    f"unknown output '{source.name}' on step '{source.producer}'."
+                    f"Run '{run.name}' input '{binding.file_input.name}' references "
+                    f"unknown output '{source.output.name}' on run "
+                    f"'{producer.name}'."
                 ) from error
-            if declared is not source:
+            if declared is not source.output:
                 raise ValueError(
-                    f"Step '{step.name}' input '{file_input.name}' references "
+                    f"Run '{run.name}' input '{binding.file_input.name}' references "
                     f"an output declaration that does not belong to "
-                    f"'{source.producer}'."
+                    f"'{producer.name}'."
                 )
 
 
-def _workflow_output_id(step: Step, output_name: str) -> str:
-    """Return a unique top-level output id for one step output."""
-    return f"{_cwl_step_id(step.name)}__{output_name}"
+def _workflow_output_id(run: StepRun, output_name: str) -> str:
+    """Return a unique top-level output id for one run output."""
+    return f"{_cwl_step_id(run.name)}__{output_name}"
 
 
 def _publisher_output_ids(plan: PublicationPlan) -> dict[str, str]:
@@ -154,16 +156,18 @@ def _publisher_output_ids(plan: PublicationPlan) -> dict[str, str]:
     return result
 
 
-def build_publication_plan(step_objs: list[Step], config: dict) -> PublicationPlan:
+def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
     """Resolve every planned output to a path relative to ``datadir``."""
     entries: list[PublicationEntry] = []
-    for step in step_objs:
+    for run in runs:
+        step = run.step
+        config = dict(run.config)
         step.validated_output_paths(config)
         for output in step.spec.outputs:
             relative = step.output_relative_path(output.name, config)
             entries.append(
                 PublicationEntry(
-                    _workflow_output_id(step, output.name),
+                    _workflow_output_id(run, output.name),
                     PurePosixPath(*relative.parts),
                 )
             )
@@ -172,12 +176,12 @@ def build_publication_plan(step_objs: list[Step], config: dict) -> PublicationPl
     return PublicationPlan(tuple(entries))
 
 
-def _publication_sources(step_objs: list[Step]) -> list[str]:
+def _publication_sources(runs: list[StepRun]) -> list[str]:
     """Return step output sources in publication-manifest order."""
     return [
-        f"{_cwl_step_id(step.name)}/{output.name}"
-        for step in step_objs
-        for output in step.spec.outputs
+        f"{_cwl_step_id(run.name)}/{output.name}"
+        for run in runs
+        for output in run.step.spec.outputs
     ]
 
 
@@ -208,8 +212,7 @@ class JobCwlGenerator(BaseCwlGenerator):
 
     def document(
         self,
-        step_objs: list[Step],
-        config: dict,
+        runs: list[StepRun],
         publication_plan: PublicationPlan,
     ) -> dict[str, Any]:
         """
@@ -223,15 +226,19 @@ class JobCwlGenerator(BaseCwlGenerator):
         - every planned step output is wired into the final publisher.
         - the publisher's top-level data roots become workflow outputs.
         """
-        _validate_planned_connections(step_objs)
-        step_names_in_seq = {step.name for step in step_objs}
+        _validate_planned_connections(runs)
+        run_ids_to_execute = {run.run_id for run in runs}
         all_inputs: dict[str, Any] = {}
-        for step in step_objs:
+        for run in runs:
+            step = run.step
+            config = dict(run.config)
             input_types = step.cwl_spec(config).input_types()
-            for file_input in step.spec.inputs:
+            for binding in run.inputs:
+                file_input = binding.file_input
+                source = binding.source
                 if (
-                    file_input.configured_override_path(config) is not None
-                    or file_input.source.producer not in step_names_in_seq
+                    not isinstance(source, StepRunOutput)
+                    or source.run.run_id not in run_ids_to_execute
                 ):
                     _declare_workflow_input(
                         all_inputs,
@@ -239,13 +246,17 @@ class JobCwlGenerator(BaseCwlGenerator):
                         input_types[file_input.name],
                     )
 
-        for step in step_objs:
+        for run in runs:
+            step = run.step
+            config = dict(run.config)
             input_types = step.cwl_spec(config).input_types()
             for cwl_key in step.config_map:
                 _declare_workflow_input(all_inputs, cwl_key, input_types[cwl_key])
 
         cwl_steps = {}
-        for step in step_objs:
+        for run in runs:
+            step = run.step
+            config = dict(run.config)
             in_map: dict[str, str | dict] = {}
 
             if step.supports_multiple_processes:
@@ -258,19 +269,20 @@ class JobCwlGenerator(BaseCwlGenerator):
             for cwl_key in step.config_map:
                 in_map[cwl_key] = cwl_key
 
-            for file_input in step.spec.inputs:
-                source = file_input.source
+            for binding in run.inputs:
+                file_input = binding.file_input
+                source = binding.source
                 if (
-                    file_input.configured_override_path(config) is not None
-                    or source.producer not in step_names_in_seq
+                    not isinstance(source, StepRunOutput)
+                    or source.run.run_id not in run_ids_to_execute
                 ):
                     in_map[file_input.name] = file_input.name
                 else:
                     in_map[file_input.name] = (
-                        f"{_cwl_step_id(source.producer)}/{source.name}"
+                        f"{_cwl_step_id(source.run.name)}/{source.output.name}"
                     )
 
-            cwl_steps[_cwl_step_id(step.name)] = {
+            cwl_steps[_cwl_step_id(run.name)] = {
                 "run": step_cwl_run_path(step),
                 "in": in_map,
                 "out": list(_output_names(step)),
@@ -281,7 +293,7 @@ class JobCwlGenerator(BaseCwlGenerator):
             "run": "publish.cwl",
             "in": {
                 "files": {
-                    "source": _publication_sources(step_objs),
+                    "source": _publication_sources(runs),
                     "linkMerge": "merge_flattened",
                 },
             },
@@ -307,14 +319,12 @@ class JobCwlGenerator(BaseCwlGenerator):
 
     def render(
         self,
-        step_objs: list[Step],
-        config: dict,
+        runs: list[StepRun],
         publication_plan: PublicationPlan,
     ) -> str:
         return self.dump(
             self.document(
-                step_objs,
-                config,
+                runs,
                 publication_plan,
             )
         )
@@ -378,19 +388,19 @@ class GeneratedCwlBundle:
 
 
 def generate_cwl_bundle(
-    step_objs: list[Step],
-    config: dict,
+    runs: list[StepRun],
 ) -> GeneratedCwlBundle:
     """Generate every CWL document required by a runnable bundle."""
-    publication_plan = build_publication_plan(step_objs, config)
+    publication_plan = build_publication_plan(runs)
     run_cwl = JobCwlGenerator().render(
-        step_objs,
-        config,
+        runs,
         publication_plan,
     )
     step_generator = StepCwlGenerator()
     step_cwls = {}
-    for step in step_objs:
+    for run in runs:
+        step = run.step
+        config = dict(run.config)
         authored_requirement = step.cwl_spec(config).requirements.get(
             "ResourceRequirement",
             {},

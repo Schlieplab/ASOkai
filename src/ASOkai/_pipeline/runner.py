@@ -16,19 +16,20 @@ from typing import Callable
 
 from ASOkai._cwl.generation import generate_cwl_bundle
 from ASOkai._cwl.input_resolution import (
-    resolve_step_inputs,
-    resolve_step_sequence_inputs,
+    resolve_run_inputs,
+    resolve_run_sequence_inputs,
 )
 from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.plan import ExecutionPlan, build_plan
+from ASOkai._pipeline.plan import ExecutionPlan, StepRun, build_plan
 from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RunnerConfig:
@@ -68,38 +69,52 @@ def runner_name_from_name(name: str) -> str:
 
 
 def _validate_published_outputs(
-    steps: list[Step],
-    config: dict,
+    runs: tuple[StepRun, ...],
 ) -> None:
-    """Ensure the CWL publisher materialized every planned output."""
-    missing: list[tuple[str, Path]] = []
-    for step in steps:
-        for name, path in step.validated_output_paths(config).items():
-            if not path.exists():
-                missing.append((f"{step.name}/{name}", path))
-    if missing:
-        details = ", ".join(f"{name} at {path}" for name, path in missing)
-        raise RuntimeError(f"CWL did not publish expected output(s): {details}.")
+    """Ensure the CWL publisher materialized valid planned outputs."""
+    for run in runs:
+        try:
+            run.step.validate_output_files(dict(run.config))
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                f"CWL did not publish expected output(s): {error}"
+            ) from error
+        except (OSError, UnicodeError, TypeError, ValueError) as error:
+            raise RuntimeError(
+                f"CWL published invalid output(s) for '{run.name}': {error}"
+            ) from error
+
+
+def _last_goal_outputs(plan: ExecutionPlan) -> dict[str, Path]:
+    """Return the declared paths of the plan's last requested goal."""
+    if not plan.goals:
+        return {}
+    goal = plan.goals[-1]
+    return goal.step.validated_output_paths(dict(goal.config))
 
 
 # ---------------------------------------------------------------------------
 # Dry-run reporting (same resolution logic, annotated display)
 # ---------------------------------------------------------------------------
 
-def _log_dry_run_plan(plan: ExecutionPlan, config: dict, label: str) -> None:
+def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
     """
-    Per-step dry-run breakdown.  Uses _resolve_step_inputs with plan context
+    Per-step dry-run breakdown. Uses run input resolution with plan context
     so the display reflects exactly the same priority logic as execution.
     """
-    steps_in_plan = {s.name for s in plan.steps_to_run}
-    logger.info("[%s] dry-run — would run %d step(s):", label, len(plan.steps_to_run))
+    run_ids_to_execute = {run.run_id for run in plan.runs_to_execute}
+    logger.info(
+        "[%s] dry-run — would run %d step(s):",
+        label,
+        len(plan.runs_to_execute),
+    )
 
-    for step in plan.steps_to_run:
-        logger.info("  ── %s", step.name)
-        resolved = resolve_step_inputs(
-            step, config,
-            pre_resolved=plan.pre_resolved,
-            steps_in_plan=steps_in_plan,
+    for run in plan.runs_to_execute:
+        logger.info("  ── %s", run.name)
+        resolved = resolve_run_inputs(
+            run,
+            resolved_outputs=dict(plan.resolved_outputs),
+            run_ids_to_execute=run_ids_to_execute,
         )
         for cwl_key, ri in resolved.items():
             if ri.source == "dep_wired":
@@ -130,7 +145,6 @@ def run_plan(
     label: str,
     config: dict,
     *,
-    force: bool = False,
     dry_run: bool = False,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
@@ -143,24 +157,29 @@ def run_plan(
 
     executor = executor or CwlToolExecutor()
 
-    if not plan.steps_to_run:
+    if not plan.runs_to_execute:
         logger.info("[%s] all outputs already exist, nothing to run.", label)
-        outputs: dict[str, Path] = {}
-        for output, path in plan.pre_resolved.items():
-            logger.info("  %s/%s: %s", output.producer, output.name, path)
-            outputs[output.name] = path
-        return outputs
+        for run_output, path in plan.resolved_outputs.items():
+            logger.info(
+                "  %s/%s: %s",
+                run_output.run.name,
+                run_output.output.name,
+                path,
+            )
+        return _last_goal_outputs(plan)
 
     cwl_bundle = generate_cwl_bundle(
-        plan.steps_to_run,
-        config,
+        list(plan.runs_to_execute),
     )
-    inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)
-    last_step = plan.steps_to_run[-1]
+    inputs = resolve_run_sequence_inputs(
+        plan.runs_to_execute,
+        dict(plan.resolved_outputs),
+    )
+    last_run = plan.runs_to_execute[-1]
 
     if dry_run:
-        _log_dry_run_plan(plan, config, label)
-        return last_step.validated_output_paths(config)
+        _log_dry_run_plan(plan, label)
+        return _last_goal_outputs(plan)
 
     job_parent = Path(config["datadir"]) / "jobs"
     job_dir = write_cwl_job_bundle(
@@ -173,19 +192,24 @@ def run_plan(
     )
     logger.info("[%s] CWL job bundle written to %s", label, job_dir)
 
-    if force:
-        for step in plan.steps_to_run:
-            logger.info("[%s] force=True, cleaning up '%s'.", label, step.name)
-            step.cleanup(config)
+    for run in plan.runs_to_execute:
+        run_config = dict(run.config)
+        if any(path.exists() for path in run.step.output_paths(run_config).values()):
+            logger.info("[%s] replacing outputs for '%s'.", label, run.name)
+            run.step.cleanup(run_config)
 
-    if len(plan.steps_to_run) == 1:
-        logger.info("[%s] running '%s'.", label, last_step.name)
+    if len(plan.runs_to_execute) == 1:
+        logger.info("[%s] running '%s'.", label, last_run.name)
     else:
-        logger.info("[%s] running %d steps.", label, len(plan.steps_to_run))
+        logger.info(
+            "[%s] running %d steps.",
+            label,
+            len(plan.runs_to_execute),
+        )
     datadir = Path(config["datadir"])
     executor.run(str(job_dir / "run.cwl"), inputs, datadir)
-    _validate_published_outputs(plan.steps_to_run, config)
-    return last_step.validated_output_paths(config)
+    _validate_published_outputs(plan.runs_to_execute)
+    return _last_goal_outputs(plan)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +222,7 @@ def run_all(
     *,
     force: bool = False,
     dry_run: bool = False,
-    recursive: bool = False,
+    non_recursive: bool = False,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
@@ -206,12 +230,16 @@ def run_all(
         raise ValueError("run_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
-    plan = build_plan(runnables, config, recursive=recursive, force=force)
+    plan = build_plan(
+        runnables,
+        config,
+        non_recursive=non_recursive,
+        force=force,
+    )
     return run_plan(
         plan,
         label,
         config,
-        force=force,
         dry_run=dry_run,
         executor=executor,
     )
@@ -221,7 +249,7 @@ def export_all(
     runnables: list[Runnable],
     config: dict,
     *,
-    recursive: bool = False,
+    non_recursive: bool = False,
     outdir: Path | None = None,
     runner_name: str = "cwltool",
 ) -> Path:
@@ -230,15 +258,22 @@ def export_all(
         raise ValueError("export_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
-    plan = build_plan(runnables, config, recursive=recursive, force=True)
-    if not plan.steps_to_run:
+    plan = build_plan(
+        runnables,
+        config,
+        non_recursive=non_recursive,
+        force=True,
+    )
+    if not plan.runs_to_execute:
         raise RuntimeError("No steps were selected for export.")
 
     cwl_bundle = generate_cwl_bundle(
-        plan.steps_to_run,
-        config,
+        list(plan.runs_to_execute),
     )
-    inputs = resolve_step_sequence_inputs(plan.steps_to_run, config, plan.pre_resolved)
+    inputs = resolve_run_sequence_inputs(
+        plan.runs_to_execute,
+        dict(plan.resolved_outputs),
+    )
     parent_dir = outdir or Path(config["datadir"]) / "jobs"
     job_dir = write_cwl_job_bundle(
         bundle=cwl_bundle,
@@ -258,7 +293,7 @@ def run_step(
     *,
     force: bool = False,
     dry_run: bool = False,
-    recursive: bool = False,
+    non_recursive: bool = False,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     """Run a single step by name."""
@@ -270,10 +305,16 @@ def run_step(
     if not isinstance(step, Step):
         raise TypeError(f"Step '{step_name}' does not conform to the Step protocol.")
 
-    plan = build_plan([step], config, recursive=recursive, force=force)
+    plan = build_plan(
+        [step],
+        config,
+        non_recursive=non_recursive,
+        force=force,
+    )
 
-    if not plan.steps_to_run and not force:
-        outputs = step.validated_output_paths(config)
+    if not plan.runs_to_execute and not force:
+        goal = plan.goals[0]
+        outputs = goal.step.validated_output_paths(dict(goal.config))
         logger.info("[%s] outputs exist, skipping.", step_name)
         for name, path in outputs.items():
             logger.info("  %s: %s", name, path)
@@ -283,7 +324,6 @@ def run_step(
         plan,
         step_name,
         config,
-        force=force,
         dry_run=dry_run,
         executor=executor,
     )
@@ -295,7 +335,7 @@ def run_task(
     *,
     force: bool = False,
     dry_run: bool = False,
-    recursive: bool = False,
+    non_recursive: bool = False,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     tasks = get_tasks()
@@ -305,12 +345,16 @@ def run_task(
     if not isinstance(task, Task):
         raise TypeError(f"Task '{task_name}' does not conform to the Task protocol.")
 
-    plan = build_plan([task], config, recursive=recursive, force=force)
+    plan = build_plan(
+        [task],
+        config,
+        non_recursive=non_recursive,
+        force=force,
+    )
     return run_plan(
         plan,
         task_name,
         config,
-        force=force,
         dry_run=dry_run,
         executor=executor,
     )
@@ -322,7 +366,7 @@ def run_workflow(
     *,
     force: bool = False,
     dry_run: bool = False,
-    recursive: bool = False,
+    non_recursive: bool = False,
     executor: Executor | None = None,
 ) -> dict[str, Path] | None:
     workflows = get_workflows()
@@ -334,12 +378,16 @@ def run_workflow(
     if not isinstance(wf, Workflow):
         raise TypeError(f"Workflow '{workflow_name}' does not conform to the Workflow protocol.")
 
-    plan = build_plan([wf], config, recursive=recursive, force=force)
+    plan = build_plan(
+        [wf],
+        config,
+        non_recursive=non_recursive,
+        force=force,
+    )
     return run_plan(
         plan,
         workflow_name,
         config,
-        force=force,
         dry_run=dry_run,
         executor=executor,
     )

@@ -118,9 +118,9 @@ def _collect_runnables(
     help="Show what would run without executing.",
 )
 @click.option(
-    "--recursive",
+    "--non-recursive",
     is_flag=True,
-    help="Automatically run missing step dependencies.",
+    help="Require step dependencies to exist instead of running missing ones.",
 )
 @click.option(
     "--executor",
@@ -146,7 +146,7 @@ def run_command(
     workflow_name: str | None,
     force: bool,
     dry_run: bool,
-    recursive: bool,
+    non_recursive: bool,
     executor_name: str,
     config_overrides: tuple,
 ) -> None:
@@ -167,10 +167,10 @@ def run_command(
             config,
             force=force,
             dry_run=dry_run,
-            recursive=recursive,
+            non_recursive=non_recursive,
             executor=runner.executor_from_name(executor_name),
         )
-    except (OSError, ValueError) as error:
+    except (OSError, RuntimeError, ValueError) as error:
         raise click.ClickException(str(error)) from error
 
 
@@ -212,9 +212,9 @@ def run_command(
     help="Workflow to export.",
 )
 @click.option(
-    "--recursive",
+    "--non-recursive",
     is_flag=True,
-    help="Include missing step dependencies in the exported plan.",
+    help="Require step dependencies to exist instead of exporting missing ones.",
 )
 @click.option(
     "--outdir",
@@ -248,7 +248,7 @@ def export_command(
     step_names: tuple[str, ...],
     task_names: tuple[str, ...],
     workflow_name: str | None,
-    recursive: bool,
+    non_recursive: bool,
     outdir: Path | None,
     executor_name: str,
     config_overrides: tuple,
@@ -268,7 +268,7 @@ def export_command(
         export_directory = runner.export_all(
             runnables,
             config,
-            recursive=recursive,
+            non_recursive=non_recursive,
             outdir=outdir,
             runner_name=runner.runner_name_from_name(executor_name),
         )

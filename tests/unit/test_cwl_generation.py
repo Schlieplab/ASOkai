@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 import yaml
@@ -28,15 +29,17 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 )
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.plan import (
+    StepInputBinding,
+    StepRun,
+    StepRunOutput,
+)
 
 
 class _SpecStep(Step):
     name = "test-step"
     description = "Test step."
     spec = StepSpec()
-
-    def outputs_exist(self, config):
-        return False
 
     def cleanup(self, config):
         pass
@@ -66,7 +69,52 @@ def _generate_run_cwl(
     steps: list[Step],
     config: dict,
 ) -> str:
-    return generate_cwl_bundle(steps, config).run_cwl
+    return _generate_bundle(steps, config).run_cwl
+
+
+def _step_runs(steps: list[Step], config: dict) -> list[StepRun]:
+    """Build main runs for focused CWL generator tests."""
+    unbound_runs = [
+        StepRun(
+            run_id=step.name,
+            name=step.name,
+            step=step,
+            config=config,
+        )
+        for step in steps
+    ]
+    runs = []
+    for run in unbound_runs:
+        bindings = []
+        for file_input in run.step.spec.inputs:
+            producer_run = next(
+                (
+                    candidate
+                    for candidate in unbound_runs
+                    if candidate.step.name == file_input.source.producer
+                ),
+                None,
+            )
+            source = (
+                StepRunOutput(producer_run, file_input.source)
+                if producer_run is not None
+                else Path(config["datadir"]) / "external" / file_input.name
+            )
+            bindings.append(StepInputBinding(file_input, source))
+        runs.append(
+            StepRun(
+                run_id=run.run_id,
+                name=run.name,
+                step=run.step,
+                config=run.config,
+                inputs=tuple(bindings),
+            )
+        )
+    return runs
+
+
+def _generate_bundle(steps: list[Step], config: dict):
+    return generate_cwl_bundle(_step_runs(steps, config))
 
 
 @pytest.fixture
@@ -209,7 +257,7 @@ def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_conf
 
 
 def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [DownloadGenomeStep(), CreateTargetGeneStep()],
         workflow_config,
     )
@@ -245,7 +293,7 @@ def test_generate_cwl_keeps_single_process_steps_at_one_core(workflow_config):
         "create-target-gene": {"memory_mb": 16384},
     }
 
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [DownloadGenomeStep(), CreateTargetGeneStep()],
         workflow_config,
     )
@@ -272,7 +320,7 @@ def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
         "intrinsic-features": {"n_processes": 4, "memory_mb": 8192},
     }
 
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [IntrinsicFeaturesStep()],
         workflow_config,
     )
@@ -300,7 +348,7 @@ def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
 def test_generate_cwl_uses_default_resource_requirement_when_not_configured(
     workflow_config,
 ):
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [DownloadGenomeStep()],
         workflow_config,
     )
@@ -330,7 +378,7 @@ def test_generate_cwl_resource_precedence(workflow_config):
         "authored-resources": {"memory_mb": 8192},
     }
 
-    generated = generate_cwl_bundle([step], workflow_config)
+    generated = _generate_bundle([step], workflow_config)
     document = yaml.safe_load(generated.step_cwls["authored-resources.cwl"])
 
     assert document["requirements"]["ResourceRequirement"] == {
@@ -500,7 +548,7 @@ def test_generate_cwl_rejects_a_same_name_output_from_another_step_class(
         )
 
 
-def test_generate_cwl_rejects_duplicate_planned_step_names(tmp_path):
+def test_generate_cwl_rejects_duplicate_planned_run_ids(tmp_path):
     first = _spec_step(
         "duplicate",
         StepSpec(outputs=[FileOutput("first", destination="first.txt")]),
@@ -510,7 +558,7 @@ def test_generate_cwl_rejects_duplicate_planned_step_names(tmp_path):
         StepSpec(outputs=[FileOutput("second", destination="second.txt")]),
     )
 
-    with pytest.raises(ValueError, match="Duplicate planned step name"):
+    with pytest.raises(ValueError, match="Duplicate planned run id"):
         _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
 
 
@@ -556,7 +604,7 @@ def test_generated_registered_tools_and_workflow_validate_with_cwltool(
             generator.render(step, workflow_config)
         )
 
-    generated = generate_cwl_bundle(steps, workflow_config)
+    generated = _generate_bundle(steps, workflow_config)
     run_path = tmp_path / "run.cwl"
     run_path.write_text(generated.run_cwl)
     (tmp_path / "publish.cwl").write_text(generated.publish_cwl)

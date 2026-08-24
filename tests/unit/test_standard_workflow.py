@@ -10,8 +10,8 @@ License: LGPL-3.0-or-later
 
 import pytest
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
-from ASOkai.Plugins import Runnable, Step, Task, Workflow
-from ASOkai._pipeline.plan import _flatten_runnable
+from ASOkai.Plugins import Runnable, Step, Workflow
+from ASOkai._pipeline.plan import _flatten_goals
 
 
 @pytest.fixture
@@ -33,23 +33,18 @@ def test_implements_workflow_protocol(workflow):
 
 def test_members_are_runnables(workflow):
     assert all(isinstance(m, Runnable) for m in workflow.members)
-    assert isinstance(workflow.members[0], Task)
-    assert isinstance(workflow.members[1], Step)
-    assert isinstance(workflow.members[2], Step)
+    assert all(isinstance(member, Step) for member in workflow.members)
 
 
 def test_member_names(workflow):
     assert [m.name for m in workflow.members] == [
-        "instantiate-target-gene",
         "generate-antisense-candidates",
         "intrinsic-features",
     ]
 
 
-def test_flattens_to_step_names(workflow):
-    assert [s.name for s in _flatten_runnable(workflow)] == [
-        "download-genome",
-        "create-target-gene",
+def test_flattens_to_goal_names(workflow):
+    assert [s.name for s in _flatten_goals(workflow)] == [
         "generate-antisense-candidates",
         "intrinsic-features",
     ]

@@ -55,9 +55,6 @@ class FakeAnalysisStep(AnalysisStep):
     def output_paths(self, config):
         return {}
 
-    def outputs_exist(self, config):
-        return False
-
     def cleanup(self, config):
         pass
 

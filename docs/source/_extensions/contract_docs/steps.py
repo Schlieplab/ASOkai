@@ -365,9 +365,8 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
         [
             nodes.paragraph(
                 text=(
-                    "The recursive flag schedules missing dependencies. Omit "
-                    "it when all dependency outputs already exist or input "
-                    "overrides are configured."
+                    "ASOkai schedules dependencies whose valid outputs do not "
+                    "already exist and whose inputs have not been overridden."
                 )
             ),
             dependency_list,
@@ -438,8 +437,6 @@ def _example_step_config(
 def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.section:
     has_dependencies = bool(step.spec.dependencies())
     command = f"ASOkai run --steps {step.name} --configfile ./config.yaml"
-    if has_dependencies:
-        command += " --recursive"
     command_block = nodes.literal_block(command, command)
 
     example_config = cast(
@@ -450,7 +447,7 @@ def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.
         ),
     )
     example_description = (
-        "Example configuration for this step and its recursive dependencies:"
+        "Example configuration for this step and its dependencies:"
         if has_dependencies
         else "Example configuration for this step:"
     )

@@ -96,8 +96,8 @@ Tasks and workflows are ASOkai CLI-level collections. They are not exported as
 their own CWL files. Export first resolves the selected steps, tasks, and/or
 workflow to an execution plan, then writes one top-level `run.cwl`.
 
-Exports always include the full selected runnable, even when outputs already
-exist locally. Missing dependencies can be included with `--recursive`.
+Exports always include the selected goals. Missing dependencies are included
+automatically; valid existing dependency outputs are reused.
 
 ## CLI
 

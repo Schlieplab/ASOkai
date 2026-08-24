@@ -99,9 +99,10 @@ def _identity(kind: str) -> nodes.field_list:
 
 
 def _run_section(runnable: Any, kind: str) -> nodes.section:
+    option = "--workflow" if kind == "workflow" else "--tasks"
     command = (
-        f"ASOkai run --{kind}s {runnable.name} "
-        "--configfile ./config.yaml --recursive"
+        f"ASOkai run {option} {runnable.name} "
+        "--configfile ./config.yaml"
     )
     return section(
         f"Run this {kind}",
@@ -109,9 +110,9 @@ def _run_section(runnable: Any, kind: str) -> nodes.section:
             nodes.literal_block(command, command),
             nodes.paragraph(
                 text=(
-                    "The recursive flag schedules dependencies that are not "
-                    "already included. Existing outputs and configured input "
-                    "overrides are reused."
+                    "ASOkai resolves and schedules missing dependencies "
+                    "automatically. Existing valid outputs and configured "
+                    "input overrides are reused."
                 )
             ),
         ],
@@ -143,7 +144,7 @@ def _members_section(
                 ),
             )
         )
-    title = "Steps" if kind == "task" else "Direct members"
+    title = "Goals" if kind == "task" else "Direct goals"
     return section(
         title,
         [
@@ -157,16 +158,16 @@ def _members_section(
     )
 
 
-def _expanded_steps(runnable: Any) -> list[Any]:
-    """Return the unique steps produced by runtime runnable expansion."""
-    from ASOkai._pipeline.plan import _flatten_runnable
+def _expanded_goals(runnable: Any) -> list[Any]:
+    """Return the unique terminal goals produced by runnable expansion."""
+    from ASOkai._pipeline.plan import _flatten_goals
 
-    return list({step.name: step for step in _flatten_runnable(runnable)}.values())
+    return list({step.name: step for step in _flatten_goals(runnable)}.values())
 
 
-def _expanded_steps_section(runnable: Any, *, refdoc: str) -> nodes.section:
+def _expanded_goals_section(runnable: Any, *, refdoc: str) -> nodes.section:
     step_list = nodes.bullet_list()
-    for step in _expanded_steps(runnable):
+    for step in _expanded_goals(runnable):
         item = nodes.list_item()
         paragraph = nodes.paragraph()
         paragraph += _runnable_link(step, refdoc=refdoc)
@@ -174,12 +175,13 @@ def _expanded_steps_section(runnable: Any, *, refdoc: str) -> nodes.section:
         item += paragraph
         step_list += item
     return section(
-        "Expanded steps",
+        "Expanded goals",
         [
             nodes.paragraph(
                 text=(
-                    "Nested tasks and workflows expand to these steps before "
-                    "dependency planning and completed-output checks."
+                    "Nested tasks and workflows expand to these terminal "
+                    "goals. Dependency planning then resolves the upstream "
+                    "steps needed to produce them."
                 )
             ),
             step_list,
@@ -206,7 +208,7 @@ def build_runnable_reference(
         _members_section(runnable, kind, refdoc=refdoc),
     ]
     if kind == "workflow":
-        result.append(_expanded_steps_section(runnable, refdoc=refdoc))
+        result.append(_expanded_goals_section(runnable, refdoc=refdoc))
     return result
 
 

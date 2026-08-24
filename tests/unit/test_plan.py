@@ -4,82 +4,63 @@ Filename: tests/unit/test_plan.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Tests for pipeline.plan.build_plan.
+Description: Tests for goal-driven pipeline planning.
 License: LGPL-3.0-or-later
 """
 
 from __future__ import annotations
 
-import pytest
 from typing import cast
 
-from ASOkai.Plugins import (
-    FileInput,
-    FileOutput,
-    Runnable,
-    Step,
-    StepSpec,
-)
-from ASOkai._pipeline.plan import build_plan
-from ASOkai._pipeline.steps.analysis.intrinsic_features import (
-    IntrinsicFeaturesStep,
-)
-from ASOkai._pipeline.steps.core.create_target_gene import (
-    CreateTargetGeneStep,
-)
+import pytest
 
+from ASOkai.Plugins import FileInput, FileOutput, Runnable, Step, StepSpec
+from ASOkai._pipeline.plan import StepRunOutput, build_plan
 
-# ---------------------------------------------------------------------------
-# Minimal step factory
-# ---------------------------------------------------------------------------
 
 def _make_step(
     name: str,
-    deps: list[Step] | None = None,
+    dependencies: list[Step] | None = None,
     *,
-    exists: bool = False,
+    outputs_valid: bool = False,
     output_names: list[str] | None = None,
     input_override: str | None = None,
     compatible_with: dict[str, list[str]] | None = None,
 ) -> Step:
-    """Return a minimal concrete Step for plan tests."""
-    if output_names is None:
-        output_names = [f"{name}_out"]
+    """Return a minimal concrete step for planner tests."""
     outputs = [
         FileOutput(
-            key,
-            destination=f"{name}/{key}.txt",
+            output_name,
+            destination=f"{name}/{output_name}.txt",
         )
-        for key in output_names
+        for output_name in output_names or [f"{name}_out"]
     ]
     spec = StepSpec(
         inputs=[
             FileInput(
-                dep.spec.outputs[0].name,
-                source=dep.spec.outputs[0],
+                dependency.spec.outputs[0].name,
+                source=dependency.spec.outputs[0],
                 override=input_override,
             )
-            for dep in deps or []
+            for dependency in dependencies or []
         ],
         outputs=outputs,
         compatible_with=compatible_with or {},
     )
 
-    def outputs_exist(self, config: dict) -> bool:
-        return exists
-
-    def cleanup(self, config: dict) -> None:
-        pass
+    def validate_output_files(self: Step, config: dict):
+        if not outputs_valid:
+            raise FileNotFoundError
+        return self.validated_output_paths(config)
 
     step_type = type(
-        "_Step",
+        f"_{name.replace('-', '_').title()}Step",
         (Step,),
         {
             "name": name,
             "description": "",
             "spec": spec,
-            "outputs_exist": outputs_exist,
-            "cleanup": cleanup,
+            "validate_output_files": validate_output_files,
             **{f"{output.name}_output": output for output in outputs},
         },
     )
@@ -87,354 +68,301 @@ def _make_step(
 
 
 @pytest.fixture
-def cfg(tmp_path):
+def config(tmp_path):
     return {"datadir": str(tmp_path)}
 
 
-# ---------------------------------------------------------------------------
-# Basic flattening and plan construction
-# ---------------------------------------------------------------------------
+def _scheduled_names(plan) -> list[str]:
+    return [run.name for run in plan.runs_to_execute]
 
-def test_single_step_no_deps_all_in_steps_to_run(cfg):
+
+def test_missing_goal_is_scheduled(config):
     step = _make_step("alpha")
-    plan = build_plan([step], cfg)
-    assert [s.name for s in plan.steps_to_run] == ["alpha"]
-    assert plan.pre_resolved == {}
+
+    plan = build_plan([step], config, _registry={step.name: step})
+
+    assert _scheduled_names(plan) == ["alpha"]
+    assert [run.name for run in plan.goals] == ["alpha"]
+    assert plan.resolved_outputs == {}
 
 
-def test_single_step_outputs_exist_goes_to_pre_resolved(cfg):
-    step = _make_step("alpha", exists=True, output_names=["result"])
-    plan = build_plan([step], cfg)
-    assert plan.steps_to_run == []
-    assert step.spec.output("result") in plan.pre_resolved
+def test_valid_goal_output_is_reused(config):
+    step = _make_step(
+        "alpha",
+        outputs_valid=True,
+        output_names=["result"],
+    )
+
+    plan = build_plan([step], config, _registry={step.name: step})
+
+    assert plan.runs_to_execute == ()
+    assert {
+        (run_output.run.name, run_output.output.name)
+        for run_output in plan.resolved_outputs
+    } == {("alpha", "result")}
 
 
-def test_force_keeps_done_step_in_steps_to_run(cfg):
-    step = _make_step("alpha", exists=True)
-    plan = build_plan([step], cfg, force=True)
-    assert [s.name for s in plan.steps_to_run] == ["alpha"]
-    assert plan.pre_resolved == {}
+def test_force_schedules_valid_goal(config):
+    step = _make_step("alpha", outputs_valid=True)
+
+    plan = build_plan(
+        [step],
+        config,
+        force=True,
+        _registry={step.name: step},
+    )
+
+    assert _scheduled_names(plan) == ["alpha"]
+    assert plan.resolved_outputs == {}
 
 
-@pytest.mark.parametrize("outputs_exist", [False, True])
-def test_incompatible_step_is_rejected_before_execution(cfg, outputs_exist):
+@pytest.mark.parametrize("outputs_valid", [False, True])
+def test_incompatible_goal_is_rejected_before_reuse(config, outputs_valid):
     step = _make_step(
         "restricted",
-        exists=outputs_exist,
+        outputs_valid=outputs_valid,
         compatible_with={"analysis.mode": ["supported"]},
     )
-    cfg["analysis"] = {"mode": "unsupported"}
+    config["analysis"] = {"mode": "unsupported"}
 
     with pytest.raises(
         ValueError,
         match=r"analysis\.mode.*incompatible.*restricted.*supported",
     ):
-        build_plan([step], cfg)
+        build_plan([step], config, _registry={step.name: step})
 
 
-def test_compatible_step_is_scheduled(cfg):
-    step = _make_step(
-        "restricted",
-        compatible_with={"analysis.mode": ["supported"]},
-    )
-    cfg["analysis"] = {"mode": "supported"}
-
-    plan = build_plan([step], cfg)
-
-    assert plan.steps_to_run == [step]
-
-
-def test_dep_done_goes_to_pre_resolved(cfg):
-    dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=[dep])
-    plan = build_plan([step, dep], cfg)
-    assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert dep.spec.output("dep_out") in plan.pre_resolved
-
-
-def test_dep_not_done_included_in_steps_to_run(cfg):
-    dep = _make_step("dep")
-    step = _make_step("step", deps=[dep])
-    plan = build_plan([dep, step], cfg)
-    names = [s.name for s in plan.steps_to_run]
-    assert names == ["dep", "step"]
-    assert plan.pre_resolved == {}
-
-
-# ---------------------------------------------------------------------------
-# Topological ordering
-# ---------------------------------------------------------------------------
-
-def test_topo_order_dep_first(cfg):
-    """dep must come before step regardless of input order."""
-    dep = _make_step("dep")
-    step = _make_step("step", deps=[dep])
-    plan = build_plan([step, dep], cfg)
-    names = [s.name for s in plan.steps_to_run]
-    assert names.index("dep") < names.index("step")
-
-
-def test_topo_order_chain(cfg):
-    a = _make_step("a")
-    b = _make_step("b", deps=[a])
-    c = _make_step("c", deps=[b])
-    plan = build_plan([c, a, b], cfg)
-    names = [s.name for s in plan.steps_to_run]
-    assert names == ["a", "b", "c"]
-
-
-def test_cycle_raises(cfg):
-    a = _make_step("a")
-    b = _make_step("b", deps=[a])
-    type(a).spec = StepSpec(
-        inputs=[
-            FileInput(
-                "b_out",
-                source=b.spec.output("b_out"),
-            )
-        ],
-        outputs=a.spec.outputs,
-    )
-    with pytest.raises(ValueError, match="cycle"):
-        build_plan([a, b], cfg)
-
-
-# ---------------------------------------------------------------------------
-# Deduplication
-# ---------------------------------------------------------------------------
-
-def test_duplicate_steps_deduplicated(cfg):
-    step = _make_step("alpha")
-    plan = build_plan([step, step], cfg)
-    assert len(plan.steps_to_run) == 1
-
-
-def test_duplicate_across_runnables_deduplicated(cfg):
-    """Same step included from two different runnables appears only once."""
-    shared = _make_step("shared")
-    plan = build_plan([shared, shared], cfg)
-    assert sum(1 for s in plan.steps_to_run if s.name == "shared") == 1
-
-
-def test_pre_resolved_outputs_are_keyed_by_producer_and_port(cfg):
-    first = _make_step("first", exists=True, output_names=["result"])
-    second = _make_step("second", exists=True, output_names=["result"])
-
-    plan = build_plan([first, second], cfg)
-
-    assert set(plan.pre_resolved) == {
-        first.spec.output("result"),
-        second.spec.output("result"),
-    }
-
-
-def test_unknown_referenced_output_raises(cfg):
-    producer = _make_step("producer", output_names=["actual"])
-    shadow_producer = _make_step("producer", output_names=["missing"])
-    consumer = _make_step("consumer", deps=[shadow_producer])
-
-    with pytest.raises(ValueError, match="unknown output 'missing'"):
-        build_plan([producer, consumer], cfg)
-
-
-# ---------------------------------------------------------------------------
-# Recursive dependency resolution
-# ---------------------------------------------------------------------------
-
-def test_recursive_prepends_missing_dep(cfg):
-    dep = _make_step("dep")
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
-    plan = build_plan([step], cfg, recursive=True, _registry=registry)
-    names = [s.name for s in plan.steps_to_run]
-    assert "dep" in names
-    assert names.index("dep") < names.index("step")
-
-
-def test_recursive_skips_done_dep(cfg):
-    dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
-    plan = build_plan([step], cfg, recursive=True, _registry=registry)
-    names = [s.name for s in plan.steps_to_run]
-    assert "dep" not in names
-    assert dep.spec.output("dep_out") in plan.pre_resolved
-
-
-def test_recursive_unknown_dep_raises(cfg):
-    ghost = _make_step("ghost")
-    step = _make_step("step", deps=[ghost])
-    registry = {"step": step}
-    with pytest.raises(ValueError, match="unknown step 'ghost'"):
-        build_plan([step], cfg, recursive=True, _registry=registry)
-
-
-def test_recursive_dependency_must_be_compatible(cfg):
-    dependency = _make_step(
-        "restricted-dependency",
-        compatible_with={"analysis.mode": ["supported"]},
-    )
-    step = _make_step("step", deps=[dependency])
-    registry = {dependency.name: dependency, step.name: step}
-    cfg["analysis"] = {"mode": "unsupported"}
-
-    with pytest.raises(
-        ValueError,
-        match=r"incompatible.*restricted-dependency",
-    ):
-        build_plan([step], cfg, recursive=True, _registry=registry)
-
-
-def test_nonrecursive_external_done_dep_goes_to_pre_resolved(cfg):
-    dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
-    plan = build_plan([step], cfg, recursive=False, _registry=registry)
-    assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert dep.spec.output("dep_out") in plan.pre_resolved
-
-
-def test_nonrecursive_analysis_uses_existing_output_for_its_config(cfg):
-    cfg["genome"] = {"assembly_id": "GRCh38"}
-    cfg["target"] = {
-        "target_id": "ENSG00000133703",
-        "k": 16,
-        "region": "pre-mrna",
-    }
-    producer = CreateTargetGeneStep()
-    analysis = IntrinsicFeaturesStep()
-    target_gene_path = producer.output_paths(cfg)["target_gene"]
-    target_gene_path.parent.mkdir(parents=True)
-    target_gene_path.touch()
-    registry = {
-        producer.name: producer,
-        analysis.name: analysis,
-    }
+def test_missing_dependencies_are_resolved_automatically(config):
+    dependency = _make_step("dependency")
+    goal = _make_step("goal", [dependency])
 
     plan = build_plan(
-        [analysis],
-        cfg,
-        recursive=False,
-        _registry=registry,
+        [goal],
+        config,
+        _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert [step.name for step in plan.steps_to_run] == [analysis.name]
-    assert producer.target_gene_output in plan.pre_resolved
+    assert _scheduled_names(plan) == ["dependency", "goal"]
+    binding = plan.goals[0].inputs[0]
+    assert isinstance(binding.source, StepRunOutput)
+    assert binding.source.run.name == "dependency"
 
 
-def test_force_keeps_external_done_dep_pre_resolved(cfg):
-    dep = _make_step("dep", exists=True, output_names=["dep_out"])
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
-    plan = build_plan([step], cfg, force=True, _registry=registry)
-    assert [s.name for s in plan.steps_to_run] == ["step"]
-    assert dep.spec.output("dep_out") in plan.pre_resolved
-
-
-def test_nonrecursive_external_missing_dep_raises(cfg):
-    dep = _make_step("dep", exists=False)
-    step = _make_step("step", deps=[dep])
-    registry = {"dep": dep, "step": step}
-    with pytest.raises(RuntimeError, match="use --recursive"):
-        build_plan([step], cfg, recursive=False, _registry=registry)
-
-
-def test_nonrecursive_override_replaces_external_dependency(cfg, tmp_path):
-    dep = _make_step("dep", exists=False, output_names=["dep_out"])
-    step = _make_step(
-        "step",
-        deps=[dep],
-        input_override="inputs.dep",
+def test_valid_dependency_is_reused(config):
+    dependency = _make_step(
+        "dependency",
+        outputs_valid=True,
+        output_names=["result"],
     )
-    registry = {"dep": dep, "step": step}
+    goal = _make_step("goal", [dependency])
+
+    plan = build_plan(
+        [goal],
+        config,
+        _registry={dependency.name: dependency, goal.name: goal},
+    )
+
+    assert _scheduled_names(plan) == ["goal"]
+    reused_output = plan.goals[0].inputs[0].source
+    assert isinstance(reused_output, StepRunOutput)
+    assert plan.resolved_outputs[reused_output].name == "result.txt"
+
+
+def test_dependency_chain_is_scheduled_in_topological_order(config):
+    first = _make_step("first")
+    second = _make_step("second", [first])
+    goal = _make_step("goal", [second])
+
+    plan = build_plan(
+        [goal],
+        config,
+        _registry={step.name: step for step in (first, second, goal)},
+    )
+
+    assert _scheduled_names(plan) == ["first", "second", "goal"]
+
+
+def test_dependency_cycle_is_rejected(config):
+    first = _make_step("first")
+    second = _make_step("second", [first])
+    type(first).spec = StepSpec(
+        inputs=[FileInput("second_out", source=second.spec.output("second_out"))],
+        outputs=first.spec.outputs,
+    )
+
+    with pytest.raises(ValueError, match="cycle"):
+        build_plan(
+            [first],
+            config,
+            _registry={first.name: first, second.name: second},
+        )
+
+
+def test_duplicate_goals_and_dependencies_share_one_run(config):
+    shared = _make_step("shared")
+    first = _make_step("first", [shared])
+    second = _make_step("second", [shared])
+
+    plan = build_plan(
+        [first, second, first],
+        config,
+        _registry={step.name: step for step in (shared, first, second)},
+    )
+
+    assert _scheduled_names(plan) == ["shared", "first", "second"]
+    assert [run.name for run in plan.goals] == ["first", "second"]
+
+
+def test_equal_port_names_from_different_runs_do_not_collide(config):
+    first = _make_step("first", outputs_valid=True, output_names=["result"])
+    second = _make_step("second", outputs_valid=True, output_names=["result"])
+
+    plan = build_plan(
+        [first, second],
+        config,
+        _registry={first.name: first, second.name: second},
+    )
+
+    assert len(plan.resolved_outputs) == 2
+    assert {output.run.name for output in plan.resolved_outputs} == {
+        "first",
+        "second",
+    }
+
+
+def test_unknown_producer_is_rejected(config):
+    missing = _make_step("missing")
+    goal = _make_step("goal", [missing])
+
+    with pytest.raises(ValueError, match="unknown producer 'missing'"):
+        build_plan([goal], config, _registry={goal.name: goal})
+
+
+def test_shadow_output_declaration_is_rejected(config):
+    producer = _make_step("producer", output_names=["actual"])
+    shadow = _make_step("producer", output_names=["missing"])
+    goal = _make_step("goal", [shadow])
+
+    with pytest.raises(ValueError, match="unknown output 'missing'"):
+        build_plan(
+            [goal],
+            config,
+            _registry={producer.name: producer, goal.name: goal},
+        )
+
+
+def test_non_recursive_reuses_valid_dependency(config):
+    dependency = _make_step("dependency", outputs_valid=True)
+    goal = _make_step("goal", [dependency])
+
+    plan = build_plan(
+        [goal],
+        config,
+        non_recursive=True,
+        _registry={dependency.name: dependency, goal.name: goal},
+    )
+
+    assert _scheduled_names(plan) == ["goal"]
+
+
+def test_non_recursive_rejects_missing_dependency(config):
+    dependency = _make_step("dependency")
+    goal = _make_step("goal", [dependency])
+
+    with pytest.raises(RuntimeError, match="Omit --non-recursive"):
+        build_plan(
+            [goal],
+            config,
+            non_recursive=True,
+            _registry={dependency.name: dependency, goal.name: goal},
+        )
+
+
+def test_explicit_goal_may_run_in_non_recursive_mode(config):
+    dependency = _make_step("dependency")
+    goal = _make_step("goal", [dependency])
+
+    plan = build_plan(
+        [dependency, goal],
+        config,
+        non_recursive=True,
+        _registry={dependency.name: dependency, goal.name: goal},
+    )
+
+    assert _scheduled_names(plan) == ["dependency", "goal"]
+
+
+def test_force_does_not_force_valid_dependency(config):
+    dependency = _make_step("dependency", outputs_valid=True)
+    goal = _make_step("goal")
+    goal_with_dependency = _make_step("goal", [dependency])
+
+    plan = build_plan(
+        [goal_with_dependency],
+        config,
+        force=True,
+        _registry={dependency.name: dependency, goal.name: goal_with_dependency},
+    )
+
+    assert _scheduled_names(plan) == ["goal"]
+
+
+def test_file_override_bypasses_dependency(config, tmp_path):
+    dependency = _make_step("dependency")
+    goal = _make_step(
+        "goal",
+        [dependency],
+        input_override="inputs.dependency",
+    )
     override = tmp_path / "override.txt"
     override.touch()
-    cfg["inputs"] = {"dep": str(override)}
+    config["inputs"] = {"dependency": str(override)}
 
-    plan = build_plan([step], cfg, recursive=False, _registry=registry)
-
-    assert [planned.name for planned in plan.steps_to_run] == ["step"]
-    assert plan.pre_resolved == {}
-
-
-def test_recursive_override_does_not_schedule_dependency(cfg, tmp_path):
-    dep = _make_step("dep", exists=False, output_names=["dep_out"])
-    step = _make_step(
-        "step",
-        deps=[dep],
-        input_override="inputs.dep",
+    plan = build_plan(
+        [goal],
+        config,
+        non_recursive=True,
+        _registry={dependency.name: dependency, goal.name: goal},
     )
-    registry = {"dep": dep, "step": step}
-    override = tmp_path / "override.txt"
-    override.touch()
-    cfg["inputs"] = {"dep": str(override)}
 
-    plan = build_plan([step], cfg, recursive=True, _registry=registry)
-
-    assert [planned.name for planned in plan.steps_to_run] == ["step"]
-    assert plan.pre_resolved == {}
+    assert _scheduled_names(plan) == ["goal"]
+    assert plan.goals[0].inputs[0].source == override.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Mixed runnables (Task and Workflow-like objects)
-# ---------------------------------------------------------------------------
-
-def test_task_flattened_to_steps(cfg):
-    s1 = _make_step("s1")
-    s2 = _make_step("s2")
+def test_task_members_are_terminal_goals(config):
+    dependency = _make_step("dependency")
+    goal = _make_step("goal", [dependency])
 
     class FakeTask:
         name = "task"
         description = ""
-        steps = [s1, s2]
+        steps = [goal]
 
-    plan = build_plan([cast(Runnable, FakeTask())], cfg)
-    names = [s.name for s in plan.steps_to_run]
-    assert names == ["s1", "s2"]
-
-
-def test_workflow_flattened_to_steps(cfg):
-    s1 = _make_step("s1")
-    s2 = _make_step("s2")
-
-    class FakeWorkflow:
-        name = "wf"
-        description = ""
-        members = [s1, s2]
-
-    plan = build_plan([cast(Runnable, FakeWorkflow())], cfg)
-    names = [s.name for s in plan.steps_to_run]
-    assert names == ["s1", "s2"]
-
-
-def test_workflow_rejects_an_incompatible_task_step(cfg):
-    restricted = _make_step(
-        "restricted",
-        compatible_with={"analysis.mode": ["supported"]},
+    plan = build_plan(
+        [cast(Runnable, FakeTask())],
+        config,
+        _registry={dependency.name: dependency, goal.name: goal},
     )
-    cfg["analysis"] = {"mode": "unsupported"}
 
-    class FakeTask:
-        name = "task"
-        description = ""
-        steps = [restricted]
+    assert [run.name for run in plan.goals] == ["goal"]
+    assert _scheduled_names(plan) == ["dependency", "goal"]
+
+
+def test_workflow_members_are_terminal_goals(config):
+    shared = _make_step("shared")
+    first = _make_step("first", [shared])
+    second = _make_step("second", [shared])
 
     class FakeWorkflow:
         name = "workflow"
         description = ""
-        members = [cast(Runnable, FakeTask())]
+        members = [first, second]
 
-    with pytest.raises(ValueError, match=r"incompatible.*restricted"):
-        build_plan([cast(Runnable, FakeWorkflow())], cfg)
+    plan = build_plan(
+        [cast(Runnable, FakeWorkflow())],
+        config,
+        _registry={step.name: step for step in (shared, first, second)},
+    )
 
-
-def test_mixed_step_and_task_deduplicated(cfg):
-    shared = _make_step("shared")
-
-    class FakeTask:
-        name = "task"
-        description = ""
-        steps = [shared]
-
-    plan = build_plan([shared, cast(Runnable, FakeTask())], cfg)
-    assert sum(1 for s in plan.steps_to_run if s.name == "shared") == 1
+    assert [run.name for run in plan.goals] == ["first", "second"]
+    assert _scheduled_names(plan) == ["shared", "first", "second"]

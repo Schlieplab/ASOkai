@@ -118,8 +118,8 @@ def list_command(unit: str) -> None:
         )
 
 
-def _expanded_goal_names(members: list) -> list[str]:
-    """Recursively expand workflow members into ordered terminal goals."""
+def _expanded_step_names(members: list) -> list[str]:
+    """Recursively expand workflow members into ordered explicit steps."""
     from ASOkai._pipeline.steps.base import Step
     from ASOkai._pipeline.tasks.base import Task
     from ASOkai._pipeline.workflows.base import Workflow
@@ -127,7 +127,7 @@ def _expanded_goal_names(members: list) -> list[str]:
     step_names: list[str] = []
     for member in members:
         if isinstance(member, Workflow):
-            step_names.extend(_expanded_goal_names(member.members))
+            step_names.extend(_expanded_step_names(member.members))
         elif isinstance(member, Task):
             step_names.extend(step.name for step in member.steps)
         elif isinstance(member, Step):
@@ -235,19 +235,19 @@ def _describe_step(step) -> tuple[list[str], str]:
 
 
 def _describe_task(task) -> tuple[list[str], str]:
-    """Print task details and return its goal summary."""
-    goal_names = [step.name for step in task.steps]
-    click.echo(f"Goals       : {', '.join(goal_names)}")
+    """Print task details and return its step summary."""
+    step_names = [step.name for step in task.steps]
+    click.echo(f"Steps       : {', '.join(step_names)}")
     click.echo("CWL         : (CLI collection; export creates run.cwl)")
-    return goal_names, "Goals"
+    return step_names, "Steps"
 
 
 def _describe_workflow(workflow) -> tuple[list[str], str]:
-    """Print workflow details and return its expanded goal summary."""
+    """Print workflow details and return its expanded step summary."""
     member_names = [member.name for member in workflow.members]
     click.echo(f"Members     : {', '.join(member_names)}")
     click.echo("CWL         : (CLI collection; export creates run.cwl)")
-    return _expanded_goal_names(workflow.members), "Goals (expanded)"
+    return _expanded_step_names(workflow.members), "Steps (expanded)"
 
 
 def _describe_dependencies(

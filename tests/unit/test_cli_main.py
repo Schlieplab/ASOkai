@@ -112,9 +112,12 @@ def test_describe_task_expands_step_names():
 
     assert result.exit_code == 0
     assert "Name        : instantiate-target-gene" in result.output
-    assert "Goals       : create-target-gene" in result.output
+    assert (
+        "Steps       : download-genome, create-target-gene"
+        in result.output
+    )
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
-    assert "Goals: create-target-gene" in result.output
+    assert "Steps: download-genome, create-target-gene" in result.output
 
 
 def test_describe_workflow_shows_members_and_expanded_steps():
@@ -125,12 +128,13 @@ def test_describe_workflow_shows_members_and_expanded_steps():
     assert result.exit_code == 0
     assert "Name        : standard" in result.output
     assert (
-        "Members     : generate-antisense-candidates, intrinsic-features"
-        in result.output
+        "Members     : instantiate-target-gene, generate-antisense-candidates, "
+        "intrinsic-features" in result.output
     )
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert (
-        "Goals (expanded): generate-antisense-candidates, intrinsic-features"
+        "Steps (expanded): download-genome, create-target-gene, "
+        "generate-antisense-candidates, intrinsic-features"
         in result.output
     )
 

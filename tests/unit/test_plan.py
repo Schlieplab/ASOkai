@@ -329,14 +329,14 @@ def test_file_override_bypasses_dependency(config, tmp_path):
     assert plan.goals[0].inputs[0].source == override.resolve()
 
 
-def test_task_members_are_terminal_goals(config):
+def test_task_steps_are_requested_goals(config):
     dependency = _make_step("dependency")
     goal = _make_step("goal", [dependency])
 
     class FakeTask:
         name = "task"
         description = ""
-        steps = [goal]
+        steps = [dependency, goal]
 
     plan = build_plan(
         [cast(Runnable, FakeTask())],
@@ -344,7 +344,7 @@ def test_task_members_are_terminal_goals(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert [run.name for run in plan.goals] == ["goal"]
+    assert [run.name for run in plan.goals] == ["dependency", "goal"]
     assert _scheduled_names(plan) == ["dependency", "goal"]
 
 

@@ -144,7 +144,7 @@ def _members_section(
                 ),
             )
         )
-    title = "Goals" if kind == "task" else "Direct goals"
+    title = "Steps" if kind == "task" else "Direct members"
     return section(
         title,
         [
@@ -158,16 +158,16 @@ def _members_section(
     )
 
 
-def _expanded_goals(runnable: Any) -> list[Any]:
-    """Return the unique terminal goals produced by runnable expansion."""
+def _expanded_steps(runnable: Any) -> list[Any]:
+    """Return the unique explicit steps produced by runnable expansion."""
     from ASOkai._pipeline.plan import _flatten_goals
 
     return list({step.name: step for step in _flatten_goals(runnable)}.values())
 
 
-def _expanded_goals_section(runnable: Any, *, refdoc: str) -> nodes.section:
+def _expanded_steps_section(runnable: Any, *, refdoc: str) -> nodes.section:
     step_list = nodes.bullet_list()
-    for step in _expanded_goals(runnable):
+    for step in _expanded_steps(runnable):
         item = nodes.list_item()
         paragraph = nodes.paragraph()
         paragraph += _runnable_link(step, refdoc=refdoc)
@@ -175,13 +175,13 @@ def _expanded_goals_section(runnable: Any, *, refdoc: str) -> nodes.section:
         item += paragraph
         step_list += item
     return section(
-        "Expanded goals",
+        "Expanded steps",
         [
             nodes.paragraph(
                 text=(
-                    "Nested tasks and workflows expand to these terminal "
-                    "goals. Dependency planning then resolves the upstream "
-                    "steps needed to produce them."
+                    "Nested tasks and workflows explicitly include these "
+                    "steps. Dependency planning may additionally resolve "
+                    "upstream steps needed to run them."
                 )
             ),
             step_list,
@@ -208,7 +208,7 @@ def build_runnable_reference(
         _members_section(runnable, kind, refdoc=refdoc),
     ]
     if kind == "workflow":
-        result.append(_expanded_goals_section(runnable, refdoc=refdoc))
+        result.append(_expanded_steps_section(runnable, refdoc=refdoc))
     return result
 
 

@@ -158,14 +158,15 @@ def test_task_reference_links_to_its_steps() -> None:
     }
 
     assert "ASOkai run --tasks instantiate-target-gene" in reference
-    assert "Expanded goals" not in reference
+    assert "Expanded steps" not in reference
     assert "Contracts" not in reference
     assert link_targets == {
+        "/steps/download-genome",
         "/steps/create-target-gene",
     }
 
 
-def test_workflow_reference_links_members_and_expanded_goals() -> None:
+def test_workflow_reference_links_members_and_expanded_steps() -> None:
     workflow = get_built_in_runnable("workflow", "standard")
     generated = build_runnable_reference(
         workflow,
@@ -180,10 +181,13 @@ def test_workflow_reference_links_members_and_expanded_goals() -> None:
     }
 
     assert "ASOkai run --workflow standard" in reference
-    assert "Direct goals" in reference
-    assert "Expanded goals" in reference
+    assert "Direct members" in reference
+    assert "Expanded steps" in reference
     assert "Contracts" not in reference
     assert link_targets == {
+        "/tasks/instantiate-target-gene",
+        "/steps/download-genome",
+        "/steps/create-target-gene",
         "/steps/generate-antisense-candidates",
         "/steps/intrinsic-features",
     }

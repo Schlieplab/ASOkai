@@ -18,6 +18,7 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
 )
+from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 
 
 class StandardWorkflow:
@@ -27,6 +28,7 @@ class StandardWorkflow:
         "candidate generation → intrinsic features."
     )
     members: list[Runnable] = [
+        InstantiateTargetGeneTask(),
         GenerateAntisenseCandidatesStep(),
         IntrinsicFeaturesStep(),
     ]

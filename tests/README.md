@@ -69,9 +69,9 @@ or node selectors unless a marker is present on the tests you want.
   subprocess failure handling, output handles, and KMC tools operations.
 - Pipeline configuration: YAML loading, dotted-key resolution, and CLI override
   application.
-- Pipeline planning: terminal-goal expansion, automatic dependency ordering,
-  run deduplication, valid-output reuse, non-recursive failure, and cycle
-  detection.
+- Pipeline planning: task/workflow step expansion, automatic dependency
+  ordering, run deduplication, valid-output reuse, non-recursive failure, and
+  cycle detection.
 - Runner and CWL generation: input resolution precedence, dependency wiring,
   reused file inputs, fixed output arguments, dry-run behavior, CWL
   export, publication layouts, and normalized CWL step IDs.

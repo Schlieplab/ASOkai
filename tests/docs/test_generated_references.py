@@ -202,7 +202,9 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
 
     assert fields["datadir"].requirement == "Required"
     assert fields["target.k"].requirement == "Required"
-    assert fields["target.target_gene_path"].requirement == ("Optional input override")
+    assert fields[
+        "steps.intrinsic-features.inputs.target_gene.path_override"
+    ].requirement == "Optional path override"
     assert fields["resources.intrinsic-features.n_processes"].requirement == (
         "Overrides resources.default"
     )
@@ -244,9 +246,12 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     reference = "\n".join(node.astext() for node in generated_nodes)
 
     assert "create-target-gene.target_gene" in reference
-    assert "target.target_gene_path" in reference
+    input_path = (
+        "steps.intrinsic-features.inputs.target_gene.path_override"
+    )
+    assert input_path in reference
     assert "{target}_k{k}_{region}_intrinsic.csv" in reference
-    assert "unless target.target_gene_path is configured" in reference
+    assert f"unless {input_path} is configured" in reference
     assert (
         "GRCh38/targets/ENSG00000133703/analysis/intrinsic/"
         "ENSG00000133703_k16_pre-mrna_intrinsic.csv" in reference

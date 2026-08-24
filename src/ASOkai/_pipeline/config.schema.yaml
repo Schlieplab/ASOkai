@@ -30,31 +30,6 @@ properties:
         type: string
         minLength: 1
         description: Ensembl species name, such as Homo_sapiens.
-      dna_path:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Optional genomic DNA FASTA override.
-      cdna_path:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Optional cDNA FASTA override.
-      annotation_path:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Optional genome annotation override.
-      db_path:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Optional annotation database override.
-
   target:
     type: object
     additionalProperties: false
@@ -81,12 +56,6 @@ properties:
           - pre-mrna
           - transcriptomic
         description: Target region type.
-      target_gene_path:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Optional serialized target-gene override.
     allOf:
       - oneOf:
           - required:
@@ -102,6 +71,39 @@ properties:
         x-error-message: >-
           exactly one of these config values is required:
           target.target_id, target.target_name
+
+  steps:
+    type: object
+    description: Optional configuration for individual step inputs.
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              path_override:
+                type: string
+                minLength: 1
+                description: Existing file used instead of the producer output.
+              parameters:
+                type: object
+                minProperties: 1
+                description: Parameters changed for a separate producer run.
+                additionalProperties:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                    - "null"
+            oneOf:
+              - required:
+                  - path_override
+              - required:
+                  - parameters
 
   antisense:
     type: object

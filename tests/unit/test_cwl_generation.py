@@ -221,7 +221,7 @@ def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
     assert doc["steps"]["step_create_target_gene"]["in"]["cdna"] == "cdna"
 
 
-def test_generate_cwl_input_overrides_keep_declared_file_types_when_not_wired(workflow_config):
+def test_generate_cwl_file_inputs_keep_declared_types_when_not_wired(workflow_config):
     doc = yaml.safe_load(_generate_run_cwl([CreateTargetGeneStep()], workflow_config))
 
     assert doc["inputs"]["dna"] == "File"
@@ -442,7 +442,7 @@ def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
         output_names = step.cwl_spec(workflow_config).output_names()
 
         assert set(step.config_map).issubset(input_names)
-        assert set(step.input_overrides).issubset(input_names)
+        assert {item.name for item in step.spec.inputs}.issubset(input_names)
         assert set(step.output_paths(workflow_config)) == output_names
 
 

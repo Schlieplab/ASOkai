@@ -32,6 +32,11 @@ class FileType:
         """Return an opaque input as a path without interpreting its contents."""
         return Path(path)
 
+    def validate(self, path: str | Path) -> None:
+        """Validate an opaque file, which has no content-level contract."""
+        if not isinstance(path, (str, Path)):
+            raise TypeError("An opaque file value must be a filesystem path.")
+
     def loads(
         self,
         content: str,

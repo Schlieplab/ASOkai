@@ -80,7 +80,10 @@ def resolve_run_inputs(
                 cwl_value={"class": "File", "path": str(source)},
                 source="input_override",
                 path=source,
-                config_path=file_input.override,
+                config_path=(
+                    f"{file_input.configuration_path(run.step.name)}"
+                    ".path_override"
+                ),
             )
             continue
 

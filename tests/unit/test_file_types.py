@@ -15,6 +15,7 @@ def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
     path = tmp_path / "input.bin"
 
     assert FileType().read(path) == path
+    assert FileType().validate(path) is None
 
 
 def test_json_file_reads_and_writes_generic_json(tmp_path):
@@ -26,6 +27,18 @@ def test_json_file_reads_and_writes_generic_json(tmp_path):
 
     assert file_type.read(path) == value
     assert json.loads(path.read_text(encoding="utf-8")) == value
+
+
+def test_json_file_validation_does_not_call_runtime_read(tmp_path, monkeypatch):
+    path = tmp_path / "result.json"
+    path.write_text('{"value": 1}', encoding="utf-8")
+
+    def unexpected_read(self, path):
+        raise AssertionError("validate() called read()")
+
+    monkeypatch.setattr(JsonFile, "read", unexpected_read)
+
+    JsonFile().validate(path)
 
 
 @pytest.mark.parametrize(
@@ -62,6 +75,22 @@ def test_csv_file_roundtrip_preserves_declared_scalar_types(tmp_path):
         "site-2,0.25,false\n"
     )
     assert file_type.read(path) == rows
+
+
+def test_csv_file_validation_does_not_call_runtime_read(tmp_path, monkeypatch):
+    path = tmp_path / "results.csv"
+    path.write_text("site_id,score\nsite-1,0.5\n", encoding="utf-8")
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float},
+    )
+
+    def unexpected_read(self, path):
+        raise AssertionError("validate() called read()")
+
+    monkeypatch.setattr(CsvFile, "read", unexpected_read)
+
+    file_type.validate(path)
 
 
 def test_csv_file_rejects_inconsistent_columns():

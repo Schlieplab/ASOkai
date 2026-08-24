@@ -33,7 +33,6 @@ class IntrinsicFeaturesStep(AnalysisStep):
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
-        override="target.target_gene_path",
         doc="Serialized target gene object from create-target-gene.",
     )
     intrinsic_features_output = FileOutput(

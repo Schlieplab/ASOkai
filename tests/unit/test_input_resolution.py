@@ -26,7 +26,6 @@ def _fake_step(
     *,
     producer: Step | None = None,
     scalar_parameters: dict[str, str] | None = None,
-    input_override: str | None = None,
     input_name: str | None = None,
     output_names: list[str] | None = None,
 ) -> Step:
@@ -46,7 +45,6 @@ def _fake_step(
             FileInput(
                 input_name,
                 source=producer.spec.output(input_name),
-                override=input_override,
             )
         )
     spec = StepSpec(
@@ -106,7 +104,6 @@ def test_path_binding_is_resolved_as_input_override(tmp_path):
         "consumer",
         producer=producer,
         input_name="shared",
-        input_override="shared.override",
     )
     override = tmp_path / "override.fa"
     run = _run(consumer, config, override=override)
@@ -118,6 +115,9 @@ def test_path_binding_is_resolved_as_input_override(tmp_path):
         "class": "File",
         "path": str(override.resolve()),
     }
+    assert resolved["shared"].config_path == (
+        "steps.consumer.inputs.shared.path_override"
+    )
 
 
 def test_scheduled_producer_output_is_wired(tmp_path):

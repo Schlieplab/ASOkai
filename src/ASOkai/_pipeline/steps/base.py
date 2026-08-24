@@ -110,11 +110,6 @@ class Step(Runnable):
         """Return config-backed CWL inputs for this step."""
         return self.spec.config_map()
 
-    @property
-    def input_overrides(self) -> dict[str, str]:
-        """Return optional file override inputs for this step."""
-        return self.spec.input_overrides()
-
     def _validate_standard_parameters(self) -> None:
         for param in (*self.spec.params, *self.spec.inputs):
             if (
@@ -226,7 +221,7 @@ class Step(Runnable):
                     f"Output '{self.name}/{output.name}' was not written to "
                     f"{path}."
                 )
-            output.file_type.read(path)
+            output.validate(path)
         return paths
 
     def cleanup(self, config: dict) -> None:

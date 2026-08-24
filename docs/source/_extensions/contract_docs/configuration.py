@@ -378,11 +378,23 @@ def collect_step_config_fields(
         )
 
     for file_input in step.spec.inputs:
-        if file_input.override is not None:
+        generic_path = "steps.<name>.inputs.<name>.path_override"
+        configuration_path = file_input.configuration_path(step.name)
+        add(
+            replace(
+                all_fields[generic_path],
+                path=f"{configuration_path}.path_override",
+                requirement="Optional path override",
+            )
+        )
+        for name in file_input.configurable_parameters:
+            parameter = file_input.configurable_parameter(name)
+            assert parameter.config is not None
             add(
                 replace(
-                    all_fields[file_input.override],
-                    requirement="Optional input override",
+                    all_fields[parameter.config],
+                    path=f"{configuration_path}.parameters.{name}",
+                    requirement="Optional producer-run parameter",
                 )
             )
 
@@ -421,11 +433,13 @@ def collect_step_schema_rules(
         for parameter in step.spec.params
         if parameter.config is not None
     }
-    paths.update(
-        file_input.override
-        for file_input in step.spec.inputs
-        if file_input.override is not None
-    )
+    for file_input in step.spec.inputs:
+        configuration_path = file_input.configuration_path(step.name)
+        paths.add(f"{configuration_path}.path_override")
+        paths.update(
+            f"{configuration_path}.parameters.{name}"
+            for name in file_input.configurable_parameters
+        )
     paths.update(step.spec.compatible_with)
     return [
         message

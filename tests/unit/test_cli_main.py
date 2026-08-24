@@ -82,8 +82,11 @@ def test_describe_step_create_target_gene_shows_details():
     assert "Config keys :" in result.output
     assert "--config target.target_id" in result.output
     assert "--config target.region" in result.output
-    assert "Input overrides (optional, bypasses dep step):" in result.output
-    assert "--config genome.dna_path" in result.output
+    assert "Input configuration (optional):" in result.output
+    assert (
+        "--config steps.create-target-gene.inputs.dna.path_override"
+        in result.output
+    )
     assert "Dependencies: download-genome" in result.output
 
 

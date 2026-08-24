@@ -9,12 +9,6 @@ genome:
   source: ensembl
   species: Homo_sapiens
 
-  # Existing files can replace outputs from download-genome.
-  # dna_path: /path/to/genome.dna.fa.gz
-  # cdna_path: /path/to/genome.cdna.fa.gz
-  # annotation_path: /path/to/genome.annotation.gtf.gz
-  # db_path: /path/to/genome.annotation.db
-
 target:
   # Set exactly one of target_id or target_name.
   target_id: ENSG00000133703
@@ -22,8 +16,12 @@ target:
   k: 16
   region: pre-mrna  # exonic_only | pre-mrna | transcriptomic
 
-  # An existing serialized target gene can replace create-target-gene.
-  # target_gene_path: /path/to/target_gene.json
+# Any file input can use an existing file instead of its producer output.
+# steps:
+#   intrinsic-features:
+#     inputs:
+#       target_gene:
+#         path_override: /path/to/target_gene.json
 
 antisense:
   modality: aso

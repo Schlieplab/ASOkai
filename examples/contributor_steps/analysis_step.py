@@ -65,7 +65,6 @@ class ExampleAnalysisStep(AnalysisStep):
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
-        override="target.target_gene_path",
     )
     analysis_output = FileOutput(
         "analysis",

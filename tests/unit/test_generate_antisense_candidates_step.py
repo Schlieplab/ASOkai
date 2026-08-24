@@ -65,7 +65,7 @@ def test_step_contract_and_dependency(step):
     assert step.target_gene_input.file_type.value_type is TargetGene
 
 
-def test_config_and_override_mapping(step):
+def test_config_and_input_mapping(step):
     assert step.config_map == {
         "assembly": "genome.assembly_id",
         "target_id": "target.target_id",
@@ -79,7 +79,9 @@ def test_config_and_override_mapping(step):
         "right_wing_length": "antisense.design.right_wing_length",
         "mechanism": "antisense.mechanism",
     }
-    assert step.input_overrides == {"target_gene": "target.target_gene_path"}
+    assert step.target_gene_input.configuration_path(step.name) == (
+        "steps.generate-antisense-candidates.inputs.target_gene"
+    )
 
 
 def test_output_path_identifies_the_candidate_design(step, config, tmp_path):

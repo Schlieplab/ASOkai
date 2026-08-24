@@ -118,6 +118,11 @@ class Param(ABC):
         """Add this parameter as an argparse option."""
         ...
 
+    @abstractmethod
+    def validate(self, value: Any) -> None:
+        """Validate one value against this parameter's contract."""
+        ...
+
 
 @dataclass(frozen=True)
 class ScalarParam(Param):
@@ -171,6 +176,42 @@ class ScalarParam(Param):
     def parser_choices(self) -> tuple[Any, ...] | None:
         """Return argparse choices inferred for this parameter."""
         return _argparse_choices_for_annotation(self.inferred_parser_annotation())
+
+    def validate(self, value: Any) -> None:
+        """Validate one resolved scalar value against this parameter contract."""
+        annotation = self.annotation
+        if value is None:
+            if _is_optional(annotation):
+                return
+            raise ValueError(f"parameter '{self.name}' does not accept null")
+
+        accepted_values = _literal_values(annotation)
+        if accepted_values:
+            if any(
+                type(value) is type(accepted_value)
+                and value == accepted_value
+                for accepted_value in accepted_values
+            ):
+                return
+            accepted = ", ".join(repr(item) for item in accepted_values)
+            raise ValueError(
+                f"parameter '{self.name}' must be one of {accepted}; "
+                f"received {value!r}"
+            )
+
+        expected_type = _strip_optional(annotation)
+        if expected_type in (str, int, float, bool):
+            if type(value) is expected_type:
+                return
+            raise ValueError(
+                f"parameter '{self.name}' must be {expected_type.__name__}; "
+                f"received {type(value).__name__}"
+            )
+
+        raise TypeError(
+            f"parameter '{self.name}' has unsupported scalar annotation "
+            f"{annotation!r}"
+        )
 
     def to_cwl_input(self) -> CwlToolInput | None:
         """Return this parameter as a rendered tool input, if needed."""

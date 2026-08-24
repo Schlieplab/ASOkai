@@ -170,20 +170,19 @@ class StepSpec:
             if param.cwl and param.config
         }
 
-    def input_overrides(self) -> dict[str, str]:
-        """Return CWL input names mapped to optional file override config paths."""
-        return {
-            item.name: item.override
-            for item in self.inputs
-            if item.override
-        }
-
     def input(self, name: str) -> FileInput:
         """Return one declared file input by name."""
         for item in self.inputs:
             if item.name == name:
                 return item
         raise KeyError(f"Unknown step input: {name!r}.")
+
+    def parameter(self, name: str) -> ScalarParam:
+        """Return one declared scalar parameter by name."""
+        for parameter in self.params:
+            if parameter.name == name:
+                return parameter
+        raise KeyError(f"Unknown step parameter: {name!r}.")
 
     def output(self, name: str) -> FileOutput:
         """Return one declared output by name."""

@@ -247,10 +247,13 @@ class _GoalResolver:
         return True
 
     def _resolve_input(self, step: Step, file_input: FileInput) -> StepInputBinding:
-        """Resolve one input override or its producer's main run."""
-        override = file_input.configured_override_path(self.config)
-        if override is not None:
-            return StepInputBinding(file_input, override)
+        """Resolve one external input path or its producer's main run."""
+        path_override = file_input.configured_path_override(
+            self.config,
+            step.name,
+        )
+        if path_override is not None:
+            return StepInputBinding(file_input, path_override)
 
         producer = self._producer(step, file_input)
         may_schedule = not self.non_recursive or producer.name in self.goal_names
@@ -274,6 +277,16 @@ class _GoalResolver:
         self.resolving.add(run_id)
         try:
             cfg.validate_step_config(self.config, [step])
+            for file_input in step.spec.inputs:
+                if file_input.configured_parameters(
+                    self.config,
+                    step.name,
+                ) is not None:
+                    raise RuntimeError(
+                        f"Input '{step.name}.{file_input.name}' configures a "
+                        "separate producer run. Resolving additional configured "
+                        "runs is the next implementation step."
+                    )
             run = StepRun(
                 run_id=run_id,
                 name=step.name,

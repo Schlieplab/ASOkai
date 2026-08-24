@@ -14,7 +14,14 @@ from typing import cast
 
 import pytest
 
-from ASOkai.Plugins import FileInput, FileOutput, Runnable, Step, StepSpec
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
+    Runnable,
+    ScalarParam,
+    Step,
+    StepSpec,
+)
 from ASOkai._pipeline.plan import StepRunOutput, build_plan
 
 
@@ -24,7 +31,6 @@ def _make_step(
     *,
     outputs_valid: bool = False,
     output_names: list[str] | None = None,
-    input_override: str | None = None,
     compatible_with: dict[str, list[str]] | None = None,
 ) -> Step:
     """Return a minimal concrete step for planner tests."""
@@ -40,7 +46,6 @@ def _make_step(
             FileInput(
                 dependency.spec.outputs[0].name,
                 source=dependency.spec.outputs[0],
-                override=input_override,
             )
             for dependency in dependencies or []
         ],
@@ -312,11 +317,16 @@ def test_file_override_bypasses_dependency(config, tmp_path):
     goal = _make_step(
         "goal",
         [dependency],
-        input_override="inputs.dependency",
     )
     override = tmp_path / "override.txt"
     override.touch()
-    config["inputs"] = {"dependency": str(override)}
+    config["steps"] = {
+        "goal": {
+            "inputs": {
+                "dependency_out": {"path_override": str(override)},
+            },
+        },
+    }
 
     plan = build_plan(
         [goal],
@@ -327,6 +337,72 @@ def test_file_override_bypasses_dependency(config, tmp_path):
 
     assert _scheduled_names(plan) == ["goal"]
     assert plan.goals[0].inputs[0].source == override.resolve()
+
+
+def test_configured_producer_run_is_not_silently_treated_as_main(config):
+    output = FileOutput(
+        "result",
+        destination="{mode}/result.txt",
+    )
+    producer_spec = StepSpec(
+        params=[ScalarParam("mode", str, config="producer.mode")],
+        outputs=[output],
+    )
+    producer_type = type(
+        "_ConfiguredProducerStep",
+        (Step,),
+        {
+            "name": "producer",
+            "description": "",
+            "result_output": output,
+            "spec": producer_spec,
+        },
+    )
+    producer = producer_type()
+
+    consumer_output = FileOutput("consumer_out", destination="consumer.txt")
+    consumer_spec = StepSpec(
+        inputs=[
+            FileInput(
+                "result",
+                source=output,
+                configurable_parameters=("mode",),
+            ),
+        ],
+        outputs=[consumer_output],
+    )
+    consumer_type = type(
+        "_ConfiguredConsumerStep",
+        (Step,),
+        {
+            "name": "consumer",
+            "description": "",
+            "consumer_out_output": consumer_output,
+            "spec": consumer_spec,
+        },
+    )
+    consumer = consumer_type()
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "result": {
+                            "parameters": {"mode": "alternate"},
+                        },
+                    },
+                },
+            },
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="separate producer run"):
+        build_plan(
+            [consumer],
+            config,
+            _registry={producer.name: producer, consumer.name: consumer},
+        )
 
 
 def test_task_steps_are_requested_goals(config):

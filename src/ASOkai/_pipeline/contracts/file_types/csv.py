@@ -211,7 +211,16 @@ class CsvFile(FileType):
         *,
         source: str = "<string>",
     ) -> CsvTable:
-        """Parse CSV while rejecting ambiguous headers and malformed rows."""
+        """Parse, validate, and decode CSV content as typed rows."""
+        return self._validated_rows(content, source=source)
+
+    def _validated_rows(
+        self,
+        content: str,
+        *,
+        source: str,
+    ) -> list[dict[str, Scalar]]:
+        """Parse and validate serialized CSV rows."""
         reader = csv.DictReader(io.StringIO(content, newline=""))
         if reader.fieldnames is None:
             raise ValueError(f"CSV from {source} must contain a header row.")
@@ -297,9 +306,17 @@ class CsvFile(FileType):
         return stream.getvalue()
 
     def read(self, path: str | Path) -> CsvTable:
-        """Read and validate a CSV file."""
+        """Read and decode a validated CSV file."""
         source = Path(path)
         return self.loads(
+            source.read_text(encoding="utf-8"),
+            source=str(source),
+        )
+
+    def validate(self, path: str | Path) -> None:
+        """Validate CSV syntax, columns, scalar values, and index values."""
+        source = Path(path)
+        self._validated_rows(
             source.read_text(encoding="utf-8"),
             source=str(source),
         )

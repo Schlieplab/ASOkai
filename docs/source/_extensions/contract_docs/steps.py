@@ -86,6 +86,7 @@ def _file_type_reference(
 
 
 def _inputs_table(
+    step: Any,
     file_inputs: list[Any] | tuple[Any, ...],
     *,
     refdoc: str,
@@ -96,8 +97,25 @@ def _inputs_table(
         input_details: list[tuple[str, str | nodes.Node, bool]] = [
             ("Source", source_name, True)
         ]
-        if file_input.override is not None:
-            input_details.append(("Override", file_input.override, True))
+        configuration_path = file_input.configuration_path(step.name)
+        input_details.append(
+            ("Path override", f"{configuration_path}.path_override", True)
+        )
+        if file_input.configurable_parameters:
+            input_details.extend(
+                (
+                    (
+                        "Producer parameters",
+                        f"{configuration_path}.parameters",
+                        True,
+                    ),
+                    (
+                        "Allowed parameters",
+                        ", ".join(file_input.configurable_parameters),
+                        True,
+                    ),
+                )
+            )
         input_details.extend(
             (
                 (
@@ -330,34 +348,30 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
             producer,
             refdoc=refdoc,
         )
-        override_paths = [
-            file_input.override
+        input_paths = [
+            f"{file_input.configuration_path(step.name)}.path_override"
             for file_input in inputs
-            if file_input.override is not None
         ]
-        if override_paths:
-            if len(inputs) == 1:
-                paragraph += nodes.Text(" is required unless ")
-                paragraph += nodes.literal(override_paths[0], override_paths[0])
-                paragraph += nodes.Text(" is configured.")
-            else:
-                paragraph += nodes.Text(
-                    " is required unless every input from it is replaced."
-                )
-                overrides = nodes.bullet_list()
-                for path in override_paths:
-                    override_item = nodes.list_item()
-                    override_paragraph = nodes.paragraph()
-                    override_paragraph += nodes.literal(path, path)
-                    override_item += override_paragraph
-                    overrides += override_item
-                item += paragraph
-                item += nodes.paragraph(text="Override all of:")
-                item += overrides
-                dependency_list += item
-                continue
+        if len(inputs) == 1:
+            paragraph += nodes.Text(" is required unless ")
+            paragraph += nodes.literal(input_paths[0], input_paths[0])
+            paragraph += nodes.Text(" is configured.")
         else:
-            paragraph += nodes.Text(" is always required.")
+            paragraph += nodes.Text(
+                " is required unless every input from it uses an existing file."
+            )
+            paths = nodes.bullet_list()
+            for path in input_paths:
+                path_item = nodes.list_item()
+                path_paragraph = nodes.paragraph()
+                path_paragraph += nodes.literal(path, path)
+                path_item += path_paragraph
+                paths += path_item
+            item += paragraph
+            item += nodes.paragraph(text="Configure all of:")
+            item += paths
+            dependency_list += item
+            continue
         item += paragraph
         dependency_list += item
     return section(
@@ -681,11 +695,11 @@ def build_step_reference(
 
     input_children: list[nodes.Node]
     if step.spec.inputs:
-        input_children = [_inputs_table(step.spec.inputs, refdoc=refdoc)]
+        input_children = [_inputs_table(step, step.spec.inputs, refdoc=refdoc)]
         input_children.append(
             nodes.paragraph(
                 text=(
-                    "Input override paths are checked for existence. JSON and "
+                    "Input path overrides are checked for existence. JSON and "
                     "CSV contents are parsed and validated by their contracts; "
                     "opaque formats are passed to the step as filesystem paths."
                 )

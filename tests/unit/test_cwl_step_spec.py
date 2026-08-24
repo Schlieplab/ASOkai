@@ -39,6 +39,22 @@ class _InputProducer(Step):
     spec = StepSpec(outputs=[result_output])
 
 
+class _ConfigurableInputProducer(Step):
+    name = "configurable-producer"
+    description = "Test producer with a configurable output."
+    result_output = FileOutput("result", destination="{region}/result.json")
+    spec = StepSpec(
+        params=[
+            ScalarParam(
+                "region",
+                Literal["exonic", "transcriptomic"],
+                config="target.region",
+            ),
+        ],
+        outputs=[result_output],
+    )
+
+
 def _file_input(name: str = "input_file") -> FileInput:
     return FileInput(name, source=_InputProducer.result_output)
 
@@ -55,6 +71,97 @@ def test_file_input_references_the_producers_exact_output_declaration():
 
     assert file_input.source is _InputProducer.result_output
     assert file_input.source.producer == "producer"
+
+
+def test_file_input_uses_standard_consumer_configuration_paths(tmp_path):
+    file_input = FileInput(
+        "target",
+        source=_ConfigurableInputProducer.result_output,
+        configurable_parameters=("region",),
+    )
+    path_override = tmp_path / "target.json"
+
+    assert file_input.configuration_path("consumer") == (
+        "steps.consumer.inputs.target"
+    )
+    assert file_input.configured_path_override(
+        {
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "target": {"path_override": str(path_override)},
+                    },
+                },
+            },
+        },
+        "consumer",
+    ) == path_override.resolve()
+    assert file_input.configured_parameters(
+        {
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "target": {
+                            "parameters": {"region": "transcriptomic"},
+                        },
+                    },
+                },
+            },
+        },
+        "consumer",
+    ) == {"region": "transcriptomic"}
+
+
+def test_file_input_rejects_unknown_configurable_producer_parameter():
+    with pytest.raises(ValueError, match="unknown parameter 'missing'"):
+        FileInput(
+            "target",
+            source=_ConfigurableInputProducer.result_output,
+            configurable_parameters=("missing",),
+        )
+
+
+def test_file_input_rejects_path_and_parameters_together():
+    file_input = FileInput(
+        "target",
+        source=_ConfigurableInputProducer.result_output,
+        configurable_parameters=("region",),
+    )
+    config = {
+        "steps": {
+            "consumer": {
+                "inputs": {
+                    "target": {
+                        "path_override": "target.json",
+                        "parameters": {"region": "transcriptomic"},
+                    },
+                },
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="exactly one"):
+        file_input.configured_path_override(config, "consumer")
+
+
+def test_file_input_rejects_unexposed_configured_parameters():
+    file_input = FileInput(
+        "target",
+        source=_ConfigurableInputProducer.result_output,
+        configurable_parameters=("region",),
+    )
+    config = {
+        "steps": {
+            "consumer": {
+                "inputs": {
+                    "target": {"parameters": {"missing": "value"}},
+                },
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="does not allow parameter.*missing"):
+        file_input.configured_parameters(config, "consumer")
 
 
 def test_step_output_must_be_declared_as_a_class_attribute():
@@ -136,7 +243,6 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
             FileInput(
                 "file_input",
                 source=_InputProducer.result_output,
-                override="section.file",
             ),
         ],
     )
@@ -144,7 +250,6 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
     cwl_spec = spec.to_cwl_tool_spec()
 
     assert spec.config_map() == {"scalar": "section.scalar"}
-    assert spec.input_overrides() == {"file_input": "section.file"}
     assert cwl_spec.input_names() == {"scalar", "file_input"}
     assert cwl_spec.input_types()["file_input"] == "File"
 

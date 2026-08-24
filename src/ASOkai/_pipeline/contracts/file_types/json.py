@@ -114,7 +114,27 @@ class JsonFile(FileType):
         *,
         source: str = "<string>",
     ) -> Any:
-        """Parse JSON and reconstruct a configured domain value when required."""
+        """Parse, validate, and decode JSON content."""
+        json_data = self._validated_json_data(content, source=source)
+        expected_type = self.value_type
+        if expected_type is None:
+            return json_data
+        expected_type_name = json_file_type_name(expected_type)
+
+        try:
+            return _from_json_data(expected_type, json_data)
+        except (ImportError, AttributeError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"Invalid {expected_type_name} from {source}: {error}"
+            ) from error
+
+    def _validated_json_data(
+        self,
+        content: str,
+        *,
+        source: str,
+    ) -> Any:
+        """Parse and validate serialized JSON without constructing domain values."""
         try:
             json_data = json.loads(
                 content,
@@ -131,12 +151,11 @@ class JsonFile(FileType):
 
         try:
             validate_json_data(expected_type, json_data)
-            value = _from_json_data(expected_type, json_data)
         except (ImportError, AttributeError, TypeError, ValueError) as error:
             raise ValueError(
                 f"Invalid {expected_type_name} from {source}: {error}"
             ) from error
-        return value
+        return json_data
 
     def dumps(self, value: Any) -> str:
         """Validate and serialize a JSON-compatible or domain value."""
@@ -164,9 +183,17 @@ class JsonFile(FileType):
             raise ValueError(f"Cannot serialize JSON: {error}") from error
 
     def read(self, path: str | Path) -> Any:
-        """Read, parse, and validate a JSON file."""
+        """Read and decode a validated JSON file."""
         source = Path(path)
         return self.loads(
+            source.read_text(encoding="utf-8"),
+            source=str(source),
+        )
+
+    def validate(self, path: str | Path) -> None:
+        """Validate JSON syntax and its configured serialized-data contract."""
+        source = Path(path)
+        self._validated_json_data(
             source.read_text(encoding="utf-8"),
             source=str(source),
         )

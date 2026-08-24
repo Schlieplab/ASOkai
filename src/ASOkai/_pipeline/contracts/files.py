@@ -17,7 +17,11 @@ from typing import Any, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
 from ASOkai._pipeline.contracts.file_types import FileType
-from ASOkai._pipeline.contracts.parameters import Param, _flag_for_name
+from ASOkai._pipeline.contracts.parameters import (
+    Param,
+    ScalarParam,
+    _flag_for_name,
+)
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate
 
 
@@ -147,13 +151,17 @@ class FileOutput(Param):
         """Write one value through this output's file type."""
         self.file_type.write(path, value)
 
+    def validate(self, value: Any) -> None:
+        """Validate a produced file against this output's file contract."""
+        self.file_type.validate(value)
+
 
 @dataclass(frozen=True)
 class FileInput(Param):
     """A file input that inherits its behavior from a producer output."""
 
     source: FileOutput
-    override: str | None = None
+    configurable_parameters: tuple[str, ...] = ()
     prefix: str | None = None
     doc: str | None = None
 
@@ -161,33 +169,148 @@ class FileInput(Param):
         if not isinstance(self.source, FileOutput):
             raise TypeError("FileInput.source must be a FileOutput.")
         self.source._require_bound()
+        parameter_names = tuple(self.configurable_parameters)
+        if any(
+            type(name) is not str or not name.strip()
+            for name in parameter_names
+        ):
+            raise ValueError(
+                "FileInput.configurable_parameters must contain non-blank "
+                "parameter names."
+            )
+        duplicates = sorted(
+            {
+                name
+                for name in parameter_names
+                if parameter_names.count(name) > 1
+            }
+        )
+        if duplicates:
+            raise ValueError(
+                "FileInput.configurable_parameters contains duplicate "
+                f"name(s): {', '.join(duplicates)}."
+            )
+        object.__setattr__(self, "configurable_parameters", parameter_names)
+        for parameter_name in parameter_names:
+            self.configurable_parameter(parameter_name)
 
-    def configured_override_path(
+    def configuration_path(self, consumer_step_name: str) -> str:
+        """Return this input's standard configuration path."""
+        if type(consumer_step_name) is not str or not consumer_step_name.strip():
+            raise ValueError("consumer_step_name must be a non-blank string.")
+        return f"steps.{consumer_step_name}.inputs.{self.name}"
+
+    def _configured_values(
         self,
-        config: dict,
+        config: Mapping[str, Any],
+        consumer_step_name: str,
+    ) -> Mapping[str, Any] | None:
+        """Return and structurally validate this input's configuration."""
+        configuration_path = self.configuration_path(consumer_step_name)
+        value: Any = config
+        for key in configuration_path.split("."):
+            if not isinstance(value, Mapping) or key not in value:
+                return None
+            value = value[key]
+        if not isinstance(value, Mapping):
+            raise TypeError(
+                f"Input configuration '{configuration_path}' must be a mapping."
+            )
+        unexpected = set(value) - {"path_override", "parameters"}
+        if unexpected:
+            names = ", ".join(sorted(str(name) for name in unexpected))
+            raise ValueError(
+                f"Input configuration '{configuration_path}' has unsupported "
+                f"field(s): {names}."
+            )
+        configured_choices = [
+            choice
+            for choice in ("path_override", "parameters")
+            if choice in value
+        ]
+        if len(configured_choices) != 1:
+            raise ValueError(
+                f"Input configuration '{configuration_path}' must define "
+                "exactly one of 'path_override' or 'parameters'."
+            )
+        return value
+
+    def configured_path_override(
+        self,
+        config: Mapping[str, Any],
+        consumer_step_name: str,
     ) -> Path | None:
-        """Return the configured override path, or None when it is not set."""
-        if self.override is None:
+        """Return this input's configured path override, when present."""
+        values = self._configured_values(config, consumer_step_name)
+        if values is None or "path_override" not in values:
             return None
-
-        from ASOkai._pipeline.config import resolve
-
-        try:
-            value = resolve(config, self.override)
-        except KeyError:
-            return None
-        if value is None:
-            return None
+        value = values["path_override"]
         if isinstance(value, str) and not value.strip():
             raise ValueError(
-                f"Input override '{self.override}' must be a non-blank path."
+                f"Input path override "
+                f"'{self.configuration_path(consumer_step_name)}.path_override' "
+                "must be non-blank."
             )
         try:
             return Path(value).resolve()
         except TypeError as error:
             raise TypeError(
-                f"Input override '{self.override}' must be a path."
+                f"Input path override "
+                f"'{self.configuration_path(consumer_step_name)}.path_override' "
+                "must be a path."
             ) from error
+
+    def configured_parameters(
+        self,
+        config: Mapping[str, Any],
+        consumer_step_name: str,
+    ) -> dict[str, Any] | None:
+        """Return configured producer-parameter overrides, when present."""
+        values = self._configured_values(config, consumer_step_name)
+        if values is None or "parameters" not in values:
+            return None
+        parameters = values["parameters"]
+        if not isinstance(parameters, Mapping):
+            raise TypeError(
+                f"Input parameters "
+                f"'{self.configuration_path(consumer_step_name)}.parameters' "
+                "must be a mapping."
+            )
+        if not parameters:
+            raise ValueError(
+                f"Input parameters "
+                f"'{self.configuration_path(consumer_step_name)}.parameters' "
+                "must not be empty."
+            )
+        unexpected = set(parameters) - set(self.configurable_parameters)
+        if unexpected:
+            names = ", ".join(sorted(str(name) for name in unexpected))
+            raise ValueError(
+                f"Input '{consumer_step_name}.{self.name}' does not allow "
+                f"parameter(s): {names}."
+            )
+        return dict(parameters)
+
+    def configurable_parameter(self, name: str) -> ScalarParam:
+        """Return one producer parameter exposed by this input."""
+        if name not in self.configurable_parameters:
+            raise KeyError(
+                f"Input '{self.name}' does not expose parameter {name!r}."
+            )
+        assert self.source._owner is not None
+        try:
+            parameter = self.source._owner.spec.parameter(name)
+        except KeyError as error:
+            raise ValueError(
+                f"FileInput '{self.name}' exposes unknown parameter {name!r} "
+                f"from producer '{self.source.producer}'."
+            ) from error
+        if parameter.config is None:
+            raise ValueError(
+                f"FileInput '{self.name}' exposes producer parameter {name!r}, "
+                "but that parameter has no main configuration path."
+            )
+        return parameter
 
     @property
     def file_type(self) -> FileType:
@@ -244,8 +367,12 @@ class FileInput(Param):
         )
 
     def read(self, path: str | Path) -> Any:
-        """Read through the file type inherited from the source."""
+        """Read and decode through the inherited file contract."""
         return self.file_type.read(path)
+
+    def validate(self, value: Any) -> None:
+        """Validate a file against this input's inherited file contract."""
+        self.file_type.validate(value)
 
     def _parse_argument(self, value: str) -> Any:
         try:

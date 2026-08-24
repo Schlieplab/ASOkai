@@ -213,24 +213,29 @@ def _describe_step_config_keys(step) -> None:
         )
 
 
-def _describe_step_input_overrides(step) -> None:
-    """Print the optional input overrides of a step."""
-    if not step.input_overrides:
+def _describe_step_input_configuration(step) -> None:
+    """Print optional configuration paths for the step's file inputs."""
+    if not step.spec.inputs:
         return
 
-    click.echo("Input overrides (optional, bypasses dep step):")
-    for input_name, config_path in step.input_overrides.items():
+    click.echo("Input configuration (optional):")
+    for file_input in step.spec.inputs:
+        configuration_path = file_input.configuration_path(step.name)
         click.echo(
-            f"  --config {config_path:<32}path to file  "
-            f"(replaces '{input_name}' from dep)"
+            f"  --config {configuration_path}.path_override  existing file"
         )
+        for name in file_input.configurable_parameters:
+            click.echo(
+                f"  --config {configuration_path}.parameters.{name}  "
+                "separate producer-run value"
+            )
 
 
 def _describe_step(step) -> tuple[list[str], str]:
     """Print step details and return its dependency summary."""
     click.echo(f"Type        : {_step_type_label(step)}")
     _describe_step_config_keys(step)
-    _describe_step_input_overrides(step)
+    _describe_step_input_configuration(step)
     return step.dependencies or [], "Dependencies"
 
 

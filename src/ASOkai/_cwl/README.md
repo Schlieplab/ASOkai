@@ -48,7 +48,6 @@ class ConsumerStep(CoreStep):
     result_input = FileInput(
         "result",
         source=ProducerStep.result_output,
-        override="result.path",
     )
     spec = StepSpec(inputs=[result_input])
 ```

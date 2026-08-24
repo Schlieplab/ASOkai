@@ -178,6 +178,36 @@ def test_config_schema_allows_plugin_namespaces(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "input_configuration",
+    [
+        {},
+        {"parameters": {}},
+        {
+            "path_override": "target.json",
+            "parameters": {"region": "pre-mrna"},
+        },
+    ],
+)
+def test_config_schema_rejects_invalid_step_input_configuration(
+    tmp_path,
+    input_configuration,
+):
+    with pytest.raises(ValueError, match="intrinsic-features.*target_gene"):
+        cfg.validate_config_schema(
+            {
+                "datadir": str(tmp_path),
+                "steps": {
+                    "intrinsic-features": {
+                        "inputs": {
+                            "target_gene": input_configuration,
+                        },
+                    },
+                },
+            }
+        )
+
+
 def test_config_schema_uses_installed_plugin_schemas(
     tmp_path,
     monkeypatch,
@@ -396,7 +426,15 @@ def test_validate_step_config_rejects_missing_override_file(tmp_path):
             "target_id": "ENSG1",
             "k": 16,
             "region": "pre-mrna",
-            "target_gene_path": str(tmp_path / "missing.json"),
+        },
+        "steps": {
+            "generate-antisense-candidates": {
+                "inputs": {
+                    "target_gene": {
+                        "path_override": str(tmp_path / "missing.json"),
+                    },
+                },
+            },
         },
         "antisense": {
             "modality": "aso",
@@ -427,7 +465,13 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
             "target_id": "ENSG1",
             "k": 16,
             "region": "pre-mrna",
-            "target_gene_path": str(override),
+        },
+        "steps": {
+            "generate-antisense-candidates": {
+                "inputs": {
+                    "target_gene": {"path_override": str(override)},
+                },
+            },
         },
         "antisense": {
             "modality": "aso",

@@ -87,9 +87,9 @@ The file type owns serialization and validation:
    and index uniqueness.
 
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
-file type. An optional configuration override lets a user substitute an
-existing file, which is parsed and validated exactly like the producer's
-output.
+file type. Every input automatically has a ``path_override`` configuration
+option that lets a user substitute an existing file. The file is parsed and
+validated exactly like the producer's output.
 
 Output destinations use values from declared scalar parameters. A
 ``TemplateField`` can define how one placeholder is selected or transformed

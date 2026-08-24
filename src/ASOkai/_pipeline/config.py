@@ -174,21 +174,11 @@ def validate_step_config(
                 continue
 
             parameter_values[parameter.name] = configured_value
-
-            accepted_values = parameter.parser_choices()
-            if accepted_values is None or any(
-                type(configured_value) is type(accepted_value)
-                and configured_value == accepted_value
-                for accepted_value in accepted_values
-            ):
-                continue
-            accepted = ", ".join(repr(value) for value in accepted_values)
-            errors.append(
-                f"$.{parameter.config}: configured value "
-                f"{configured_value!r} is not accepted by step "
-                f"'{step.name}'; accepted values: {accepted}"
-            )
-            parameters_are_valid = False
+            try:
+                parameter.validate(configured_value)
+            except (TypeError, ValueError) as error:
+                errors.append(f"$.{parameter.config}: {error}")
+                parameters_are_valid = False
 
         if parameters_are_valid:
             try:
@@ -228,34 +218,50 @@ def validate_step_config(
                 )
 
         for file_input in step.spec.inputs:
+            configuration_path = file_input.configuration_path(step.name)
             try:
-                override_path = file_input.configured_override_path(config)
-            except (KeyError, TypeError, ValueError) as error:
-                errors.append(str(error))
-                continue
-            if override_path is None:
-                continue
-            if not override_path.exists():
-                errors.append(
-                    f"$.{file_input.override}: file does not exist: "
-                    f"{override_path}"
+                path_override = file_input.configured_path_override(
+                    config,
+                    step.name,
                 )
-                continue
-            if not override_path.is_file():
-                errors.append(
-                    f"$.{file_input.override}: path is not a file: "
-                    f"{override_path}"
+                configured_parameters = file_input.configured_parameters(
+                    config,
+                    step.name,
                 )
+            except (TypeError, ValueError) as error:
+                errors.append(f"$.{configuration_path}: {error}")
                 continue
-            try:
-                file_input.read(override_path)
-            except (
-                OSError,
-                UnicodeError,
-                TypeError,
-                ValueError,
-            ) as error:
-                errors.append(f"$.{file_input.override}: {error}")
+            if path_override is not None:
+                path_config = f"{configuration_path}.path_override"
+                if not path_override.exists():
+                    errors.append(
+                        f"$.{path_config}: file does not exist: "
+                        f"{path_override}"
+                    )
+                    continue
+                if not path_override.is_file():
+                    errors.append(
+                        f"$.{path_config}: path is not a file: "
+                        f"{path_override}"
+                    )
+                    continue
+                try:
+                    file_input.validate(path_override)
+                except (
+                    OSError,
+                    UnicodeError,
+                    TypeError,
+                    ValueError,
+                ) as error:
+                    errors.append(f"$.{path_config}: {error}")
+            elif configured_parameters is not None:
+                for name, value in configured_parameters.items():
+                    try:
+                        file_input.configurable_parameter(name).validate(value)
+                    except (TypeError, ValueError) as error:
+                        errors.append(
+                            f"$.{configuration_path}.parameters.{name}: {error}"
+                        )
 
         if not missing_parameter:
             for output in step.spec.outputs:
@@ -288,11 +294,11 @@ def validate_step_config_paths(
             for parameter in step.spec.params
             if parameter.config is not None
         ]
-        paths.extend(
-            file_input.override
-            for file_input in step.spec.inputs
-            if file_input.override is not None
-        )
+        for file_input in step.spec.inputs:
+            for name in file_input.configurable_parameters:
+                parameter_path = file_input.configurable_parameter(name).config
+                if parameter_path is not None:
+                    paths.append(parameter_path)
         paths.extend(step.spec.compatible_with)
         for path in dict.fromkeys(paths):
             if any(

@@ -77,25 +77,21 @@ class CreateTargetGeneStep(CoreStep):
             FileInput(
                 "dna",
                 source=DownloadGenomeStep.dna_output,
-                override="genome.dna_path",
                 doc="Primary assembly FASTA from download-genome.",
             ),
             FileInput(
                 "cdna",
                 source=DownloadGenomeStep.cdna_output,
-                override="genome.cdna_path",
                 doc="cDNA FASTA from download-genome.",
             ),
             FileInput(
                 "annotation",
                 source=DownloadGenomeStep.annotation_output,
-                override="genome.annotation_path",
                 doc="GTF annotation file from download-genome.",
             ),
             FileInput(
                 "db",
                 source=DownloadGenomeStep.db_output,
-                override="genome.db_path",
                 doc="Reusable annotation database from download-genome.",
             ),
         ],

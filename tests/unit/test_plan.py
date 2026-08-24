@@ -22,7 +22,8 @@ from ASOkai.Plugins import (
     Step,
     StepSpec,
 )
-from ASOkai._pipeline.plan import StepRunOutput, build_plan
+from ASOkai._pipeline.contracts.execution import StepRunOutput
+from ASOkai._pipeline.plan import build_plan
 
 
 def _make_step(
@@ -72,13 +73,75 @@ def _make_step(
     return step_type()
 
 
+def _make_configurable_producer_and_consumer() -> tuple[Step, Step]:
+    """Return a consumer that can override its producer's mode parameter."""
+    output = FileOutput(
+        "result",
+        destination="{mode}/result.txt",
+    )
+    producer_type = type(
+        "_ConfiguredProducerStep",
+        (Step,),
+        {
+            "name": "producer",
+            "description": "",
+            "result_output": output,
+            "spec": StepSpec(
+                params=[ScalarParam("mode", str, config="producer.mode")],
+                outputs=[output],
+            ),
+        },
+    )
+    producer = producer_type()
+
+    consumer_output = FileOutput("consumer_out", destination="consumer.txt")
+    consumer_type = type(
+        "_ConfiguredConsumerStep",
+        (Step,),
+        {
+            "name": "consumer",
+            "description": "",
+            "consumer_out_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[
+                    FileInput(
+                        "result",
+                        source=output,
+                        configurable_parameters=("mode",),
+                    ),
+                ],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    return producer, consumer_type()
+
+
+def _request_alternate_producer_run(config: dict) -> None:
+    """Request an alternate producer mode for the consumer's file input."""
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "result": {
+                            "parameters": {"mode": "alternate"},
+                        },
+                    },
+                },
+            },
+        }
+    )
+
+
 @pytest.fixture
 def config(tmp_path):
     return {"datadir": str(tmp_path)}
 
 
-def _scheduled_names(plan) -> list[str]:
-    return [run.name for run in plan.runs_to_execute]
+def _scheduled_run_ids(plan) -> list[str]:
+    return [run.run_id for run in plan.runs_to_execute]
 
 
 def test_missing_goal_is_scheduled(config):
@@ -86,8 +149,8 @@ def test_missing_goal_is_scheduled(config):
 
     plan = build_plan([step], config, _registry={step.name: step})
 
-    assert _scheduled_names(plan) == ["alpha"]
-    assert [run.name for run in plan.goals] == ["alpha"]
+    assert _scheduled_run_ids(plan) == ["alpha"]
+    assert [run.run_id for run in plan.goals] == ["alpha"]
     assert plan.resolved_outputs == {}
 
 
@@ -102,7 +165,7 @@ def test_valid_goal_output_is_reused(config):
 
     assert plan.runs_to_execute == ()
     assert {
-        (run_output.run.name, run_output.output.name)
+        (run_output.run.run_id, run_output.output.name)
         for run_output in plan.resolved_outputs
     } == {("alpha", "result")}
 
@@ -117,7 +180,7 @@ def test_force_schedules_valid_goal(config):
         _registry={step.name: step},
     )
 
-    assert _scheduled_names(plan) == ["alpha"]
+    assert _scheduled_run_ids(plan) == ["alpha"]
     assert plan.resolved_outputs == {}
 
 
@@ -147,10 +210,10 @@ def test_missing_dependencies_are_resolved_automatically(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert _scheduled_names(plan) == ["dependency", "goal"]
+    assert _scheduled_run_ids(plan) == ["dependency", "goal"]
     binding = plan.goals[0].inputs[0]
     assert isinstance(binding.source, StepRunOutput)
-    assert binding.source.run.name == "dependency"
+    assert binding.source.run.run_id == "dependency"
 
 
 def test_valid_dependency_is_reused(config):
@@ -167,7 +230,7 @@ def test_valid_dependency_is_reused(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert _scheduled_names(plan) == ["goal"]
+    assert _scheduled_run_ids(plan) == ["goal"]
     reused_output = plan.goals[0].inputs[0].source
     assert isinstance(reused_output, StepRunOutput)
     assert plan.resolved_outputs[reused_output].name == "result.txt"
@@ -184,7 +247,25 @@ def test_dependency_chain_is_scheduled_in_topological_order(config):
         _registry={step.name: step for step in (first, second, goal)},
     )
 
-    assert _scheduled_names(plan) == ["first", "second", "goal"]
+    assert _scheduled_run_ids(plan) == ["first", "second", "goal"]
+
+
+def test_breadth_first_discovery_prioritizes_sibling_runs(config):
+    deep = _make_step("deep")
+    left = _make_step("left", [deep])
+    right = _make_step("right")
+    goal = _make_step("goal", [left, right])
+
+    plan = build_plan(
+        [goal],
+        config,
+        _registry={
+            step.name: step
+            for step in (deep, left, right, goal)
+        },
+    )
+
+    assert _scheduled_run_ids(plan) == ["right", "deep", "left", "goal"]
 
 
 def test_dependency_cycle_is_rejected(config):
@@ -214,8 +295,8 @@ def test_duplicate_goals_and_dependencies_share_one_run(config):
         _registry={step.name: step for step in (shared, first, second)},
     )
 
-    assert _scheduled_names(plan) == ["shared", "first", "second"]
-    assert [run.name for run in plan.goals] == ["first", "second"]
+    assert _scheduled_run_ids(plan) == ["shared", "first", "second"]
+    assert [run.run_id for run in plan.goals] == ["first", "second"]
 
 
 def test_equal_port_names_from_different_runs_do_not_collide(config):
@@ -229,7 +310,7 @@ def test_equal_port_names_from_different_runs_do_not_collide(config):
     )
 
     assert len(plan.resolved_outputs) == 2
-    assert {output.run.name for output in plan.resolved_outputs} == {
+    assert {output.run.run_id for output in plan.resolved_outputs} == {
         "first",
         "second",
     }
@@ -267,7 +348,7 @@ def test_non_recursive_reuses_valid_dependency(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert _scheduled_names(plan) == ["goal"]
+    assert _scheduled_run_ids(plan) == ["goal"]
 
 
 def test_non_recursive_rejects_missing_dependency(config):
@@ -294,7 +375,7 @@ def test_explicit_goal_may_run_in_non_recursive_mode(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert _scheduled_names(plan) == ["dependency", "goal"]
+    assert _scheduled_run_ids(plan) == ["dependency", "goal"]
 
 
 def test_force_does_not_force_valid_dependency(config):
@@ -309,7 +390,7 @@ def test_force_does_not_force_valid_dependency(config):
         _registry={dependency.name: dependency, goal.name: goal_with_dependency},
     )
 
-    assert _scheduled_names(plan) == ["goal"]
+    assert _scheduled_run_ids(plan) == ["goal"]
 
 
 def test_file_override_bypasses_dependency(config, tmp_path):
@@ -335,74 +416,79 @@ def test_file_override_bypasses_dependency(config, tmp_path):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert _scheduled_names(plan) == ["goal"]
+    assert _scheduled_run_ids(plan) == ["goal"]
     assert plan.goals[0].inputs[0].source == override.resolve()
 
 
-def test_configured_producer_run_is_not_silently_treated_as_main(config):
-    output = FileOutput(
-        "result",
-        destination="{mode}/result.txt",
-    )
-    producer_spec = StepSpec(
-        params=[ScalarParam("mode", str, config="producer.mode")],
-        outputs=[output],
-    )
-    producer_type = type(
-        "_ConfiguredProducerStep",
-        (Step,),
-        {
-            "name": "producer",
-            "description": "",
-            "result_output": output,
-            "spec": producer_spec,
-        },
-    )
-    producer = producer_type()
+def test_configured_producer_gets_a_dotted_run_id_and_derived_config(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    _request_alternate_producer_run(config)
 
-    consumer_output = FileOutput("consumer_out", destination="consumer.txt")
-    consumer_spec = StepSpec(
-        inputs=[
-            FileInput(
-                "result",
-                source=output,
-                configurable_parameters=("mode",),
-            ),
-        ],
-        outputs=[consumer_output],
-    )
-    consumer_type = type(
-        "_ConfiguredConsumerStep",
-        (Step,),
-        {
-            "name": "consumer",
-            "description": "",
-            "consumer_out_output": consumer_output,
-            "spec": consumer_spec,
-        },
-    )
-    consumer = consumer_type()
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                "consumer": {
-                    "inputs": {
-                        "result": {
-                            "parameters": {"mode": "alternate"},
-                        },
-                    },
-                },
-            },
-        }
+    plan = build_plan(
+        [consumer],
+        config,
+        _registry={producer.name: producer, consumer.name: consumer},
     )
 
-    with pytest.raises(RuntimeError, match="separate producer run"):
-        build_plan(
-            [consumer],
-            config,
-            _registry={producer.name: producer, consumer.name: consumer},
-        )
+    assert _scheduled_run_ids(plan) == ["consumer.producer", "consumer"]
+    configured_producer = plan.runs_to_execute[0]
+    assert configured_producer.config["producer"]["mode"] == "alternate"
+    assert config["producer"]["mode"] == "main"
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is configured_producer
+
+
+def test_existing_configured_producer_output_is_reused(config, tmp_path):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    configured_output = tmp_path / "alternate" / "result.txt"
+    configured_output.parent.mkdir()
+    configured_output.touch()
+    _request_alternate_producer_run(config)
+
+    plan = build_plan(
+        [consumer],
+        config,
+        non_recursive=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert _scheduled_run_ids(plan) == ["consumer"]
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run.run_id == "consumer.producer"
+    assert plan.resolved_outputs[source] == configured_output
+
+
+def test_task_listed_producer_keeps_main_and_configured_run_separate(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    registered_producer = type(producer)()
+    registered_consumer = type(consumer)()
+    _request_alternate_producer_run(config)
+
+    class FakeTask:
+        name = "task"
+        description = ""
+        steps = [consumer, producer]
+
+    plan = build_plan(
+        [cast(Runnable, FakeTask())],
+        config,
+        _registry={
+            registered_producer.name: registered_producer,
+            registered_consumer.name: registered_consumer,
+        },
+    )
+
+    assert [run.run_id for run in plan.goals] == ["consumer", "producer"]
+    assert _scheduled_run_ids(plan) == [
+        "producer",
+        "consumer.producer",
+        "consumer",
+    ]
+    consumer_source = plan.goals[0].inputs[0].source
+    assert isinstance(consumer_source, StepRunOutput)
+    assert consumer_source.run.run_id == "consumer.producer"
 
 
 def test_task_steps_are_requested_goals(config):
@@ -420,8 +506,8 @@ def test_task_steps_are_requested_goals(config):
         _registry={dependency.name: dependency, goal.name: goal},
     )
 
-    assert [run.name for run in plan.goals] == ["dependency", "goal"]
-    assert _scheduled_names(plan) == ["dependency", "goal"]
+    assert [run.run_id for run in plan.goals] == ["dependency", "goal"]
+    assert _scheduled_run_ids(plan) == ["dependency", "goal"]
 
 
 def test_workflow_members_are_terminal_goals(config):
@@ -440,5 +526,5 @@ def test_workflow_members_are_terminal_goals(config):
         _registry={step.name: step for step in (shared, first, second)},
     )
 
-    assert [run.name for run in plan.goals] == ["first", "second"]
-    assert _scheduled_names(plan) == ["shared", "first", "second"]
+    assert [run.run_id for run in plan.goals] == ["first", "second"]
+    assert _scheduled_run_ids(plan) == ["shared", "first", "second"]

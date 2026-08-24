@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
 from ASOkai._pipeline.contracts.files import FileOutput
-from ASOkai._pipeline.plan import StepRun, StepRunOutput
 
 
 InputSource = Literal[
@@ -34,7 +34,7 @@ class ResolvedInput:
     cwl_value: Any
     source: InputSource
     path: Path | None = None
-    dep_name: str | None = None
+    producer_run_id: str | None = None
     source_output: FileOutput | None = None
     config_path: str | None = None
 
@@ -70,7 +70,7 @@ def resolve_run_inputs(
             binding = bindings[file_input.name]
         except KeyError as error:
             raise ValueError(
-                f"Run '{run.name}' has no binding for input "
+                f"Run '{run.run_id}' has no binding for input "
                 f"'{file_input.name}'."
             ) from error
 
@@ -92,7 +92,7 @@ def resolve_run_inputs(
             resolved[file_input.name] = ResolvedInput(
                 cwl_value=None,
                 source="dep_wired",
-                dep_name=producer_run.name,
+                producer_run_id=producer_run.run_id,
                 source_output=source.output,
             )
             continue
@@ -100,14 +100,14 @@ def resolve_run_inputs(
         path = resolved_outputs.get(source)
         if path is None:
             raise RuntimeError(
-                f"Run '{run.name}' input '{file_input.name}' requires "
-                f"resolved output '{producer_run.name}/{source.output.name}'."
+                f"Run '{run.run_id}' input '{file_input.name}' requires "
+                f"resolved output '{producer_run.run_id}/{source.output.name}'."
             )
         resolved[file_input.name] = ResolvedInput(
             cwl_value={"class": "File", "path": str(path)},
             source="dep_disk",
             path=path,
-            dep_name=producer_run.name,
+            producer_run_id=producer_run.run_id,
             source_output=source.output,
         )
 

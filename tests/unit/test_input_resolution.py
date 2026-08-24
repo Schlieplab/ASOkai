@@ -18,7 +18,7 @@ from ASOkai._cwl.input_resolution import (
     resolve_run_sequence_inputs,
     to_cwl_inputs,
 )
-from ASOkai._pipeline.plan import StepInputBinding, StepRun
+from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 
 
 def _fake_step(
@@ -90,7 +90,6 @@ def _run(
         bindings.append(StepInputBinding(file_input, source))
     return StepRun(
         run_id=step.name,
-        name=step.name,
         step=step,
         config=config,
         inputs=tuple(bindings),

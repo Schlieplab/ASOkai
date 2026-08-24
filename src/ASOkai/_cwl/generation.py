@@ -20,8 +20,8 @@ import yaml
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
 from ASOkai._pipeline.contracts.files import FileInput
-from ASOkai._pipeline.plan import StepRun, StepRunOutput
 from ASOkai._pipeline.steps.base import Step
 
 
@@ -125,21 +125,21 @@ def _validate_planned_connections(runs: list[StepRun]) -> None:
                 declared = producer.step.spec.output(source.output.name)
             except KeyError as error:
                 raise ValueError(
-                    f"Run '{run.name}' input '{binding.file_input.name}' references "
+                    f"Run '{run.run_id}' input '{binding.file_input.name}' references "
                     f"unknown output '{source.output.name}' on run "
-                    f"'{producer.name}'."
+                    f"'{producer.run_id}'."
                 ) from error
             if declared is not source.output:
                 raise ValueError(
-                    f"Run '{run.name}' input '{binding.file_input.name}' references "
+                    f"Run '{run.run_id}' input '{binding.file_input.name}' references "
                     f"an output declaration that does not belong to "
-                    f"'{producer.name}'."
+                    f"'{producer.run_id}'."
                 )
 
 
 def _workflow_output_id(run: StepRun, output_name: str) -> str:
     """Return a unique top-level output id for one run output."""
-    return f"{_cwl_step_id(run.name)}__{output_name}"
+    return f"{_cwl_step_id(run.run_id)}__{output_name}"
 
 
 def _publisher_output_ids(plan: PublicationPlan) -> dict[str, str]:
@@ -179,7 +179,7 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
 def _publication_sources(runs: list[StepRun]) -> list[str]:
     """Return step output sources in publication-manifest order."""
     return [
-        f"{_cwl_step_id(run.name)}/{output.name}"
+        f"{_cwl_step_id(run.run_id)}/{output.name}"
         for run in runs
         for output in run.step.spec.outputs
     ]
@@ -279,10 +279,10 @@ class JobCwlGenerator(BaseCwlGenerator):
                     in_map[file_input.name] = file_input.name
                 else:
                     in_map[file_input.name] = (
-                        f"{_cwl_step_id(source.run.name)}/{source.output.name}"
+                        f"{_cwl_step_id(source.run.run_id)}/{source.output.name}"
                     )
 
-            cwl_steps[_cwl_step_id(run.name)] = {
+            cwl_steps[_cwl_step_id(run.run_id)] = {
                 "run": step_cwl_run_path(step),
                 "in": in_map,
                 "out": list(_output_names(step)),

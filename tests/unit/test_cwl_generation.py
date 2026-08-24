@@ -24,16 +24,16 @@ from ASOkai.Plugins import (
     StepSpec,
 )
 from ASOkai.Plugins._registry import get_steps
+from ASOkai._pipeline.contracts.execution import (
+    StepInputBinding,
+    StepRun,
+    StepRunOutput,
+)
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.plan import (
-    StepInputBinding,
-    StepRun,
-    StepRunOutput,
-)
 
 
 class _SpecStep(Step):
@@ -77,7 +77,6 @@ def _step_runs(steps: list[Step], config: dict) -> list[StepRun]:
     unbound_runs = [
         StepRun(
             run_id=step.name,
-            name=step.name,
             step=step,
             config=config,
         )
@@ -104,7 +103,6 @@ def _step_runs(steps: list[Step], config: dict) -> list[StepRun]:
         runs.append(
             StepRun(
                 run_id=run.run_id,
-                name=run.name,
                 step=run.step,
                 config=run.config,
                 inputs=tuple(bindings),

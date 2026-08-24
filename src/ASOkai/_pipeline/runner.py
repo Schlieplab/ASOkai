@@ -22,7 +22,8 @@ from ASOkai._cwl.input_resolution import (
 from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.plan import ExecutionPlan, StepRun, build_plan
+from ASOkai._pipeline.contracts.execution import ExecutionPlan, StepRun
+from ASOkai._pipeline.plan import build_plan
 from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
@@ -81,7 +82,7 @@ def _validate_published_outputs(
             ) from error
         except (OSError, UnicodeError, TypeError, ValueError) as error:
             raise RuntimeError(
-                f"CWL published invalid output(s) for '{run.name}': {error}"
+                f"CWL published invalid output(s) for '{run.run_id}': {error}"
             ) from error
 
 
@@ -110,7 +111,7 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
     )
 
     for run in plan.runs_to_execute:
-        logger.info("  ── %s", run.name)
+        logger.info("  ── %s", run.run_id)
         resolved = resolve_run_inputs(
             run,
             resolved_outputs=dict(plan.resolved_outputs),
@@ -118,7 +119,11 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
         )
         for cwl_key, ri in resolved.items():
             if ri.source == "dep_wired":
-                logger.info("    %-22s wired from '%s'", cwl_key, ri.dep_name)
+                logger.info(
+                    "    %-22s wired from '%s'",
+                    cwl_key,
+                    ri.producer_run_id,
+                )
             elif ri.source == "dep_disk":
                 p = ri.path
                 if p is not None:
@@ -126,7 +131,7 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
                     logger.info("    %-22s %s  (%s)", cwl_key, p, status)
                 else:
                     logger.info("    %-22s MISSING — dep '%s' output unknown",
-                                cwl_key, ri.dep_name)
+                                cwl_key, ri.producer_run_id)
             elif ri.source == "input_override":
                 p = ri.path
                 status = "OK" if p is not None and p.exists() else "MISSING"
@@ -162,7 +167,7 @@ def run_plan(
         for run_output, path in plan.resolved_outputs.items():
             logger.info(
                 "  %s/%s: %s",
-                run_output.run.name,
+                run_output.run.run_id,
                 run_output.output.name,
                 path,
             )
@@ -195,11 +200,11 @@ def run_plan(
     for run in plan.runs_to_execute:
         run_config = dict(run.config)
         if any(path.exists() for path in run.step.output_paths(run_config).values()):
-            logger.info("[%s] replacing outputs for '%s'.", label, run.name)
+            logger.info("[%s] replacing outputs for '%s'.", label, run.run_id)
             run.step.cleanup(run_config)
 
     if len(plan.runs_to_execute) == 1:
-        logger.info("[%s] running '%s'.", label, last_run.name)
+        logger.info("[%s] running '%s'.", label, last_run.run_id)
     else:
         logger.info(
             "[%s] running %d steps.",

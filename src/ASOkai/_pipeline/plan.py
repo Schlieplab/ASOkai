@@ -11,158 +11,27 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import logging
+from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, Mapping
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.execution import (
+    ExecutionPlan,
+    StepInputBinding,
+    StepRun,
+    StepRunOutput,
+)
+from ASOkai._pipeline.contracts.files import FileInput
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, eq=False)
-class StepRun:
-    """One concrete execution of a step under resolved configuration."""
-
-    run_id: str
-    name: str
-    step: Step
-    config: Mapping[str, Any] = field(repr=False)
-    inputs: tuple[StepInputBinding, ...] = ()
-
-    def __post_init__(self) -> None:
-        if type(self.run_id) is not str or not self.run_id.strip():
-            raise ValueError("StepRun.run_id must be a non-blank string.")
-        if type(self.name) is not str or not self.name.strip():
-            raise ValueError("StepRun.name must be a non-blank string.")
-        if not isinstance(self.step, Step):
-            raise TypeError("StepRun.step must be a Step.")
-        if not isinstance(self.config, Mapping):
-            raise TypeError("StepRun.config must be a mapping.")
-
-        inputs = tuple(self.inputs)
-        if any(not isinstance(item, StepInputBinding) for item in inputs):
-            raise TypeError(
-                "StepRun.inputs must contain only StepInputBinding values."
-            )
-        input_names = [item.file_input.name for item in inputs]
-        duplicates = sorted(
-            {name for name in input_names if input_names.count(name) > 1}
-        )
-        if duplicates:
-            raise ValueError(
-                "StepRun input bindings contain duplicate name(s): "
-                f"{', '.join(duplicates)}."
-            )
-
-        object.__setattr__(
-            self,
-            "config",
-            MappingProxyType(deepcopy(dict(self.config))),
-        )
-        object.__setattr__(self, "inputs", inputs)
-
-    def __eq__(self, other: object) -> bool:
-        """Concrete runs compare by their stable resolved identity."""
-        return isinstance(other, StepRun) and self.run_id == other.run_id
-
-    def __hash__(self) -> int:
-        return hash(self.run_id)
-
-    def output(self, output: FileOutput) -> StepRunOutput:
-        """Return one output port qualified by this concrete run."""
-        try:
-            declared = self.step.spec.output(output.name)
-        except KeyError as error:
-            raise ValueError(
-                f"Output '{output.name}' does not belong to step "
-                f"'{self.step.name}'."
-            ) from error
-        if declared is not output:
-            raise ValueError(
-                f"Output '{output.name}' does not belong to step "
-                f"'{self.step.name}'."
-            )
-        return StepRunOutput(self, output)
-
-
-@dataclass(frozen=True)
-class StepRunOutput:
-    """One declared file output produced by one concrete step run."""
-
-    run: StepRun
-    output: FileOutput
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.run, StepRun):
-            raise TypeError("StepRunOutput.run must be a StepRun.")
-        if not isinstance(self.output, FileOutput):
-            raise TypeError("StepRunOutput.output must be a FileOutput.")
-
-
-@dataclass(frozen=True)
-class StepInputBinding:
-    """A step input resolved to an external path or producer-run output."""
-
-    file_input: FileInput
-    source: Path | StepRunOutput
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.file_input, FileInput):
-            raise TypeError("StepInputBinding.file_input must be a FileInput.")
-        if isinstance(self.source, Path):
-            object.__setattr__(self, "source", self.source.resolve())
-        elif not isinstance(self.source, StepRunOutput):
-            raise TypeError(
-                "StepInputBinding.source must be a Path or StepRunOutput."
-            )
-
-
-@dataclass(frozen=True)
-class ExecutionPlan:
-    """Resolved goals, scheduled runs, and reusable run outputs."""
-
-    goals: tuple[StepRun, ...]
-    runs_to_execute: tuple[StepRun, ...]
-    resolved_outputs: Mapping[StepRunOutput, Path] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        goals = tuple(self.goals)
-        runs_to_execute = tuple(self.runs_to_execute)
-        if any(not isinstance(run, StepRun) for run in goals):
-            raise TypeError("ExecutionPlan.goals must contain only StepRun values.")
-        if any(not isinstance(run, StepRun) for run in runs_to_execute):
-            raise TypeError(
-                "ExecutionPlan.runs_to_execute must contain only StepRun values."
-            )
-
-        resolved_outputs: dict[StepRunOutput, Path] = {}
-        for output, path in self.resolved_outputs.items():
-            if not isinstance(output, StepRunOutput):
-                raise TypeError(
-                    "ExecutionPlan.resolved_outputs keys must be StepRunOutput values."
-                )
-            if not isinstance(path, Path):
-                raise TypeError(
-                    "ExecutionPlan.resolved_outputs values must be Path values."
-                )
-            resolved_outputs[output] = path.resolve()
-
-        object.__setattr__(self, "goals", goals)
-        object.__setattr__(self, "runs_to_execute", runs_to_execute)
-        object.__setattr__(
-            self,
-            "resolved_outputs",
-            MappingProxyType(resolved_outputs),
-        )
 
 
 def _flatten_goals(
@@ -185,141 +54,317 @@ def _flatten_goals(
     raise TypeError(f"Unsupported runnable type: {type(runnable).__name__!r}.")
 
 
-class _GoalResolver:
-    """Resolve requested main runs and their required producer runs."""
+@dataclass(frozen=True)
+class _PendingInputBinding:
+    """An input binding waiting for its producer StepRun to be constructed."""
+
+    file_input: FileInput
+    producer_run_id: str
+
+
+@dataclass
+class _RunDraft:
+    """Mutable run state used only while constructing an execution plan."""
+
+    run_id: str
+    step: Step
+    config: dict[str, Any]
+    step_lineage: tuple[str, ...]
+    inputs: list[StepInputBinding | _PendingInputBinding] = field(
+        default_factory=list,
+    )
+    reusable_outputs: dict[str, Path] | None = None
+
+
+def _configured_producer_run_id(
+    consumer_run_id: str,
+    producer_step_name: str,
+) -> str:
+    """Return the contextual ID for a parameter-configured producer run."""
+    return f"{consumer_run_id}.{producer_step_name}"
+
+
+class _PlanBuilder:
+    """Discover concrete runs breadth-first, then order them for execution."""
 
     def __init__(
         self,
-        config: dict,
-        registry: Mapping[str, Step],
+        main_config: dict,
+        registered_steps: Mapping[str, Step],
         *,
-        goal_names: set[str],
+        main_goal_ids: set[str],
         non_recursive: bool,
         force: bool,
     ) -> None:
-        self.config = config
-        self.registry = registry
-        self.goal_names = goal_names
+        self.main_config = main_config
+        self.registered_steps = registered_steps
+        self.main_goal_ids = main_goal_ids
         self.non_recursive = non_recursive
-        self.forced_run_ids = goal_names if force else set()
-        self.runs: dict[str, StepRun] = {}
-        self.resolving: set[str] = set()
-        self.runs_to_execute: list[StepRun] = []
-        self.resolved_outputs: dict[StepRunOutput, Path] = {}
+        self.force_goals = force
+        self.run_drafts: dict[str, _RunDraft] = {}
+        self.pending_run_ids: deque[str] = deque()
 
-    def _producer(
+    def _registered_producer(
         self,
-        consumer: Step,
+        consumer_step: Step,
         file_input: FileInput,
     ) -> Step:
         """Return and validate the registered producer for one file input."""
         source = file_input.source
-        producer = self.registry.get(source.producer)
+        producer = self.registered_steps.get(source.producer)
         if producer is None:
             raise ValueError(
-                f"Step '{consumer.name}' references unknown producer "
+                f"Step '{consumer_step.name}' references unknown producer "
                 f"'{source.producer}'."
             )
         try:
             declared = producer.spec.output(source.name)
         except KeyError as error:
             raise ValueError(
-                f"Step '{consumer.name}' input '{file_input.name}' references "
+                f"Step '{consumer_step.name}' input "
+                f"'{file_input.name}' references "
                 f"unknown output '{source.name}' on step '{source.producer}'."
             ) from error
         if declared is not source:
             raise ValueError(
-                f"Step '{consumer.name}' input '{file_input.name}' references "
+                f"Step '{consumer_step.name}' input "
+                f"'{file_input.name}' references "
                 f"an output declaration that does not belong to "
                 f"'{source.producer}'."
             )
         return producer
 
-    def _existing_outputs(self, run: StepRun) -> bool:
-        """Record valid existing outputs and report whether the run is done."""
+    def _reusable_outputs(self, run_draft: _RunDraft) -> dict[str, Path] | None:
+        """Return valid existing outputs, or ``None`` when the run must execute."""
         try:
-            paths = run.step.validate_output_files(dict(run.config))
+            paths = run_draft.step.validate_output_files(run_draft.config)
         except (OSError, UnicodeError, TypeError, ValueError):
-            return False
-        for output in run.step.spec.outputs:
-            self.resolved_outputs[run.output(output)] = paths[output.name]
-        logger.debug("[plan] '%s' outputs are valid — reused.", run.name)
-        return True
+            return None
+        logger.debug("[plan] '%s' outputs are valid — reused.", run_draft.run_id)
+        return paths
 
-    def _resolve_input(self, step: Step, file_input: FileInput) -> StepInputBinding:
-        """Resolve one external input path or its producer's main run."""
+    def _configured_producer_config(
+        self,
+        file_input: FileInput,
+        parameter_values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return main configuration with one input's producer overrides."""
+        overrides: dict[str, Any] = {}
+        for name, value in parameter_values.items():
+            parameter = file_input.configurable_parameter(name)
+            assert parameter.config is not None
+            overrides[parameter.config] = value
+        return cfg.apply_overrides(deepcopy(self.main_config), overrides)
+
+    def _reserve_run(
+        self,
+        run_id: str,
+        step: Step,
+        config: dict[str, Any],
+        *,
+        step_lineage: tuple[str, ...],
+    ) -> None:
+        """Reserve one named run in the breadth-first discovery queue."""
+        reserved_run = self.run_drafts.get(run_id)
+        if reserved_run is not None:
+            if (
+                type(reserved_run.step) is not type(step)
+                or reserved_run.config != config
+            ):
+                raise ValueError(
+                    f"Run id '{run_id}' resolves to conflicting step "
+                    "configurations."
+                )
+            return
+
+        run_draft = _RunDraft(
+            run_id=run_id,
+            step=step,
+            config=config,
+            step_lineage=step_lineage,
+        )
+        self.run_drafts[run_id] = run_draft
+        self.pending_run_ids.append(run_id)
+
+    def _discover_input(
+        self,
+        consumer_run: _RunDraft,
+        file_input: FileInput,
+    ) -> StepInputBinding | _PendingInputBinding:
+        """Resolve one override or discover its concrete producer run."""
         path_override = file_input.configured_path_override(
-            self.config,
-            step.name,
+            consumer_run.config,
+            consumer_run.step.name,
         )
         if path_override is not None:
             return StepInputBinding(file_input, path_override)
 
-        producer = self._producer(step, file_input)
-        may_schedule = not self.non_recursive or producer.name in self.goal_names
-        producer_run = self.resolve(producer, may_schedule=may_schedule)
-        return StepInputBinding(
-            file_input,
-            producer_run.output(file_input.source),
+        producer = self._registered_producer(consumer_run.step, file_input)
+        if producer.name in consumer_run.step_lineage:
+            cycle = " -> ".join(
+                (*consumer_run.step_lineage, producer.name)
+            )
+            raise ValueError(f"Dependency cycle detected: {cycle}.")
+
+        parameter_values = file_input.configured_parameters(
+            consumer_run.config,
+            consumer_run.step.name,
         )
-
-    def resolve(self, step: Step, *, may_schedule: bool = True) -> StepRun:
-        """Resolve one main run, recursively resolving inputs when required."""
-        run_id = step.name
-        existing = self.runs.get(run_id)
-        if existing is not None:
-            return existing
-        if run_id in self.resolving:
-            raise ValueError(
-                f"Dependency cycle detected involving step '{step.name}'."
+        if parameter_values is None:
+            producer_run_id = producer.name
+            producer_config = self.main_config
+            producer_step_lineage = (producer.name,)
+        else:
+            producer_run_id = _configured_producer_run_id(
+                consumer_run.run_id,
+                producer.name,
+            )
+            producer_config = self._configured_producer_config(
+                file_input,
+                parameter_values,
+            )
+            producer_step_lineage = (
+                *consumer_run.step_lineage,
+                producer.name,
             )
 
-        self.resolving.add(run_id)
-        try:
-            cfg.validate_step_config(self.config, [step])
-            for file_input in step.spec.inputs:
-                if file_input.configured_parameters(
-                    self.config,
-                    step.name,
-                ) is not None:
-                    raise RuntimeError(
-                        f"Input '{step.name}.{file_input.name}' configures a "
-                        "separate producer run. Resolving additional configured "
-                        "runs is the next implementation step."
-                    )
-            run = StepRun(
-                run_id=run_id,
-                name=step.name,
-                step=step,
-                config=self.config,
+        self._reserve_run(
+            producer_run_id,
+            producer,
+            producer_config,
+            step_lineage=producer_step_lineage,
+        )
+        return _PendingInputBinding(file_input, producer_run_id)
+
+    def _discover_dependencies(self) -> None:
+        """Resolve queued runs and add their missing producers breadth-first."""
+        while self.pending_run_ids:
+            run_draft = self.run_drafts[self.pending_run_ids.popleft()]
+            cfg.validate_step_config(run_draft.config, [run_draft.step])
+
+            goal_is_forced = (
+                self.force_goals
+                and run_draft.run_id in self.main_goal_ids
             )
-            forced = run_id in self.forced_run_ids
-            if not forced and self._existing_outputs(run):
-                self.runs[run_id] = run
-                return run
-            if not may_schedule:
+            if not goal_is_forced:
+                run_draft.reusable_outputs = self._reusable_outputs(run_draft)
+            if run_draft.reusable_outputs is not None:
+                continue
+            if (
+                self.non_recursive
+                and run_draft.run_id not in self.main_goal_ids
+            ):
                 raise RuntimeError(
-                    f"Step '{step.name}' is required, but its outputs are "
+                    f"Run '{run_draft.run_id}' is required, but its outputs are "
                     "missing or invalid. Omit --non-recursive to run missing "
                     "dependencies automatically."
                 )
 
-            inputs = tuple(
-                self._resolve_input(step, file_input)
-                for file_input in step.spec.inputs
+            run_draft.inputs.extend(
+                self._discover_input(run_draft, file_input)
+                for file_input in run_draft.step.spec.inputs
             )
+
+    def _dependency_ordered_run_ids(self) -> list[str]:
+        """Return discovered run IDs with every producer before its consumers."""
+        dependencies: dict[str, set[str]] = {
+            run_id: {
+                binding.producer_run_id
+                for binding in draft.inputs
+                if isinstance(binding, _PendingInputBinding)
+            }
+            for run_id, draft in self.run_drafts.items()
+        }
+        consumers: dict[str, list[str]] = {
+            run_id: [] for run_id in self.run_drafts
+        }
+        for consumer_run_id in self.run_drafts:
+            for producer_run_id in dependencies[consumer_run_id]:
+                consumers[producer_run_id].append(consumer_run_id)
+
+        ready = deque(
+            run_id
+            for run_id in self.run_drafts
+            if not dependencies[run_id]
+        )
+        ordered: list[str] = []
+        while ready:
+            producer_run_id = ready.popleft()
+            ordered.append(producer_run_id)
+            for consumer_run_id in consumers[producer_run_id]:
+                dependencies[consumer_run_id].discard(producer_run_id)
+                if not dependencies[consumer_run_id]:
+                    ready.append(consumer_run_id)
+
+        if len(ordered) != len(self.run_drafts):
+            cycle = ", ".join(
+                run_id
+                for run_id in self.run_drafts
+                if dependencies[run_id]
+            )
+            raise ValueError(
+                f"Dependency cycle detected involving run(s): {cycle}."
+            )
+        return ordered
+
+    def _materialize_runs(
+        self,
+        ordered_run_ids: list[str],
+    ) -> tuple[dict[str, StepRun], dict[StepRunOutput, Path]]:
+        """Construct immutable runs and qualify every reusable output."""
+        runs: dict[str, StepRun] = {}
+        reusable_outputs: dict[StepRunOutput, Path] = {}
+        for run_id in ordered_run_ids:
+            draft = self.run_drafts[run_id]
+            inputs: list[StepInputBinding] = []
+            for draft_input in draft.inputs:
+                if isinstance(draft_input, StepInputBinding):
+                    inputs.append(draft_input)
+                    continue
+                producer_run = runs[draft_input.producer_run_id]
+                inputs.append(
+                    StepInputBinding(
+                        draft_input.file_input,
+                        producer_run.output(draft_input.file_input.source),
+                    )
+                )
             run = StepRun(
                 run_id=run_id,
-                name=step.name,
-                step=step,
-                config=self.config,
-                inputs=inputs,
+                step=draft.step,
+                config=draft.config,
+                inputs=tuple(inputs),
             )
-            self.runs[run_id] = run
-            self.runs_to_execute.append(run)
-            return run
-        finally:
-            self.resolving.discard(run_id)
+            runs[run_id] = run
+            if draft.reusable_outputs is not None:
+                for output in run.step.spec.outputs:
+                    reusable_outputs[run.output(output)] = (
+                        draft.reusable_outputs[output.name]
+                    )
+        return runs, reusable_outputs
+
+    def build(self, goal_steps: list[Step]) -> ExecutionPlan:
+        """Resolve reserved main goals into a dependency-complete plan."""
+        for step in goal_steps:
+            self._reserve_run(
+                step.name,
+                step,
+                self.main_config,
+                step_lineage=(step.name,),
+            )
+        self._discover_dependencies()
+
+        ordered_run_ids = self._dependency_ordered_run_ids()
+        runs, reusable_outputs = self._materialize_runs(ordered_run_ids)
+
+        return ExecutionPlan(
+            goals=tuple(runs[step.name] for step in goal_steps),
+            runs_to_execute=tuple(
+                runs[run_id]
+                for run_id in ordered_run_ids
+                if self.run_drafts[run_id].reusable_outputs is None
+            ),
+            resolved_outputs=reusable_outputs,
+        )
 
 
 def build_plan(
@@ -339,24 +384,19 @@ def build_plan(
     cfg.validate_config_schema(config)
 
     goal_steps: list[Step] = []
-    seen_names: set[str] = set()
+    seen_goal_names: set[str] = set()
     for runnable in runnables:
         for step in _flatten_goals(runnable):
-            if step.name in seen_names:
+            if step.name in seen_goal_names:
                 continue
-            seen_names.add(step.name)
+            seen_goal_names.add(step.name)
             goal_steps.append(step)
 
-    resolver = _GoalResolver(
+    builder = _PlanBuilder(
         config,
         _registry,
-        goal_names=seen_names,
+        main_goal_ids=seen_goal_names,
         non_recursive=non_recursive,
         force=force,
     )
-    goals = tuple(resolver.resolve(step) for step in goal_steps)
-    return ExecutionPlan(
-        goals=goals,
-        runs_to_execute=tuple(resolver.runs_to_execute),
-        resolved_outputs=resolver.resolved_outputs,
-    )
+    return builder.build(goal_steps)

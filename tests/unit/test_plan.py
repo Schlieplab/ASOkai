@@ -73,8 +73,10 @@ def _make_step(
     return step_type()
 
 
-def _make_configurable_producer_and_consumer() -> tuple[Step, Step]:
-    """Return a consumer that can override its producer's mode parameter."""
+def _make_configurable_producer_and_consumers(
+    *consumer_names: str,
+) -> tuple[Step, list[Step]]:
+    """Return consumers that can override one producer's mode parameter."""
     output = FileOutput(
         "result",
         destination="{mode}/result.txt",
@@ -94,27 +96,39 @@ def _make_configurable_producer_and_consumer() -> tuple[Step, Step]:
     )
     producer = producer_type()
 
-    consumer_output = FileOutput("consumer_out", destination="consumer.txt")
-    consumer_type = type(
-        "_ConfiguredConsumerStep",
-        (Step,),
-        {
-            "name": "consumer",
-            "description": "",
-            "consumer_out_output": consumer_output,
-            "spec": StepSpec(
-                inputs=[
-                    FileInput(
-                        "result",
-                        source=output,
-                        configurable_parameters=("mode",),
-                    ),
-                ],
-                outputs=[consumer_output],
-            ),
-        },
-    )
-    return producer, consumer_type()
+    consumers: list[Step] = []
+    for consumer_name in consumer_names:
+        consumer_output = FileOutput(
+            f"{consumer_name}_out",
+            destination=f"{consumer_name}.txt",
+        )
+        consumer_type = type(
+            f"_{consumer_name.title()}ConsumerStep",
+            (Step,),
+            {
+                "name": consumer_name,
+                "description": "",
+                f"{consumer_name}_out_output": consumer_output,
+                "spec": StepSpec(
+                    inputs=[
+                        FileInput(
+                            "result",
+                            source=output,
+                            configurable_parameters=("mode",),
+                        ),
+                    ],
+                    outputs=[consumer_output],
+                ),
+            },
+        )
+        consumers.append(consumer_type())
+    return producer, consumers
+
+
+def _make_configurable_producer_and_consumer() -> tuple[Step, Step]:
+    """Return one consumer with a configurable producer input."""
+    producer, consumers = _make_configurable_producer_and_consumers("consumer")
+    return producer, consumers[0]
 
 
 def _request_alternate_producer_run(config: dict) -> None:
@@ -330,10 +344,7 @@ def test_breadth_first_discovery_prioritizes_sibling_runs(config):
     plan = build_plan(
         [goal],
         config,
-        _registry={
-            step.name: step
-            for step in (deep, left, right, goal)
-        },
+        _registry={step.name: step for step in (deep, left, right, goal)},
     )
 
     assert _scheduled_run_ids(plan) == ["right", "deep", "left", "goal"]
@@ -508,6 +519,110 @@ def test_configured_producer_gets_a_dotted_run_id_and_derived_config(config):
     source = plan.goals[0].inputs[0].source
     assert isinstance(source, StepRunOutput)
     assert source.run is configured_producer
+
+
+def test_matching_configured_producer_requests_share_one_run(config):
+    producer, consumers = _make_configurable_producer_and_consumers(
+        "first",
+        "second",
+    )
+    first, second = consumers
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                consumer.name: {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "alternate"}},
+                    },
+                }
+                for consumer in consumers
+            },
+        }
+    )
+
+    plan = build_plan(
+        consumers,
+        config,
+        _registry={step.name: step for step in (producer, first, second)},
+    )
+
+    assert _scheduled_run_ids(plan) == ["first.producer", "first", "second"]
+    first_source = plan.goals[0].inputs[0].source
+    second_source = plan.goals[1].inputs[0].source
+    assert isinstance(first_source, StepRunOutput)
+    assert isinstance(second_source, StepRunOutput)
+    assert first_source.run is second_source.run
+
+
+def test_different_configured_producer_requests_keep_separate_runs(config):
+    producer, consumers = _make_configurable_producer_and_consumers(
+        "first",
+        "second",
+    )
+    first, second = consumers
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "first": {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "one"}},
+                    },
+                },
+                "second": {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "two"}},
+                    },
+                },
+            },
+        }
+    )
+
+    plan = build_plan(
+        consumers,
+        config,
+        _registry={step.name: step for step in (producer, first, second)},
+    )
+
+    assert _scheduled_run_ids(plan) == [
+        "first.producer",
+        "second.producer",
+        "first",
+        "second",
+    ]
+    first_source = plan.goals[0].inputs[0].source
+    second_source = plan.goals[1].inputs[0].source
+    assert isinstance(first_source, StepRunOutput)
+    assert isinstance(second_source, StepRunOutput)
+    assert first_source.run is not second_source.run
+
+
+def test_main_request_names_an_equivalent_configured_producer_run(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "main"}},
+                    },
+                },
+            },
+        }
+    )
+
+    plan = build_plan(
+        [consumer, producer],
+        config,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert _scheduled_run_ids(plan) == ["producer", "consumer"]
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is plan.goals[1]
 
 
 def test_existing_configured_producer_output_is_reused(config, tmp_path):

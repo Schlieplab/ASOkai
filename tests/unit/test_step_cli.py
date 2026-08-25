@@ -64,6 +64,15 @@ def test_step_with_a_spec_requires_an_explicit_name():
             spec = StepSpec()
 
 
+def test_step_name_must_be_usable_as_a_run_identifier():
+    with pytest.raises(TypeError, match="letters, numbers, hyphens"):
+
+        class InvalidNameStep(Step):
+            name = "invalid name"
+            description = "Invalid test step."
+            spec = StepSpec()
+
+
 def test_step_output_paths_are_owned_by_file_output_destinations():
     with pytest.raises(TypeError, match="FileOutput.destination"):
 

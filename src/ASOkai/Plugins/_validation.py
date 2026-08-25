@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 
 from ASOkai.Analysis import Analysis
-from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import Step
@@ -19,6 +19,11 @@ def validate_plugin_instance(kind: str, instance: object) -> None:
     description = getattr(instance, "description", None)
     if type(name) is not str or not name.strip():
         raise TypeError(f"{kind} name must be a non-blank string.")
+    if not is_valid_runnable_name(name):
+        raise ValueError(
+            f"{kind} name {name!r} must start with a letter or number and "
+            "contain only letters, numbers, hyphens, and underscores."
+        )
     if type(description) is not str or not description.strip():
         raise TypeError(f"{kind} description must be a non-blank string.")
 

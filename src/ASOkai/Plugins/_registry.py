@@ -220,14 +220,18 @@ def get_steps() -> dict[str, Step]:
     return registered
 
 
-def get_tasks() -> dict[str, Task]:
+def get_tasks(
+    registered_steps: dict[str, Step] | None = None,
+) -> dict[str, Task]:
+    """Return tasks, reusing an existing step registry when provided."""
     plugins = _discover_plugins("asokai.tasks", "task", Task)
     registered = _index_unique(
         "task",
         [*_BUILTIN_TASKS, *(plugin.instance for plugin in plugins)],
     )
     if plugins:
-        registered_steps = get_steps()
+        if registered_steps is None:
+            registered_steps = get_steps()
         for plugin in plugins:
             try:
                 validate_task_members(plugin.instance, registered_steps)
@@ -238,15 +242,21 @@ def get_tasks() -> dict[str, Task]:
     return registered
 
 
-def get_workflows() -> dict[str, Workflow]:
+def get_workflows(
+    registered_steps: dict[str, Step] | None = None,
+    registered_tasks: dict[str, Task] | None = None,
+) -> dict[str, Workflow]:
+    """Return workflows, reusing dependency registries when provided."""
     plugins = _discover_plugins("asokai.workflows", "workflow", Workflow)
     registered = _index_unique(
         "workflow",
         [*_BUILTIN_WORKFLOWS, *(plugin.instance for plugin in plugins)],
     )
     if plugins:
-        registered_steps = get_steps()
-        registered_tasks = get_tasks()
+        if registered_steps is None:
+            registered_steps = get_steps()
+        if registered_tasks is None:
+            registered_tasks = get_tasks(registered_steps)
         for plugin in plugins:
             try:
                 validate_workflow_members(
@@ -260,6 +270,18 @@ def get_workflows() -> dict[str, Workflow]:
                     f"Invalid ASOkai workflow plugin {plugin.source}: {error}"
                 ) from error
     return registered
+
+
+def get_pipeline_units() -> tuple[
+    dict[str, Step],
+    dict[str, Task],
+    dict[str, Workflow],
+]:
+    """Discover all pipeline units once and validate their relationships."""
+    steps = get_steps()
+    tasks = get_tasks(steps)
+    workflows = get_workflows(steps, tasks)
+    return steps, tasks, workflows
 
 
 def get_config_schema_paths() -> dict[str, Path]:

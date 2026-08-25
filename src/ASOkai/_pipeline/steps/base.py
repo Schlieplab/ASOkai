@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Mapping
 
 from ASOkai._cwl.model import CwlCommandLineToolSpec
-from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.files import FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.step_spec import StepSpec
@@ -70,8 +70,12 @@ class Step(Runnable):
         if not isinstance(spec, StepSpec):
             raise TypeError(f"Step '{cls.__name__}.spec' must be a StepSpec.")
         step_name = getattr(cls, "name", None)
-        if type(step_name) is not str or not step_name.strip():
-            raise TypeError(f"Step class '{cls.__name__}' requires a name.")
+        if not is_valid_runnable_name(step_name):
+            raise TypeError(
+                f"Step class '{cls.__name__}' requires a name that starts "
+                "with a letter or number and contains only letters, numbers, "
+                "hyphens, and underscores."
+            )
         if type(cls.supports_multiple_processes) is not bool:
             raise TypeError(
                 f"Step '{cls.name}' supports_multiple_processes must be a boolean."

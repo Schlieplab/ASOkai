@@ -13,17 +13,12 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from ASOkai._pipeline.base import is_valid_runnable_name
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.steps.base import Step
-
-
-_RUN_ID_PATTERN = re.compile(
-    r"[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*"
-)
 
 
 @dataclass(frozen=True, eq=False)
@@ -36,9 +31,8 @@ class StepRun:
     inputs: tuple[StepInputBinding, ...] = ()
 
     def __post_init__(self) -> None:
-        if (
-            type(self.run_id) is not str
-            or _RUN_ID_PATTERN.fullmatch(self.run_id) is None
+        if type(self.run_id) is not str or not all(
+            is_valid_runnable_name(name) for name in self.run_id.split(".")
         ):
             raise ValueError(
                 "StepRun.run_id must contain dot-separated names using only "

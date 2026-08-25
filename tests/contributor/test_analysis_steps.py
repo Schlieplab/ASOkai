@@ -15,7 +15,10 @@ import yaml
 
 from ASOkai.Plugins import AnalysisStep, JsonFile, Step
 from ASOkai.Plugins import _registry as registry
-from ASOkai.Plugins._validation import validate_plugin_instance
+from ASOkai.Plugins._validation import (
+    validate_plugin_instance,
+    validate_step_dependencies,
+)
 from ASOkai._pipeline import config as config_module
 from ASOkai._pipeline import steps as steps_package
 from ASOkai._pipeline.contracts.json_schema import (
@@ -101,32 +104,14 @@ def test_step_config_paths_exist_in_core_schema(step: Step) -> None:
 
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_dependencies_use_registered_outputs(step: Step) -> None:
-    for file_input in step.spec.inputs:
-        producer = REGISTERED_STEPS.get(file_input.source.producer)
-        assert producer is not None, (
-            f"{type(step).__name__}.{file_input.name} references an "
-            "unregistered producer."
-        )
-        assert producer.spec.output(file_input.source.name) is file_input.source, (
-            f"{type(step).__name__}.{file_input.name} must reference the "
-            "registered producer output declaration."
-        )
+    validate_step_dependencies(step, REGISTERED_STEPS)
 
 
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_contract_builds_from_example_config(step: Step) -> None:
-    step.build_parser()
+    validate_plugin_instance("step", step)
     step.cwl_spec(EXAMPLE_CONFIG)
     step.output_paths(EXAMPLE_CONFIG)
     for output in step.spec.outputs:
         if isinstance(output.file_type, JsonFile) and output.file_type.value_type:
             build_json_schema(output.file_type.value_type)
-
-
-@pytest.mark.parametrize(
-    "step",
-    [step for step in CONTRIBUTOR_STEPS if isinstance(step, AnalysisStep)],
-    ids=_step_name,
-)
-def test_analysis_step_contract(step: AnalysisStep) -> None:
-    validate_plugin_instance("analysis step", step)

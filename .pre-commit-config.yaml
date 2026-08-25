@@ -9,7 +9,7 @@ repos:
         files: '^(src/ASOkai/|examples/contributor_steps/|examples/config\.example\.yaml$|tests/contributor/test_analysis_steps\.py$|pyproject\.toml$|\.pre-commit-config\.yaml$)'
       - id: validate-asokai-plugins
         name: Validate ASOkai plugin contracts
-        entry: python -m pytest -q tests/unit/test_plugins.py
+        entry: python -m pytest -q tests/plugins
         language: system
         pass_filenames: false
-        files: '^(src/ASOkai/|examples/plugins/|tests/unit/test_plugins\.py$|pyproject\.toml$|\.pre-commit-config\.yaml$)'
+        files: '^(src/ASOkai/|examples/plugins/|tests/plugins/|pyproject\.toml$|\.pre-commit-config\.yaml$)'

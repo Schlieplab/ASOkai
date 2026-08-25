@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Tests for external extension authoring, discovery, and validation."""
+"""Tests for external plugin discovery and registration."""
 
 from pathlib import Path
 import runpy
@@ -19,18 +19,11 @@ from ASOkai.Plugins import (
 from ASOkai.Plugins import _registry as plugin_registry
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
-
 ROOT = Path(__file__).parents[2]
 EXAMPLE_PLUGIN = ROOT / "examples/plugins/example_analysis"
-EXAMPLE_SCHEMA = (
-    EXAMPLE_PLUGIN
-    / "src/asokai_example_analysis/config.schema.yaml"
-)
+EXAMPLE_SCHEMA = EXAMPLE_PLUGIN / "src/asokai_example_analysis/config.schema.yaml"
 EXAMPLE_STEP_CLASS = runpy.run_path(
-    str(
-        EXAMPLE_PLUGIN
-        / "src/asokai_example_analysis/analysis_step.py"
-    )
+    str(EXAMPLE_PLUGIN / "src/asokai_example_analysis/analysis_step.py")
 )["ExampleAnalysisStep"]
 
 
@@ -54,8 +47,10 @@ class FakeEntryPoint:
         self.value = value
         self.dist = FakeDistribution(package)
         self.load_error = load_error
+        self.load_count = 0
 
     def load(self):
+        self.load_count += 1
         if self.load_error is not None:
             raise self.load_error
         return self.value
@@ -66,9 +61,7 @@ def _provide_entry_points(monkeypatch, *provided: FakeEntryPoint) -> None:
         plugin_registry,
         "entry_points",
         lambda *, group: [
-            entry_point
-            for entry_point in provided
-            if entry_point.group == group
+            entry_point for entry_point in provided if entry_point.group == group
         ],
     )
 
@@ -88,6 +81,18 @@ class UndeclaredConfigStep(Step):
             "undeclared.mode": ["fast"],
         },
     )
+
+    def run_from_args(self, args) -> int:
+        return 0
+
+
+class ConstructorFailureStep(Step):
+    name = "constructor-failure"
+    description = "Raises while being instantiated."
+    spec = StepSpec()
+
+    def __init__(self) -> None:
+        raise RuntimeError("initialization failed")
 
     def run_from_args(self, args) -> int:
         return 0
@@ -135,6 +140,27 @@ class PluginWorkflowWithUnregisteredTask:
     name = "unregistered-workflow"
     description = "Contains a task that was not registered."
     members = [PluginTaskWithUnregisteredStep()]
+
+
+class RegisteredPluginStep(Step):
+    name = "registered-plugin-step"
+    description = "A valid step used to exercise aggregate discovery."
+    spec = StepSpec()
+
+    def run_from_args(self, args) -> int:
+        return 0
+
+
+class RegisteredPluginTask:
+    name = "registered-plugin-task"
+    description = "A valid plugin task."
+    steps = [RegisteredPluginStep()]
+
+
+class RegisteredPluginWorkflow:
+    name = "registered-plugin-workflow"
+    description = "A valid plugin workflow."
+    members = [RegisteredPluginTask()]
 
 
 def test_step_authoring_contracts_are_public() -> None:
@@ -205,6 +231,39 @@ def test_example_plugin_is_discovered_and_validated(monkeypatch) -> None:
     )
 
 
+def test_aggregate_registry_loads_each_plugin_once(monkeypatch) -> None:
+    step_entry_point = FakeEntryPoint(
+        "asokai.steps",
+        RegisteredPluginStep.name,
+        RegisteredPluginStep,
+    )
+    task_entry_point = FakeEntryPoint(
+        "asokai.tasks",
+        RegisteredPluginTask.name,
+        RegisteredPluginTask,
+    )
+    workflow_entry_point = FakeEntryPoint(
+        "asokai.workflows",
+        RegisteredPluginWorkflow.name,
+        RegisteredPluginWorkflow,
+    )
+    _provide_entry_points(
+        monkeypatch,
+        step_entry_point,
+        task_entry_point,
+        workflow_entry_point,
+    )
+
+    steps, tasks, workflows = plugin_registry.get_pipeline_units()
+
+    assert RegisteredPluginStep.name in steps
+    assert RegisteredPluginTask.name in tasks
+    assert RegisteredPluginWorkflow.name in workflows
+    assert step_entry_point.load_count == 1
+    assert task_entry_point.load_count == 1
+    assert workflow_entry_point.load_count == 1
+
+
 def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:
     _provide_entry_points(
         monkeypatch,
@@ -245,6 +304,34 @@ def test_plugin_entry_point_must_expose_expected_class(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="must expose a class"):
+        plugin_registry.get_steps()
+
+
+def test_plugin_class_must_implement_the_entry_point_kind(monkeypatch) -> None:
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint("asokai.steps", "wrong-kind", object),
+    )
+
+    with pytest.raises(ValueError, match="expected Step, received object"):
+        plugin_registry.get_steps()
+
+
+def test_plugin_instantiation_errors_include_entry_point_context(monkeypatch) -> None:
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.steps",
+            ConstructorFailureStep.name,
+            ConstructorFailureStep,
+            package="broken-constructor-package",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"constructor-failure.*broken-constructor-package.*initialization failed",
+    ):
         plugin_registry.get_steps()
 
 
@@ -389,3 +476,22 @@ def test_plugin_config_schema_entry_points_expose_paths(
     assert plugin_registry.get_config_schema_paths() == {
         "example": schema_path,
     }
+
+
+def test_plugin_config_schema_names_must_be_unique(monkeypatch, tmp_path) -> None:
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.config_schemas",
+            "duplicate",
+            tmp_path / "first.yaml",
+        ),
+        FakeEntryPoint(
+            "asokai.config_schemas",
+            "duplicate",
+            tmp_path / "second.yaml",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Duplicate registered config schema"):
+        plugin_registry.get_config_schema_paths()

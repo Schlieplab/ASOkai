@@ -13,7 +13,7 @@ from pathlib import Path
 
 import click
 
-from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
+from ASOkai.Plugins._registry import get_pipeline_units
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
 
@@ -33,9 +33,7 @@ def _collect_runnables(
     workflow_name: str | None,
 ) -> list:
     """Resolve CLI selections to registered runnable objects."""
-    steps = get_steps()
-    tasks = get_tasks()
-    workflows = get_workflows()
+    steps, tasks, workflows = get_pipeline_units()
 
     runnables = []
     for name in flatten_option_values(step_names):

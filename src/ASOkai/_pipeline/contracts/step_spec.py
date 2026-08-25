@@ -13,13 +13,17 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import dataclass, field
+import keyword
 from pathlib import PurePosixPath
+import re
 from typing import Any, Mapping, Sequence
 
 from ASOkai._types import Scalar
 from ASOkai._cwl.model import CwlCommandLineToolSpec, CwlToolArgument
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
+
+_PORT_NAME_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,18 @@ class StepSpec:
             self._normalized_compatibility(),
         )
 
+        self._require_valid_names(
+            "parameter",
+            [param.name for param in self.params],
+        )
+        self._require_valid_names(
+            "input",
+            [item.name for item in self.inputs],
+        )
+        self._require_valid_names(
+            "output",
+            [output.name for output in self.outputs],
+        )
         self._require_unique("parameter", [param.name for param in self.params])
         self._require_unique("input", [item.name for item in self.inputs])
         self._require_unique("output", [output.name for output in self.outputs])
@@ -58,6 +74,13 @@ class StepSpec:
         cwl_inputs = [param.name for param in self.params if param.cwl]
         cwl_inputs.extend(item.name for item in self.inputs)
         self._require_unique("generated CWL input", cwl_inputs)
+
+        cli_options = [param.cli_prefix for param in self.params]
+        cli_options.extend(item.cli_prefix for item in self.inputs)
+        cli_options.extend(output.cli_prefix for output in self.outputs)
+        self._require_unique("CLI option", cli_options)
+        if "--help" in cli_options:
+            raise ValueError("StepSpec CLI option '--help' is reserved.")
 
         declared_cwl_inputs = {
             param.name for param in self.params if param.cwl
@@ -122,6 +145,25 @@ class StepSpec:
                 )
             compatible_with[path] = tuple(values)
         return compatible_with
+
+    @staticmethod
+    def _require_valid_names(label: str, names: list[str]) -> None:
+        invalid = sorted({
+            repr(name)
+            for name in names
+            if (
+                type(name) is not str
+                or _PORT_NAME_PATTERN.fullmatch(name) is None
+                or keyword.iskeyword(name)
+            )
+        })
+        if invalid:
+            joined = ", ".join(invalid)
+            raise ValueError(
+                f"Invalid {label} name(s): {joined}. Names must start with a "
+                "letter, contain only letters, numbers, and underscores, and "
+                "not be a Python keyword."
+            )
 
     @staticmethod
     def _require_unique(label: str, names: list[str]) -> None:

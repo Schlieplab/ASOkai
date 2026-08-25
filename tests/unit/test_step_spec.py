@@ -132,6 +132,37 @@ def test_step_spec_rejects_duplicate_authored_names(kwargs, message):
         StepSpec(**kwargs)
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"params": [ScalarParam("invalid-name", str)]},
+        {"params": [ScalarParam("class", str)]},
+        {"inputs": [_file_input("2input")]},
+        {"outputs": [FileOutput("", destination="result.json")]},
+    ],
+)
+def test_step_spec_rejects_invalid_port_names(kwargs):
+    with pytest.raises(ValueError, match="Invalid .* name"):
+        StepSpec(**kwargs)
+
+
+def test_step_spec_rejects_duplicate_generated_cli_options():
+    with pytest.raises(ValueError, match="Duplicate CLI option"):
+        StepSpec(
+            params=[
+                ScalarParam("first", str, prefix="--shared"),
+                ScalarParam("second", str, prefix="--shared"),
+            ],
+        )
+
+
+def test_step_spec_rejects_the_reserved_help_option():
+    with pytest.raises(ValueError, match="--help.*reserved"):
+        StepSpec(
+            params=[ScalarParam("custom_help", str, prefix="--help")],
+        )
+
+
 def test_step_spec_rejects_reserved_extra_keys():
     with pytest.raises(ValueError, match="cannot replace reserved keys: inputs"):
         StepSpec(extra={"inputs": {}})

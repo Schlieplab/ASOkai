@@ -16,7 +16,6 @@ from typing import Any, Literal
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
-from ASOkai._pipeline.contracts.files import FileOutput
 
 
 InputSource = Literal[
@@ -34,8 +33,7 @@ class ResolvedInput:
     cwl_value: Any
     source: InputSource
     path: Path | None = None
-    producer_run_id: str | None = None
-    source_output: FileOutput | None = None
+    producer_output: StepRunOutput | None = None
     config_path: str | None = None
 
 
@@ -92,8 +90,7 @@ def resolve_run_inputs(
             resolved[file_input.name] = ResolvedInput(
                 cwl_value=None,
                 source="dep_wired",
-                producer_run_id=producer_run.run_id,
-                source_output=source.output,
+                producer_output=source,
             )
             continue
 
@@ -101,14 +98,13 @@ def resolve_run_inputs(
         if path is None:
             raise RuntimeError(
                 f"Run '{run.run_id}' input '{file_input.name}' requires "
-                f"resolved output '{producer_run.run_id}/{source.output.name}'."
+                f"resolved output '{source.qualified_name}'."
             )
         resolved[file_input.name] = ResolvedInput(
             cwl_value={"class": "File", "path": str(path)},
             source="dep_disk",
             path=path,
-            producer_run_id=producer_run.run_id,
-            source_output=source.output,
+            producer_output=source,
         )
 
     return resolved

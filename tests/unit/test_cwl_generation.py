@@ -332,7 +332,7 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     }
     assert "InlineJavascriptRequirement" not in publisher.get("requirements", {})
     assert layout["outputs"][0] == {
-        "id": "step_download_genome__dna",
+        "id": "download-genome.dna",
         "destination": (
             "GRCh38/genomes/ensembl/114/"
             "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
@@ -491,6 +491,7 @@ def test_generate_cwl_references_generated_step_files(workflow_config):
 def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
     generated = _configured_run_bundle(tmp_path)
     document = yaml.safe_load(generated.run_cwl)
+    layout = yaml.safe_load(generated.output_layout)
 
     assert set(generated.step_cwls) == {
         "producer.cwl",
@@ -510,6 +511,10 @@ def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
         "in": {"mode": "consumer.producer.mode"},
         "out": ["result"],
     }
+    assert [entry["id"] for entry in layout["outputs"]] == [
+        "producer.result",
+        "consumer.producer.result",
+    ]
 
 
 def test_registered_step_output_paths_define_names(workflow_config):

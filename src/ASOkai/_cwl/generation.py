@@ -138,11 +138,6 @@ def _validate_planned_connections(runs: list[StepRun]) -> None:
                 )
 
 
-def _workflow_output_id(run: StepRun, output_name: str) -> str:
-    """Return a unique top-level output id for one run output."""
-    return f"{_cwl_step_id(run.run_id)}__{output_name}"
-
-
 def _publisher_output_ids(plan: PublicationPlan) -> dict[str, str]:
     """Return stable CWL output ids for publication roots."""
     result: dict[str, str] = {}
@@ -168,7 +163,7 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
             relative = step.output_relative_path(output.name, config)
             entries.append(
                 PublicationEntry(
-                    _workflow_output_id(run, output.name),
+                    run.output(output).qualified_name,
                     PurePosixPath(*relative.parts),
                 )
             )

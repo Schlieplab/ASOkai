@@ -8,12 +8,14 @@ Description: Tests for pipeline runner logic.
 License: LGPL-3.0-or-later
 """
 
-import pytest
-import yaml
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch, MagicMock
+
+import pytest
+import yaml
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
@@ -79,9 +81,9 @@ def test_run_step_skips_when_outputs_exist(config, tmp_path):
 def test_run_step_dry_run_returns_outputs(config):
     result = runner.run_step("download-genome", config, dry_run=True, force=True)
     assert result is not None
-    assert "dna" in result
-    assert "cdna" in result
-    assert "annotation" in result
+    assert "download-genome.dna" in result
+    assert "download-genome.cdna" in result
+    assert "download-genome.annotation" in result
 
 
 def test_run_step_dry_run_does_not_call_default_executor(config):
@@ -347,7 +349,7 @@ def test_export_all_includes_steps_even_when_outputs_exist(workflow_config, tmp_
     assert "step_download_genome:" in (export_dir / "run.cwl").read_text()
 
 
-def test_run_task_multistep_dry_run_returns_final_outputs(workflow_config):
+def test_run_task_multistep_dry_run_returns_requested_outputs(workflow_config):
     executor = MagicMock()
 
     result = runner.run_task(
@@ -357,15 +359,21 @@ def test_run_task_multistep_dry_run_returns_final_outputs(workflow_config):
         executor=executor,
     )
 
-    assert result == {
-        "target_gene": (
-            Path(workflow_config["datadir"])
-            / "GRCh38"
-            / "targets"
-            / "ENSG00000133703"
-            / "ENSG00000133703_k16_pre-mrna.json"
-        )
+    assert result is not None
+    assert set(result) == {
+        "download-genome.dna",
+        "download-genome.cdna",
+        "download-genome.annotation",
+        "download-genome.db",
+        "create-target-gene.target_gene",
     }
+    assert result["create-target-gene.target_gene"] == (
+        Path(workflow_config["datadir"])
+        / "GRCh38"
+        / "targets"
+        / "ENSG00000133703"
+        / "ENSG00000133703_k16_pre-mrna.json"
+    )
     executor.run.assert_not_called()
 
 
@@ -374,7 +382,7 @@ def test_run_all_empty_runnables_raises(workflow_config):
         runner.run_all([], workflow_config)
 
 
-def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
+def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
     executor = MagicMock()
     download = DownloadGenomeStep()
     create = CreateTargetGeneStep()
@@ -392,8 +400,33 @@ def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
         executor=executor,
     )
 
-    assert result == CreateTargetGeneStep().output_paths(workflow_config)
+    assert result == {
+        "create-target-gene.target_gene": CreateTargetGeneStep().output_paths(
+            workflow_config
+        )["target_gene"]
+    }
     executor.run.assert_not_called()
+
+
+def test_dry_run_reports_qualified_producer_outputs(workflow_config, caplog):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    plan = build_plan(
+        [create],
+        workflow_config,
+        _registry={download.name: download, create.name: create},
+    )
+    caplog.set_level(logging.INFO)
+
+    runner.run_plan(
+        plan,
+        "instantiate-target-gene",
+        workflow_config,
+        dry_run=True,
+        executor=MagicMock(),
+    )
+
+    assert "wired from 'download-genome.dna'" in caplog.text
 
 
 def test_flatten_workflow_expands_task_then_step():

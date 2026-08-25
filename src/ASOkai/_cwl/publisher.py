@@ -28,7 +28,7 @@ PUBLISHED_DIR = "published"
 
 @dataclass(frozen=True)
 class PublicationEntry:
-    """One workflow output and its destination below the data directory."""
+    """One concrete run output and its destination below the data directory."""
 
     output_id: str
     destination: PurePosixPath

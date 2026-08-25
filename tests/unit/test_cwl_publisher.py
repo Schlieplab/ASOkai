@@ -30,7 +30,7 @@ FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "cwl_publisher"
 def _write_manifest(path: Path, destination: str = "root/result.txt") -> None:
     path.write_text(
         PublicationPlan(
-            (PublicationEntry("step__result", PurePosixPath(destination)),)
+            (PublicationEntry("step.result", PurePosixPath(destination)),)
         ).render()
     )
 
@@ -45,7 +45,7 @@ def test_publisher_uses_a_hard_link_when_supported(tmp_path):
     published = publish_outputs(manifest, [source], workdir=workdir)
 
     destination = workdir / "published" / "root" / "result.txt"
-    assert published == {"step__result": destination}
+    assert published == {"step.result": destination}
     assert destination.read_text() == "result"
     assert os.path.samefile(source, destination)
 

@@ -35,7 +35,7 @@ This directory contains a prepared ASOkai CWL job bundle for `{label}`.
 - `run.cwl`: generated top-level runtime CWL.
 - `publish.cwl`: final tool that publishes every planned output.
 - `output-layout.yml`: relative destinations below the chosen output directory.
-- `steps/*.cwl`: generated CWL command-line tools for each ASOkai step.
+- `steps/*.cwl`: generated CWL command-line tools for each concrete step run.
 - `job.yml`: resolved job inputs from the ASOkai configuration and CLI overrides.
 - `README.md`: this file.
 

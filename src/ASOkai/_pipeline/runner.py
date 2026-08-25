@@ -78,7 +78,8 @@ def _validate_published_outputs(
             run.step.validate_output_files(dict(run.config))
         except FileNotFoundError as error:
             raise RuntimeError(
-                f"CWL did not publish expected output(s): {error}"
+                f"CWL did not publish expected output(s) for "
+                f"'{run.run_id}': {error}"
             ) from error
         except (OSError, UnicodeError, TypeError, ValueError) as error:
             raise RuntimeError(
@@ -86,12 +87,14 @@ def _validate_published_outputs(
             ) from error
 
 
-def _last_goal_outputs(plan: ExecutionPlan) -> dict[str, Path]:
-    """Return the declared paths of the plan's last requested goal."""
-    if not plan.goals:
-        return {}
-    goal = plan.goals[-1]
-    return goal.step.validated_output_paths(dict(goal.config))
+def _requested_outputs(plan: ExecutionPlan) -> dict[str, Path]:
+    """Return every requested output under its run-qualified name."""
+    requested: dict[str, Path] = {}
+    for run in plan.goals:
+        paths = run.step.validated_output_paths(dict(run.config))
+        for output in run.step.spec.outputs:
+            requested[run.output(output).qualified_name] = paths[output.name]
+    return requested
 
 
 # ---------------------------------------------------------------------------
@@ -119,19 +122,30 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
         )
         for cwl_key, ri in resolved.items():
             if ri.source == "dep_wired":
+                assert ri.producer_output is not None
                 logger.info(
                     "    %-22s wired from '%s'",
                     cwl_key,
-                    ri.producer_run_id,
+                    ri.producer_output.qualified_name,
                 )
             elif ri.source == "dep_disk":
+                assert ri.producer_output is not None
                 p = ri.path
                 if p is not None:
                     status = "OK" if p.exists() else "MISSING"
-                    logger.info("    %-22s %s  (%s)", cwl_key, p, status)
+                    logger.info(
+                        "    %-22s %s  (%s)  [from '%s']",
+                        cwl_key,
+                        p,
+                        status,
+                        ri.producer_output.qualified_name,
+                    )
                 else:
-                    logger.info("    %-22s MISSING — dep '%s' output unknown",
-                                cwl_key, ri.producer_run_id)
+                    logger.info(
+                        "    %-22s MISSING — output '%s' unknown",
+                        cwl_key,
+                        ri.producer_output.qualified_name,
+                    )
             elif ri.source == "input_override":
                 p = ri.path
                 status = "OK" if p is not None and p.exists() else "MISSING"
@@ -171,7 +185,7 @@ def run_plan(
                 run_output.output.name,
                 path,
             )
-        return _last_goal_outputs(plan)
+        return _requested_outputs(plan)
 
     cwl_bundle = generate_cwl_bundle(
         list(plan.runs_to_execute),
@@ -184,7 +198,7 @@ def run_plan(
 
     if dry_run:
         _log_dry_run_plan(plan, label)
-        return _last_goal_outputs(plan)
+        return _requested_outputs(plan)
 
     job_parent = Path(config["datadir"]) / "jobs"
     job_dir = write_cwl_job_bundle(
@@ -214,7 +228,7 @@ def run_plan(
     datadir = Path(config["datadir"])
     executor.run(str(job_dir / "run.cwl"), inputs, datadir)
     _validate_published_outputs(plan.runs_to_execute)
-    return _last_goal_outputs(plan)
+    return _requested_outputs(plan)
 
 
 # ---------------------------------------------------------------------------
@@ -316,14 +330,6 @@ def run_step(
         non_recursive=non_recursive,
         force=force,
     )
-
-    if not plan.runs_to_execute and not force:
-        goal = plan.goals[0]
-        outputs = goal.step.validated_output_paths(dict(goal.config))
-        logger.info("[%s] outputs exist, skipping.", step_name)
-        for name, path in outputs.items():
-            logger.info("  %s: %s", name, path)
-        return outputs
 
     return run_plan(
         plan,

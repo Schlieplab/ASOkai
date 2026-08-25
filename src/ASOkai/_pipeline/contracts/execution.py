@@ -108,6 +108,11 @@ class StepRunOutput:
         if not isinstance(self.output, FileOutput):
             raise TypeError("StepRunOutput.output must be a FileOutput.")
 
+    @property
+    def qualified_name(self) -> str:
+        """Return the output name qualified by its concrete run."""
+        return f"{self.run.run_id}.{self.output.name}"
+
 
 @dataclass(frozen=True)
 class StepInputBinding:

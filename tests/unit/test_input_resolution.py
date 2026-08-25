@@ -161,7 +161,9 @@ def test_scheduled_producer_output_is_wired(tmp_path):
 
     assert resolved["result"].source == "dep_wired"
     assert resolved["result"].cwl_value is None
-    assert resolved["result"].source_output is producer.spec.output("result")
+    assert resolved["result"].producer_output == producer_run.output(
+        producer.spec.output("result")
+    )
     assert "result" not in to_cwl_inputs(resolved)
 
 

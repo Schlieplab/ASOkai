@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
 
 
@@ -50,17 +49,17 @@ def resolve_run_inputs(
         run_ids_to_execute = set()
 
     resolved: dict[str, ResolvedInput] = {}
+    parameter_values = run.step.resolved_parameter_values(run.config)
     for parameter in run.step.spec.params:
         if not parameter.cwl or parameter.config is None:
             continue
-        try:
-            resolved[parameter.name] = ResolvedInput(
-                cwl_value=cfg.resolve_parameter_value(run.config, parameter),
-                source="scalar",
-                config_path=parameter.config,
-            )
-        except KeyError:
-            pass
+        if parameter.name not in parameter_values:
+            continue
+        resolved[parameter.name] = ResolvedInput(
+            cwl_value=parameter_values[parameter.name],
+            source="scalar",
+            config_path=parameter.config,
+        )
 
     bindings = {binding.file_input.name: binding for binding in run.inputs}
     for file_input in run.step.spec.inputs:

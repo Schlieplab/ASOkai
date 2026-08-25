@@ -125,7 +125,7 @@ class Step(Runnable):
         """Return the generated lower-level CWL tool spec for this step."""
         self._validate_standard_parameters()
         spec = self.spec.to_cwl_tool_spec(
-            self._output_template_values(config),
+            self.resolved_parameter_values(config),
         )
         if not self.supports_multiple_processes:
             return spec
@@ -164,18 +164,21 @@ class Step(Runnable):
         self.prepare_output_directories(args)
         return self.run_from_args(args)
 
-    def _output_template_values(self, config: dict) -> dict[str, Any]:
-        """Resolve config-backed values used by output path templates."""
+    def resolved_parameter_values(
+        self,
+        config: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return config-backed parameter values that can be resolved."""
         from ASOkai._pipeline import config as cfg
 
         values: dict[str, Any] = {}
-        for param in self.spec.params:
-            if not param.config:
+        for parameter in self.spec.params:
+            if parameter.config is None:
                 continue
             try:
-                values[param.name] = cfg.resolve_parameter_value(
+                values[parameter.name] = cfg.resolve_parameter_value(
                     config,
-                    param,
+                    parameter,
                 )
             except KeyError:
                 pass
@@ -185,7 +188,7 @@ class Step(Runnable):
         """Render a declared output path relative to ``config['datadir']``."""
         path = self.spec.output_relative_path(
             name,
-            self._output_template_values(config),
+            self.resolved_parameter_values(config),
         )
         return Path(*path.parts)
 

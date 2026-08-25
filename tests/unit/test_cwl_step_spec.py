@@ -254,6 +254,31 @@ def test_step_spec_derives_config_maps_and_cwl_inputs():
     assert cwl_spec.input_types()["file_input"] == "File"
 
 
+def test_step_resolves_each_available_config_backed_parameter():
+    class ParameterizedStep(Step):
+        name = "parameterized"
+        description = "Test parameter resolution."
+        spec = StepSpec(
+            params=[
+                ScalarParam("visible", str, config="values.visible"),
+                ScalarParam(
+                    "internal",
+                    int,
+                    config="values.internal",
+                    cwl=False,
+                ),
+                ScalarParam("missing", str, config="values.missing"),
+                ScalarParam("unconfigured", str),
+            ],
+        )
+
+    values = ParameterizedStep().resolved_parameter_values(
+        {"values": {"visible": "yes", "internal": 3}}
+    )
+
+    assert values == {"visible": "yes", "internal": 3}
+
+
 def test_step_spec_uses_only_declared_compatibility():
     spec = StepSpec(
         params=[

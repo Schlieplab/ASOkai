@@ -135,6 +135,77 @@ def _request_alternate_producer_run(config: dict) -> None:
     )
 
 
+def _make_nested_configurable_steps() -> tuple[Step, Step, Step]:
+    """Return a three-step chain with configurable producer inputs."""
+    source_output = FileOutput(
+        "source_result",
+        destination="{profile}/source.txt",
+    )
+    source_type = type(
+        "_NestedSourceStep",
+        (Step,),
+        {
+            "name": "source",
+            "description": "",
+            "source_result_output": source_output,
+            "spec": StepSpec(
+                params=[ScalarParam("profile", str, config="source.profile")],
+                outputs=[source_output],
+            ),
+        },
+    )
+
+    producer_output = FileOutput(
+        "producer_result",
+        destination="{mode}/producer.txt",
+    )
+    producer_type = type(
+        "_NestedProducerStep",
+        (Step,),
+        {
+            "name": "producer",
+            "description": "",
+            "producer_result_output": producer_output,
+            "spec": StepSpec(
+                params=[ScalarParam("mode", str, config="producer.mode")],
+                inputs=[
+                    FileInput(
+                        "source_result",
+                        source=source_output,
+                        configurable_parameters=("profile",),
+                    )
+                ],
+                outputs=[producer_output],
+            ),
+        },
+    )
+
+    consumer_output = FileOutput(
+        "consumer_result",
+        destination="consumer.txt",
+    )
+    consumer_type = type(
+        "_NestedConsumerStep",
+        (Step,),
+        {
+            "name": "consumer",
+            "description": "",
+            "consumer_result_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[
+                    FileInput(
+                        "producer_result",
+                        source=producer_output,
+                        configurable_parameters=("mode",),
+                    )
+                ],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    return source_type(), producer_type(), consumer_type()
+
+
 @pytest.fixture
 def config(tmp_path):
     return {"datadir": str(tmp_path)}
@@ -458,6 +529,56 @@ def test_existing_configured_producer_output_is_reused(config, tmp_path):
     assert isinstance(source, StepRunOutput)
     assert source.run.run_id == "consumer.producer"
     assert plan.resolved_outputs[source] == configured_output
+
+
+def test_nested_configured_producers_keep_the_full_run_path(config):
+    source, producer, consumer = _make_nested_configurable_steps()
+    config.update(
+        {
+            "source": {"profile": "main"},
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "producer_result": {
+                            "parameters": {"mode": "alternate"},
+                        },
+                    },
+                },
+                "producer": {
+                    "inputs": {
+                        "source_result": {
+                            "parameters": {"profile": "nested"},
+                        },
+                    },
+                },
+            },
+        }
+    )
+
+    plan = build_plan(
+        [consumer],
+        config,
+        _registry={step.name: step for step in (source, producer, consumer)},
+    )
+
+    assert _scheduled_run_ids(plan) == [
+        "consumer.producer.source",
+        "consumer.producer",
+        "consumer",
+    ]
+    source_run, producer_run, consumer_run = plan.runs_to_execute
+    assert source_run.config["source"]["profile"] == "nested"
+    assert producer_run.config["producer"]["mode"] == "alternate"
+    assert config["source"]["profile"] == "main"
+    assert config["producer"]["mode"] == "main"
+
+    producer_source = producer_run.inputs[0].source
+    consumer_source = consumer_run.inputs[0].source
+    assert isinstance(producer_source, StepRunOutput)
+    assert isinstance(consumer_source, StepRunOutput)
+    assert producer_source.run is source_run
+    assert consumer_source.run is producer_run
 
 
 def test_task_listed_producer_keeps_main_and_configured_run_separate(config):

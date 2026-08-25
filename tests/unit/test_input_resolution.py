@@ -96,16 +96,20 @@ def _run(
     )
 
 
-def test_step_run_accepts_dotted_context_paths(tmp_path):
+@pytest.mark.parametrize(
+    "run_id",
+    ["producer", "consumer.producer", "analysis.consumer.producer"],
+)
+def test_step_run_accepts_dotted_context_paths(tmp_path, run_id):
     step = _fake_step("producer")
 
     run = StepRun(
-        run_id="consumer.producer",
+        run_id=run_id,
         step=step,
         config={"datadir": str(tmp_path)},
     )
 
-    assert run.run_id == "consumer.producer"
+    assert run.run_id == run_id
 
 
 @pytest.mark.parametrize("run_id", ["consumer..producer", "consumer/producer"])
@@ -245,7 +249,7 @@ def test_sequence_qualifies_different_values_by_run(tmp_path):
     }
 
 
-def test_sequence_merges_matching_shared_inputs(tmp_path):
+def test_sequence_qualifies_matching_values_by_run(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "shared": {"mode": "fast"},

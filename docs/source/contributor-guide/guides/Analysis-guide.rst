@@ -60,8 +60,8 @@ An independently installed plugin imports the public equivalents from
 ``FileInput``
    A file produced by another step. Its ``source`` is that step's
    ``FileOutput`` declaration. This connection supplies the dependency and
-   file type automatically. If ``override`` is configured, a user may provide
-   a pre-existing file with the same contract.
+   file type automatically. A user may provide a pre-existing file through
+   ``path_override``.
 
 ``FileOutput``
    A produced file, its type, and its destination below the configured data
@@ -71,6 +71,16 @@ An independently installed plugin imports the public equivalents from
 Declare every ``FileOutput`` once as a class attribute and reuse that object
 in ``StepSpec.outputs``. Referencing that class attribute from a later
 ``FileInput`` connects the steps without a separate dependency list.
+
+Configure a producer for one input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A file input uses its producer's main configuration by default. Set
+``configurable_parameters`` only when that particular input should permit a
+user to change selected producer parameters. The
+:ref:`configuring-an-input-producer` section shows the declaration, YAML
+configuration, path-override alternative, sharing behavior, and output-path
+rule. These rules apply unchanged to analysis steps.
 
 Analysis outputs
 ~~~~~~~~~~~~~~~~
@@ -113,6 +123,12 @@ For a built-in step, add new configuration fields to
 ``src/ASOkai/_pipeline/config.schema.yaml`` and document them in
 ``examples/config.example.yaml``. Reuse existing fields when they already
 represent the required value.
+
+The shared schema already defines the
+``steps.<consumer>.inputs.<input>.parameters`` and ``path_override``
+structure. Adding a configurable input does not require another schema entry;
+its allowed parameter names and value types come from the ``FileInput`` and
+the producer's ``ScalarParam`` declarations.
 
 The YAML schema should express types, required fields, enumerated values,
 ranges, and other structural constraints. Override

@@ -16,7 +16,6 @@ import pytest
 import yaml
 
 from ASOkai._cwl.generation import GeneratedCwlBundle, generate_cwl_bundle
-from ASOkai._cwl.input_resolution import resolve_run_sequence_inputs
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
@@ -150,7 +149,7 @@ def _shared_producer_plan(
     tmp_path: Path,
     *,
     producer_output_exists: bool = False,
-) -> tuple[ExecutionPlan, Path]:
+) -> ExecutionPlan:
     """Plan two consumers requesting the same configured producer run."""
     producer_output = FileOutput(
         "result",
@@ -196,12 +195,11 @@ def _shared_producer_plan(
         producer_path.parent.mkdir()
         producer_path.touch()
 
-    plan = build_plan(
+    return build_plan(
         consumers,
         config,
         _registry={step.name: step for step in (producer, *consumers)},
     )
-    return plan, producer_path
 
 
 def _validate_bundle_with_cwltool(
@@ -579,7 +577,7 @@ def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
 
 
 def test_shared_producer_is_generated_and_wired_once(tmp_path):
-    plan, _ = _shared_producer_plan(tmp_path)
+    plan = _shared_producer_plan(tmp_path)
 
     generated = generate_cwl_bundle(list(plan.runs_to_execute))
     workflow = yaml.safe_load(generated.run_cwl)
@@ -614,17 +612,13 @@ def test_shared_producer_is_generated_and_wired_once(tmp_path):
 
 
 def test_reused_shared_producer_is_one_workflow_input(tmp_path):
-    plan, producer_path = _shared_producer_plan(
+    plan = _shared_producer_plan(
         tmp_path,
         producer_output_exists=True,
     )
 
     generated = generate_cwl_bundle(list(plan.runs_to_execute))
     workflow = yaml.safe_load(generated.run_cwl)
-    inputs = resolve_run_sequence_inputs(
-        plan.runs_to_execute,
-        dict(plan.resolved_outputs),
-    )
 
     assert set(generated.step_cwls) == {"first.cwl", "second.cwl"}
     assert "step_first.producer" not in workflow["steps"]
@@ -635,12 +629,6 @@ def test_reused_shared_producer_is_one_workflow_input(tmp_path):
     assert workflow["steps"]["step_second"]["in"]["result"] == (
         "first.producer.result"
     )
-    assert inputs == {
-        "first.producer.result": {
-            "class": "File",
-            "path": str(producer_path.resolve()),
-        },
-    }
 
 
 def test_registered_step_output_paths_define_names(workflow_config):

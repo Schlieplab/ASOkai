@@ -70,7 +70,7 @@ class ExampleAnalysisStep(AnalysisStep):
         ),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/analysis/example/"
-            "{target}_k{k}_{region}_sequence_lengths.csv",
+            "{target}_k{k}_{region}_min{minimum_length}_sequence_lengths.csv",
             fields={
                 "target": TemplateField.first_of(
                     "target_id",

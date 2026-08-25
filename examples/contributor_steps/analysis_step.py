@@ -65,6 +65,8 @@ class ExampleAnalysisStep(AnalysisStep):
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
+        # Add configurable_parameters=("parameter_name",) only when users
+        # should be able to select a different producer configuration here.
     )
     analysis_output = FileOutput(
         "analysis",

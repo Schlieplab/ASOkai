@@ -22,6 +22,17 @@ target:
 #     inputs:
 #       target_gene:
 #         path_override: /path/to/target_gene.json
+#
+# If that FileInput explicitly exposes producer parameters, it can instead
+# request a separate producer run. The allowed names come from the input's
+# configurable_parameters declaration. Use parameters or path_override,
+# never both.
+# steps:
+#   consumer-step:
+#     inputs:
+#       input_name:
+#         parameters:
+#           producer_parameter: alternate-value
 
 antisense:
   modality: aso

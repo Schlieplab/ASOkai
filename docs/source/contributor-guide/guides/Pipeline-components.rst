@@ -91,6 +91,51 @@ file type. Every input automatically has a ``path_override`` configuration
 option that lets a user substitute an existing file. The file is parsed and
 validated exactly like the producer's output.
 
+.. _configuring-an-input-producer:
+
+Choosing the producer run for an input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Normally, a ``FileInput`` receives the producer output made with the main
+configuration. This is the default for core and analysis steps alike.
+
+An input can expose a small, explicit set of producer parameters when a
+consumer needs a differently configured producer output::
+
+   context_target_input = FileInput(
+       "context_target",
+       source=CreateTargetGeneStep.target_gene_output,
+       configurable_parameters=("region",),
+   )
+
+The names in ``configurable_parameters`` are names from the producer's
+``StepSpec.params``. Only expose parameters that make biological sense for
+that input; this is the contributor-owned boundary for what users may change.
+A user can then select the producer configuration below the consuming step::
+
+   steps:
+     example-analysis:
+       inputs:
+         context_target:
+           parameters:
+             region: pre-mrna
+
+ASOkai copies the main configuration, changes the selected producer
+parameters, and resolves that producer's dependencies recursively. Requests
+with the same producer step, resolved scalar values, and file inputs share
+one run. Requests that differ in any of those values remain separate.
+
+``path_override`` is the alternative when the required file already exists::
+
+   steps:
+     example-analysis:
+       inputs:
+         context_target:
+           path_override: /path/to/target_gene.json
+
+An input may specify ``parameters`` or ``path_override``, never both. With
+neither, it uses the producer's main configuration.
+
 Output destinations use values from declared scalar parameters. A
 ``TemplateField`` can define how one placeholder is selected or transformed
 without adding path-building logic to the step implementation.
@@ -100,6 +145,11 @@ that output's ``OutputPathTemplate``. Distinct parameter configurations must
 resolve to distinct destination paths so that one run cannot overwrite or be
 mistaken for another run's output. Parameters that only affect execution,
 such as resource allocation, do not belong in the destination.
+
+The same rule applies to an input-specific producer configuration. If that
+choice changes a consumer's output contents, the consumer output destination
+must contain a declared value that distinguishes the choice. The producer's
+filename does not automatically namespace the consumer's outputs.
 
 Shared step lifecycle
 ---------------------

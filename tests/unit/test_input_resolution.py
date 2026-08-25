@@ -96,34 +96,6 @@ def _run(
     )
 
 
-@pytest.mark.parametrize(
-    "run_id",
-    ["producer", "consumer.producer", "analysis.consumer.producer"],
-)
-def test_step_run_accepts_dotted_context_paths(tmp_path, run_id):
-    step = _fake_step("producer")
-
-    run = StepRun(
-        run_id=run_id,
-        step=step,
-        config={"datadir": str(tmp_path)},
-    )
-
-    assert run.run_id == run_id
-
-
-@pytest.mark.parametrize("run_id", ["consumer..producer", "consumer/producer"])
-def test_step_run_rejects_malformed_context_paths(tmp_path, run_id):
-    step = _fake_step("producer")
-
-    with pytest.raises(ValueError, match="dot-separated names"):
-        StepRun(
-            run_id=run_id,
-            step=step,
-            config={"datadir": str(tmp_path)},
-        )
-
-
 def test_path_binding_is_resolved_as_input_override(tmp_path):
     config = {"datadir": str(tmp_path)}
     producer = _fake_step("producer", output_names=["shared"])
@@ -209,23 +181,6 @@ def test_missing_reused_output_is_rejected(tmp_path):
 
     with pytest.raises(RuntimeError, match="requires resolved output"):
         resolve_run_inputs(consumer_run)
-
-
-def test_missing_file_input_binding_is_rejected(tmp_path):
-    producer = _fake_step("producer", output_names=["result"])
-    consumer = _fake_step(
-        "consumer",
-        producer=producer,
-        input_name="result",
-    )
-    run = StepRun(
-        run_id=consumer.name,
-        step=consumer,
-        config={"datadir": str(tmp_path)},
-    )
-
-    with pytest.raises(ValueError, match="no binding for input 'result'"):
-        resolve_run_inputs(run)
 
 
 def test_sequence_qualifies_matching_values_by_run(tmp_path):

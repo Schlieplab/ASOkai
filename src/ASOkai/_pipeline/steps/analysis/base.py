@@ -161,8 +161,14 @@ class AnalysisStep(Step):
                 f"Analysis step '{self.name}' does not define analysis_cls."
             )
 
-        analysis_kwargs = self.analysis_kwargs(args)
-        analysis_kwargs.setdefault("n_processes", args.n_processes)
+        provided_analysis_kwargs = self.analysis_kwargs(args)
+        if not isinstance(provided_analysis_kwargs, Mapping):
+            raise TypeError(
+                f"Analysis step '{self.name}' analysis_kwargs() must return "
+                "a mapping."
+            )
+        analysis_kwargs = dict(provided_analysis_kwargs)
+        analysis_kwargs["n_processes"] = args.n_processes
         analysis = self.analysis_cls(**analysis_kwargs)
         results = analysis.run()
         additional_values = self.additional_output_values(

@@ -63,14 +63,7 @@ def resolve_run_inputs(
 
     bindings = {binding.file_input.name: binding for binding in run.inputs}
     for file_input in run.step.spec.inputs:
-        try:
-            binding = bindings[file_input.name]
-        except KeyError as error:
-            raise ValueError(
-                f"Run '{run.run_id}' has no binding for input "
-                f"'{file_input.name}'."
-            ) from error
-
+        binding = bindings[file_input.name]
         source = binding.source
         if isinstance(source, Path):
             resolved[file_input.name] = ResolvedInput(

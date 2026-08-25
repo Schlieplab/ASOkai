@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 
+from ASOkai.Utils import Serializable
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
 
 
@@ -27,6 +28,23 @@ def test_json_file_reads_and_writes_generic_json(tmp_path):
 
     assert file_type.read(path) == value
     assert json.loads(path.read_text(encoding="utf-8")) == value
+
+
+def test_typed_json_file_uses_serializable_annotations():
+    class Data(Serializable):
+        count: int
+
+        def __init__(self, count):
+            self.count = count
+            super().__init__()
+
+    file_type = JsonFile(Data)
+
+    assert json.loads(file_type.dumps(Data(1)))["count"] == 1
+    with pytest.raises(ValueError, match=r"\$.count"):
+        file_type.dumps(Data("not-an-integer"))
+    with pytest.raises(TypeError, match="requires Data"):
+        file_type.dumps(cast(Any, "not-a-Data"))
 
 
 def test_json_file_validation_does_not_call_runtime_read(tmp_path, monkeypatch):

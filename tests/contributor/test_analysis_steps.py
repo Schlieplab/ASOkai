@@ -117,7 +117,7 @@ def test_step_dependencies_use_registered_outputs(step: Step) -> None:
 def test_step_contract_builds_from_example_config(step: Step) -> None:
     step.build_parser()
     step.cwl_spec(EXAMPLE_CONFIG)
-    step.validated_output_paths(EXAMPLE_CONFIG)
+    step.output_paths(EXAMPLE_CONFIG)
     for output in step.spec.outputs:
         if isinstance(output.file_type, JsonFile) and output.file_type.value_type:
             build_json_schema(output.file_type.value_type)

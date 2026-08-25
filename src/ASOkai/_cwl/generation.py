@@ -111,8 +111,8 @@ def _output_names(step: Step) -> tuple[str, ...]:
     return step.spec.output_names()
 
 
-def _validate_planned_connections(runs: list[StepRun]) -> None:
-    """Validate run identities and direct producer-output bindings."""
+def _validate_planned_runs(runs: list[StepRun]) -> None:
+    """Reject conflicting run definitions in one generated workflow."""
     by_id: dict[str, StepRun] = {}
     for run in runs:
         if run.run_id in by_id:
@@ -134,20 +134,6 @@ def _validate_planned_connections(runs: list[StepRun]) -> None:
                 raise ValueError(
                     f"Run '{run.run_id}' input '{binding.file_input.name}' "
                     "references a conflicting definition for planned run "
-                    f"'{producer.run_id}'."
-                )
-            try:
-                declared = producer.step.spec.output(source.output.name)
-            except KeyError as error:
-                raise ValueError(
-                    f"Run '{run.run_id}' input '{binding.file_input.name}' references "
-                    f"unknown output '{source.output.name}' on run "
-                    f"'{producer.run_id}'."
-                ) from error
-            if declared is not source.output:
-                raise ValueError(
-                    f"Run '{run.run_id}' input '{binding.file_input.name}' references "
-                    f"an output declaration that does not belong to "
                     f"'{producer.run_id}'."
                 )
 
@@ -172,7 +158,6 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
     for run in runs:
         step = run.step
         config = dict(run.config)
-        step.validated_output_paths(config)
         for output in step.spec.outputs:
             relative = step.output_relative_path(output.name, config)
             entries.append(
@@ -236,7 +221,7 @@ class JobCwlGenerator(BaseCwlGenerator):
         - every planned step output is wired into the final publisher.
         - the publisher's top-level data roots become workflow outputs.
         """
-        _validate_planned_connections(runs)
+        _validate_planned_runs(runs)
         run_ids_to_execute = {run.run_id for run in runs}
         all_inputs: dict[str, Any] = {}
         for run in runs:

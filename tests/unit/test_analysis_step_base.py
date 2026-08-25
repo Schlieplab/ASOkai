@@ -2,7 +2,7 @@
 """Tests for AnalysisStep template execution."""
 
 from argparse import Namespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -15,9 +15,6 @@ from ASOkai.Plugins import (
     ScalarParam,
     StepSpec,
 )
-from ASOkai.Plugins._validation import validate_plugin_instance
-
-
 class FakeAnalysis(Analysis):
     last_process_count = None
 
@@ -49,21 +46,25 @@ class FakeAnalysisStep(AnalysisStep):
         outputs=[analysis_output],
     )
 
-    def outdir(self, config):
-        return config["outdir"]
-
-    def output_paths(self, config):
-        return {}
-
-    def cleanup(self, config):
-        pass
-
     def analysis_kwargs(self, args):
         return {"value": args.value}
 
 
 class MissingAnalysisClassStep(FakeAnalysisStep):
     analysis_cls = None
+
+
+class ConflictingProcessCountStep(FakeAnalysisStep):
+    def analysis_kwargs(self, args):
+        return {
+            "value": args.value,
+            "n_processes": 99,
+        }
+
+
+class InvalidAnalysisKwargsStep(FakeAnalysisStep):
+    def analysis_kwargs(self, args):
+        return cast(Any, None)
 
 
 class MultiOutputAnalysisStep(AnalysisStep):
@@ -149,6 +150,29 @@ def test_analysis_step_requires_analysis_class(tmp_path):
         MissingAnalysisClassStep().run_from_args(args)
 
 
+def test_analysis_step_uses_the_framework_allocated_process_count(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        value=7,
+        n_processes=2,
+    )
+
+    ConflictingProcessCountStep().run_from_args(args)
+
+    assert FakeAnalysis.last_process_count == 2
+
+
+def test_analysis_step_requires_analysis_kwargs_to_be_a_mapping(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        value=7,
+        n_processes=1,
+    )
+
+    with pytest.raises(TypeError, match=r"analysis_kwargs\(\).*mapping"):
+        InvalidAnalysisKwargsStep().run_from_args(args)
+
+
 def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
     analysis_output = tmp_path / "analysis.csv"
     doubled_output = tmp_path / "doubled.csv"
@@ -162,7 +186,6 @@ def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
     )
 
     step = MultiOutputAnalysisStep()
-    validate_plugin_instance("analysis step", step)
     result = step.run_from_args(args)
 
     assert result == 0

@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from ASOkai._types import Scalar
@@ -209,20 +209,6 @@ class StepSpec:
             if output.name == name:
                 return output.destination.render(values)
         raise KeyError(f"Unknown step output: {name!r}.")
-
-    def validate_output_paths(self, output_paths: dict[str, Path]) -> None:
-        """Ensure runtime output paths exactly implement the declared outputs."""
-        declared = set(self.output_names())
-        actual = set(output_paths)
-        if declared == actual:
-            return
-
-        missing = ", ".join(sorted(declared - actual)) or "none"
-        unexpected = ", ".join(sorted(actual - declared)) or "none"
-        raise ValueError(
-            "Step output_paths() does not match StepSpec outputs "
-            f"(missing: {missing}; unexpected: {unexpected})."
-        )
 
     def build_parser(
         self,

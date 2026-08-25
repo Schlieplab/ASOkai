@@ -46,6 +46,18 @@ class Step(Runnable):
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""
         super().__init_subclass__(**kwargs)
+        overridden_path_methods = [
+            method_name
+            for method_name in ("output_relative_path", "output_paths")
+            if method_name in cls.__dict__
+        ]
+        if overridden_path_methods:
+            names = ", ".join(overridden_path_methods)
+            raise TypeError(
+                f"Step class '{cls.__name__}' cannot override framework-owned "
+                f"output path method(s): {names}. Declare paths through "
+                "FileOutput.destination."
+            )
         spec = cls.__dict__.get("spec")
         if spec is None:
             if "name" in cls.__dict__:
@@ -57,7 +69,8 @@ class Step(Runnable):
             return
         if not isinstance(spec, StepSpec):
             raise TypeError(f"Step '{cls.__name__}.spec' must be a StepSpec.")
-        if type(cls.name) is not str or not cls.name.strip():
+        step_name = getattr(cls, "name", None)
+        if type(step_name) is not str or not step_name.strip():
             raise TypeError(f"Step class '{cls.__name__}' requires a name.")
         if type(cls.supports_multiple_processes) is not bool:
             raise TypeError(
@@ -192,20 +205,6 @@ class Step(Runnable):
         )
         return Path(*path.parts)
 
-    def validated_output_paths(self, config: dict) -> dict[str, Path]:
-        """Return output paths after checking them against the step specification."""
-        paths = self.output_paths(config)
-        self.spec.validate_output_paths(paths)
-        datadir = Path(config["datadir"])
-        for name, path in paths.items():
-            expected = datadir / self.output_relative_path(name, config)
-            if path != expected:
-                raise ValueError(
-                    f"Output '{name}' path does not match its destination template "
-                    f"(expected: {expected}; actual: {path})."
-                )
-        return paths
-
     def output_paths(self, config: dict) -> dict[str, Path]:
         """Return all declared output paths below the configured data directory."""
         datadir = Path(config["datadir"])
@@ -216,7 +215,7 @@ class Step(Runnable):
 
     def validate_output_files(self, config: dict) -> dict[str, Path]:
         """Return output paths after validating every declared file contract."""
-        paths = self.validated_output_paths(config)
+        paths = self.output_paths(config)
         for output in self.spec.outputs:
             path = paths[output.name]
             if not path.is_file():

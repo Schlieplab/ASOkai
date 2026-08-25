@@ -71,6 +71,10 @@ def _cwl_type_for_annotation(annotation: Any) -> Any:
         cwl_type = "string"
     elif base is int:
         cwl_type = "int"
+    elif base is float:
+        cwl_type = "double"
+    elif base is bool:
+        cwl_type = "boolean"
     elif base is Path:
         cwl_type = "File"
     else:
@@ -90,9 +94,22 @@ def _argparse_type_for_annotation(annotation: Any) -> Any:
         return None
     if base is int:
         return int
+    if base is float:
+        return float
+    if base is bool:
+        return _parse_boolean
     if base is Path:
         return Path
     return None
+
+
+def _parse_boolean(value: str) -> bool:
+    """Parse the lowercase boolean spelling used by ASOkai configuration."""
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise argparse.ArgumentTypeError("expected 'true' or 'false'")
 
 
 def _argparse_choices_for_annotation(annotation: Any) -> tuple[Any, ...] | None:

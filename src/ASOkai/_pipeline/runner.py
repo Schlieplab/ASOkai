@@ -91,7 +91,7 @@ def _requested_outputs(plan: ExecutionPlan) -> dict[str, Path]:
     """Return every requested output under its run-qualified name."""
     requested: dict[str, Path] = {}
     for run in plan.goals:
-        paths = run.step.validated_output_paths(dict(run.config))
+        paths = run.step.output_paths(dict(run.config))
         for output in run.step.spec.outputs:
             requested[run.output(output).qualified_name] = paths[output.name]
     return requested

@@ -64,6 +64,33 @@ class StepRun:
                 f"{', '.join(duplicates)}."
             )
 
+        declared_inputs = {
+            file_input.name: file_input
+            for file_input in self.step.spec.inputs
+        }
+        bound_inputs = {
+            binding.file_input.name: binding.file_input
+            for binding in inputs
+        }
+        if declared_inputs.keys() != bound_inputs.keys():
+            missing = ", ".join(
+                sorted(declared_inputs.keys() - bound_inputs.keys())
+            ) or "none"
+            unexpected = ", ".join(
+                sorted(bound_inputs.keys() - declared_inputs.keys())
+            ) or "none"
+            raise ValueError(
+                f"StepRun '{self.run_id}' input bindings do not match step "
+                f"'{self.step.name}' (missing: {missing}; "
+                f"unexpected: {unexpected})."
+            )
+        for name, file_input in bound_inputs.items():
+            if file_input is not declared_inputs[name]:
+                raise ValueError(
+                    f"StepRun '{self.run_id}' input binding '{name}' does not "
+                    f"use the declaration from step '{self.step.name}'."
+                )
+
         object.__setattr__(
             self,
             "config",
@@ -80,18 +107,6 @@ class StepRun:
 
     def output(self, output: FileOutput) -> StepRunOutput:
         """Return one output port qualified by this concrete run."""
-        try:
-            declared = self.step.spec.output(output.name)
-        except KeyError as error:
-            raise ValueError(
-                f"Output '{output.name}' does not belong to step "
-                f"'{self.step.name}'."
-            ) from error
-        if declared is not output:
-            raise ValueError(
-                f"Output '{output.name}' does not belong to step "
-                f"'{self.step.name}'."
-            )
         return StepRunOutput(self, output)
 
 
@@ -107,6 +122,18 @@ class StepRunOutput:
             raise TypeError("StepRunOutput.run must be a StepRun.")
         if not isinstance(self.output, FileOutput):
             raise TypeError("StepRunOutput.output must be a FileOutput.")
+        try:
+            declared_output = self.run.step.spec.output(self.output.name)
+        except KeyError as error:
+            raise ValueError(
+                f"Output '{self.output.name}' does not belong to step "
+                f"'{self.run.step.name}'."
+            ) from error
+        if declared_output is not self.output:
+            raise ValueError(
+                f"Output '{self.output.name}' does not belong to step "
+                f"'{self.run.step.name}'."
+            )
 
     @property
     def qualified_name(self) -> str:
@@ -126,7 +153,15 @@ class StepInputBinding:
             raise TypeError("StepInputBinding.file_input must be a FileInput.")
         if isinstance(self.source, Path):
             object.__setattr__(self, "source", self.source.resolve())
-        elif not isinstance(self.source, StepRunOutput):
+        elif isinstance(self.source, StepRunOutput):
+            if self.source.output is not self.file_input.source:
+                raise ValueError(
+                    f"Input '{self.file_input.name}' requires output "
+                    f"'{self.file_input.source.producer}."
+                    f"{self.file_input.source.name}', but received "
+                    f"'{self.source.qualified_name}'."
+                )
+        else:
             raise TypeError(
                 "StepInputBinding.source must be a Path or StepRunOutput."
             )

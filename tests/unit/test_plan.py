@@ -57,7 +57,7 @@ def _make_step(
     def validate_output_files(self: Step, config: dict):
         if not outputs_valid:
             raise FileNotFoundError
-        return self.validated_output_paths(config)
+        return self.output_paths(config)
 
     step_type = type(
         f"_{name.replace('-', '_').title()}Step",

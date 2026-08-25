@@ -28,7 +28,6 @@ from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
     StepInputBinding,
     StepRun,
-    StepRunOutput,
 )
 from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
@@ -702,54 +701,6 @@ def test_generate_cwl_wires_differently_named_input_to_exact_output(tmp_path):
     assert doc["steps"]["step_consumer"]["in"]["renamed_input"] == (
         "step_producer/result"
     )
-
-
-def test_generate_cwl_rejects_a_same_name_output_from_another_step_class(
-    tmp_path,
-):
-    expected_producer = _spec_step(
-        "producer",
-        StepSpec(outputs=[FileOutput("result", destination="expected.txt")]),
-    )
-    replacement_producer = _spec_step(
-        "producer",
-        StepSpec(outputs=[FileOutput("result", destination="replacement.txt")]),
-    )
-    consumer = _spec_step(
-        "consumer",
-        StepSpec(
-            inputs=[
-                FileInput(
-                    "result",
-                    source=expected_producer.spec.output("result"),
-                )
-            ],
-            outputs=[FileOutput("done", destination="done.txt")],
-        ),
-    )
-    config = {"datadir": str(tmp_path)}
-    replacement_run = StepRun(
-        replacement_producer.name,
-        replacement_producer,
-        config,
-    )
-    consumer_run = StepRun(
-        consumer.name,
-        consumer,
-        config,
-        inputs=(
-            StepInputBinding(
-                consumer.spec.input("result"),
-                StepRunOutput(
-                    replacement_run,
-                    expected_producer.spec.output("result"),
-                ),
-            ),
-        ),
-    )
-
-    with pytest.raises(ValueError, match="does not belong to 'producer'"):
-        generate_cwl_bundle([replacement_run, consumer_run])
 
 
 def test_generate_cwl_rejects_duplicate_planned_run_ids(tmp_path):

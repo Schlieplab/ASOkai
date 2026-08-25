@@ -54,8 +54,6 @@ class FileOutput(Param):
 
         if file_type is None:
             file_type = FileType()
-        if not isinstance(file_type, FileType):
-            raise TypeError("FileOutput.file_type must be a FileType.")
         object.__setattr__(self, "file_type", file_type)
         object.__setattr__(self, "doc", doc)
         object.__setattr__(self, "_owner", None)

@@ -6,7 +6,7 @@ on:
       - master
     paths:
       - "docs/**"
-      - ".github/workflows/docs.yml"
+      - ".github/workflows/main.yaml"
       - "**.py"
       - "pyproject.toml"
       - "setup.py"
@@ -42,7 +42,7 @@ jobs:
 
       - name: Build Sphinx HTML
         run: |
-          sphinx-build -M html docs/source docs/build
+          python -m sphinx -W --keep-going -b html docs/source docs/build/html
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

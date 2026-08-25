@@ -16,7 +16,13 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx.util.docutils import SphinxDirective
 
-from .rendering import details, document_link, section, table
+from .rendering import (
+    details,
+    document_link,
+    note_reference_dependencies,
+    section,
+    table,
+)
 
 
 def get_built_in_runnables(kind: str) -> tuple[Any, ...]:
@@ -45,6 +51,18 @@ def get_built_in_runnable(kind: str, name: str) -> Any:
         if runnable.name == name:
             return runnable
     raise ValueError(f"Unknown built-in {kind}: {name!r}.")
+
+
+def _runnable_documentation_sources() -> list[object]:
+    """Return declarations whose values feed runnable references."""
+    from ASOkai.Plugins import _registry
+
+    return [
+        _registry,
+        *_registry._BUILTIN_STEPS,
+        *_registry._BUILTIN_TASKS,
+        *_registry._BUILTIN_WORKFLOWS,
+    ]
 
 
 def _runnable_kind(runnable: Any) -> str:
@@ -221,13 +239,18 @@ class ASOkaiRunnableReference(SphinxDirective):
         try:
             kind, name = self.arguments
             runnable = get_built_in_runnable(kind, name)
-            return build_runnable_reference(
+            result = build_runnable_reference(
                 runnable,
                 kind,
                 refdoc=self.env.docname,
             )
         except (TypeError, ValueError) as error:
             raise self.error(str(error)) from error
+        note_reference_dependencies(
+            self.env,
+            _runnable_documentation_sources(),
+        )
+        return result
 
 
 class ASOkaiRunnableList(SphinxDirective):
@@ -237,7 +260,7 @@ class ASOkaiRunnableList(SphinxDirective):
 
     def run(self) -> list[nodes.Node]:
         try:
-            return [
+            result: list[nodes.Node] = [
                 build_runnable_list(
                     self.arguments[0],
                     refdoc=self.env.docname,
@@ -245,3 +268,8 @@ class ASOkaiRunnableList(SphinxDirective):
             ]
         except ValueError as error:
             raise self.error(str(error)) from error
+        note_reference_dependencies(
+            self.env,
+            _runnable_documentation_sources(),
+        )
+        return result

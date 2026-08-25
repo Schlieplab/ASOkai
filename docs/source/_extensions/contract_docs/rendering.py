@@ -10,14 +10,41 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 import inspect
+from pathlib import Path
+from typing import Any
 
 from docutils import nodes
 from sphinx import addnodes
 
 TableCell = tuple[str, bool] | nodes.Node
 DetailValue = str | nodes.Node
+
+
+def note_reference_dependencies(
+    environment: Any,
+    documented_objects: Iterable[object] = (),
+    *,
+    paths: Iterable[str | Path] = (),
+) -> None:
+    """Make Sphinx rebuild generated references when their sources change."""
+    dependency_paths = set(Path(__file__).parent.glob("*.py"))
+    dependency_paths.update(Path(path) for path in paths)
+    for documented_object in documented_objects:
+        source_object = (
+            documented_object
+            if inspect.isclass(documented_object)
+            or inspect.ismodule(documented_object)
+            or inspect.isfunction(documented_object)
+            else type(documented_object)
+        )
+        source_path = inspect.getsourcefile(source_object)
+        if source_path is not None:
+            dependency_paths.add(Path(source_path))
+
+    for dependency_path in sorted(dependency_paths):
+        environment.note_dependency(str(dependency_path))
 
 
 def document_link(
@@ -89,25 +116,6 @@ def documented_items(documented_object: object) -> dict[str, str]:
         if name.replace("_", "").isalnum():
             result[name] = description.strip()
     return result
-
-
-def local_contents(sections: Sequence[nodes.section]) -> nodes.topic:
-    """Return a compact in-page outline for generated reference sections."""
-    topic = nodes.topic(classes=["contents", "local"])
-    topic += nodes.title(text="On this page")
-    links = nodes.bullet_list()
-    for documented in sections:
-        item = nodes.list_item()
-        paragraph = nodes.paragraph()
-        title = documented.next_node(nodes.title)
-        paragraph += nodes.reference(
-            text=title.astext() if title is not None else documented["ids"][0],
-            refid=documented["ids"][0],
-        )
-        item += paragraph
-        links += item
-    topic += links
-    return topic
 
 
 def code_block(content: str, language: str) -> nodes.literal_block:

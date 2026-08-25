@@ -44,11 +44,8 @@ from contract_docs.file_contracts import (  # noqa: E402
     json_contract_types,
     json_example,
 )
-from contract_docs.rendering import (  # noqa: E402
-    local_contents,
-    section,
-)
 from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
+from ASOkai._pipeline.contracts.files import FileInput  # noqa: E402
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
@@ -216,6 +213,36 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
         "exactly one of these config values is required: "
         "target.target_id, target.target_name"
     ]
+
+
+def test_step_reference_documents_configurable_producer_runs() -> None:
+    from ASOkai._pipeline.steps.core.create_target_gene import (
+        CreateTargetGeneStep,
+    )
+
+    class ContextConsumerStep(CoreStep):
+        name = "context-consumer"
+        description = "Consumes a separately configured target gene."
+        context_target_input = FileInput(
+            "context_target",
+            source=CreateTargetGeneStep.target_gene_output,
+            configurable_parameters=("region",),
+        )
+        spec = StepSpec(inputs=[context_target_input])
+
+    reference = "\n".join(
+        node.astext()
+        for node in build_step_reference(
+            ContextConsumerStep(),
+            _config_schema(),
+        )
+    )
+    input_path = "steps.context-consumer.inputs.context_target"
+
+    assert f"{input_path}.parameters.region" in reference
+    assert f"Producer parameters: {input_path}.parameters" in reference
+    assert "Allowed parameters: region" in reference
+    assert "one of these alternatives, never both" in reference
 
 
 def test_single_process_step_omits_process_count() -> None:
@@ -463,9 +490,15 @@ def test_serializable_contract_is_the_final_class_section() -> None:
     description += addnodes.desc_content()
     module_section += description
     document += module_section
+    dependencies: list[str] = []
 
     append_serializable_contracts(
-        SimpleNamespace(env=SimpleNamespace(docname="api/modules/Targets")),
+        SimpleNamespace(
+            env=SimpleNamespace(
+                docname="api/modules/Targets",
+                note_dependency=dependencies.append,
+            )
+        ),
         document,
     )
 
@@ -477,6 +510,8 @@ def test_serializable_contract_is_the_final_class_section() -> None:
     assert contract_title is not None
     assert contract_title.astext() == "File contract"
     assert list(contract_section.findall(nodes.table))
+    assert any(path.endswith("Targets/_target_gene.py") for path in dependencies)
+    assert any(path.endswith("Sites/_genomic_site.py") for path in dependencies)
 
 
 def test_json_contract_generates_valid_examples() -> None:
@@ -499,14 +534,6 @@ def test_class_contract_omits_an_invalid_schema_derived_example() -> None:
     assert "File contract" in reference
     assert "Fields" in reference
     assert "Example object" not in reference
-
-
-def test_local_contents_uses_internal_page_links() -> None:
-    contents = local_contents([section("Example", [])])
-    link = next(contents.findall(nodes.reference))
-
-    assert link["refid"] == "example"
-    assert "refuri" not in link
 
 
 def test_opaque_outputs_use_human_readable_format_names() -> None:

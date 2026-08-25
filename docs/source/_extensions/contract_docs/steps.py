@@ -33,6 +33,7 @@ from .rendering import (
     document_link,
     documented_items,
     documented_section,
+    note_reference_dependencies,
     section,
     table,
 )
@@ -273,6 +274,19 @@ def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
         for step in get_built_in_steps()
         if isinstance(step, step_type)
     )
+
+
+def _step_documentation_sources(steps: tuple[Any, ...]) -> list[object]:
+    """Return declarations whose values feed generated step references."""
+    from ASOkai.Plugins import _registry
+
+    sources: list[object] = [_registry]
+    for step in steps:
+        sources.append(step)
+        analysis_type = getattr(step, "analysis_cls", None)
+        if analysis_type is not None:
+            sources.append(analysis_type)
+    return sources
 
 
 def build_step_list(
@@ -668,7 +682,16 @@ def build_step_reference(
     resource_config_fields = [
         field for field in step_config_fields if field.path.startswith("resources.")
     ]
-    configuration_children: list[nodes.Node] = [config_table(ordinary_config_fields)]
+    configuration_children: list[nodes.Node] = [
+        nodes.paragraph(
+            text=(
+                "These values are read directly by this step. Configuration "
+                "used only by a dependency is documented on that step's "
+                "linked reference page."
+            )
+        ),
+        config_table(ordinary_config_fields),
+    ]
     if resource_config_fields:
         configuration_children.append(
             section(
@@ -684,10 +707,10 @@ def build_step_reference(
                 ],
             )
         )
-    result.append(section("Configuration", configuration_children))
     rules = rules_section(collect_step_schema_rules(step, schema))
     if rules is not None:
-        result.append(rules)
+        configuration_children.append(rules)
+    result.append(section("Configuration", configuration_children))
 
     analysis = _analysis_section(step)
     if analysis is not None:
@@ -699,8 +722,19 @@ def build_step_reference(
         input_children.append(
             nodes.paragraph(
                 text=(
-                    "Input path overrides are checked for existence. JSON and "
-                    "CSV contents are parsed and validated by their contracts; "
+                    "An input uses the listed producer output made with the "
+                    "main configuration unless an alternative is configured. "
+                    "A path override uses an existing file; exposed producer "
+                    "parameters request a separate producer run. An input may "
+                    "configure one of these alternatives, never both."
+                )
+            )
+        )
+        input_children.append(
+            nodes.paragraph(
+                text=(
+                    "Path overrides are checked for existence. JSON and CSV "
+                    "contents are parsed and validated by their contracts; "
                     "opaque formats are passed to the step as filesystem paths."
                 )
             )
@@ -748,8 +782,12 @@ class ASOkaiStepReference(SphinxDirective):
             schema_path, schema = load_packaged_config_schema()
         except (OSError, ValueError, yaml.YAMLError) as error:
             raise self.error(str(error)) from error
-        self.env.note_dependency(str(schema_path))
-        self.env.note_dependency(str(EXAMPLE_CONFIG_PATH))
+        included_steps = tuple(_transitive_steps(step))
+        note_reference_dependencies(
+            self.env,
+            _step_documentation_sources(included_steps),
+            paths=(schema_path, EXAMPLE_CONFIG_PATH),
+        )
         return build_step_reference(
             step,
             schema,
@@ -766,6 +804,7 @@ class ASOkaiStepList(SphinxDirective):
     def run(self) -> list[nodes.Node]:
         try:
             step_kind = self.arguments[0]
+            steps = _built_in_steps_of_kind(step_kind)
             step_list = build_step_list(
                 step_kind,
                 include_descriptions="descriptions" in self.options,
@@ -777,5 +816,9 @@ class ASOkaiStepList(SphinxDirective):
             )
         except ValueError as error:
             raise self.error(str(error)) from error
+        note_reference_dependencies(
+            self.env,
+            _step_documentation_sources(steps),
+        )
         self.set_source_info(step_toctree)
         return [step_list, step_toctree]

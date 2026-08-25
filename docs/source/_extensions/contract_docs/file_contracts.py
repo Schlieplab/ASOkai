@@ -21,6 +21,7 @@ from sphinx import addnodes
 
 from .rendering import (
     code_block,
+    note_reference_dependencies,
     section,
     table,
 )
@@ -477,6 +478,40 @@ def json_contract_types(file_type: Any) -> tuple[type, ...]:
     return tuple(dict.fromkeys(collect(schema)))
 
 
+def _serializable_types_in_contract(
+    serializable_type: type,
+) -> tuple[type, ...]:
+    """Return serializable classes used anywhere in one class contract."""
+    from ASOkai._pipeline.contracts.json_schema import build_json_schema
+
+    def collect(schema: Mapping[str, Any]) -> list[type]:
+        result: list[type] = []
+        nested_type = _serializable_type(schema)
+        if nested_type is not None:
+            result.append(nested_type)
+
+        properties = schema.get("properties")
+        if isinstance(properties, Mapping):
+            for property_schema in properties.values():
+                if isinstance(property_schema, Mapping):
+                    result.extend(collect(property_schema))
+
+        for keyword in ("items", "additionalProperties"):
+            nested_schema = schema.get(keyword)
+            if isinstance(nested_schema, Mapping):
+                result.extend(collect(nested_schema))
+
+        for keyword in ("oneOf", "anyOf"):
+            alternatives = schema.get(keyword)
+            if isinstance(alternatives, list):
+                for alternative in alternatives:
+                    if isinstance(alternative, Mapping):
+                        result.extend(collect(alternative))
+        return result
+
+    return tuple(dict.fromkeys(collect(build_json_schema(serializable_type))))
+
+
 def serializable_contract_nodes(
     serializable_type: type,
     *,
@@ -539,6 +574,7 @@ def append_serializable_contracts(app: Any, doctree: nodes.document) -> None:
     """Append each contract as the final section of its API class entry."""
     from ASOkai.Utils._serializer import Serializable
 
+    contract_source_types: list[type] = []
     for description in doctree.findall(addnodes.desc):
         if description.get("objtype") != "class":
             continue
@@ -580,3 +616,12 @@ def append_serializable_contracts(app: Any, doctree: nodes.document) -> None:
         if not generated or not isinstance(generated[0], nodes.section):
             continue
         content += generated[0]
+        contract_source_types.extend(
+            _serializable_types_in_contract(documented_type)
+        )
+
+    if contract_source_types:
+        note_reference_dependencies(
+            app.env,
+            tuple(dict.fromkeys(contract_source_types)),
+        )

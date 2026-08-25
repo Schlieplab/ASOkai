@@ -321,6 +321,20 @@ def test_valid_dependency_is_reused(config):
     assert plan.resolved_outputs[reused_output].name == "result.txt"
 
 
+def test_reused_goal_does_not_require_its_missing_dependencies(config):
+    dependency = _make_step("dependency")
+    goal = _make_step("goal", [dependency], outputs_valid=True)
+
+    plan = build_plan(
+        [goal],
+        config,
+        _registry={dependency.name: dependency, goal.name: goal},
+    )
+
+    assert plan.runs_to_execute == ()
+    assert {output.run.run_id for output in plan.resolved_outputs} == {"goal"}
+
+
 def test_dependency_chain_is_scheduled_in_topological_order(config):
     first = _make_step("first")
     second = _make_step("second", [first])
@@ -623,6 +637,100 @@ def test_main_request_names_an_equivalent_configured_producer_run(config):
     source = plan.goals[0].inputs[0].source
     assert isinstance(source, StepRunOutput)
     assert source.run is plan.goals[1]
+
+
+def test_matching_reusable_producer_requests_share_one_run(config, tmp_path):
+    producer, consumers = _make_configurable_producer_and_consumers(
+        "first",
+        "second",
+    )
+    output_path = tmp_path / "alternate" / "result.txt"
+    output_path.parent.mkdir()
+    output_path.touch()
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                consumer.name: {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "alternate"}},
+                    },
+                }
+                for consumer in consumers
+            },
+        }
+    )
+
+    plan = build_plan(
+        consumers,
+        config,
+        _registry={step.name: step for step in (producer, *consumers)},
+    )
+
+    assert _scheduled_run_ids(plan) == ["first", "second"]
+    first_source = plan.goals[0].inputs[0].source
+    second_source = plan.goals[1].inputs[0].source
+    assert isinstance(first_source, StepRunOutput)
+    assert isinstance(second_source, StepRunOutput)
+    assert first_source.run is second_source.run
+    assert plan.resolved_outputs[first_source] == output_path
+
+
+def test_force_applies_to_a_shared_main_producer_run(config, tmp_path):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    output_path = tmp_path / "main" / "result.txt"
+    output_path.parent.mkdir()
+    output_path.touch()
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "main"}},
+                    },
+                },
+            },
+        }
+    )
+
+    plan = build_plan(
+        [consumer, producer],
+        config,
+        force=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert _scheduled_run_ids(plan) == ["producer", "consumer"]
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is plan.goals[1]
+    assert source not in plan.resolved_outputs
+
+
+def test_non_recursive_recognizes_a_shared_main_producer_as_a_goal(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config.update(
+        {
+            "producer": {"mode": "main"},
+            "steps": {
+                "consumer": {
+                    "inputs": {
+                        "result": {"parameters": {"mode": "main"}},
+                    },
+                },
+            },
+        }
+    )
+
+    plan = build_plan(
+        [consumer, producer],
+        config,
+        non_recursive=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert _scheduled_run_ids(plan) == ["producer", "consumer"]
 
 
 def test_existing_configured_producer_output_is_reused(config, tmp_path):

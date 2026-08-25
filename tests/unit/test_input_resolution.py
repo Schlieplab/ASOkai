@@ -272,3 +272,36 @@ def test_sequence_qualifies_matching_values_by_run(tmp_path):
         "first.mode": "fast",
         "second.mode": "fast",
     }
+
+
+def test_sequence_reuses_one_input_for_one_producer_output(tmp_path):
+    config = {"datadir": str(tmp_path)}
+    producer = _fake_step("producer", output_names=["result"])
+    first = _fake_step(
+        "first",
+        producer=producer,
+        input_name="result",
+    )
+    second = _fake_step(
+        "second",
+        producer=producer,
+        input_name="result",
+    )
+    producer_run = _run(producer, config)
+    producer_output = producer_run.output(producer.spec.output("result"))
+    path = tmp_path / "producer-result.txt"
+
+    resolved = resolve_run_sequence_inputs(
+        [
+            _run(first, config, producer_run=producer_run),
+            _run(second, config, producer_run=producer_run),
+        ],
+        {producer_output: path},
+    )
+
+    assert resolved == {
+        "producer.result": {
+            "class": "File",
+            "path": str(path.resolve()),
+        },
+    }

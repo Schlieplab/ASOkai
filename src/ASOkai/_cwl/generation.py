@@ -17,7 +17,10 @@ from typing import Any
 
 import yaml
 
-from ASOkai._cwl.input_resolution import workflow_input_id
+from ASOkai._cwl.input_resolution import (
+    workflow_file_input_id,
+    workflow_input_id,
+)
 from ASOkai._cwl.publisher import PUBLISHED_DIR, PublicationEntry, PublicationPlan
 from ASOkai._cwl.resources import cwl_resource_requirement
 from ASOkai._pipeline import config as cfg
@@ -238,7 +241,11 @@ class JobCwlGenerator(BaseCwlGenerator):
                 ):
                     _declare_workflow_input(
                         all_inputs,
-                        workflow_input_id(run, file_input.name),
+                        workflow_file_input_id(
+                            run,
+                            file_input.name,
+                            source,
+                        ),
                         input_types[file_input.name],
                     )
 
@@ -276,9 +283,10 @@ class JobCwlGenerator(BaseCwlGenerator):
                     not isinstance(source, StepRunOutput)
                     or source.run.run_id not in run_ids_to_execute
                 ):
-                    in_map[file_input.name] = workflow_input_id(
+                    in_map[file_input.name] = workflow_file_input_id(
                         run,
                         file_input.name,
+                        source,
                     )
                 else:
                     in_map[file_input.name] = (

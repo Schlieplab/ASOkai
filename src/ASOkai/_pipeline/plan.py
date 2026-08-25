@@ -59,8 +59,7 @@ class _RequestedInputSource:
     """The path override or producer request found for one file input."""
 
     file_input: FileInput
-    path_override: Path | None = None
-    producer_request_id: str | None = None
+    source: Path | _RunRequest
 
 
 @dataclass
@@ -72,7 +71,6 @@ class _RunRequest:
     config: dict[str, Any]
     dependency_path: tuple[str, ...]
     input_sources: list[_RequestedInputSource] = field(default_factory=list)
-    reusable_outputs: dict[str, Path] | None = None
 
 
 @dataclass(frozen=True)
@@ -116,13 +114,11 @@ class _PlanBuilder:
         main_config: dict,
         registered_steps: Mapping[str, Step],
         *,
-        goal_request_ids: set[str],
         non_recursive: bool,
         force: bool,
     ) -> None:
         self.main_config = main_config
         self.registered_steps = registered_steps
-        self.goal_request_ids = goal_request_ids
         self.non_recursive = non_recursive
         self.force_goal_runs = force
         self.requests: dict[str, _RunRequest] = {}
@@ -158,15 +154,15 @@ class _PlanBuilder:
             )
         return producer
 
-    def _reusable_outputs(self, request: _RunRequest) -> dict[str, Path] | None:
-        """Return valid existing outputs, or ``None`` when the request must run."""
+    def _existing_output_paths(self, run: StepRun) -> dict[str, Path] | None:
+        """Return valid existing outputs, or ``None`` when the run is required."""
         try:
-            paths = request.step.validate_output_files(request.config)
+            paths = run.step.validate_output_files(dict(run.config))
         except (OSError, UnicodeError, TypeError, ValueError):
             return None
         logger.debug(
             "[plan] '%s' outputs are valid — reused.",
-            request.request_id,
+            run.run_id,
         )
         return paths
 
@@ -190,7 +186,7 @@ class _PlanBuilder:
         config: dict[str, Any],
         *,
         dependency_path: tuple[str, ...],
-    ) -> None:
+    ) -> _RunRequest:
         """Reserve one request in the breadth-first discovery queue."""
         existing_request = self.requests.get(request_id)
         if existing_request is not None:
@@ -202,7 +198,7 @@ class _PlanBuilder:
                     f"Request id '{request_id}' resolves to conflicting step "
                     "configurations."
                 )
-            return
+            return existing_request
 
         request = _RunRequest(
             request_id=request_id,
@@ -212,6 +208,7 @@ class _PlanBuilder:
         )
         self.requests[request_id] = request
         self.pending_request_ids.append(request_id)
+        return request
 
     def _discover_input_source(
         self,
@@ -226,7 +223,7 @@ class _PlanBuilder:
         if path_override is not None:
             return _RequestedInputSource(
                 file_input=file_input,
-                path_override=path_override,
+                source=path_override,
             )
 
         producer = self._registered_producer(consumer_request.step, file_input)
@@ -256,7 +253,7 @@ class _PlanBuilder:
                 producer.name,
             )
 
-        self._reserve_request(
+        producer_request = self._reserve_request(
             producer_request_id,
             producer,
             producer_config,
@@ -264,85 +261,74 @@ class _PlanBuilder:
         )
         return _RequestedInputSource(
             file_input=file_input,
-            producer_request_id=producer_request_id,
+            source=producer_request,
         )
 
-    def _discover_dependencies(self) -> None:
-        """Resolve queued requests and add missing producers breadth-first."""
+    def _discover_run_requests(self) -> None:
+        """Resolve queued requests and add their producers breadth-first."""
         while self.pending_request_ids:
             request = self.requests[self.pending_request_ids.popleft()]
             cfg.validate_step_config(request.config, [request.step])
-
-            goal_is_forced = (
-                self.force_goal_runs and request.request_id in self.goal_request_ids
-            )
-            if not goal_is_forced:
-                request.reusable_outputs = self._reusable_outputs(request)
-            if request.reusable_outputs is not None:
-                continue
-            if self.non_recursive and request.request_id not in self.goal_request_ids:
-                raise RuntimeError(
-                    f"Run '{request.request_id}' is required, but its outputs are "
-                    "missing or invalid. Omit --non-recursive to run missing "
-                    "dependencies automatically."
-                )
-
             request.input_sources.extend(
                 self._discover_input_source(request, file_input)
                 for file_input in request.step.spec.inputs
             )
 
-    def _resolve_run_requests(
-        self,
-    ) -> tuple[
-        dict[str, StepRun],
-        tuple[StepRun, ...],
-        dict[StepRunOutput, Path],
-    ]:
-        """Resolve requests producer-first into shared concrete runs."""
-        pending_producer_ids: dict[str, set[str]] = {
-            request_id: {
-                input_source.producer_request_id
-                for input_source in request.input_sources
-                if input_source.producer_request_id is not None
-            }
-            for request_id, request in self.requests.items()
-        }
-        consumer_ids_by_producer_id: dict[str, list[str]] = {
-            request_id: [] for request_id in self.requests
-        }
-        for consumer_request_id in self.requests:
-            for producer_request_id in pending_producer_ids[consumer_request_id]:
-                consumer_ids_by_producer_id[producer_request_id].append(
-                    consumer_request_id
+    def _producer_first_requests(self) -> list[_RunRequest]:
+        """Return discovered requests with producers before consumers."""
+        remaining_request_ids = list(self.requests)
+        resolved_request_ids: set[str] = set()
+        ordered_requests: list[_RunRequest] = []
+
+        while remaining_request_ids:
+            ready_request_ids = [
+                request_id
+                for request_id in remaining_request_ids
+                if all(
+                    isinstance(input_source.source, Path)
+                    or input_source.source.request_id in resolved_request_ids
+                    for input_source in self.requests[request_id].input_sources
+                )
+            ]
+            if not ready_request_ids:
+                cycle = ", ".join(remaining_request_ids)
+                raise ValueError(
+                    f"Dependency cycle detected involving run(s): {cycle}."
                 )
 
-        ready_request_ids = deque(
-            request_id
-            for request_id in self.requests
-            if not pending_producer_ids[request_id]
-        )
+            ordered_requests.extend(
+                self.requests[request_id] for request_id in ready_request_ids
+            )
+            resolved_request_ids.update(ready_request_ids)
+            remaining_request_ids = [
+                request_id
+                for request_id in remaining_request_ids
+                if request_id not in resolved_request_ids
+            ]
+
+        return ordered_requests
+
+    def _resolve_run_requests(
+        self,
+    ) -> tuple[dict[str, StepRun], tuple[StepRun, ...]]:
+        """Resolve producer-first requests into shared concrete runs."""
         run_by_request_id: dict[str, StepRun] = {}
         run_by_signature: dict[_RunSignature, StepRun] = {}
-        runs_to_execute: list[StepRun] = []
-        reusable_outputs: dict[StepRunOutput, Path] = {}
+        producer_first_runs: list[StepRun] = []
 
-        while ready_request_ids:
-            request_id = ready_request_ids.popleft()
-            request = self.requests[request_id]
+        for request in self._producer_first_requests():
             input_bindings: list[StepInputBinding] = []
             for input_source in request.input_sources:
-                if input_source.path_override is not None:
+                source = input_source.source
+                if isinstance(source, Path):
                     input_bindings.append(
                         StepInputBinding(
                             input_source.file_input,
-                            input_source.path_override,
+                            source,
                         )
                     )
                     continue
-                producer_request_id = input_source.producer_request_id
-                assert producer_request_id is not None
-                producer_run = run_by_request_id[producer_request_id]
+                producer_run = run_by_request_id[source.request_id]
                 input_bindings.append(
                     StepInputBinding(
                         input_source.file_input,
@@ -350,44 +336,63 @@ class _PlanBuilder:
                     )
                 )
 
-            if request.reusable_outputs is None:
-                run_signature = _run_signature(request, input_bindings)
-                run = run_by_signature.get(run_signature)
-                if run is None:
-                    run = StepRun(
-                        run_id=request_id,
-                        step=request.step,
-                        config=request.config,
-                        inputs=tuple(input_bindings),
-                    )
-                    run_by_signature[run_signature] = run
-                    runs_to_execute.append(run)
-            else:
+            run_signature = _run_signature(request, input_bindings)
+            run = run_by_signature.get(run_signature)
+            if run is None:
                 run = StepRun(
-                    run_id=request_id,
+                    run_id=request.request_id,
                     step=request.step,
                     config=request.config,
                     inputs=tuple(input_bindings),
                 )
+                run_by_signature[run_signature] = run
+                producer_first_runs.append(run)
+            run_by_request_id[request.request_id] = run
+        return run_by_request_id, tuple(producer_first_runs)
+
+    def _schedule_required_runs(
+        self,
+        goals: tuple[StepRun, ...],
+        producer_first_runs: tuple[StepRun, ...],
+    ) -> tuple[tuple[StepRun, ...], dict[StepRunOutput, Path]]:
+        """Select missing runs reachable through goals that cannot be reused."""
+        goal_runs = set(goals)
+        pending_required_runs = deque(goals)
+        checked_runs: set[StepRun] = set()
+        runs_to_execute: set[StepRun] = set()
+        reusable_outputs: dict[StepRunOutput, Path] = {}
+
+        while pending_required_runs:
+            run = pending_required_runs.popleft()
+            if run in checked_runs:
+                continue
+            checked_runs.add(run)
+
+            existing_outputs = None
+            if not (self.force_goal_runs and run in goal_runs):
+                existing_outputs = self._existing_output_paths(run)
+            if existing_outputs is not None:
                 for output in run.step.spec.outputs:
-                    reusable_outputs[run.output(output)] = request.reusable_outputs[
-                        output.name
-                    ]
-            run_by_request_id[request_id] = run
+                    reusable_outputs[run.output(output)] = existing_outputs[output.name]
+                continue
 
-            for consumer_request_id in consumer_ids_by_producer_id[request_id]:
-                pending_producer_ids[consumer_request_id].discard(request_id)
-                if not pending_producer_ids[consumer_request_id]:
-                    ready_request_ids.append(consumer_request_id)
+            if self.non_recursive and run not in goal_runs:
+                raise RuntimeError(
+                    f"Run '{run.run_id}' is required, but its outputs are "
+                    "missing or invalid. Omit --non-recursive to run missing "
+                    "dependencies automatically."
+                )
 
-        if len(run_by_request_id) != len(self.requests):
-            cycle = ", ".join(
-                request_id
-                for request_id in self.requests
-                if pending_producer_ids[request_id]
-            )
-            raise ValueError(f"Dependency cycle detected involving run(s): {cycle}.")
-        return run_by_request_id, tuple(runs_to_execute), reusable_outputs
+            runs_to_execute.add(run)
+            for input_binding in run.inputs:
+                source = input_binding.source
+                if isinstance(source, StepRunOutput):
+                    pending_required_runs.append(source.run)
+
+        ordered_runs_to_execute = tuple(
+            run for run in producer_first_runs if run in runs_to_execute
+        )
+        return ordered_runs_to_execute, reusable_outputs
 
     def build(self, goal_steps: list[Step]) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
@@ -398,14 +403,17 @@ class _PlanBuilder:
                 self.main_config,
                 dependency_path=(step.name,),
             )
-        self._discover_dependencies()
+        self._discover_run_requests()
 
-        run_by_request_id, runs_to_execute, reusable_outputs = (
-            self._resolve_run_requests()
+        run_by_request_id, producer_first_runs = self._resolve_run_requests()
+        goals = tuple(run_by_request_id[step.name] for step in goal_steps)
+        runs_to_execute, reusable_outputs = self._schedule_required_runs(
+            goals,
+            producer_first_runs,
         )
 
         return ExecutionPlan(
-            goals=tuple(run_by_request_id[step.name] for step in goal_steps),
+            goals=goals,
             runs_to_execute=runs_to_execute,
             resolved_outputs=reusable_outputs,
         )
@@ -439,7 +447,6 @@ def build_plan(
     builder = _PlanBuilder(
         config,
         _registry,
-        goal_request_ids=seen_goal_names,
         non_recursive=non_recursive,
         force=force,
     )

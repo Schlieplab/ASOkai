@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from ASOkai._cwl.generation import GeneratedCwlBundle, generate_cwl_bundle
+from ASOkai._cwl.input_resolution import resolve_run_sequence_inputs
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
@@ -25,10 +26,12 @@ from ASOkai.Plugins import (
 )
 from ASOkai.Plugins._registry import get_steps
 from ASOkai._pipeline.contracts.execution import (
+    ExecutionPlan,
     StepInputBinding,
     StepRun,
     StepRunOutput,
 )
+from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
@@ -141,6 +144,64 @@ def _configured_run_bundle(tmp_path: Path) -> GeneratedCwlBundle:
         },
     )
     return generate_cwl_bundle([main_run, configured_run])
+
+
+def _shared_producer_plan(
+    tmp_path: Path,
+    *,
+    producer_output_exists: bool = False,
+) -> tuple[ExecutionPlan, Path]:
+    """Plan two consumers requesting the same configured producer run."""
+    producer_output = FileOutput(
+        "result",
+        destination="{mode}/result.txt",
+    )
+    producer = _spec_step(
+        "producer",
+        StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[producer_output],
+        ),
+    )
+    consumers = [
+        _spec_step(
+            name,
+            StepSpec(
+                inputs=[
+                    FileInput(
+                        "result",
+                        source=producer_output,
+                        configurable_parameters=("mode",),
+                    ),
+                ],
+                outputs=[FileOutput(f"{name}_result", destination=f"{name}.txt")],
+            ),
+        )
+        for name in ("first", "second")
+    ]
+    config = {
+        "datadir": str(tmp_path),
+        "producer": {"mode": "main"},
+        "steps": {
+            consumer.name: {
+                "inputs": {
+                    "result": {"parameters": {"mode": "alternate"}},
+                },
+            }
+            for consumer in consumers
+        },
+    }
+    producer_path = tmp_path / "alternate" / "result.txt"
+    if producer_output_exists:
+        producer_path.parent.mkdir()
+        producer_path.touch()
+
+    plan = build_plan(
+        consumers,
+        config,
+        _registry={step.name: step for step in (producer, *consumers)},
+    )
+    return plan, producer_path
 
 
 def _validate_bundle_with_cwltool(
@@ -515,6 +576,71 @@ def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
         "producer.result",
         "consumer.producer.result",
     ]
+
+
+def test_shared_producer_is_generated_and_wired_once(tmp_path):
+    plan, _ = _shared_producer_plan(tmp_path)
+
+    generated = generate_cwl_bundle(list(plan.runs_to_execute))
+    workflow = yaml.safe_load(generated.run_cwl)
+    layout = yaml.safe_load(generated.output_layout)
+
+    assert set(generated.step_cwls) == {
+        "first.producer.cwl",
+        "first.cwl",
+        "second.cwl",
+    }
+    assert set(workflow["steps"]) == {
+        "step_first.producer",
+        "step_first",
+        "step_second",
+        "publish_outputs",
+    }
+    assert workflow["steps"]["step_first"]["in"]["result"] == (
+        "step_first.producer/result"
+    )
+    assert workflow["steps"]["step_second"]["in"]["result"] == (
+        "step_first.producer/result"
+    )
+    publication_sources = workflow["steps"]["publish_outputs"]["in"]["files"][
+        "source"
+    ]
+    assert publication_sources.count("step_first.producer/result") == 1
+    assert [entry["id"] for entry in layout["outputs"]] == [
+        "first.producer.result",
+        "first.first_result",
+        "second.second_result",
+    ]
+
+
+def test_reused_shared_producer_is_one_workflow_input(tmp_path):
+    plan, producer_path = _shared_producer_plan(
+        tmp_path,
+        producer_output_exists=True,
+    )
+
+    generated = generate_cwl_bundle(list(plan.runs_to_execute))
+    workflow = yaml.safe_load(generated.run_cwl)
+    inputs = resolve_run_sequence_inputs(
+        plan.runs_to_execute,
+        dict(plan.resolved_outputs),
+    )
+
+    assert set(generated.step_cwls) == {"first.cwl", "second.cwl"}
+    assert "step_first.producer" not in workflow["steps"]
+    assert workflow["inputs"] == {"first.producer.result": "File"}
+    assert workflow["steps"]["step_first"]["in"]["result"] == (
+        "first.producer.result"
+    )
+    assert workflow["steps"]["step_second"]["in"]["result"] == (
+        "first.producer.result"
+    )
+    assert inputs == {
+        "first.producer.result": {
+            "class": "File",
+            "path": str(producer_path.resolve()),
+        },
+    }
 
 
 def test_registered_step_output_paths_define_names(workflow_config):

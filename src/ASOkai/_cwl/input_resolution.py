@@ -123,6 +123,17 @@ def workflow_input_id(run: StepRun, input_name: str) -> str:
     return f"{run.run_id}.{input_name}"
 
 
+def workflow_file_input_id(
+    consumer_run: StepRun,
+    input_name: str,
+    source: Path | StepRunOutput,
+) -> str:
+    """Identify a top-level file input by its override or producer output."""
+    if isinstance(source, StepRunOutput):
+        return source.qualified_name
+    return workflow_input_id(consumer_run, input_name)
+
+
 def resolve_run_sequence_inputs(
     runs: list[StepRun] | tuple[StepRun, ...],
     resolved_outputs: dict[StepRunOutput, Path],
@@ -139,5 +150,19 @@ def resolve_run_sequence_inputs(
         for input_name, item in resolved.items():
             if item.cwl_value is None:
                 continue
-            workflow_inputs[workflow_input_id(run, input_name)] = item.cwl_value
+            if item.source == "scalar":
+                input_id = workflow_input_id(run, input_name)
+            else:
+                file_source = (
+                    item.producer_output
+                    if item.producer_output is not None
+                    else item.path
+                )
+                assert file_source is not None
+                input_id = workflow_file_input_id(
+                    run,
+                    input_name,
+                    file_source,
+                )
+            workflow_inputs[input_id] = item.cwl_value
     return workflow_inputs

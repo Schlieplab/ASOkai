@@ -125,6 +125,17 @@ def _validate_planned_connections(runs: list[StepRun]) -> None:
             if not isinstance(source, StepRunOutput):
                 continue
             producer = source.run
+            planned_producer = by_id.get(producer.run_id)
+            if planned_producer is not None and (
+                type(planned_producer.step) is not type(producer.step)
+                or planned_producer.config != producer.config
+                or planned_producer.inputs != producer.inputs
+            ):
+                raise ValueError(
+                    f"Run '{run.run_id}' input '{binding.file_input.name}' "
+                    "references a conflicting definition for planned run "
+                    f"'{producer.run_id}'."
+                )
             try:
                 declared = producer.step.spec.output(source.output.name)
             except KeyError as error:

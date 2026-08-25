@@ -82,12 +82,26 @@ class _RunSignature:
     input_sources: tuple[tuple[str, Path | StepRunOutput], ...]
 
 
+def _request_matches_step_config(
+    request: _RunRequest,
+    step: Step,
+    config: Mapping[str, Any],
+) -> bool:
+    """Return whether an existing request describes this step configuration."""
+    return type(request.step) is type(step) and request.config == config
+
+
 def _configured_producer_request_id(
     consumer_request_id: str,
     producer_step_name: str,
+    *,
+    input_name: str | None = None,
 ) -> str:
     """Return the contextual ID for a parameter-configured producer request."""
-    return f"{consumer_request_id}.{producer_step_name}"
+    context = consumer_request_id
+    if input_name is not None:
+        context = f"{context}.{input_name}"
+    return f"{context}.{producer_step_name}"
 
 
 def _run_signature(
@@ -190,9 +204,10 @@ class _PlanBuilder:
         """Reserve one request in the breadth-first discovery queue."""
         existing_request = self.requests.get(request_id)
         if existing_request is not None:
-            if (
-                type(existing_request.step) is not type(step)
-                or existing_request.config != config
+            if not _request_matches_step_config(
+                existing_request,
+                step,
+                config,
             ):
                 raise ValueError(
                     f"Request id '{request_id}' resolves to conflicting step "
@@ -248,6 +263,17 @@ class _PlanBuilder:
                 file_input,
                 producer_parameter_overrides,
             )
+            existing_request = self.requests.get(producer_request_id)
+            if existing_request is not None and not _request_matches_step_config(
+                existing_request,
+                producer,
+                producer_config,
+            ):
+                producer_request_id = _configured_producer_request_id(
+                    consumer_request.request_id,
+                    producer.name,
+                    input_name=file_input.name,
+                )
             producer_dependency_path = (
                 *consumer_request.dependency_path,
                 producer.name,

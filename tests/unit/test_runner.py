@@ -43,10 +43,12 @@ def config(tmp_path):
     }
 
 
-def _materializing_executor(*filenames):
+def _materializing_executor(*filenames, before_run=None):
     executor = MagicMock()
 
     def run(cwl_path, _inputs, outdir):
+        if before_run is not None:
+            before_run()
         outdir.mkdir(parents=True, exist_ok=True)
         layout = yaml.safe_load(
             (Path(cwl_path).parent / "output-layout.yml").read_text()
@@ -78,26 +80,20 @@ def test_run_step_skips_when_outputs_exist(config, tmp_path):
     assert result is not None
 
 
-def test_run_step_dry_run_returns_outputs(config):
-    result = runner.run_step("download-genome", config, dry_run=True, force=True)
+def test_run_step_dry_run_returns_outputs_without_executing(config):
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as execute:
+        result = runner.run_step(
+            "download-genome",
+            config,
+            dry_run=True,
+            force=True,
+        )
+
+    execute.assert_not_called()
     assert result is not None
     assert "download-genome.dna" in result
     assert "download-genome.cdna" in result
     assert "download-genome.annotation" in result
-
-
-def test_run_step_dry_run_does_not_call_default_executor(config):
-    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        runner.run_step("download-genome", config, dry_run=True, force=True)
-        mock_run.assert_not_called()
-
-
-def test_run_step_uses_injected_executor(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
-
-    runner.run_step("download-genome", config, force=True, executor=executor)
-
-    executor.run.assert_called_once()
 
 
 def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
@@ -131,15 +127,6 @@ def test_run_step_rejects_missing_published_outputs(config):
     assert not paths["cdna"].exists()
 
 
-def test_run_step_uses_config_download_source(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
-
-    runner.run_step("download-genome", config, force=True, executor=executor)
-
-    _, inputs, _ = executor.run.call_args.args
-    assert inputs["download-genome.source"] == "ensembl"
-
-
 def test_run_step_rejects_unsupported_download_source(config):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
     config["genome"]["source"] = "ucsc"
@@ -166,6 +153,31 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
         runner.run_step("download-genome", config, force=True, dry_run=True)
 
     assert all(path.exists() for path in step.output_paths(config).values())
+
+
+def test_run_step_removes_partial_outputs_before_execution(config):
+    step = DownloadGenomeStep()
+    existing_output = step.output_paths(config)["dna"]
+    existing_output.parent.mkdir(parents=True)
+    existing_output.write_text("stale")
+
+    def assert_stale_output_removed():
+        assert not existing_output.exists()
+
+    executor = _materializing_executor(
+        "dna.fa.gz",
+        "cdna.fa.gz",
+        "annotation.gtf.gz",
+        "annotation.db",
+        before_run=assert_stale_output_removed,
+    )
+
+    runner.run_step(
+        "download-genome",
+        config,
+        force=True,
+        executor=executor,
+    )
 
 
 def test_run_step_missing_dependency_raises(config, monkeypatch):

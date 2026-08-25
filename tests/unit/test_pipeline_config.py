@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from ASOkai.Plugins import FileInput, Step, StepSpec
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
     GenerateAntisenseCandidatesStep,
@@ -418,7 +420,21 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
         )
 
 
-def test_validate_step_config_rejects_missing_override_file(tmp_path):
+@pytest.mark.parametrize(
+    ("create_override", "message"),
+    [
+        (False, "file does not exist"),
+        (True, "path is not a file"),
+    ],
+)
+def test_validate_step_config_rejects_invalid_override_path(
+    tmp_path,
+    create_override,
+    message,
+):
+    override = tmp_path / "target.json"
+    if create_override:
+        override.mkdir()
     config = {
         "datadir": str(tmp_path),
         "genome": {"assembly_id": "GRCh38"},
@@ -431,7 +447,7 @@ def test_validate_step_config_rejects_missing_override_file(tmp_path):
             "generate-antisense-candidates": {
                 "inputs": {
                     "target_gene": {
-                        "path_override": str(tmp_path / "missing.json"),
+                        "path_override": str(override),
                     },
                 },
             },
@@ -448,7 +464,7 @@ def test_validate_step_config_rejects_missing_override_file(tmp_path):
         },
     }
 
-    with pytest.raises(ValueError, match="file does not exist"):
+    with pytest.raises(ValueError, match=message):
         cfg.validate_step_config(
             config,
             [GenerateAntisenseCandidatesStep()],
@@ -490,6 +506,39 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
             config,
             [GenerateAntisenseCandidatesStep()],
         )
+
+
+def test_validate_step_config_checks_configured_producer_parameter_type(
+    tmp_path,
+):
+    class ConfiguredConsumerStep(Step):
+        name = "consumer"
+        description = ""
+        spec = StepSpec(
+            inputs=[
+                FileInput(
+                    "target_gene",
+                    source=CreateTargetGeneStep.target_gene_output,
+                    configurable_parameters=("region",),
+                ),
+            ],
+        )
+    config = {
+        "datadir": str(tmp_path),
+        "steps": {
+            "consumer": {
+                "inputs": {
+                    "target_gene": {"parameters": {"region": 3}},
+                },
+            },
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"steps.consumer.inputs.target_gene.parameters.region.*must be one of",
+    ):
+        cfg.validate_step_config(config, [ConfiguredConsumerStep()])
 
 
 def test_validate_step_config_rejects_datadir_file(tmp_path):

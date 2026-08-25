@@ -75,6 +75,7 @@ def _make_step(
 
 def _make_configurable_producer_and_consumers(
     *consumer_names: str,
+    input_names: tuple[str, ...] = ("result",),
 ) -> tuple[Step, list[Step]]:
     """Return consumers that can override one producer's mode parameter."""
     output = FileOutput(
@@ -112,10 +113,11 @@ def _make_configurable_producer_and_consumers(
                 "spec": StepSpec(
                     inputs=[
                         FileInput(
-                            "result",
+                            input_name,
                             source=output,
                             configurable_parameters=("mode",),
-                        ),
+                        )
+                        for input_name in input_names
                     ],
                     outputs=[consumer_output],
                 ),
@@ -131,19 +133,23 @@ def _make_configurable_producer_and_consumer() -> tuple[Step, Step]:
     return producer, consumers[0]
 
 
-def _request_alternate_producer_run(config: dict) -> None:
-    """Request an alternate producer mode for the consumer's file input."""
+def _configure_producer_modes(
+    config: dict,
+    consumer_modes: dict[str, str],
+) -> None:
+    """Configure the main producer mode and each consumer-specific mode."""
     config.update(
         {
             "producer": {"mode": "main"},
             "steps": {
-                "consumer": {
+                consumer_name: {
                     "inputs": {
                         "result": {
-                            "parameters": {"mode": "alternate"},
+                            "parameters": {"mode": mode},
                         },
                     },
-                },
+                }
+                for consumer_name, mode in consumer_modes.items()
             },
         }
     )
@@ -518,7 +524,7 @@ def test_file_override_bypasses_dependency(config, tmp_path):
 
 def test_configured_producer_gets_a_dotted_run_id_and_derived_config(config):
     producer, consumer = _make_configurable_producer_and_consumer()
-    _request_alternate_producer_run(config)
+    _configure_producer_modes(config, {"consumer": "alternate"})
 
     plan = build_plan(
         [consumer],
@@ -541,18 +547,9 @@ def test_matching_configured_producer_requests_share_one_run(config):
         "second",
     )
     first, second = consumers
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                consumer.name: {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "alternate"}},
-                    },
-                }
-                for consumer in consumers
-            },
-        }
+    _configure_producer_modes(
+        config,
+        {consumer.name: "alternate" for consumer in consumers},
     )
 
     plan = build_plan(
@@ -575,22 +572,9 @@ def test_different_configured_producer_requests_keep_separate_runs(config):
         "second",
     )
     first, second = consumers
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                "first": {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "one"}},
-                    },
-                },
-                "second": {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "two"}},
-                    },
-                },
-            },
-        }
+    _configure_producer_modes(
+        config,
+        {"first": "one", "second": "two"},
     )
 
     plan = build_plan(
@@ -612,20 +596,47 @@ def test_different_configured_producer_requests_keep_separate_runs(config):
     assert first_source.run is not second_source.run
 
 
-def test_main_request_names_an_equivalent_configured_producer_run(config):
-    producer, consumer = _make_configurable_producer_and_consumer()
+def test_one_consumer_can_request_two_configurations_of_one_producer(config):
+    producer, consumers = _make_configurable_producer_and_consumers(
+        "consumer",
+        input_names=("first_result", "second_result"),
+    )
+    consumer = consumers[0]
     config.update(
         {
             "producer": {"mode": "main"},
             "steps": {
                 "consumer": {
                     "inputs": {
-                        "result": {"parameters": {"mode": "main"}},
+                        "first_result": {"parameters": {"mode": "one"}},
+                        "second_result": {"parameters": {"mode": "two"}},
                     },
                 },
             },
         }
     )
+
+    plan = build_plan(
+        [consumer],
+        config,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert _scheduled_run_ids(plan) == [
+        "consumer.producer",
+        "consumer.second_result.producer",
+        "consumer",
+    ]
+    producer_runs = [binding.source.run for binding in plan.goals[0].inputs]
+    assert [run.config["producer"]["mode"] for run in producer_runs] == [
+        "one",
+        "two",
+    ]
+
+
+def test_main_request_names_an_equivalent_configured_producer_run(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    _configure_producer_modes(config, {"consumer": "main"})
 
     plan = build_plan(
         [consumer, producer],
@@ -647,18 +658,9 @@ def test_matching_reusable_producer_requests_share_one_run(config, tmp_path):
     output_path = tmp_path / "alternate" / "result.txt"
     output_path.parent.mkdir()
     output_path.touch()
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                consumer.name: {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "alternate"}},
-                    },
-                }
-                for consumer in consumers
-            },
-        }
+    _configure_producer_modes(
+        config,
+        {consumer.name: "alternate" for consumer in consumers},
     )
 
     plan = build_plan(
@@ -681,18 +683,7 @@ def test_force_applies_to_a_shared_main_producer_run(config, tmp_path):
     output_path = tmp_path / "main" / "result.txt"
     output_path.parent.mkdir()
     output_path.touch()
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                "consumer": {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "main"}},
-                    },
-                },
-            },
-        }
-    )
+    _configure_producer_modes(config, {"consumer": "main"})
 
     plan = build_plan(
         [consumer, producer],
@@ -710,18 +701,7 @@ def test_force_applies_to_a_shared_main_producer_run(config, tmp_path):
 
 def test_non_recursive_recognizes_a_shared_main_producer_as_a_goal(config):
     producer, consumer = _make_configurable_producer_and_consumer()
-    config.update(
-        {
-            "producer": {"mode": "main"},
-            "steps": {
-                "consumer": {
-                    "inputs": {
-                        "result": {"parameters": {"mode": "main"}},
-                    },
-                },
-            },
-        }
-    )
+    _configure_producer_modes(config, {"consumer": "main"})
 
     plan = build_plan(
         [consumer, producer],
@@ -738,7 +718,7 @@ def test_existing_configured_producer_output_is_reused(config, tmp_path):
     configured_output = tmp_path / "alternate" / "result.txt"
     configured_output.parent.mkdir()
     configured_output.touch()
-    _request_alternate_producer_run(config)
+    _configure_producer_modes(config, {"consumer": "alternate"})
 
     plan = build_plan(
         [consumer],
@@ -808,7 +788,7 @@ def test_task_listed_producer_keeps_main_and_configured_run_separate(config):
     producer, consumer = _make_configurable_producer_and_consumer()
     registered_producer = type(producer)()
     registered_consumer = type(consumer)()
-    _request_alternate_producer_run(config)
+    _configure_producer_modes(config, {"consumer": "alternate"})
 
     class FakeTask:
         name = "task"

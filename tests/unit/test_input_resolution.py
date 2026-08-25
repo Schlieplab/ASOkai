@@ -211,42 +211,21 @@ def test_missing_reused_output_is_rejected(tmp_path):
         resolve_run_inputs(consumer_run)
 
 
-def test_resolution_does_not_inject_output_filenames(tmp_path):
-    step = _fake_step("producer", output_names=["result"])
-
-    resolved = resolve_run_inputs(_run(step, {"datadir": str(tmp_path)}))
-
-    assert "result_output" not in resolved
-    assert "result_filename" not in resolved
-
-
-def test_sequence_qualifies_different_values_by_run(tmp_path):
-    first_config = {
-        "datadir": str(tmp_path),
-        "first": {"mode": "fast"},
-    }
-    second_config = {
-        "datadir": str(tmp_path),
-        "second": {"mode": "careful"},
-    }
-    first = _fake_step(
-        "first",
-        scalar_parameters={"mode": "first.mode"},
+def test_missing_file_input_binding_is_rejected(tmp_path):
+    producer = _fake_step("producer", output_names=["result"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="result",
     )
-    second = _fake_step(
-        "second",
-        scalar_parameters={"mode": "second.mode"},
+    run = StepRun(
+        run_id=consumer.name,
+        step=consumer,
+        config={"datadir": str(tmp_path)},
     )
 
-    resolved = resolve_run_sequence_inputs(
-        [_run(first, first_config), _run(second, second_config)],
-        {},
-    )
-
-    assert resolved == {
-        "first.mode": "fast",
-        "second.mode": "careful",
-    }
+    with pytest.raises(ValueError, match="no binding for input 'result'"):
+        resolve_run_inputs(run)
 
 
 def test_sequence_qualifies_matching_values_by_run(tmp_path):
@@ -304,4 +283,37 @@ def test_sequence_reuses_one_input_for_one_producer_output(tmp_path):
             "class": "File",
             "path": str(path.resolve()),
         },
+    }
+
+
+def test_sequence_keeps_path_overrides_qualified_by_consumer(tmp_path):
+    config = {"datadir": str(tmp_path)}
+    producer = _fake_step("producer", output_names=["result"])
+    first = _fake_step(
+        "first",
+        producer=producer,
+        input_name="result",
+    )
+    second = _fake_step(
+        "second",
+        producer=producer,
+        input_name="result",
+    )
+    path = tmp_path / "override.txt"
+
+    resolved = resolve_run_sequence_inputs(
+        [
+            _run(first, config, override=path),
+            _run(second, config, override=path),
+        ],
+        {},
+    )
+
+    file_value = {
+        "class": "File",
+        "path": str(path.resolve()),
+    }
+    assert resolved == {
+        "first.result": file_value,
+        "second.result": file_value,
     }

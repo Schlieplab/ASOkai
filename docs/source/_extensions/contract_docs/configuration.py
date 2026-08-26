@@ -462,7 +462,7 @@ def config_table(fields: list[ConfigField]) -> nodes.table:
 
 
 def rules_section(rules: list[str]) -> nodes.section | None:
-    """Render configuration rules under a real heading."""
+    """Render cross-parameter rules under a real heading."""
     if not rules:
         return None
     rule_list = nodes.bullet_list()
@@ -470,7 +470,7 @@ def rules_section(rules: list[str]) -> nodes.section | None:
         item = nodes.list_item()
         item += nodes.paragraph(text=rule)
         rule_list += item
-    return section("Configuration rules", [rule_list])
+    return section("Parameter rules", [rule_list])
 
 
 def load_packaged_config_schema() -> tuple[Path, Mapping[str, Any]]:

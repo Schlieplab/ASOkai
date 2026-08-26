@@ -244,9 +244,11 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
     input_path = "steps.context-consumer.inputs.context_target"
 
     assert f"{input_path}.parameters.region" in reference
-    assert f"Producer parameters: {input_path}.parameters" in reference
-    assert "Allowed parameters: region" in reference
-    assert "an override or producer parameters, never both" in reference
+    assert f"Producer parameter: {input_path}.parameters.region" in reference
+    assert (
+        "producer parameters or a path override for an input, never both"
+        in reference
+    )
 
 
 def test_single_process_step_omits_process_count() -> None:
@@ -284,11 +286,20 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         for node in generated_nodes
         if isinstance(node, nodes.section)
     }
-    assert input_path in sections["Dependencies"].astext()
-    assert "config.yaml" in sections["Dependencies"].astext()
-    assert input_path not in sections["Configuration"].astext()
+    assert list(sections) == [
+        "Run this step",
+        "Parameters",
+        "Inputs",
+        "Resources",
+        "Outputs",
+    ]
+    assert "Dependencies" not in sections
+    assert "Configuration" not in sections
+    assert "datadir" not in sections["Parameters"].astext()
+    assert input_path in sections["Inputs"].astext()
+    assert "config.yaml" in sections["Inputs"].astext()
     override_examples = list(
-        sections["Dependencies"].findall(nodes.literal_block)
+        sections["Inputs"].findall(nodes.literal_block)
     )
     assert len(override_examples) == 1
     assert yaml.safe_load(override_examples[0].astext()) == {
@@ -303,8 +314,8 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         }
     }
     assert "{target}_k{k}_{region}_intrinsic.csv" in reference
-    assert "requires the target_gene input, normally supplied by" in reference
-    assert f"unless an existing file is configured at {input_path}" in reference
+    assert "Producer output: create-target-gene.target_gene" in reference
+    assert "Path override: " + input_path in reference
     assert (
         "GRCh38/targets/ENSG00000133703/analysis/intrinsic/"
         "ENSG00000133703_k16_pre-mrna_intrinsic.csv" in reference
@@ -340,6 +351,8 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     assert "JSON — TargetGene" in reference
     assert "CSV" in reference
     assert "Output columns" in reference
+    assert "Analysis" not in sections
+    assert "Output columns" in sections["Outputs"].astext()
     assert "first row is a header" in reference
     assert "Rows: Intrinsic features per target site" in reference
     assert "Applicability" not in reference

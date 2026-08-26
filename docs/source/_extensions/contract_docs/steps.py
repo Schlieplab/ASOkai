@@ -32,7 +32,6 @@ from .rendering import (
     details,
     document_link,
     documented_items,
-    documented_section,
     note_reference_dependencies,
     section,
     table,
@@ -118,25 +117,36 @@ def _inputs_table(
 ) -> nodes.table:
     rows = []
     for file_input in file_inputs:
-        source_name = f"{file_input.source.producer}.{file_input.source.name}"
+        producer_output = nodes.inline()
+        producer_output += document_link(
+            f"steps/{file_input.source.producer}",
+            file_input.source.producer,
+            refdoc=refdoc,
+        )
+        producer_output += nodes.Text(".")
+        producer_output += nodes.literal(
+            file_input.source.name,
+            file_input.source.name,
+        )
         input_details: list[tuple[str, str | nodes.Node, bool]] = [
-            ("Source", source_name, True)
+            ("Producer output", producer_output, False)
         ]
         configuration_path = file_input.configuration_path(step.name)
+        input_details.append(
+            (
+                "Path override",
+                f"{configuration_path}.path_override",
+                True,
+            )
+        )
         if file_input.configurable_parameters:
             input_details.extend(
                 (
-                    (
-                        "Producer parameters",
-                        f"{configuration_path}.parameters",
-                        True,
-                    ),
-                    (
-                        "Allowed parameters",
-                        ", ".join(file_input.configurable_parameters),
-                        True,
-                    ),
+                    "Producer parameter",
+                    f"{configuration_path}.parameters.{name}",
+                    True,
                 )
+                for name in file_input.configurable_parameters
             )
         input_details.extend(
             (
@@ -356,94 +366,6 @@ def _step_toctree(step_kind: str, *, parent: str) -> nodes.compound:
     return wrapper
 
 
-def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
-    if not step.spec.inputs:
-        return section(
-            "Dependencies",
-            [
-                nodes.paragraph(
-                    text=(
-                        "This step can run directly because it has no step "
-                        "dependencies."
-                    )
-                )
-            ],
-        )
-
-    grouped: dict[str, list[Any]] = {}
-    for file_input in step.spec.inputs:
-        grouped.setdefault(file_input.source.producer, []).append(file_input)
-
-    dependency_list = nodes.bullet_list()
-    for producer, inputs in grouped.items():
-        item = nodes.list_item()
-        paragraph = nodes.paragraph()
-        input_names = list(dict.fromkeys(file_input.name for file_input in inputs))
-        paragraph += nodes.Text("This step requires the ")
-        for index, input_name in enumerate(input_names):
-            if index:
-                paragraph += nodes.Text(", ")
-            paragraph += nodes.literal(input_name, input_name)
-        paragraph += nodes.Text(
-            " input, normally supplied by "
-            if len(input_names) == 1
-            else " inputs, normally supplied by "
-        )
-        paragraph += document_link(
-            f"steps/{producer}",
-            producer,
-            refdoc=refdoc,
-        )
-        paragraph += nodes.Text(". ")
-        input_paths = [
-            f"{file_input.configuration_path(step.name)}.path_override"
-            for file_input in inputs
-        ]
-        if len(inputs) == 1:
-            paragraph += nodes.Text(
-                "ASOkai runs this step unless an existing file is configured at "
-            )
-            paragraph += nodes.literal(input_paths[0], input_paths[0])
-            paragraph += nodes.Text(".")
-        else:
-            paragraph += nodes.Text(
-                "ASOkai runs this step unless existing files are configured for "
-                "every corresponding input."
-            )
-            paths = nodes.bullet_list()
-            for path in input_paths:
-                path_item = nodes.list_item()
-                path_paragraph = nodes.paragraph()
-                path_paragraph += nodes.literal(path, path)
-                path_item += path_paragraph
-                paths += path_item
-            item += paragraph
-            item += nodes.paragraph(text="Configure all of these paths:")
-            item += paths
-            dependency_list += item
-            continue
-        item += paragraph
-        dependency_list += item
-    return section(
-        "Dependencies",
-        [
-            nodes.paragraph(
-                text=(
-                    "ASOkai schedules dependencies whose valid outputs do not "
-                    "already exist. To use an existing file instead, set the "
-                    "listed path override in config.yaml. Overrides are "
-                    "validated against the input's file contract. For inputs "
-                    "with configurable producer parameters, configure either "
-                    "an override or producer parameters, never both."
-                )
-            ),
-            dependency_list,
-            nodes.paragraph(text="Example path-override configuration:"),
-            _path_override_example(step),
-        ],
-    )
-
-
 def _transitive_steps(step: Any) -> list[Any]:
     """Return dependencies followed by the selected step."""
     from ASOkai._pipeline.catalog import _BUILTIN_STEPS
@@ -661,15 +583,13 @@ def _analysis_output_section(
     )
 
 
-def _analysis_section(step: Any) -> nodes.section | None:
+def _analysis_output_sections(step: Any) -> list[nodes.section]:
+    """Return column documentation nested beneath analysis file outputs."""
     from ASOkai._pipeline.contracts.file_types import CsvFile
 
     analysis_type = getattr(step, "analysis_cls", None)
     if analysis_type is None:
-        return None
-    analysis = documented_section("Analysis", analysis_type)
-    if analysis is None:
-        analysis = section("Analysis", [])
+        return []
 
     csv_outputs = [
         (index, output)
@@ -677,14 +597,142 @@ def _analysis_section(step: Any) -> nodes.section | None:
         if isinstance(output.file_type, CsvFile)
     ]
     descriptions = documented_items(analysis_type)
+    output_sections = []
     for output_index, output in csv_outputs:
-        analysis += _analysis_output_section(
-            output,
-            descriptions,
-            is_primary=output_index == 0,
-            include_output_name=len(csv_outputs) > 1,
+        output_sections.append(
+            _analysis_output_section(
+                output,
+                descriptions,
+                is_primary=output_index == 0,
+                include_output_name=len(csv_outputs) > 1,
+            )
         )
-    return analysis
+    return output_sections
+
+
+def _parameters_section(
+    step: Any,
+    config_fields: list[Any],
+    schema: Mapping[str, Any],
+) -> nodes.section:
+    """Document scalar values passed directly to one step."""
+    parameter_paths = {
+        parameter.config
+        for parameter in step.spec.params
+        if parameter.config is not None
+    }
+    parameter_paths.update(step.spec.compatible_with)
+    parameter_fields = [
+        field for field in config_fields if field.path in parameter_paths
+    ]
+    children: list[nodes.Node] = []
+    if parameter_fields:
+        children.extend(
+            (
+                nodes.paragraph(
+                    text="These scalar configuration values are passed to this step."
+                ),
+                config_table(parameter_fields),
+            )
+        )
+    else:
+        children.append(
+            nodes.paragraph(text="This step has no scalar parameters.")
+        )
+
+    rules = rules_section(collect_step_schema_rules(step, schema))
+    if rules is not None:
+        children.append(rules)
+    return section("Parameters", children)
+
+
+def _inputs_section(step: Any, *, refdoc: str) -> nodes.section:
+    """Document file inputs together with their producer dependencies."""
+    if not step.spec.inputs:
+        return section(
+            "Inputs",
+            [
+                nodes.paragraph(
+                    text="This step has no file inputs or producer dependencies."
+                )
+            ],
+        )
+
+    return section(
+        "Inputs",
+        [
+            nodes.paragraph(
+                text=(
+                    "Each input is normally supplied by the linked producer "
+                    "output. ASOkai schedules that producer when its required "
+                    "outputs do not already exist. To use an existing file "
+                    "instead, set the input's path override in config.yaml. "
+                    "Overrides are validated against the input's file contract."
+                )
+            ),
+            _inputs_table(step, step.spec.inputs, refdoc=refdoc),
+            nodes.paragraph(
+                text=(
+                    "Inputs with exposed producer parameters can request a "
+                    "separate producer run. Configure producer parameters or "
+                    "a path override for an input, never both."
+                )
+            ),
+            nodes.paragraph(text="Example path-override configuration:"),
+            _path_override_example(step),
+        ],
+    )
+
+
+def _resources_section(step: Any, config_fields: list[Any]) -> nodes.section | None:
+    """Document configurable compute resources, when the step has any."""
+    resource_fields = [
+        field for field in config_fields if field.path.startswith("resources.")
+    ]
+    if not resource_fields:
+        return None
+    return section(
+        "Resources",
+        [
+            nodes.paragraph(
+                text=(
+                    "Configurable resources use the first value in the "
+                    "resolution order shown below."
+                )
+            ),
+            _resources_table(step, resource_fields),
+        ],
+    )
+
+
+def _outputs_section(
+    step: Any,
+    example_config: Mapping[str, Any],
+    *,
+    refdoc: str,
+) -> nodes.section:
+    """Document scalar and file outputs, including analysis table columns."""
+    if not step.spec.outputs:
+        return section(
+            "Outputs",
+            [nodes.paragraph(text="This step has no declared outputs.")],
+        )
+
+    children: list[nodes.Node] = [
+        nodes.paragraph(
+            text=(
+                "File output paths are relative to datadir. Braced names "
+                "are replaced with the corresponding parameter values."
+            )
+        ),
+        section("Scalar outputs", [_scalar_outputs_table()]),
+        section(
+            "File outputs",
+            [_file_outputs_table(step, example_config, refdoc=refdoc)],
+        ),
+    ]
+    children.extend(_analysis_output_sections(step))
+    return section("Outputs", children)
 
 
 def build_step_reference(
@@ -710,104 +758,14 @@ def build_step_reference(
     applicability = _applicability_section(step)
     if applicability is not None:
         result.append(applicability)
-    result.extend(
-        (
-            _invocation_section(step, example_config),
-            _dependency_section(step, refdoc=refdoc),
-        )
-    )
-
+    result.append(_invocation_section(step, example_config))
     step_config_fields = collect_step_config_fields(step, schema)
-    documented_config_fields = [
-        field
-        for field in step_config_fields
-        if not field.path.endswith(".path_override")
-    ]
-    ordinary_config_fields = [
-        field
-        for field in documented_config_fields
-        if not field.path.startswith("resources.")
-    ]
-    resource_config_fields = [
-        field
-        for field in documented_config_fields
-        if field.path.startswith("resources.")
-    ]
-    configuration_children: list[nodes.Node] = [
-        nodes.paragraph(
-            text=(
-                "These values are read directly by this step. Configuration "
-                "used only by a dependency is documented on that step's "
-                "linked reference page."
-            )
-        ),
-        config_table(ordinary_config_fields),
-    ]
-    if resource_config_fields:
-        configuration_children.append(
-            section(
-                "Resources",
-                [
-                    nodes.paragraph(
-                        text=(
-                            "Configurable resources use the first value in the "
-                            "resolution order shown below."
-                        )
-                    ),
-                    _resources_table(step, resource_config_fields),
-                ],
-            )
-        )
-    rules = rules_section(collect_step_schema_rules(step, schema))
-    if rules is not None:
-        configuration_children.append(rules)
-    result.append(section("Configuration", configuration_children))
-
-    analysis = _analysis_section(step)
-    if analysis is not None:
-        result.append(analysis)
-
-    input_children: list[nodes.Node]
-    if step.spec.inputs:
-        input_children = [_inputs_table(step, step.spec.inputs, refdoc=refdoc)]
-        input_children.append(
-            nodes.paragraph(
-                text=(
-                    "An input uses the listed producer output made with the "
-                    "main configuration unless an alternative is configured. "
-                    "Exposed producer parameters request a separate producer "
-                    "run."
-                )
-            )
-        )
-    else:
-        input_children = [nodes.paragraph(text="This step has no file inputs.")]
-    result.append(section("Inputs", input_children))
-
-    output_children: list[nodes.Node]
-    if step.spec.outputs:
-        output_children = [
-            nodes.paragraph(
-                text=(
-                    "File output paths are relative to datadir. Braced names "
-                    "are replaced with the corresponding configuration values."
-                )
-            ),
-            section("Scalar outputs", [_scalar_outputs_table()]),
-            section(
-                "File outputs",
-                [
-                    _file_outputs_table(
-                        step,
-                        example_config,
-                        refdoc=refdoc,
-                    )
-                ],
-            ),
-        ]
-    else:
-        output_children = [nodes.paragraph(text="This step has no declared outputs.")]
-    result.append(section("Outputs", output_children))
+    result.append(_parameters_section(step, step_config_fields, schema))
+    result.append(_inputs_section(step, refdoc=refdoc))
+    resources = _resources_section(step, step_config_fields)
+    if resources is not None:
+        result.append(resources)
+    result.append(_outputs_section(step, example_config, refdoc=refdoc))
 
     return result
 

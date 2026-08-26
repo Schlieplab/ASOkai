@@ -40,7 +40,7 @@ def test_members_are_runnables(workflow):
 def test_member_names(workflow):
     assert [m.name for m in workflow.members] == [
         "instantiate-target-gene",
-        "generate-antisense-candidates",
+        "generate-aso-candidates",
         "intrinsic-features",
     ]
 
@@ -49,6 +49,6 @@ def test_flattens_to_explicit_step_names(workflow):
     assert [s.name for s in _flatten_goals(workflow)] == [
         "download-genome",
         "create-target-gene",
-        "generate-antisense-candidates",
+        "generate-aso-candidates",
         "intrinsic-features",
     ]

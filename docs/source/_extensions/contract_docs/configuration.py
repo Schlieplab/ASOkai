@@ -31,6 +31,15 @@ class ConfigField:
     description: str
 
 
+@dataclass(frozen=True)
+class ConditionalParameterGroup:
+    """Parameters selected by one configuration value."""
+
+    discriminator: ConfigField
+    alternatives: Mapping[str, tuple[ConfigField, ...]]
+    explained_rules: frozenset[str]
+
+
 def _collect_config_fields(schema: Mapping[str, Any]) -> list[ConfigField]:
     """Collect documented leaf fields from a nested object schema."""
     fields: list[ConfigField] = []
@@ -438,6 +447,135 @@ def collect_step_schema_rules(
         if not rule_path
         or any(path == rule_path or path.startswith(f"{rule_path}.") for path in paths)
     ]
+
+
+def collect_conditional_parameter_groups(
+    config_fields: list[ConfigField],
+    schema: Mapping[str, Any],
+) -> list[ConditionalParameterGroup]:
+    """Return schema-defined alternatives among documented parameters."""
+    fields_by_path = {field.path: field for field in config_fields}
+    groups: list[ConditionalParameterGroup] = []
+
+    def visit(current: Mapping[str, Any], path: str) -> None:
+        alternatives_by_field: dict[str, dict[str, dict[str, set[str]]]] = {}
+        rules_by_field: dict[str, set[str]] = {}
+        branches = current.get("allOf")
+        if isinstance(branches, list):
+            for branch in branches:
+                if not isinstance(branch, Mapping):
+                    continue
+                condition = branch.get("if")
+                consequence = branch.get("then")
+                if not isinstance(condition, Mapping) or not isinstance(
+                    consequence,
+                    Mapping,
+                ):
+                    continue
+                condition_properties = condition.get("properties")
+                if not isinstance(condition_properties, Mapping):
+                    continue
+                discriminators = [
+                    (name, field_schema["const"])
+                    for name, field_schema in condition_properties.items()
+                    if isinstance(field_schema, Mapping)
+                    and isinstance(field_schema.get("const"), str)
+                ]
+                if len(discriminators) != 1:
+                    continue
+                discriminator_name, discriminator_value = discriminators[0]
+                discriminator_path = (
+                    f"{path}.{discriminator_name}"
+                    if path
+                    else discriminator_name
+                )
+                if discriminator_path not in fields_by_path:
+                    continue
+
+                required = {
+                    name
+                    for name in consequence.get("required", ())
+                    if isinstance(name, str)
+                }
+                included = set(required)
+                consequence_properties = consequence.get("properties")
+                if isinstance(consequence_properties, Mapping):
+                    included.update(
+                        name
+                        for name in consequence_properties
+                        if isinstance(name, str)
+                    )
+                excluded: set[str] = set()
+                negated = consequence.get("not")
+                if isinstance(negated, Mapping):
+                    forbidden_branches = negated.get("anyOf")
+                    if isinstance(forbidden_branches, list):
+                        for forbidden_branch in forbidden_branches:
+                            if not isinstance(forbidden_branch, Mapping):
+                                continue
+                            excluded.update(
+                                name
+                                for name in forbidden_branch.get("required", ())
+                                if isinstance(name, str)
+                            )
+
+                alternatives_by_field.setdefault(
+                    discriminator_path,
+                    {},
+                )[discriminator_value] = {
+                    "included": included,
+                    "required": required,
+                    "excluded": excluded,
+                }
+                for source in (branch, consequence):
+                    message = source.get("x-error-message")
+                    if isinstance(message, str):
+                        rules_by_field.setdefault(
+                            discriminator_path,
+                            set(),
+                        ).add(message)
+
+        for discriminator_path, alternatives in alternatives_by_field.items():
+            if len(alternatives) < 2:
+                continue
+            documented_alternatives: dict[str, tuple[ConfigField, ...]] = {}
+            for value, declarations in alternatives.items():
+                fields: list[ConfigField] = []
+                included_paths = {
+                    f"{path}.{name}" if path else name
+                    for name in declarations["included"]
+                    - declarations["excluded"]
+                }
+                for field in config_fields:
+                    if field.path not in included_paths:
+                        continue
+                    name = field.path.rsplit(".", maxsplit=1)[-1]
+                    requirement = (
+                        f"Required when {discriminator_path} is {value}"
+                        if name in declarations["required"]
+                        else f"Optional when {discriminator_path} is {value}"
+                    )
+                    fields.append(replace(field, requirement=requirement))
+                documented_alternatives[value] = tuple(fields)
+            groups.append(
+                ConditionalParameterGroup(
+                    discriminator=fields_by_path[discriminator_path],
+                    alternatives=documented_alternatives,
+                    explained_rules=frozenset(
+                        rules_by_field.get(discriminator_path, ())
+                    ),
+                )
+            )
+
+        properties = current.get("properties")
+        if isinstance(properties, Mapping):
+            for name, child in properties.items():
+                if isinstance(child, Mapping):
+                    child_path = f"{path}.{name}" if path else name
+                    visit(child, child_path)
+
+    visit(schema, "")
+    return groups
 
 
 def config_table(fields: list[ConfigField]) -> nodes.table:

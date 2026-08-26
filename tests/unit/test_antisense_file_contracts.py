@@ -19,8 +19,8 @@ from ASOkai.Antisense import (
 )
 from ASOkai.Biochemistry import RNaseH1Mechanism
 from ASOkai.Plugins import JsonFile
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 
 
@@ -57,9 +57,9 @@ def sirna() -> siRNA:
 
 def test_step_declares_typed_antisense_collections():
     therapeutics_file = (
-        GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+        GenerateASOCandidatesStep.therapeutics_output.file_type
     )
-    bindings_file = GenerateAntisenseCandidatesStep.bindings_output.file_type
+    bindings_file = GenerateASOCandidatesStep.bindings_output.file_type
 
     assert isinstance(therapeutics_file, JsonFile)
     assert isinstance(bindings_file, JsonFile)
@@ -68,7 +68,7 @@ def test_step_declares_typed_antisense_collections():
 
 
 def _assert_therapeutic_roundtrip(therapeutic: AntisenseTherapeutic) -> None:
-    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([therapeutic]))
 
@@ -85,7 +85,7 @@ def test_aso_collection_roundtrip_reconstructs_domain_values(aso):
 
 def test_gapmer_collection_roundtrip_reconstructs_domain_values(gapmer):
     _assert_therapeutic_roundtrip(gapmer)
-    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([gapmer]))
 
@@ -94,7 +94,7 @@ def test_gapmer_collection_roundtrip_reconstructs_domain_values(gapmer):
 
 def test_sirna_collection_roundtrip_reconstructs_domain_values(sirna):
     _assert_therapeutic_roundtrip(sirna)
-    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([sirna]))
 
@@ -103,7 +103,7 @@ def test_sirna_collection_roundtrip_reconstructs_domain_values(sirna):
 
 
 def test_binding_collection_roundtrip_reconstructs_domain_values():
-    file_type = GenerateAntisenseCandidatesStep.bindings_output.file_type
+    file_type = GenerateASOCandidatesStep.bindings_output.file_type
     binding = Binding("aso-1", "site-1")
 
     restored = file_type.loads(file_type.dumps([binding]))
@@ -115,7 +115,7 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
 
 
 def test_gapmer_collection_rejects_invalid_segment_length(gapmer):
-    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([gapmer]))
     document[0]["gap_length"] = 0
 
@@ -124,7 +124,7 @@ def test_gapmer_collection_rejects_invalid_segment_length(gapmer):
 
 
 def test_binding_collection_rejects_invalid_ids():
-    file_type = GenerateAntisenseCandidatesStep.bindings_output.file_type
+    file_type = GenerateASOCandidatesStep.bindings_output.file_type
     document = json.loads(file_type.dumps([Binding("aso-1", "site-1")]))
     document[0]["site_id"] = []
 
@@ -133,7 +133,7 @@ def test_binding_collection_rejects_invalid_ids():
 
 
 def test_typed_collection_schema_rejects_the_wrong_item_type():
-    file_type = GenerateAntisenseCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
     with pytest.raises(ValueError, match=r"\$\[0\]"):
         file_type.dumps(cast(Any, [Binding("aso-1", "site-1")]))

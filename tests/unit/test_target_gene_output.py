@@ -15,8 +15,8 @@ from ASOkai.Sites import GenomicSite, TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai.Plugins import FileInput, FileOutput, JsonFile
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 
 
@@ -27,7 +27,7 @@ def output() -> FileOutput:
 
 @pytest.fixture
 def input_contract() -> FileInput:
-    return GenerateAntisenseCandidatesStep.target_gene_input
+    return GenerateASOCandidatesStep.target_gene_input
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Tests for GenerateAntisenseCandidatesStep."""
+"""Tests for GenerateASOCandidatesStep."""
 
 import json
 
@@ -13,8 +13,8 @@ from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
 from ASOkai.Plugins import CoreStep, FileInput, JsonFile, Step
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 
 
@@ -48,13 +48,13 @@ def config(tmp_path):
 
 @pytest.fixture
 def step():
-    return GenerateAntisenseCandidatesStep()
+    return GenerateASOCandidatesStep()
 
 
 def test_step_contract_and_dependency(step):
     assert isinstance(step, Step)
     assert isinstance(step, CoreStep)
-    assert step.name == "generate-antisense-candidates"
+    assert step.name == "generate-aso-candidates"
     assert step.dependencies == ["create-target-gene"]
     assert (
         step.spec.input("target_gene").source
@@ -72,7 +72,6 @@ def test_config_and_input_mapping(step):
         "target_name": "target.target_name",
         "k": "target.k",
         "region": "target.region",
-        "modality": "antisense.modality",
         "design": "antisense.design.type",
         "left_wing_length": "antisense.design.left_wing_length",
         "gap_length": "antisense.design.gap_length",
@@ -80,7 +79,7 @@ def test_config_and_input_mapping(step):
         "mechanism": "antisense.mechanism",
     }
     assert step.target_gene_input.configuration_path(step.name) == (
-        "steps.generate-antisense-candidates.inputs.target_gene"
+        "steps.generate-aso-candidates.inputs.target_gene"
     )
 
 
@@ -139,9 +138,8 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config):
     assert document["baseCommand"] == [
         "ASOkai",
         "step",
-        "generate-antisense-candidates",
+        "generate-aso-candidates",
     ]
-    assert document["inputs"]["modality"]["type"]["type"] == "enum"
     assert document["inputs"]["design"]["type"]["type"] == "enum"
     assert document["inputs"]["mechanism"]["type"]["type"] == "enum"
     assert document["inputs"]["left_wing_length"]["type"] == "int?"
@@ -180,7 +178,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
     therapeutics_output = tmp_path / "nested" / "therapeutics.json"
     bindings_output = tmp_path / "nested" / "bindings.json"
 
-    result = GenerateAntisenseCandidatesStep().run_cli(
+    result = GenerateASOCandidatesStep().run_cli(
         [
             "--assembly",
             "GRCh38",
@@ -190,8 +188,6 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
             "16",
             "--region",
             "pre-mrna",
-            "--modality",
-            "aso",
             "--design",
             "gapmer",
             "--left-wing-length",
@@ -243,7 +239,7 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = GenerateAntisenseCandidatesStep().run_cli(
+    result = GenerateASOCandidatesStep().run_cli(
         [
             "--assembly",
             "GRCh38",
@@ -253,8 +249,6 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
             "4",
             "--region",
             "pre-mrna",
-            "--modality",
-            "aso",
             "--design",
             "unmodified",
             "--mechanism",
@@ -295,7 +289,7 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = GenerateAntisenseCandidatesStep().run_cli(
+    result = GenerateASOCandidatesStep().run_cli(
         [
             "--assembly",
             "GRCh38",
@@ -305,8 +299,6 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
             "16",
             "--region",
             "pre-mrna",
-            "--modality",
-            "aso",
             "--design",
             "unmodified",
             "--mechanism",
@@ -338,7 +330,7 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
     )
 
     with pytest.raises(SystemExit) as error:
-        GenerateAntisenseCandidatesStep().run_cli(
+        GenerateASOCandidatesStep().run_cli(
             [
                 "--assembly",
                 "GRCh38",
@@ -348,8 +340,6 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
                 "16",
                 "--region",
                 "pre-mrna",
-                "--modality",
-                "aso",
                 "--design",
                 "unmodified",
                 "--mechanism",

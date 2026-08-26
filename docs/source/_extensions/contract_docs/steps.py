@@ -20,6 +20,8 @@ from sphinx import addnodes
 from sphinx.util.docutils import SphinxDirective
 
 from .configuration import (
+    ConditionalParameterGroup,
+    collect_conditional_parameter_groups,
     collect_step_config_fields,
     collect_step_schema_rules,
     config_table,
@@ -29,6 +31,7 @@ from .configuration import (
     rules_section,
 )
 from .rendering import (
+    code_block,
     details,
     document_link,
     documented_items,
@@ -614,6 +617,7 @@ def _parameters_section(
     step: Any,
     config_fields: list[Any],
     schema: Mapping[str, Any],
+    example_config: Mapping[str, Any],
 ) -> nodes.section:
     """Document scalar values passed directly to one step."""
     parameter_paths = {
@@ -625,25 +629,109 @@ def _parameters_section(
     parameter_fields = [
         field for field in config_fields if field.path in parameter_paths
     ]
+    conditional_groups = collect_conditional_parameter_groups(
+        parameter_fields,
+        schema,
+    )
+    conditional_paths = {
+        group.discriminator.path
+        for group in conditional_groups
+    }
+    conditional_paths.update(
+        field.path
+        for group in conditional_groups
+        for fields in group.alternatives.values()
+        for field in fields
+    )
+    common_fields = [
+        field for field in parameter_fields if field.path not in conditional_paths
+    ]
     children: list[nodes.Node] = []
-    if parameter_fields:
+    if common_fields:
+        parameter_table = config_table(common_fields)
+        if conditional_groups:
+            parameter_table = section(
+                "Common parameters",
+                [parameter_table],
+            )
         children.extend(
             (
                 nodes.paragraph(
                     text="These scalar configuration values are passed to this step."
                 ),
-                config_table(parameter_fields),
+                parameter_table,
             )
         )
-    else:
+    elif not conditional_groups:
         children.append(
             nodes.paragraph(text="This step has no scalar parameters.")
         )
 
-    rules = rules_section(collect_step_schema_rules(step, schema))
+    children.extend(
+        _conditional_parameter_section(group, example_config)
+        for group in conditional_groups
+    )
+    explained_rules = {
+        rule
+        for group in conditional_groups
+        for rule in group.explained_rules
+    }
+    remaining_rules = [
+        rule
+        for rule in collect_step_schema_rules(step, schema)
+        if rule not in explained_rules
+    ]
+    rules = rules_section(remaining_rules)
     if rules is not None:
         children.append(rules)
     return section("Parameters", children)
+
+
+def _conditional_parameter_section(
+    group: ConditionalParameterGroup,
+    example_config: Mapping[str, Any],
+) -> nodes.section:
+    """Render one schema-defined set of parameter alternatives."""
+    parent_name = group.discriminator.path.split(".")[-2]
+    alternatives: list[nodes.Node] = []
+    for value, fields in group.alternatives.items():
+        description = nodes.paragraph()
+        description += nodes.Text("Set ")
+        description += nodes.literal(
+            group.discriminator.path,
+            group.discriminator.path,
+        )
+        description += nodes.Text(" to ")
+        description += nodes.literal(value, value)
+        description += nodes.Text(".")
+
+        variant_config: dict[str, Any] = {}
+        _assign_path(variant_config, group.discriminator.path, value)
+        for field in fields:
+            example_value = _resolve_optional(example_config, field.path)
+            if example_value is not None:
+                _assign_path(variant_config, field.path, example_value)
+        example = yaml.safe_dump(variant_config, sort_keys=False).rstrip()
+
+        variant_children: list[nodes.Node] = [
+            description,
+            nodes.paragraph(text="Example configuration:"),
+            code_block(example, "yaml"),
+        ]
+        if fields:
+            variant_children.append(config_table(list(fields)))
+        else:
+            variant_children.append(
+                nodes.paragraph(
+                    text="This option has no additional parameters."
+                )
+            )
+        value_label = str(value).replace("-", " ").capitalize()
+        alternatives.append(
+            section(f"{value_label} {parent_name}", variant_children)
+        )
+    group_title = f"{parent_name.capitalize()}s"
+    return section(group_title, alternatives)
 
 
 def _inputs_section(step: Any, *, refdoc: str) -> nodes.section:
@@ -760,7 +848,14 @@ def build_step_reference(
         result.append(applicability)
     result.append(_invocation_section(step, example_config))
     step_config_fields = collect_step_config_fields(step, schema)
-    result.append(_parameters_section(step, step_config_fields, schema))
+    result.append(
+        _parameters_section(
+            step,
+            step_config_fields,
+            schema,
+            example_config,
+        )
+    )
     result.append(_inputs_section(step, refdoc=refdoc))
     resources = _resources_section(step, step_config_fields)
     if resources is not None:

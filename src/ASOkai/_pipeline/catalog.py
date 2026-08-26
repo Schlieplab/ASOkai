@@ -21,8 +21,8 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
@@ -40,7 +40,7 @@ from ASOkai.Plugins._validation import (
 _BUILTIN_STEPS: list[Step] = [
     DownloadGenomeStep(),
     CreateTargetGeneStep(),
-    GenerateAntisenseCandidatesStep(),
+    GenerateASOCandidatesStep(),
     IntrinsicFeaturesStep(),
 ]
 

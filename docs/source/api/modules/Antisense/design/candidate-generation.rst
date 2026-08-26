@@ -17,3 +17,8 @@ Generators construct candidate therapeutics from target sites.
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. autoclass:: ASOkai.Antisense.SiRNACandidateGenerator
+   :members:
+   :undoc-members:
+   :show-inheritance:

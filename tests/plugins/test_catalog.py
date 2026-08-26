@@ -185,7 +185,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "FileInput",
         "FileOutput",
         "FileType",
-        "GenerateAntisenseCandidatesStep",
+        "GenerateASOCandidatesStep",
         "IntrinsicFeaturesStep",
         "JsonFile",
         "OutputPathTemplate",

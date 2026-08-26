@@ -185,7 +185,7 @@ def test_workflow_reference_links_members_and_expanded_steps() -> None:
         "/tasks/instantiate-target-gene",
         "/steps/download-genome",
         "/steps/create-target-gene",
-        "/steps/generate-antisense-candidates",
+        "/steps/generate-aso-candidates",
         "/steps/intrinsic-features",
     }
 
@@ -387,17 +387,17 @@ def test_step_reference_renders_only_declared_applicability() -> None:
     assert "rnase-h1" in reference
 
 
-def test_candidate_generation_has_no_assumed_applicability() -> None:
-    step = get_built_in_step("generate-antisense-candidates")
+def test_aso_candidate_generation_declares_its_modality() -> None:
+    step = get_built_in_step("generate-aso-candidates")
     generated_nodes = build_step_reference(step, _config_schema())
     reference = "\n".join(node.astext() for node in generated_nodes)
 
-    assert step.spec.compatible_with == {}
-    assert "Applicability" not in reference
+    assert step.spec.compatible_with == {"antisense.modality": ("aso",)}
+    assert "Applicability" in reference
 
 
 def test_candidate_generation_documents_conditional_design_fields() -> None:
-    step = get_built_in_step("generate-antisense-candidates")
+    step = get_built_in_step("generate-aso-candidates")
     fields = {
         field.path: field
         for field in collect_step_config_fields(step, _config_schema())
@@ -423,9 +423,52 @@ def test_candidate_generation_documents_conditional_design_fields() -> None:
     ) in rules
 
 
+def test_candidate_generation_separates_design_parameters() -> None:
+    step = get_built_in_step("generate-aso-candidates")
+    generated_nodes = build_step_reference(step, _config_schema())
+    sections = {
+        generated_section[0].astext(): generated_section
+        for root in generated_nodes
+        for generated_section in root.findall(nodes.section)
+    }
+
+    common_parameters = sections["Common parameters"].astext()
+    gapmer_design = sections["Gapmer design"]
+    unmodified_design = sections["Unmodified design"]
+
+    assert "antisense.design.type" not in common_parameters
+    assert yaml.safe_load(
+        next(gapmer_design.findall(nodes.literal_block)).astext()
+    ) == {
+        "antisense": {
+            "design": {
+                "type": "gapmer",
+                "left_wing_length": 3,
+                "gap_length": 10,
+                "right_wing_length": 3,
+            }
+        }
+    }
+    assert yaml.safe_load(
+        next(unmodified_design.findall(nodes.literal_block)).astext()
+    ) == {"antisense": {"design": {"type": "unmodified"}}}
+    for field_name in (
+        "left_wing_length",
+        "gap_length",
+        "right_wing_length",
+    ):
+        assert f"antisense.design.{field_name}" in gapmer_design.astext()
+        assert f"antisense.design.{field_name}" not in unmodified_design.astext()
+
+    parameters = sections["Parameters"].astext()
+    assert "A gapmer design requires" not in parameters
+    assert "An unmodified design must not define" not in parameters
+    assert "exactly one of these config values is required" in parameters
+
+
 def test_json_file_contract_maps_to_its_serializable_class() -> None:
     target_step = get_built_in_step("create-target-gene")
-    candidate_step = get_built_in_step("generate-antisense-candidates")
+    candidate_step = get_built_in_step("generate-aso-candidates")
 
     assert json_contract_types(target_step.target_gene_output.file_type) == (
         TargetGene,

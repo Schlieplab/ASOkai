@@ -17,6 +17,7 @@ from ._candidate_generator import (
     ASOCandidateGenerator,
     AntisenseCandidateGenerator,
     GapmerCandidateGenerator,
+    SiRNACandidateGenerator,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "AntisenseCandidateGenerator",
     "ASOCandidateGenerator",
     "GapmerCandidateGenerator",
+    "SiRNACandidateGenerator",
 ]

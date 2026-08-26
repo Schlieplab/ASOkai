@@ -18,8 +18,11 @@ from ASOkai.Antisense import (
     AntisenseTherapeutic,
     Gapmer,
     GapmerCandidateGenerator,
+    Oligonucleotide,
+    SiRNACandidateGenerator,
+    siRNA,
 )
-from ASOkai.Biochemistry import RNaseH1Mechanism
+from ASOkai.Biochemistry import MechanismOfAction, RNaseH1Mechanism
 from ASOkai.Sites import Site, TranscriptSite
 
 
@@ -41,6 +44,16 @@ class TwoCandidateGenerator(AntisenseCandidateGenerator):
                 mechanism=self.mechanism,
             ),
         ]
+
+
+class ExampleRNAInterferenceMechanism(MechanismOfAction):
+    """Test-only mechanism for siRNA candidate construction."""
+
+
+def test_candidate_generators_follow_the_modality_hierarchy():
+    assert issubclass(ASOCandidateGenerator, AntisenseCandidateGenerator)
+    assert issubclass(GapmerCandidateGenerator, ASOCandidateGenerator)
+    assert issubclass(SiRNACandidateGenerator, AntisenseCandidateGenerator)
 
 
 def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
@@ -109,6 +122,30 @@ def test_aso_generator_preserves_the_site_for_each_binding():
         (therapeutics[0].id, first_site.id),
         (therapeutics[1].id, second_site.id),
     ]
+
+
+def test_sirna_generator_creates_an_antiparallel_duplex_for_each_site():
+    site = TranscriptSite(
+        id="target-S00001",
+        loci=[TranscriptLocus("transcript-1", 0, 4)],
+        sequence=Seq("ATGC"),
+    )
+    generator = SiRNACandidateGenerator(
+        mechanism=ExampleRNAInterferenceMechanism()
+    )
+
+    therapeutics, bindings = generator.generate([site])
+
+    assert len(therapeutics) == 1
+    therapeutic = therapeutics[0]
+    assert isinstance(therapeutic, siRNA)
+    assert isinstance(therapeutic.antisense_strand, Oligonucleotide)
+    assert therapeutic.id == "target-S00001-siRNA"
+    assert therapeutic.antisense_strand.sequence == Seq("GCAT")
+    assert therapeutic.sense_strand.sequence == Seq("ATGC")
+    assert len(bindings) == 1
+    assert bindings[0].therapeutic_id == therapeutic.id
+    assert bindings[0].site_id == site.id
 
 
 def test_generator_returns_empty_collections_without_sites():

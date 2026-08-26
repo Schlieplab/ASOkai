@@ -17,9 +17,11 @@ target:
 antisense:
   modality: aso
   mechanism: rnase-h1
-  chemistry:
+  design:
     type: gapmer
-    layout: "3-10-3"
+    left_wing_length: 3
+    gap_length: 10
+    right_wing_length: 3
 
 resources:
   default:
@@ -31,7 +33,7 @@ resources:
   create-target-gene:
     n_processes: 1
     memory_mb: 4096
-  generate-antisense-candidates:
+  generate-aso-candidates:
     n_processes: 1
     memory_mb: 4096
   intrinsic-features:

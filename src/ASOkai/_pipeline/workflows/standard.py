@@ -15,8 +15,8 @@ from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 
@@ -24,11 +24,11 @@ from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGene
 class StandardWorkflow:
     name: ClassVar[str] = "standard"
     description: ClassVar[str] = (
-        "Full pipeline: genome download → target gene creation → antisense "
+        "Full pipeline: genome download → target gene creation → ASO "
         "candidate generation → intrinsic features."
     )
     members: list[Runnable] = [
         InstantiateTargetGeneTask(),
-        GenerateAntisenseCandidatesStep(),
+        GenerateASOCandidatesStep(),
         IntrinsicFeaturesStep(),
     ]

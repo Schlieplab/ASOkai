@@ -17,6 +17,8 @@ from ._antisense_therapeutic import AntisenseTherapeutic
 from ._aso import ASO
 from ._binding import Binding
 from ._gapmer import Gapmer
+from ._oligonucleotide import Oligonucleotide
+from ._sirna import siRNA
 
 
 class AntisenseCandidateGenerator(ABC):
@@ -80,5 +82,24 @@ class GapmerCandidateGenerator(ASOCandidateGenerator):
                 left_wing_length=self.left_wing_length,
                 gap_length=self.gap_length,
                 right_wing_length=self.right_wing_length,
+            )
+        ]
+
+
+class SiRNACandidateGenerator(AntisenseCandidateGenerator):
+    """Generate one siRNA duplex for each target site."""
+
+    def __init__(self, mechanism: MechanismOfAction):
+        self.mechanism = mechanism
+
+    def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
+        return [
+            siRNA(
+                id=f"{site.id}-siRNA",
+                antisense_strand=Oligonucleotide(
+                    sequence=site.sequence.reverse_complement(),
+                ),
+                sense_strand=Oligonucleotide(sequence=site.sequence),
+                mechanism=self.mechanism,
             )
         ]

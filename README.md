@@ -119,7 +119,7 @@ ASOkai run --tasks instantiate-target-gene
 ASOkai run --workflow standard
 
 # Run multiple selected units
-ASOkai run --steps generate-antisense-candidates intrinsic-features
+ASOkai run --steps generate-aso-candidates intrinsic-features
 
 # Export the selected goals as a CWL job bundle without executing them
 ASOkai export --workflow standard

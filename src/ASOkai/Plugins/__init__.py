@@ -27,8 +27,8 @@ from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
@@ -43,7 +43,7 @@ __all__ = [
     "FileInput",
     "FileOutput",
     "FileType",
-    "GenerateAntisenseCandidatesStep",
+    "GenerateASOCandidatesStep",
     "IntrinsicFeaturesStep",
     "JsonFile",
     "OutputPathTemplate",

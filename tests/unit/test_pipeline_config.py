@@ -12,8 +12,8 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 )
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.core.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_aso_candidates import (
+    GenerateASOCandidatesStep,
 )
 
 
@@ -142,7 +142,7 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
     ):
         cfg.validate_step_config(
             config,
-            [GenerateAntisenseCandidatesStep()],
+            [GenerateASOCandidatesStep()],
         )
 
 
@@ -165,8 +165,31 @@ def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
     cfg.validate_config_schema(config)
     cfg.validate_step_config(
         config,
-        [GenerateAntisenseCandidatesStep()],
+        [GenerateASOCandidatesStep()],
     )
+
+
+def test_aso_step_rejects_a_different_modality(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {"assembly_id": "GRCh38"},
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+        },
+        "antisense": {
+            "modality": "sirna",
+            "mechanism": "rnase-h1",
+            "design": {"type": "unmodified"},
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"antisense.modality.*incompatible.*generate-aso-candidates",
+    ):
+        cfg.validate_step_config(config, [GenerateASOCandidatesStep()])
 
 
 def test_config_schema_allows_plugin_namespaces(tmp_path):
@@ -447,11 +470,11 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
     cfg.validate_config_schema(config)
     with pytest.raises(
         ValueError,
-        match=r"generate-antisense-candidates.*target-site length \(18\)",
+        match=r"generate-aso-candidates.*target-site length \(18\)",
     ):
         cfg.validate_step_config(
             config,
-            [GenerateAntisenseCandidatesStep()],
+            [GenerateASOCandidatesStep()],
         )
 
 
@@ -479,7 +502,7 @@ def test_validate_step_config_rejects_invalid_override_path(
             "region": "pre-mrna",
         },
         "steps": {
-            "generate-antisense-candidates": {
+            "generate-aso-candidates": {
                 "inputs": {
                     "target_gene": {
                         "path_override": str(override),
@@ -502,7 +525,7 @@ def test_validate_step_config_rejects_invalid_override_path(
     with pytest.raises(ValueError, match=message):
         cfg.validate_step_config(
             config,
-            [GenerateAntisenseCandidatesStep()],
+            [GenerateASOCandidatesStep()],
         )
 
 
@@ -518,7 +541,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
             "region": "pre-mrna",
         },
         "steps": {
-            "generate-antisense-candidates": {
+            "generate-aso-candidates": {
                 "inputs": {
                     "target_gene": {"path_override": str(override)},
                 },
@@ -539,7 +562,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
     with pytest.raises(ValueError, match="Invalid JSON"):
         cfg.validate_step_config(
             config,
-            [GenerateAntisenseCandidatesStep()],
+            [GenerateASOCandidatesStep()],
         )
 
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/core/generate_antisense_candidates.py
+Filename: src/ASOkai/_pipeline/steps/core/generate_aso_candidates.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Definition of the antisense-candidate generation step.
+Description: Definition of the ASO-candidate generation step.
 License: LGPL-3.0-or-later
 """
 
@@ -26,9 +26,9 @@ from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
-class GenerateAntisenseCandidatesStep(CoreStep):
-    name = "generate-antisense-candidates"
-    description = "Generates antisense therapeutic candidates for target sites."
+class GenerateASOCandidatesStep(CoreStep):
+    name = "generate-aso-candidates"
+    description = "Generates ASO candidates for target sites."
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
@@ -39,20 +39,20 @@ class GenerateAntisenseCandidatesStep(CoreStep):
         file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_{modality}_{design}_{mechanism}_"
+            "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
             "therapeutics.json",
             fields={
                 "target": TemplateField.first_of("target_id", "target_name"),
             },
         ),
-        doc="Serialized antisense therapeutic candidates.",
+        doc="Serialized ASO candidates.",
     )
     bindings_output = FileOutput(
         "bindings",
         file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_{modality}_{design}_{mechanism}_"
+            "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
             "bindings.json",
             fields={
                 "target": TemplateField.first_of("target_id", "target_name"),
@@ -71,7 +71,6 @@ class GenerateAntisenseCandidatesStep(CoreStep):
             ScalarParam("target_name", str | None, config="target.target_name"),
             ScalarParam("k", int, config="target.k"),
             ScalarParam("region", TargetRegion, config="target.region"),
-            ScalarParam("modality", Literal["aso"], config="antisense.modality"),
             ScalarParam(
                 "design",
                 Literal["unmodified", "gapmer"],
@@ -103,6 +102,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
         ],
         inputs=[target_gene_input],
         outputs=[therapeutics_output, bindings_output],
+        compatible_with={"antisense.modality": ["aso"]},
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
@@ -130,7 +130,7 @@ class GenerateAntisenseCandidatesStep(CoreStep):
             )
 
     def run_from_args(self, args) -> int:
-        """Generate and serialize antisense candidates and their bindings."""
+        """Generate and serialize ASO candidates and their bindings."""
         from ASOkai.Antisense import (
             ASOCandidateGenerator,
             GapmerCandidateGenerator,

@@ -13,7 +13,7 @@ from typing import Literal, TypeAlias
 Scalar: TypeAlias = str | int | float | bool | None
 Strand: TypeAlias = Literal["+", "-"]
 TargetRegion: TypeAlias = Literal[
-    "exonic_only",
+    "exonic",
     "pre-mrna",
     "transcriptomic",
 ]

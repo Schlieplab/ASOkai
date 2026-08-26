@@ -25,7 +25,7 @@ def test_scalar_contains_supported_scalar_values():
 def test_shared_domain_types_are_available_from_types_namespace():
     assert set(get_args(Types.Strand)) == {"+", "-"}
     assert set(get_args(Types.TargetRegion)) == {
-        "exonic_only",
+        "exonic",
         "pre-mrna",
         "transcriptomic",
     }

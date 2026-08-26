@@ -42,6 +42,30 @@ PROJECT_ROOT = Path(__file__).parents[4]
 EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "examples/config.example.yaml"
 
 
+def _path_override_example(step: Any) -> nodes.literal_block:
+    """Build a complete YAML path-override example for one step."""
+    suffixes = {
+        "application/json": ".json",
+        "text/csv": ".csv",
+    }
+    inputs = {
+        file_input.name: {
+            "path_override": (
+                f"/path/to/{file_input.name}"
+                f"{suffixes.get(file_input.file_type.media_type, '')}"
+            )
+        }
+        for file_input in step.spec.inputs
+    }
+    example = yaml.safe_dump(
+        {"steps": {step.name: {"inputs": inputs}}},
+        sort_keys=False,
+    ).rstrip()
+    block = nodes.literal_block(example, example)
+    block["language"] = "yaml"
+    return block
+
+
 def _file_type_label(file_type: Any) -> str:
     from ASOkai._pipeline.contracts.file_types import JsonFile
     from ASOkai._pipeline.contracts.json_schema import json_file_type_name
@@ -99,9 +123,6 @@ def _inputs_table(
             ("Source", source_name, True)
         ]
         configuration_path = file_input.configuration_path(step.name)
-        input_details.append(
-            ("Path override", f"{configuration_path}.path_override", True)
-        )
         if file_input.configurable_parameters:
             input_details.extend(
                 (
@@ -357,22 +378,37 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
     for producer, inputs in grouped.items():
         item = nodes.list_item()
         paragraph = nodes.paragraph()
+        input_names = list(dict.fromkeys(file_input.name for file_input in inputs))
+        paragraph += nodes.Text("This step requires the ")
+        for index, input_name in enumerate(input_names):
+            if index:
+                paragraph += nodes.Text(", ")
+            paragraph += nodes.literal(input_name, input_name)
+        paragraph += nodes.Text(
+            " input, normally supplied by "
+            if len(input_names) == 1
+            else " inputs, normally supplied by "
+        )
         paragraph += document_link(
             f"steps/{producer}",
             producer,
             refdoc=refdoc,
         )
+        paragraph += nodes.Text(". ")
         input_paths = [
             f"{file_input.configuration_path(step.name)}.path_override"
             for file_input in inputs
         ]
         if len(inputs) == 1:
-            paragraph += nodes.Text(" is required unless ")
+            paragraph += nodes.Text(
+                "ASOkai runs this step unless an existing file is configured at "
+            )
             paragraph += nodes.literal(input_paths[0], input_paths[0])
-            paragraph += nodes.Text(" is configured.")
+            paragraph += nodes.Text(".")
         else:
             paragraph += nodes.Text(
-                " is required unless every input from it uses an existing file."
+                "ASOkai runs this step unless existing files are configured for "
+                "every corresponding input."
             )
             paths = nodes.bullet_list()
             for path in input_paths:
@@ -382,7 +418,7 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
                 path_item += path_paragraph
                 paths += path_item
             item += paragraph
-            item += nodes.paragraph(text="Configure all of:")
+            item += nodes.paragraph(text="Configure all of these paths:")
             item += paths
             dependency_list += item
             continue
@@ -394,10 +430,16 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
             nodes.paragraph(
                 text=(
                     "ASOkai schedules dependencies whose valid outputs do not "
-                    "already exist and whose inputs have not been overridden."
+                    "already exist. To use an existing file instead, set the "
+                    "listed path override in config.yaml. Overrides are "
+                    "validated against the input's file contract. For inputs "
+                    "with configurable producer parameters, configure either "
+                    "an override or producer parameters, never both."
                 )
             ),
             dependency_list,
+            nodes.paragraph(text="Example path-override configuration:"),
+            _path_override_example(step),
         ],
     )
 
@@ -676,11 +718,20 @@ def build_step_reference(
     )
 
     step_config_fields = collect_step_config_fields(step, schema)
+    documented_config_fields = [
+        field
+        for field in step_config_fields
+        if not field.path.endswith(".path_override")
+    ]
     ordinary_config_fields = [
-        field for field in step_config_fields if not field.path.startswith("resources.")
+        field
+        for field in documented_config_fields
+        if not field.path.startswith("resources.")
     ]
     resource_config_fields = [
-        field for field in step_config_fields if field.path.startswith("resources.")
+        field
+        for field in documented_config_fields
+        if field.path.startswith("resources.")
     ]
     configuration_children: list[nodes.Node] = [
         nodes.paragraph(
@@ -724,18 +775,8 @@ def build_step_reference(
                 text=(
                     "An input uses the listed producer output made with the "
                     "main configuration unless an alternative is configured. "
-                    "A path override uses an existing file; exposed producer "
-                    "parameters request a separate producer run. An input may "
-                    "configure one of these alternatives, never both."
-                )
-            )
-        )
-        input_children.append(
-            nodes.paragraph(
-                text=(
-                    "Path overrides are checked for existence. JSON and CSV "
-                    "contents are parsed and validated by their contracts; "
-                    "opaque formats are passed to the step as filesystem paths."
+                    "Exposed producer parameters request a separate producer "
+                    "run."
                 )
             )
         )

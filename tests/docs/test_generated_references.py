@@ -77,7 +77,7 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
 
     assert fields["datadir"].requirement == "Required"
     assert fields["target.region"].constraints == (
-        "one of: exonic_only, pre-mrna, transcriptomic"
+        "one of: exonic, pre-mrna, transcriptomic"
     )
     assert fields["resources.intrinsic-features.n_processes"].value_type == "integer"
     assert fields["target.target_id"].requirement == (
@@ -246,7 +246,7 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
     assert f"{input_path}.parameters.region" in reference
     assert f"Producer parameters: {input_path}.parameters" in reference
     assert "Allowed parameters: region" in reference
-    assert "one of these alternatives, never both" in reference
+    assert "an override or producer parameters, never both" in reference
 
 
 def test_single_process_step_omits_process_count() -> None:
@@ -277,12 +277,34 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     reference = "\n".join(node.astext() for node in generated_nodes)
 
     assert "create-target-gene.target_gene" in reference
-    input_path = (
-        "steps.intrinsic-features.inputs.target_gene.path_override"
-    )
+    input_path = "steps.intrinsic-features.inputs.target_gene.path_override"
     assert input_path in reference
+    sections = {
+        node[0].astext(): node
+        for node in generated_nodes
+        if isinstance(node, nodes.section)
+    }
+    assert input_path in sections["Dependencies"].astext()
+    assert "config.yaml" in sections["Dependencies"].astext()
+    assert input_path not in sections["Configuration"].astext()
+    override_examples = list(
+        sections["Dependencies"].findall(nodes.literal_block)
+    )
+    assert len(override_examples) == 1
+    assert yaml.safe_load(override_examples[0].astext()) == {
+        "steps": {
+            "intrinsic-features": {
+                "inputs": {
+                    "target_gene": {
+                        "path_override": "/path/to/target_gene.json"
+                    }
+                }
+            }
+        }
+    }
     assert "{target}_k{k}_{region}_intrinsic.csv" in reference
-    assert f"unless {input_path} is configured" in reference
+    assert "requires the target_gene input, normally supplied by" in reference
+    assert f"unless an existing file is configured at {input_path}" in reference
     assert (
         "GRCh38/targets/ENSG00000133703/analysis/intrinsic/"
         "ENSG00000133703_k16_pre-mrna_intrinsic.csv" in reference

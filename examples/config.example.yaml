@@ -14,7 +14,7 @@ target:
   target_id: ENSG00000133703
   # target_name: KRAS
   k: 16
-  region: pre-mrna  # exonic_only | pre-mrna | transcriptomic
+  region: pre-mrna  # exonic | pre-mrna | transcriptomic
 
 # Any file input can use an existing file instead of its producer output.
 # steps:

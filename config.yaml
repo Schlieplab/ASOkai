@@ -12,7 +12,7 @@ genome:
 target:
   target_id: ENSG00000133703  # KRAS
   k: 16
-  region: pre-mrna  # exonic_only | pre-mrna | transcriptomic
+  region: pre-mrna  # exonic | pre-mrna | transcriptomic
 
 antisense:
   modality: aso

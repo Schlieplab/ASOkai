@@ -146,6 +146,13 @@ Built-in analysis steps live in
 ``src/ASOkai/_pipeline/steps/analysis`` and are added to ``_BUILTIN_STEPS`` in
 ``src/ASOkai/_pipeline/catalog.py``.
 
+Add a built-in analysis class to the API page matching its scope:
+``docs/source/api/modules/Analysis/site-specific.rst``,
+``target-specific.rst``, or ``genome-wide.rst``. Add an ``autoclass`` entry
+for the class exported from ``ASOkai.Analysis``. Do not create a separate step
+reference page; registration generates that page automatically from the step
+contract.
+
 An independently installed plugin does not modify ASOkai's registry. It
 publishes the step through the ``asokai.steps`` Python entry-point group.
 When it introduces configuration fields, it also publishes its YAML schema

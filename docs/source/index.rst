@@ -5,8 +5,8 @@ Welcome to the official documentation for the :mod:`ASOkai` library.
 
 If you're new to the project, start with the :doc:`Getting Started
 <getting-started>` guide. The :doc:`pipeline reference <steps/index>` describes
-the available steps, and the :doc:`API reference <api/index>` documents the
-public Python interface.
+the available steps. The API sections below document the public Python
+interface.
 
 .. toctree::
    :maxdepth: 2
@@ -26,7 +26,12 @@ public Python interface.
    :maxdepth: 2
    :caption: API Reference
 
-   api/index
+   api/modules/Analysis
+   api/modules/Antisense
+   api/modules/Biochemistry
+   api/modules/Sites
+   api/modules/Targets
+   api/modules/Utils
 
 .. toctree::
    :maxdepth: 2

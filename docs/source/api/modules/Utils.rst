@@ -1,12 +1,11 @@
 Utils
 =====
 
+Utilities are grouped by responsibility. Choose a section for its usage guide
+and public Python API.
+
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
    Utils/kmc
-
-.. automodule:: ASOkai.Utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   Utils/serialization

@@ -210,13 +210,13 @@ def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
             "download-genome",
             "--config",
             "target.k=20",
-            "target.region=exonic_only",
+            "target.region=exonic",
         ],
     )
 
     assert result.exit_code == 0
     assert captured["config"]["target"]["k"] == 20
-    assert captured["config"]["target"]["region"] == "exonic_only"
+    assert captured["config"]["target"]["region"] == "exonic"
 
 
 def test_run_config_accepts_repeated_flags(monkeypatch):
@@ -238,13 +238,13 @@ def test_run_config_accepts_repeated_flags(monkeypatch):
             "--config",
             "target.k=20",
             "--config",
-            "target.region=exonic_only",
+            "target.region=exonic",
         ],
     )
 
     assert result.exit_code == 0
     assert captured["config"]["target"]["k"] == 20
-    assert captured["config"]["target"]["region"] == "exonic_only"
+    assert captured["config"]["target"]["region"] == "exonic"
 
 
 def test_run_requires_explicit_runnable_selection(monkeypatch):

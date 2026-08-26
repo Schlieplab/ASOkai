@@ -52,7 +52,7 @@ properties:
         description: Target-site length.
       region:
         enum:
-          - exonic_only
+          - exonic
           - pre-mrna
           - transcriptomic
         description: Target region type.

@@ -143,7 +143,7 @@ def test_exonic_extraction_creates_one_site_per_unique_genomic_locus(
         genome,
         target_id="ENSG00000133703",
         site_length=4,
-        region="exonic_only",
+        region="exonic",
     )
 
     assert [site.start for site in result.sites] == list(range(100, 107))
@@ -206,7 +206,7 @@ def test_negative_strand_exonic_sites_use_reference_order_and_site_orientation()
         genome,
         target_id="gene-1",
         site_length=4,
-        region="exonic_only",
+        region="exonic",
     )
 
     assert [site.start for site in result.sites] == [100, 101, 102]

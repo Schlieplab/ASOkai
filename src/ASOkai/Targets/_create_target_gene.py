@@ -143,7 +143,7 @@ def create_target_gene(
     target_name: str | None = None,
     *,
     site_length: int,
-    region: TargetRegion = "exonic_only",
+    region: TargetRegion = "exonic",
 ) -> TargetGene:
     """Create a target gene and extract its target sites from a genome."""
     if (target_id is None) == (target_name is None):
@@ -157,7 +157,7 @@ def create_target_gene(
         gene = genome.gene_by_name(target_name)
         target_label = target_name
 
-    if region == "exonic_only":
+    if region == "exonic":
         sites = _extract_exonic_sites(
             gene,
             genome,

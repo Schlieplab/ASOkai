@@ -40,7 +40,7 @@ def _make_step(
             output_name,
             destination=f"{name}/{output_name}.txt",
         )
-        for output_name in output_names or [f"{name}_out"]
+        for output_name in output_names or [f"{name.replace('-', '_')}_out"]
     ]
     spec = StepSpec(
         inputs=[
@@ -71,6 +71,30 @@ def _make_step(
         },
     )
     return step_type()
+
+
+def test_planner_rejects_an_outputless_step(config):
+    outputless_type = type(
+        "_OutputlessStep",
+        (Step,),
+        {
+            "name": "outputless",
+            "description": "Invalid outputless step.",
+            "spec": StepSpec(),
+        },
+    )
+    step = outputless_type()
+
+    with pytest.raises(ValueError, match="at least one file output"):
+        build_plan([step], config, _registry={step.name: step})
+
+
+def test_planner_rejects_unknown_configured_step_name(config):
+    step = _make_step("known-step")
+    config["steps"] = {"misspelled-step": {"inputs": {}}}
+
+    with pytest.raises(ValueError, match=r"steps\.misspelled-step.*unknown"):
+        build_plan([step], config, _registry={step.name: step})
 
 
 def _make_configurable_producer_and_consumers(

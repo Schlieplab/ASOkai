@@ -180,6 +180,41 @@ def test_config_schema_allows_plugin_namespaces(tmp_path):
     )
 
 
+def test_configured_step_names_must_be_registered(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "steps": {"misspelled-step": {"inputs": {}}},
+        "resources": {"another-misspelled-step": {"memory_mb": 1024}},
+    }
+
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_configured_step_names(
+            config,
+            {"intrinsic-features": IntrinsicFeaturesStep()},
+        )
+
+    message = str(raised.value)
+    assert "$.steps.misspelled-step" in message
+    assert "$.resources.another-misspelled-step" in message
+
+
+def test_configured_input_name_must_be_declared_by_step(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "steps": {
+            "intrinsic-features": {
+                "inputs": {"misspelled_input": {"path_override": "x"}},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="misspelled_input"):
+        cfg.validate_configured_step_names(
+            config,
+            {"intrinsic-features": IntrinsicFeaturesStep()},
+        )
+
+
 @pytest.mark.parametrize(
     "input_configuration",
     [
@@ -226,7 +261,7 @@ def test_config_schema_uses_installed_plugin_schemas(
         "        maximum: 1\n"
     )
     monkeypatch.setattr(
-        "ASOkai.Plugins._registry.get_config_schema_paths",
+        "ASOkai._pipeline.catalog.get_config_schema_paths",
         lambda: {"example": schema_path},
     )
 

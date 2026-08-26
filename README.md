@@ -121,8 +121,11 @@ ASOkai run --workflow standard
 # Run multiple selected units
 ASOkai run --steps generate-antisense-candidates intrinsic-features
 
-# Export a portable CWL job bundle without executing it
+# Export the selected goals as a CWL job bundle without executing them
 ASOkai export --workflow standard
+
+# Include the complete producer closure in the exported bundle
+ASOkai export --steps intrinsic-features --recursive
 
 # Require dependencies to exist instead of scheduling missing ones
 ASOkai run --steps intrinsic-features --non-recursive

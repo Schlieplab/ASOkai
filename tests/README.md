@@ -8,8 +8,11 @@ and the CWL-backed pipeline orchestration code.
 ```
 tests/
 ├── conftest.py
+├── contributor/
+├── docs/
 ├── integration/
-│   └── test_serialization_integration.py
+│   └── test_pipeline_execution.py
+├── plugins/
 └── unit/
     ├── test_base_site_functionality.py
     ├── test_cli_main.py
@@ -60,11 +63,9 @@ or node selectors unless a marker is present on the tests you want.
 ## Coverage Areas
 
 - Serialization and type adapters: `Serializable`, `Bio.Seq.Seq`,
-  `GenomeUtils.Locus`, nested containers, file I/O, and roundtrip behavior.
+  `GenomeUtils.Locus`, nested containers, and typed `JsonFile` roundtrips.
 - Domain objects: genomic and transcript sites, targets, target genes, target
   creators, site IDs, edge coordinates, special identifiers, and empty inputs.
-- Integration workflows: larger serialization roundtrips, repeated save/load
-  cycles, backward-compatible missing attributes, and larger target genes.
 - KMC wrappers: executable resolution, command-line construction, validation,
   subprocess failure handling, output handles, and KMC tools operations.
 - Pipeline configuration: YAML loading, dotted-key resolution, and CLI override
@@ -75,6 +76,8 @@ or node selectors unless a marker is present on the tests you want.
 - Runner and CWL generation: input resolution precedence, dependency wiring,
   reused file inputs, fixed output arguments, dry-run behavior, CWL
   export, publication layouts, and normalized CWL step IDs.
+- End-to-end execution: shared-run planning, generated CWL execution, and
+  publication through a small local synthetic workflow.
 - CLI: listing and describing registered units, hidden internal step dispatch,
   run selection defaults, unknown runnable errors, config override parsing, and
   YAML scalar preservation.

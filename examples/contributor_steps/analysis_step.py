@@ -6,7 +6,7 @@ To add an analysis step:
 2. Add any new configuration fields to
    ``src/ASOkai/_pipeline/config.schema.yaml`` and
    ``examples/config.example.yaml``.
-3. Register the step in ``ASOkai.Plugins._registry``.
+3. Register the step in ``ASOkai._pipeline.catalog``.
 4. Run the contributor contract test, or let pre-commit run it.
 
 The declared ``StepSpec`` is the step's schema; no second contributor schema is

@@ -285,7 +285,9 @@ def _serialized_fields(
 ) -> dict[str, Any]:
     """Collect serialized field annotations from the full class hierarchy."""
     serialized_fields: dict[str, Any] = {}
-    attribute_serializers = serializable_type._attribute_serializers
+    attribute_serializers = (
+        serializable_type._registered_attribute_serializers()
+    )
     serialized_private_fields = attribute_serializers.keys()
     for class_in_hierarchy in reversed(serializable_type.__mro__):
         for field_name, field_type in _declared_field_types(

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/Plugins/_registry.py
+Filename: src/ASOkai/_pipeline/catalog.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Discovery registry for built-in and external extensions.
+Description: Catalog of built-in and installed pipeline components.
 License: LGPL-3.0-or-later
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGene
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
-from ._validation import (
+from ASOkai.Plugins._validation import (
     validate_plugin_instance,
     validate_step_dependencies,
     validate_task_members,
@@ -65,6 +65,16 @@ class _DiscoveredConfigSchema:
     name: str
     path: Path
     package_name: str | None
+
+
+@dataclass(frozen=True)
+class PipelineCatalog:
+    """One consistent snapshot of available pipeline components."""
+
+    steps: dict[str, Step]
+    tasks: dict[str, Task]
+    workflows: dict[str, Workflow]
+    config_schema_paths: dict[str, Path]
 
 
 def _entry_point_package_name(entry_point: Any) -> str | None:
@@ -183,8 +193,11 @@ def _index_unique(kind: str, instances: list) -> dict:
     return result
 
 
-def get_steps() -> dict[str, Step]:
-    plugins = _discover_plugins("asokai.steps", "step", Step)
+def _build_step_registry(
+    plugins: list[_DiscoveredPlugin],
+    config_schemas: list[_DiscoveredConfigSchema],
+) -> dict[str, Step]:
+    """Validate and index already-discovered step plugins."""
     registered = _index_unique(
         "step",
         [*_BUILTIN_STEPS, *(plugin.instance for plugin in plugins)],
@@ -200,11 +213,10 @@ def get_steps() -> dict[str, Step]:
     if plugins:
         from ASOkai._pipeline import config
 
-        schemas = _discover_config_schemas()
         for plugin in plugins:
             schema_paths = {
                 schema.name: schema.path
-                for schema in schemas
+                for schema in config_schemas
                 if plugin.package_name is None
                 or schema.package_name == plugin.package_name
             }
@@ -218,6 +230,12 @@ def get_steps() -> dict[str, Step]:
                     f"Invalid ASOkai step plugin {plugin.source}: {error}"
                 ) from error
     return registered
+
+
+def get_steps() -> dict[str, Step]:
+    """Discover and return built-in and installed steps."""
+    plugins = _discover_plugins("asokai.steps", "step", Step)
+    return _build_step_registry(plugins, _discover_config_schemas())
 
 
 def get_tasks(
@@ -272,16 +290,24 @@ def get_workflows(
     return registered
 
 
-def get_pipeline_units() -> tuple[
-    dict[str, Step],
-    dict[str, Task],
-    dict[str, Workflow],
-]:
-    """Discover all pipeline units once and validate their relationships."""
-    steps = get_steps()
+def get_pipeline_catalog() -> PipelineCatalog:
+    """Discover every component once and return one validated snapshot."""
+    config_schemas = _discover_config_schemas()
+    steps = _build_step_registry(
+        _discover_plugins("asokai.steps", "step", Step),
+        config_schemas,
+    )
     tasks = get_tasks(steps)
     workflows = get_workflows(steps, tasks)
-    return steps, tasks, workflows
+    return PipelineCatalog(
+        steps=steps,
+        tasks=tasks,
+        workflows=workflows,
+        config_schema_paths={
+            schema.name: schema.path
+            for schema in config_schemas
+        },
+    )
 
 
 def get_config_schema_paths() -> dict[str, Path]:

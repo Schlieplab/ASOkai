@@ -23,11 +23,8 @@ from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.execution import ExecutionPlan, StepRun
-from ASOkai._pipeline.plan import build_plan
-from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
+from ASOkai._pipeline.plan import build_export_plan, build_plan
 from ASOkai._pipeline.steps.base import Step
-from ASOkai._pipeline.tasks.base import Task
-from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +240,8 @@ def run_all(
     dry_run: bool = False,
     non_recursive: bool = False,
     executor: Executor | None = None,
+    registered_steps: dict[str, Step] | None = None,
+    config_schema_paths: dict[str, Path] | None = None,
 ) -> dict[str, Path] | None:
     """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
     if not runnables:
@@ -254,6 +253,8 @@ def run_all(
         config,
         non_recursive=non_recursive,
         force=force,
+        _registry=registered_steps,
+        _config_schema_paths=config_schema_paths,
     )
     return run_plan(
         plan,
@@ -268,20 +269,23 @@ def export_all(
     runnables: list[Runnable],
     config: dict,
     *,
-    non_recursive: bool = False,
+    recursive: bool = False,
     outdir: Path | None = None,
     runner_name: str = "cwltool",
+    registered_steps: dict[str, Step] | None = None,
+    config_schema_paths: dict[str, Path] | None = None,
 ) -> Path:
     """Export a complete runnable CWL bundle for the selected runnables."""
     if not runnables:
         raise ValueError("export_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
-    plan = build_plan(
+    plan = build_export_plan(
         runnables,
         config,
-        non_recursive=non_recursive,
-        force=True,
+        recursive=recursive,
+        _registry=registered_steps,
+        _config_schema_paths=config_schema_paths,
     )
     if not plan.runs_to_execute:
         raise RuntimeError("No steps were selected for export.")
@@ -304,101 +308,3 @@ def export_all(
     )
     logger.info("[%s] CWL export bundle written to %s", label, job_dir)
     return job_dir
-
-
-def run_step(
-    step_name: str,
-    config: dict,
-    *,
-    force: bool = False,
-    dry_run: bool = False,
-    non_recursive: bool = False,
-    executor: Executor | None = None,
-) -> dict[str, Path] | None:
-    """Run a single step by name."""
-    steps = get_steps()
-    if step_name not in steps:
-        raise ValueError(f"Unknown step '{step_name}'. Run 'ASOkai list steps' to see available steps.")
-
-    step = steps[step_name]
-    if not isinstance(step, Step):
-        raise TypeError(f"Step '{step_name}' does not conform to the Step protocol.")
-
-    plan = build_plan(
-        [step],
-        config,
-        non_recursive=non_recursive,
-        force=force,
-    )
-
-    return run_plan(
-        plan,
-        step_name,
-        config,
-        dry_run=dry_run,
-        executor=executor,
-    )
-
-
-def run_task(
-    task_name: str,
-    config: dict,
-    *,
-    force: bool = False,
-    dry_run: bool = False,
-    non_recursive: bool = False,
-    executor: Executor | None = None,
-) -> dict[str, Path] | None:
-    tasks = get_tasks()
-    if task_name not in tasks:
-        raise ValueError(f"Unknown task '{task_name}'. Run 'ASOkai list tasks' to see available tasks.")
-    task = tasks[task_name]
-    if not isinstance(task, Task):
-        raise TypeError(f"Task '{task_name}' does not conform to the Task protocol.")
-
-    plan = build_plan(
-        [task],
-        config,
-        non_recursive=non_recursive,
-        force=force,
-    )
-    return run_plan(
-        plan,
-        task_name,
-        config,
-        dry_run=dry_run,
-        executor=executor,
-    )
-
-
-def run_workflow(
-    workflow_name: str,
-    config: dict,
-    *,
-    force: bool = False,
-    dry_run: bool = False,
-    non_recursive: bool = False,
-    executor: Executor | None = None,
-) -> dict[str, Path] | None:
-    workflows = get_workflows()
-    if workflow_name not in workflows:
-        raise ValueError(
-            f"Unknown workflow '{workflow_name}'. Run 'ASOkai list workflows' to see available workflows."
-        )
-    wf = workflows[workflow_name]
-    if not isinstance(wf, Workflow):
-        raise TypeError(f"Workflow '{workflow_name}' does not conform to the Workflow protocol.")
-
-    plan = build_plan(
-        [wf],
-        config,
-        non_recursive=non_recursive,
-        force=force,
-    )
-    return run_plan(
-        plan,
-        workflow_name,
-        config,
-        dry_run=dry_run,
-        executor=executor,
-    )

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Tests for external plugin discovery and registration."""
+"""Tests for the pipeline catalog and installed-plugin discovery."""
 
 from pathlib import Path
 import runpy
@@ -10,13 +10,14 @@ import pytest
 from ASOkai import Plugins
 from ASOkai.Plugins import (
     AnalysisStep,
+    CsvFile,
     FileInput,
     FileOutput,
     ScalarParam,
     Step,
     StepSpec,
 )
-from ASOkai.Plugins import _registry as plugin_registry
+from ASOkai._pipeline import catalog as pipeline_catalog
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 ROOT = Path(__file__).parents[2]
@@ -58,7 +59,7 @@ class FakeEntryPoint:
 
 def _provide_entry_points(monkeypatch, *provided: FakeEntryPoint) -> None:
     monkeypatch.setattr(
-        plugin_registry,
+        pipeline_catalog,
         "entry_points",
         lambda *, group: [
             entry_point for entry_point in provided if entry_point.group == group
@@ -69,6 +70,7 @@ def _provide_entry_points(monkeypatch, *provided: FakeEntryPoint) -> None:
 class UndeclaredConfigStep(Step):
     name = "undeclared-config"
     description = "Uses a configuration field without a plugin schema."
+    result_output = FileOutput("result", destination="undeclared/result.txt")
     spec = StepSpec(
         params=[
             ScalarParam(
@@ -80,6 +82,7 @@ class UndeclaredConfigStep(Step):
         compatible_with={
             "undeclared.mode": ["fast"],
         },
+        outputs=[result_output],
     )
 
     def run_from_args(self, args) -> int:
@@ -89,7 +92,8 @@ class UndeclaredConfigStep(Step):
 class ConstructorFailureStep(Step):
     name = "constructor-failure"
     description = "Raises while being instantiated."
-    spec = StepSpec()
+    result_output = FileOutput("result", destination="constructor/result.txt")
+    spec = StepSpec(outputs=[result_output])
 
     def __init__(self) -> None:
         raise RuntimeError("initialization failed")
@@ -118,7 +122,8 @@ class MissingProducerStep(Step):
         "result",
         source=UnregisteredProducerStep.result_output,
     )
-    spec = StepSpec(inputs=[result_input])
+    result_output = FileOutput("consumer_result", destination="consumer/result.txt")
+    spec = StepSpec(inputs=[result_input], outputs=[result_output])
 
     def run_from_args(self, args) -> int:
         return 0
@@ -127,7 +132,12 @@ class MissingProducerStep(Step):
 class InvalidAnalysisStep(AnalysisStep):
     name = "invalid-analysis"
     description = "Does not declare an analysis implementation."
-    spec = StepSpec()
+    result_output = FileOutput(
+        "result",
+        destination="invalid-analysis/result.csv",
+        file_type=CsvFile(index={"site_id": str}, columns={"value": int}),
+    )
+    spec = StepSpec(outputs=[result_output])
 
 
 class PluginTaskWithUnregisteredStep:
@@ -145,7 +155,8 @@ class PluginWorkflowWithUnregisteredTask:
 class RegisteredPluginStep(Step):
     name = "registered-plugin-step"
     description = "A valid step used to exercise aggregate discovery."
-    spec = StepSpec()
+    result_output = FileOutput("result", destination="registered/result.txt")
+    spec = StepSpec(outputs=[result_output])
 
     def run_from_args(self, args) -> int:
         return 0
@@ -223,7 +234,7 @@ def test_example_plugin_is_discovered_and_validated(monkeypatch) -> None:
         ),
     )
 
-    registered = plugin_registry.get_steps()
+    registered = pipeline_catalog.get_steps()
 
     assert isinstance(
         registered["example-sequence-length"],
@@ -231,7 +242,7 @@ def test_example_plugin_is_discovered_and_validated(monkeypatch) -> None:
     )
 
 
-def test_aggregate_registry_loads_each_plugin_once(monkeypatch) -> None:
+def test_pipeline_catalog_loads_each_plugin_once(monkeypatch) -> None:
     step_entry_point = FakeEntryPoint(
         "asokai.steps",
         RegisteredPluginStep.name,
@@ -247,21 +258,28 @@ def test_aggregate_registry_loads_each_plugin_once(monkeypatch) -> None:
         RegisteredPluginWorkflow.name,
         RegisteredPluginWorkflow,
     )
+    schema_entry_point = FakeEntryPoint(
+        "asokai.config_schemas",
+        "registered-plugin-schema",
+        EXAMPLE_SCHEMA,
+    )
     _provide_entry_points(
         monkeypatch,
         step_entry_point,
         task_entry_point,
         workflow_entry_point,
+        schema_entry_point,
     )
 
-    steps, tasks, workflows = plugin_registry.get_pipeline_units()
+    catalog = pipeline_catalog.get_pipeline_catalog()
 
-    assert RegisteredPluginStep.name in steps
-    assert RegisteredPluginTask.name in tasks
-    assert RegisteredPluginWorkflow.name in workflows
+    assert RegisteredPluginStep.name in catalog.steps
+    assert RegisteredPluginTask.name in catalog.tasks
+    assert RegisteredPluginWorkflow.name in catalog.workflows
     assert step_entry_point.load_count == 1
     assert task_entry_point.load_count == 1
     assert workflow_entry_point.load_count == 1
+    assert schema_entry_point.load_count == 1
 
 
 def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:
@@ -275,7 +293,7 @@ def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="Duplicate registered step name"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_load_errors_include_package_context(monkeypatch) -> None:
@@ -294,7 +312,7 @@ def test_plugin_load_errors_include_package_context(monkeypatch) -> None:
         ValueError,
         match=r"broken.*broken-package.*missing dependency",
     ):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_entry_point_must_expose_expected_class(monkeypatch) -> None:
@@ -304,7 +322,7 @@ def test_plugin_entry_point_must_expose_expected_class(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="must expose a class"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_class_must_implement_the_entry_point_kind(monkeypatch) -> None:
@@ -314,7 +332,7 @@ def test_plugin_class_must_implement_the_entry_point_kind(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="expected Step, received object"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_instantiation_errors_include_entry_point_context(monkeypatch) -> None:
@@ -332,7 +350,7 @@ def test_plugin_instantiation_errors_include_entry_point_context(monkeypatch) ->
         ValueError,
         match=r"constructor-failure.*broken-constructor-package.*initialization failed",
     ):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_entry_point_name_must_match_step_name(monkeypatch) -> None:
@@ -346,7 +364,7 @@ def test_plugin_entry_point_name_must_match_step_name(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="must match.*undeclared-config"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_analysis_plugin_contract_is_validated(monkeypatch) -> None:
@@ -360,7 +378,7 @@ def test_analysis_plugin_contract_is_validated(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="concrete Analysis subclass"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_dependencies_must_be_registered(monkeypatch) -> None:
@@ -374,7 +392,7 @@ def test_plugin_dependencies_must_be_registered(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="unregistered producer"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_config_paths_require_a_registered_schema(monkeypatch) -> None:
@@ -388,7 +406,7 @@ def test_plugin_config_paths_require_a_registered_schema(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError) as raised:
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
     message = str(raised.value)
     assert "undeclared.threshold" in message
@@ -428,7 +446,7 @@ def test_plugin_config_schema_must_come_from_the_same_package(
     )
 
     with pytest.raises(ValueError, match="undeclared\\.threshold"):
-        plugin_registry.get_steps()
+        pipeline_catalog.get_steps()
 
 
 def test_plugin_task_steps_must_be_registered(monkeypatch) -> None:
@@ -442,7 +460,7 @@ def test_plugin_task_steps_must_be_registered(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="asokai.steps"):
-        plugin_registry.get_tasks()
+        pipeline_catalog.get_tasks()
 
 
 def test_plugin_workflow_members_must_be_registered(monkeypatch) -> None:
@@ -456,7 +474,7 @@ def test_plugin_workflow_members_must_be_registered(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match="asokai.tasks"):
-        plugin_registry.get_workflows()
+        pipeline_catalog.get_workflows()
 
 
 def test_plugin_config_schema_entry_points_expose_paths(
@@ -473,7 +491,7 @@ def test_plugin_config_schema_entry_points_expose_paths(
         ),
     )
 
-    assert plugin_registry.get_config_schema_paths() == {
+    assert pipeline_catalog.get_config_schema_paths() == {
         "example": schema_path,
     }
 
@@ -494,4 +512,4 @@ def test_plugin_config_schema_names_must_be_unique(monkeypatch, tmp_path) -> Non
     )
 
     with pytest.raises(ValueError, match="Duplicate registered config schema"):
-        plugin_registry.get_config_schema_paths()
+        pipeline_catalog.get_config_schema_paths()

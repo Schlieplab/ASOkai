@@ -36,6 +36,16 @@ def test_run_help_uses_configfile_and_config_override_options():
     assert "--set" not in result.output
 
 
+def test_export_help_uses_explicit_recursive_option():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["export", "--help"])
+
+    assert result.exit_code == 0
+    assert "--recursive" in result.output
+    assert "--non-recursive" not in result.output
+
+
 def test_public_subcommands_accept_short_help():
     runner = CliRunner()
 
@@ -158,10 +168,34 @@ def test_verbose_describe_step_shows_dependency_tree():
     assert "`-- download-genome" in result.output
 
 
+def test_verbose_describe_uses_one_catalog_snapshot(monkeypatch):
+    from ASOkai._pipeline.catalog import get_pipeline_catalog
+
+    catalog_calls = 0
+
+    def load_catalog():
+        nonlocal catalog_calls
+        catalog_calls += 1
+        return get_pipeline_catalog()
+
+    monkeypatch.setattr(
+        "ASOkai._cli.catalog.get_pipeline_catalog",
+        load_catalog,
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["describe", "--verbose", "step", "intrinsic-features"],
+    )
+
+    assert result.exit_code == 0
+    assert catalog_calls == 1
+
+
 def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {"target": {"k": 16}})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),
@@ -188,7 +222,7 @@ def test_run_config_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_config_accepts_repeated_flags(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {"k": 16}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {"target": {"k": 16}})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),
@@ -214,7 +248,7 @@ def test_run_config_accepts_repeated_flags(monkeypatch):
 
 
 def test_run_requires_explicit_runnable_selection(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run"])
@@ -226,7 +260,7 @@ def test_run_requires_explicit_runnable_selection(monkeypatch):
 def test_run_workflow_selects_standard_explicitly(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(
@@ -246,7 +280,7 @@ def test_run_workflow_selects_standard_explicitly(monkeypatch):
 def test_run_steps_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(runnables=runnables),
@@ -268,7 +302,7 @@ def test_run_steps_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_tasks_accepts_multiple_values_after_one_flag(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(runnables=runnables),
@@ -287,7 +321,7 @@ def test_run_tasks_accepts_multiple_values_after_one_flag(monkeypatch):
 def test_run_uses_toil_executor_when_requested(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(kwargs),
@@ -314,7 +348,7 @@ def test_export_steps_uses_outdir_and_runner_name(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": str(tmp_path / "data")},
+        lambda _path, **_kwargs: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.export_all",
@@ -355,7 +389,7 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
 
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": str(tmp_path / "data")},
+        lambda _path, **_kwargs: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.export_all",
@@ -371,6 +405,28 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
     assert result.exit_code == 0
     assert [r.name for r in captured["runnables"]] == ["standard"]
     assert captured["outdir"] is None
+    assert captured["recursive"] is False
+
+
+def test_export_recursive_flag_is_forwarded(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path, **_kwargs: {"datadir": str(tmp_path / "data")},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.export_all",
+        lambda runnables, config, **kwargs: captured.update(kwargs)
+        or tmp_path / "export",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["export", "--steps", "create-target-gene", "--recursive"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["recursive"] is True
 
 
 def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
@@ -378,7 +434,7 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": str(tmp_path / "data")},
+        lambda _path, **_kwargs: {"datadir": str(tmp_path / "data")},
     )
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.export_all",
@@ -396,7 +452,7 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
 
 
 def test_run_rejects_unknown_step(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--steps", "not-a-step"])
@@ -406,7 +462,7 @@ def test_run_rejects_unknown_step(monkeypatch):
 
 
 def test_run_rejects_unknown_task(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--tasks", "not-a-task"])
@@ -416,7 +472,7 @@ def test_run_rejects_unknown_task(monkeypatch):
 
 
 def test_run_rejects_unknown_workflow(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
     result = runner.invoke(main, ["run", "--workflow", "not-a-workflow"])
@@ -426,7 +482,7 @@ def test_run_rejects_unknown_workflow(monkeypatch):
 
 
 def test_run_config_rejects_malformed_override(monkeypatch):
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
     result = runner.invoke(
@@ -447,7 +503,7 @@ def test_run_config_rejects_malformed_override(monkeypatch):
 def test_run_displays_configuration_errors_without_traceback(monkeypatch):
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": "./data"},
+        lambda _path, **_kwargs: {"datadir": "./data"},
     )
 
     def reject_config(*args, **kwargs):
@@ -475,7 +531,7 @@ def test_run_displays_configuration_errors_without_traceback(monkeypatch):
 def test_run_displays_missing_dependency_errors_without_traceback(monkeypatch):
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": "./data"},
+        lambda _path, **_kwargs: {"datadir": "./data"},
     )
 
     def reject_plan(*args, **kwargs):
@@ -502,7 +558,7 @@ def test_run_displays_missing_dependency_errors_without_traceback(monkeypatch):
 def test_export_displays_configuration_errors_without_traceback(monkeypatch):
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",
-        lambda _path: {"datadir": "./data"},
+        lambda _path, **_kwargs: {"datadir": "./data"},
     )
 
     def reject_config(*args, **kwargs):
@@ -530,7 +586,7 @@ def test_export_displays_configuration_errors_without_traceback(monkeypatch):
 def test_run_config_preserves_yaml_scalar_types(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {"target": {}})
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {"target": {}})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(config=config),

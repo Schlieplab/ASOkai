@@ -41,13 +41,6 @@ class MissingRunMethodStep(Step):
     spec = StepSpec()
 
 
-class MissingPrimaryOutputStep(AnalysisStep):
-    name = "missing-primary-output"
-    description = "Does not declare a primary analysis output."
-    analysis_cls = ExampleAnalysis
-    spec = StepSpec()
-
-
 class JsonPrimaryOutputStep(AnalysisStep):
     name = "json-primary-output"
     description = "Declares JSON as its primary analysis output."
@@ -146,10 +139,22 @@ def test_step_plugin_must_implement_its_execution_method():
         validate_plugin_instance("step", MissingRunMethodStep())
 
 
+def test_step_plugin_must_declare_an_output():
+    class OutputlessStep(Step):
+        name = "outputless"
+        description = "Does not declare an output."
+        spec = StepSpec()
+
+        def run_from_args(self, args) -> int:
+            return 0
+
+    with pytest.raises(ValueError, match="at least one file output"):
+        validate_plugin_instance("step", OutputlessStep())
+
+
 @pytest.mark.parametrize(
     ("step", "message"),
     [
-        (MissingPrimaryOutputStep(), "primary CSV output"),
         (JsonPrimaryOutputStep(), "first output must use CsvFile"),
         (
             MissingAdditionalOutputValuesStep(),

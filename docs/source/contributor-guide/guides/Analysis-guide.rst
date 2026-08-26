@@ -144,7 +144,7 @@ Registration
 
 Built-in analysis steps live in
 ``src/ASOkai/_pipeline/steps/analysis`` and are added to ``_BUILTIN_STEPS`` in
-``src/ASOkai/Plugins/_registry.py``.
+``src/ASOkai/_pipeline/catalog.py``.
 
 An independently installed plugin does not modify ASOkai's registry. It
 publishes the step through the ``asokai.steps`` Python entry-point group.

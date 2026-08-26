@@ -86,16 +86,6 @@ def test_transcript_site_roundtrip_preserves_shared_loci(transcript_site):
 
 @pytest.mark.unit
 @pytest.mark.serialization
-def test_transcript_site_file_roundtrip(transcript_site, temp_json_file):
-    transcript_site.to_file(temp_json_file)
-
-    reconstructed = TranscriptSite.from_file(temp_json_file)
-
-    assert reconstructed == transcript_site
-
-
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_transcript_site_roundtrip_preserves_extra_scalars():
     site = TranscriptSite(
         id="site",

@@ -38,7 +38,12 @@ DEFAULT_STEP_RESOURCES = {
 _CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
 
 
-def load(path: Path | str) -> dict:
+def load(
+    path: Path | str,
+    *,
+    plugin_schema_paths: Mapping[str, Path] | None = None,
+    registered_steps: Mapping[str, Step] | None = None,
+) -> dict:
     """Load a YAML configuration whose root is a mapping."""
     source = Path(path)
     try:
@@ -52,7 +57,9 @@ def load(path: Path | str) -> dict:
             f"Configuration in {source} must contain a mapping at its root."
         )
     config = dict(data)
-    validate_config_schema(config)
+    validate_config_schema(config, plugin_schema_paths=plugin_schema_paths)
+    if registered_steps is not None:
+        validate_configured_step_names(config, registered_steps)
     return config
 
 
@@ -131,6 +138,8 @@ def resolve_parameter_value(
 def validate_step_config(
     config: Any,
     steps: Sequence[Step],
+    *,
+    validate_input_files: bool = True,
 ) -> None:
     """Validate selected-step values, compatibility, paths, and input files."""
     errors: list[str] = []
@@ -232,6 +241,8 @@ def validate_step_config(
                 errors.append(f"$.{configuration_path}: {error}")
                 continue
             if path_override is not None:
+                if not validate_input_files:
+                    continue
                 path_config = f"{configuration_path}.path_override"
                 if not path_override.exists():
                     errors.append(
@@ -271,6 +282,40 @@ def validate_step_config(
                     errors.append(
                         f"Step '{step.name}' output '{output.name}': {error}"
                     )
+
+    if errors:
+        _raise_config_errors(errors)
+
+
+def validate_configured_step_names(
+    config: Mapping[str, Any],
+    registered_steps: Mapping[str, Step],
+) -> None:
+    """Validate dynamic step, input, and resource names against the registry."""
+    errors: list[str] = []
+    configured_steps = config.get("steps", {})
+    configured_resources = config.get("resources", {})
+
+    for step_name, step_config in configured_steps.items():
+        step = registered_steps.get(step_name)
+        if step is None:
+            errors.append(f"$.steps.{step_name}: unknown step")
+            continue
+
+        declared_inputs = {file_input.name for file_input in step.spec.inputs}
+        for input_name in step_config.get("inputs", {}):
+            if input_name not in declared_inputs:
+                errors.append(
+                    f"$.steps.{step_name}.inputs.{input_name}: step "
+                    f"'{step_name}' has no input with this name"
+                )
+
+    for step_name in configured_resources:
+        if (
+            step_name != RESOURCE_DEFAULT_KEY
+            and step_name not in registered_steps
+        ):
+            errors.append(f"$.resources.{step_name}: unknown step")
 
     if errors:
         _raise_config_errors(errors)
@@ -318,13 +363,18 @@ def validate_step_config_paths(
 
 def validate_config_schema(
     config: Any,
+    *,
+    plugin_schema_paths: Mapping[str, Path] | None = None,
 ) -> None:
     """Validate data against ASOkai and installed-plugin config schemas."""
     errors = _schema_errors("ASOkai", _load_config_schema(), config)
 
-    from ASOkai.Plugins._registry import get_config_schema_paths
+    if plugin_schema_paths is None:
+        from ASOkai._pipeline.catalog import get_config_schema_paths
 
-    for plugin_name, schema_path in get_config_schema_paths().items():
+        plugin_schema_paths = get_config_schema_paths()
+
+    for plugin_name, schema_path in plugin_schema_paths.items():
         schema = _read_config_schema(
             schema_path,
             f"plugin '{plugin_name}'",

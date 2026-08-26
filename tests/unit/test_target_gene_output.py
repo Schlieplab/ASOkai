@@ -111,12 +111,13 @@ def test_target_gene_output_and_input_write_and_read_path(
 
 
 def test_json_input_loads_an_existing_override_during_argument_parsing(
+    output,
     input_contract,
     target_gene,
     tmp_path,
 ):
     path = tmp_path / "existing-target.json"
-    target_gene.to_file(str(path))
+    output.write(path, target_gene)
     parser = argparse.ArgumentParser()
     input_contract.add_to_parser(parser)
 

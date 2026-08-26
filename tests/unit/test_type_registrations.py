@@ -9,6 +9,8 @@ License: LGPL-3.0-or-later
 """
 
 import pytest
+from ASOkai.Antisense import siRNA
+from ASOkai.Targets import TargetGene
 from ASOkai.Utils import Serializable
 
 
@@ -39,3 +41,9 @@ class TestAttributeAdapters:
             'end': sample_locus.end,
             'strand': sample_locus.strand,
         }
+
+    def test_specialized_adapters_do_not_leak_to_unrelated_classes(self):
+        assert "_sites" in TargetGene._registered_attribute_serializers()
+        assert "_antisense_strand" in siRNA._registered_attribute_serializers()
+        assert "_sites" not in Serializable._registered_attribute_serializers()
+        assert "_antisense_strand" not in Serializable._registered_attribute_serializers()

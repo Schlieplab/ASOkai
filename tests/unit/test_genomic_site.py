@@ -189,15 +189,6 @@ class TestGenomicSiteRoundtrip:
         assert getattr(reconstructed, "score") == 0.95
         assert getattr(reconstructed, "metadata") == {"key": "value"}
         
-    def test_file_roundtrip(self, sample_genomic_site, temp_json_file):
-        """Test roundtrip through file I/O."""
-        sample_genomic_site.to_file(temp_json_file)
-        reconstructed = GenomicSite.from_file(temp_json_file)
-        
-        assert reconstructed.id == sample_genomic_site.id
-        assert reconstructed.chr == sample_genomic_site.chr
-        assert str(reconstructed.sequence) == str(sample_genomic_site.sequence)
-        
     def test_multiple_sites_in_dict(self, sample_sequence):
         """Test serialization of multiple sites in a dictionary."""
         site1 = GenomicSite(

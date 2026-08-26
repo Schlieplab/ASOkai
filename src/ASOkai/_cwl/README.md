@@ -49,7 +49,15 @@ class ConsumerStep(CoreStep):
         "result",
         source=ProducerStep.result_output,
     )
-    spec = StepSpec(inputs=[result_input])
+    processed_output = FileOutput(
+        "processed",
+        destination="results/processed.json",
+        file_type=JsonFile(),
+    )
+    spec = StepSpec(
+        inputs=[result_input],
+        outputs=[processed_output],
+    )
 ```
 
 The file type owns format-specific I/O and validation. `FileType` leaves an
@@ -95,8 +103,10 @@ Tasks and workflows are ASOkai CLI-level collections. They are not exported as
 their own CWL files. Export first resolves the selected steps, tasks, and/or
 workflow to an execution plan, then writes one top-level `run.cwl`.
 
-Exports always include the selected goals. Missing dependencies are included
-automatically; valid existing dependency outputs are reused.
+Exports include only the selected goals by default. Their omitted producer
+outputs become external file inputs in `job.yml`. Pass `--recursive` to include
+the complete producer closure. Export planning does not inspect existing input
+or output files.
 
 ## CLI
 
@@ -105,7 +115,7 @@ Use `ASOkai export` to write a runnable CWL bundle:
 ```bash
 ASOkai export --steps download-genome create-target-gene --outdir data/jobs
 ASOkai export --tasks instantiate-target-gene --outdir data/jobs
-ASOkai export --workflow standard --outdir data/jobs
+ASOkai export --workflow standard --recursive --outdir data/jobs
 ```
 
 Each bundle contains:

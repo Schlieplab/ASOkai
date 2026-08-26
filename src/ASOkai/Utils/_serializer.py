@@ -7,28 +7,32 @@ Version: 0.1.1
 Description: This file defines the Serializable class for serializing and deserializing objects.
 License: LGPL-3.0-or-later
 """
-import json
 import importlib
 import inspect
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
+from types import NoneType, UnionType
 from typing import (
     Any,
     Callable,
     Dict,
+    Literal,
     Optional,
     Self,
+    Union,
     cast,
     get_args,
     get_origin,
     get_type_hints,
 )
 
+from Bio.Seq import Seq
+
 from .._types import Scalar
 
 class Serializable:
     """
-    Base class for objects that can be serialized to a dictionary and file.
+    Base class for objects that can be serialized to a dictionary.
     """
     
     # Class-level registry for external types
@@ -39,6 +43,36 @@ class Serializable:
     
     # Attributes to exclude from serialization
     _non_serializable_attrs: set[str] = set()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Give each subclass its own attribute-adapter declarations."""
+        super().__init_subclass__(**kwargs)
+        cls._attribute_serializers = {}
+        cls._attribute_deserializers = {}
+
+    @classmethod
+    def _registered_attribute_serializers(
+        cls,
+    ) -> Dict[str, tuple[str, Callable[[Any], Any], bool]]:
+        """Return inherited serializers without sharing mutable registries."""
+        serializers: Dict[str, tuple[str, Callable[[Any], Any], bool]] = {}
+        for base in reversed(cls.__mro__):
+            serializers.update(
+                base.__dict__.get("_attribute_serializers", {})
+            )
+        return serializers
+
+    @classmethod
+    def _registered_attribute_deserializers(
+        cls,
+    ) -> Dict[str, tuple[str, Callable[[Any], Any]]]:
+        """Return inherited deserializers without sharing mutable registries."""
+        deserializers: Dict[str, tuple[str, Callable[[Any], Any]]] = {}
+        for base in reversed(cls.__mro__):
+            deserializers.update(
+                base.__dict__.get("_attribute_deserializers", {})
+            )
+        return deserializers
     
 
     def __init__(self, **kwargs: Any) -> None:
@@ -97,8 +131,9 @@ class Serializable:
         """
         if attribute_name in self._non_serializable_attrs:
             return {}
-        if attribute_name in self._attribute_serializers:
-            serialize_attribute_name, serialize_func, flatten = self._attribute_serializers[attribute_name]
+        serializers = type(self)._registered_attribute_serializers()
+        if attribute_name in serializers:
+            serialize_attribute_name, serialize_func, flatten = serializers[attribute_name]
             if flatten:
                 return serialize_func(value)
             else:
@@ -110,7 +145,9 @@ class Serializable:
         """
         Default method to serialize a value to a dictionary.
         """
-        if isinstance(value, Scalar):
+        if isinstance(value, Seq):
+            return str(value)
+        elif isinstance(value, Scalar):
             return value
         elif isinstance(value, Serializable):
             return value.to_dict()
@@ -127,13 +164,6 @@ class Serializable:
         else:
             raise TypeError(f"Cannot serialize type {type(value).__name__}")
 
-    def to_file(self, file_path: str) -> None:
-        """
-        method to write the object to a file.
-        """
-        with open(file_path, 'w') as f:
-            json.dump(self.to_dict(), f, indent=4)
-
     @classmethod
     def _deserialize_value(
         cls,
@@ -146,25 +176,70 @@ class Serializable:
         origin = get_origin(expected_type)
         type_arguments = get_args(expected_type)
 
-        if origin is list and isinstance(value_data, list):
+        if origin in (Union, UnionType):
+            errors: list[TypeError | ValueError] = []
+            for alternative in type_arguments:
+                try:
+                    return cls._deserialize_value(value_data, alternative)
+                except (TypeError, ValueError) as error:
+                    errors.append(error)
+            raise TypeError(
+                f"Value {value_data!r} does not match {expected_type!r}."
+            ) from errors[-1]
+
+        if origin is Literal:
+            if any(
+                type(value_data) is type(option) and value_data == option
+                for option in type_arguments
+            ):
+                return value_data
+            raise ValueError(
+                f"Value {value_data!r} is not one of {type_arguments!r}."
+            )
+
+        if expected_type is Seq:
+            if type(value_data) is not str:
+                raise TypeError("Seq values must be serialized as strings.")
+            return Seq(value_data)
+
+        if expected_type is NoneType:
+            if value_data is not None:
+                raise TypeError("Expected null.")
+            return None
+
+        if expected_type in (str, int, float, bool):
+            if expected_type is float:
+                if type(value_data) not in (int, float):
+                    raise TypeError("Expected a number.")
+                return float(value_data)
+            if type(value_data) is not expected_type:
+                raise TypeError(
+                    f"Expected {expected_type.__name__}; received "
+                    f"{type(value_data).__name__}."
+                )
+            return value_data
+
+        if origin is list:
+            if not isinstance(value_data, list):
+                raise TypeError("Expected a list.")
             item_type = type_arguments[0] if type_arguments else Any
             return [
                 cls._deserialize_value(item, item_type)
                 for item in value_data
             ]
 
-        if origin in (dict, Mapping) and isinstance(value_data, dict):
+        if origin in (dict, Mapping):
+            if not isinstance(value_data, dict):
+                raise TypeError("Expected a mapping.")
             value_type = type_arguments[1] if len(type_arguments) == 2 else Any
             return {
                 key: cls._deserialize_value(value, value_type)
                 for key, value in value_data.items()
             }
 
-        if (
-            isinstance(expected_type, type)
-            and is_dataclass(expected_type)
-            and isinstance(value_data, dict)
-        ):
+        if isinstance(expected_type, type) and is_dataclass(expected_type):
+            if not isinstance(value_data, dict):
+                raise TypeError("Expected a dataclass mapping.")
             field_types = get_type_hints(expected_type)
             constructor_values = {
                 field.name: cls._deserialize_value(
@@ -175,6 +250,14 @@ class Serializable:
                 if field.init and field.name in value_data
             }
             return expected_type(**constructor_values)
+
+        if (
+            isinstance(expected_type, type)
+            and issubclass(expected_type, Serializable)
+        ):
+            if not isinstance(value_data, dict):
+                raise TypeError("Expected a serialized object mapping.")
+            return expected_type.from_dict(value_data)
 
         if isinstance(value_data, list):
             return [cls._deserialize_value(item) for item in value_data]
@@ -200,9 +283,20 @@ class Serializable:
         """
         Deserialize an attribute from a dictionary.
         """
-        if attribute_name in cls._attribute_deserializers:
-            deserialize_attribute_name, deserialize_func = cls._attribute_deserializers[attribute_name]
-            return {deserialize_attribute_name: deserialize_func(value)}
+        deserializers = cls._registered_attribute_deserializers()
+        if attribute_name in deserializers:
+            deserialize_attribute_name, deserialize_func = deserializers[attribute_name]
+            if expected_type is not Any:
+                try:
+                    deserialized_value = cls._deserialize_value(
+                        value,
+                        expected_type,
+                    )
+                except (TypeError, ValueError):
+                    deserialized_value = deserialize_func(value)
+            else:
+                deserialized_value = deserialize_func(value)
+            return {deserialize_attribute_name: deserialized_value}
 
         return {
             attribute_name: cls._deserialize_value(value, expected_type)
@@ -256,16 +350,3 @@ class Serializable:
                 break
 
         return cast(Self, cls_from_data(**init_args))
-
-
-    @classmethod
-    def from_file(
-        cls,
-        file_path: str,
-    ) -> Self:
-        """
-        Create an object from a JSON file.
-        """
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-        return cls.from_dict(data)

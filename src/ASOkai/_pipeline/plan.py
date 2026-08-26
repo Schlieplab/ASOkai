@@ -130,11 +130,13 @@ class _PlanBuilder:
         *,
         non_recursive: bool,
         force: bool,
+        validate_input_files: bool = True,
     ) -> None:
         self.main_config = main_config
         self.registered_steps = registered_steps
         self.non_recursive = non_recursive
         self.force_goal_runs = force
+        self.validate_input_files = validate_input_files
         self.requests: dict[str, _RunRequest] = {}
         self.pending_request_ids: deque[str] = deque()
 
@@ -202,6 +204,7 @@ class _PlanBuilder:
         dependency_path: tuple[str, ...],
     ) -> _RunRequest:
         """Reserve one request in the breadth-first discovery queue."""
+        step.validate_output_declaration()
         existing_request = self.requests.get(request_id)
         if existing_request is not None:
             if not _request_matches_step_config(
@@ -294,7 +297,11 @@ class _PlanBuilder:
         """Resolve queued requests and add their producers breadth-first."""
         while self.pending_request_ids:
             request = self.requests[self.pending_request_ids.popleft()]
-            cfg.validate_step_config(request.config, [request.step])
+            cfg.validate_step_config(
+                request.config,
+                [request.step],
+                validate_input_files=self.validate_input_files,
+            )
             request.input_sources.extend(
                 self._discover_input_source(request, file_input)
                 for file_input in request.step.spec.inputs
@@ -422,17 +429,7 @@ class _PlanBuilder:
 
     def build(self, goal_steps: list[Step]) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
-        for step in goal_steps:
-            self._reserve_request(
-                step.name,
-                step,
-                self.main_config,
-                dependency_path=(step.name,),
-            )
-        self._discover_run_requests()
-
-        run_by_request_id, producer_first_runs = self._resolve_run_requests()
-        goals = tuple(run_by_request_id[step.name] for step in goal_steps)
+        goals, producer_first_runs = self._resolve_goals(goal_steps)
         runs_to_execute, reusable_outputs = self._schedule_required_runs(
             goals,
             producer_first_runs,
@@ -444,22 +441,73 @@ class _PlanBuilder:
             resolved_outputs=reusable_outputs,
         )
 
+    def _resolve_goals(
+        self,
+        goal_steps: list[Step],
+    ) -> tuple[tuple[StepRun, ...], tuple[StepRun, ...]]:
+        """Discover dependencies and return goals plus producer-first runs."""
+        for step in goal_steps:
+            self._reserve_request(
+                step.name,
+                step,
+                self.main_config,
+                dependency_path=(step.name,),
+            )
+        self._discover_run_requests()
 
-def build_plan(
+        run_by_request_id, producer_first_runs = self._resolve_run_requests()
+        goals = tuple(run_by_request_id[step.name] for step in goal_steps)
+        return goals, producer_first_runs
+
+    def build_export(
+        self,
+        goal_steps: list[Step],
+        *,
+        recursive: bool,
+    ) -> ExecutionPlan:
+        """Resolve runs for export without consulting existing output files."""
+        goals, producer_first_runs = self._resolve_goals(goal_steps)
+        goal_runs = set(goals)
+        included_runs = (
+            producer_first_runs
+            if recursive
+            else tuple(run for run in producer_first_runs if run in goal_runs)
+        )
+        included_run_set = set(included_runs)
+        external_outputs: dict[StepRunOutput, Path] = {}
+        for run in producer_first_runs:
+            if run in included_run_set:
+                continue
+            paths = run.step.output_paths(dict(run.config))
+            for output in run.step.spec.outputs:
+                external_outputs[run.output(output)] = paths[output.name]
+
+        return ExecutionPlan(
+            goals=goals,
+            runs_to_execute=included_runs,
+            resolved_outputs=external_outputs,
+        )
+
+
+def _validated_goal_steps(
     runnables: Sequence[Runnable],
     config: dict,
-    *,
-    non_recursive: bool = False,
-    force: bool = False,
-    _registry: dict[str, Step] | None = None,
-) -> ExecutionPlan:
-    """Resolve requested runnables into a dependency-complete execution plan."""
-    if _registry is None:
-        from ASOkai.Plugins._registry import get_steps
+    registered_steps: dict[str, Step] | None,
+    config_schema_paths: Mapping[str, Path] | None,
+) -> tuple[dict[str, Step], list[Step]]:
+    """Resolve the registry and validate shared planning inputs once."""
+    if registered_steps is None:
+        from ASOkai._pipeline.catalog import get_pipeline_catalog
 
-        _registry = get_steps()
+        catalog = get_pipeline_catalog()
+        registered_steps = catalog.steps
+        config_schema_paths = catalog.config_schema_paths
 
-    cfg.validate_config_schema(config)
+    cfg.validate_config_schema(
+        config,
+        plugin_schema_paths=config_schema_paths,
+    )
+    cfg.validate_configured_step_names(config, registered_steps)
 
     goal_steps: list[Step] = []
     seen_goal_names: set[str] = set()
@@ -469,6 +517,25 @@ def build_plan(
                 continue
             seen_goal_names.add(step.name)
             goal_steps.append(step)
+    return registered_steps, goal_steps
+
+
+def build_plan(
+    runnables: Sequence[Runnable],
+    config: dict,
+    *,
+    non_recursive: bool = False,
+    force: bool = False,
+    _registry: dict[str, Step] | None = None,
+    _config_schema_paths: Mapping[str, Path] | None = None,
+) -> ExecutionPlan:
+    """Resolve requested runnables into a dependency-complete execution plan."""
+    _registry, goal_steps = _validated_goal_steps(
+        runnables,
+        config,
+        _registry,
+        _config_schema_paths,
+    )
 
     builder = _PlanBuilder(
         config,
@@ -477,3 +544,28 @@ def build_plan(
         force=force,
     )
     return builder.build(goal_steps)
+
+
+def build_export_plan(
+    runnables: Sequence[Runnable],
+    config: dict,
+    *,
+    recursive: bool = False,
+    _registry: dict[str, Step] | None = None,
+    _config_schema_paths: Mapping[str, Path] | None = None,
+) -> ExecutionPlan:
+    """Resolve a file-system-independent plan for a CWL export bundle."""
+    _registry, goal_steps = _validated_goal_steps(
+        runnables,
+        config,
+        _registry,
+        _config_schema_paths,
+    )
+    builder = _PlanBuilder(
+        config,
+        _registry,
+        non_recursive=False,
+        force=True,
+        validate_input_files=False,
+    )
+    return builder.build_export(goal_steps, recursive=recursive)

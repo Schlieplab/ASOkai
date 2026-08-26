@@ -127,6 +127,13 @@ class Step(Runnable):
         """Return config-backed CWL inputs for this step."""
         return self.spec.config_map()
 
+    def validate_output_declaration(self) -> None:
+        """Require at least one file output for planning and publication."""
+        if not self.spec.outputs:
+            raise ValueError(
+                f"Step '{self.name}' must declare at least one file output."
+            )
+
     def _validate_standard_parameters(self) -> None:
         for param in (*self.spec.params, *self.spec.inputs):
             if (

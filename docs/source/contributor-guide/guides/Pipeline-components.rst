@@ -38,7 +38,9 @@ The step specification
 
 ``StepSpec`` is the source of truth for one step's interface. It contains
 scalar parameters, file inputs, file outputs, optional applicability rules,
-and the low-level CWL settings needed by exceptional steps.
+and the low-level CWL settings needed by exceptional steps. Every concrete
+step must declare at least one file output so the planner can track completion
+and publication.
 
 From this declaration ASOkai derives:
 

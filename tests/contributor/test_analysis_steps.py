@@ -14,11 +14,11 @@ import pytest
 import yaml
 
 from ASOkai.Plugins import AnalysisStep, JsonFile, Step
-from ASOkai.Plugins import _registry as registry
 from ASOkai.Plugins._validation import (
     validate_plugin_instance,
     validate_step_dependencies,
 )
+from ASOkai._pipeline import catalog as pipeline_catalog
 from ASOkai._pipeline import config as config_module
 from ASOkai._pipeline import steps as steps_package
 from ASOkai._pipeline.contracts.json_schema import (
@@ -48,7 +48,7 @@ TEMPLATE_STEP = cast(
         str(ROOT / "examples/contributor_steps/analysis_step.py")
     )["ExampleAnalysisStep"],
 )()
-BUILTIN_STEPS = tuple(registry._BUILTIN_STEPS)
+BUILTIN_STEPS = tuple(pipeline_catalog._BUILTIN_STEPS)
 CONTRIBUTOR_STEPS = (*BUILTIN_STEPS, TEMPLATE_STEP)
 REGISTERED_STEPS = {step.name: step for step in BUILTIN_STEPS}
 

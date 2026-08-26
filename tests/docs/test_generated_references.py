@@ -45,7 +45,7 @@ from contract_docs.file_contracts import (  # noqa: E402
     json_example,
 )
 from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
-from ASOkai._pipeline.contracts.files import FileInput  # noqa: E402
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput  # noqa: E402
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
@@ -81,7 +81,7 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     )
     assert fields["resources.intrinsic-features.n_processes"].value_type == "integer"
     assert fields["target.target_id"].requirement == (
-        "Exactly one of target_id or target_name is required"
+        "Exactly one of target_id, target_name is required when target is configured"
     )
 
 
@@ -228,7 +228,11 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
             source=CreateTargetGeneStep.target_gene_output,
             configurable_parameters=("region",),
         )
-        spec = StepSpec(inputs=[context_target_input])
+        result_output = FileOutput("result", destination="context/result.txt")
+        spec = StepSpec(
+            inputs=[context_target_input],
+            outputs=[result_output],
+        )
 
     reference = "\n".join(
         node.astext()

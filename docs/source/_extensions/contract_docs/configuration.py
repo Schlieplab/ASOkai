@@ -317,7 +317,7 @@ def _collect_schema_rules(
 
 def get_built_in_steps() -> tuple[Any, ...]:
     """Return the built-in steps in their registered pipeline order."""
-    from ASOkai.Plugins._registry import _BUILTIN_STEPS
+    from ASOkai._pipeline.catalog import _BUILTIN_STEPS
 
     return tuple(_BUILTIN_STEPS)
 
@@ -349,21 +349,12 @@ def collect_step_config_fields(
             added_paths.add(field.path)
 
     add(all_fields["datadir"])
-    parameter_paths = {
-        parameter.config
-        for parameter in step.spec.params
-        if parameter.config is not None
-    }
-    identifier_paths = {"target.target_id", "target.target_name"}
-    has_identifier_choice = identifier_paths <= parameter_paths
     for parameter in step.spec.params:
         if parameter.config is None or parameter.config in added_paths:
             continue
         field = all_fields[parameter.config]
         requirement = field.requirement
-        if has_identifier_choice and parameter.config in identifier_paths:
-            requirement = "Exactly one of target_id or target_name is required"
-        elif requirement == "Optional" and parameter.parser_required():
+        if requirement == "Optional" and parameter.parser_required():
             requirement = "Required"
         add(replace(field, requirement=requirement))
 

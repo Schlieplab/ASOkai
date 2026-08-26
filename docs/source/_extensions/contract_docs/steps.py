@@ -278,9 +278,9 @@ def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
 
 def _step_documentation_sources(steps: tuple[Any, ...]) -> list[object]:
     """Return declarations whose values feed generated step references."""
-    from ASOkai.Plugins import _registry
+    from ASOkai._pipeline import catalog
 
-    sources: list[object] = [_registry]
+    sources: list[object] = [catalog]
     for step in steps:
         sources.append(step)
         analysis_type = getattr(step, "analysis_cls", None)
@@ -404,7 +404,7 @@ def _dependency_section(step: Any, *, refdoc: str) -> nodes.section:
 
 def _transitive_steps(step: Any) -> list[Any]:
     """Return dependencies followed by the selected step."""
-    from ASOkai.Plugins._registry import _BUILTIN_STEPS
+    from ASOkai._pipeline.catalog import _BUILTIN_STEPS
 
     registry = {candidate.name: candidate for candidate in _BUILTIN_STEPS}
     ordered: list[Any] = []

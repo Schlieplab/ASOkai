@@ -14,7 +14,7 @@ from typing import Any
 
 import click
 
-from ASOkai.Plugins._registry import get_steps, get_tasks, get_workflows
+from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.core.base import CoreStep
 
@@ -66,11 +66,12 @@ def _display_description(pipeline_unit: object) -> str:
 )
 def list_command(unit: str) -> None:
     """List available steps, tasks, or workflows."""
+    catalog = get_pipeline_catalog()
     registry = {
-        "steps": get_steps,
-        "tasks": get_tasks,
-        "workflows": get_workflows,
-    }[unit]()
+        "steps": catalog.steps,
+        "tasks": catalog.tasks,
+        "workflows": catalog.workflows,
+    }[unit]
     if not registry:
         click.echo(f"No {unit} available.")
         return
@@ -260,15 +261,16 @@ def _describe_dependencies(
     dependencies: list[str],
     unit: str,
     verbose: bool,
+    catalog: PipelineCatalog,
 ) -> None:
     """Print a dependency summary."""
     if not dependencies:
         click.echo(f"{label}: (none)")
     elif verbose and unit == "step":
         registry = {
-            **get_steps(),
-            **get_tasks(),
-            **get_workflows(),
+            **catalog.steps,
+            **catalog.tasks,
+            **catalog.workflows,
         }
         click.echo(f"{label}:")
         for line in _dependency_tree_lines(registry, dependencies):
@@ -294,11 +296,12 @@ def describe_command(
     name: str,
 ) -> None:
     """Describe a step, task, or workflow."""
+    catalog = get_pipeline_catalog()
     registry = {
-        "step": get_steps,
-        "task": get_tasks,
-        "workflow": get_workflows,
-    }[unit]()
+        "step": catalog.steps,
+        "task": catalog.tasks,
+        "workflow": catalog.workflows,
+    }[unit]
     pipeline_unit = registry.get(name)
     if pipeline_unit is None:
         raise click.ClickException(f"Unknown {unit} '{name}'.")
@@ -320,4 +323,5 @@ def describe_command(
         dependencies,
         unit,
         ctx.obj.get("verbose", False),
+        catalog,
     )

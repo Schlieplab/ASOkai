@@ -28,6 +28,8 @@ from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 
 @pytest.fixture
@@ -62,12 +64,18 @@ def _materializing_executor(*filenames, before_run=None):
     return executor
 
 
-def test_run_step_unknown_step(config):
-    with pytest.raises(ValueError, match="Unknown step 'nonexistent'"):
-        runner.run_step("nonexistent", config)
+def _run_download(config, **kwargs):
+    """Run the download step through the generic runner entry point."""
+    step = DownloadGenomeStep()
+    return runner.run_all(
+        [step],
+        config,
+        registered_steps={step.name: step},
+        **kwargs,
+    )
 
 
-def test_run_step_skips_when_outputs_exist(config, tmp_path):
+def test_runner_skips_execution_when_outputs_exist(config, tmp_path):
     step = DownloadGenomeStep()
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
@@ -75,15 +83,14 @@ def test_run_step_skips_when_outputs_exist(config, tmp_path):
         p.touch()
 
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        result = runner.run_step("download-genome", config)
+        result = _run_download(config)
         mock_run.assert_not_called()
     assert result is not None
 
 
-def test_run_step_dry_run_returns_outputs_without_executing(config):
+def test_dry_run_returns_outputs_without_executing(config):
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as execute:
-        result = runner.run_step(
-            "download-genome",
+        result = _run_download(
             config,
             dry_run=True,
             force=True,
@@ -96,10 +103,10 @@ def test_run_step_dry_run_returns_outputs_without_executing(config):
     assert "download-genome.annotation" in result
 
 
-def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
+def test_runner_writes_job_bundle_before_execution(config, tmp_path):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
 
-    runner.run_step("download-genome", config, force=True, executor=executor)
+    _run_download(config, force=True, executor=executor)
 
     export_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(export_dirs) == 1
@@ -116,24 +123,23 @@ def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
     ))
 
 
-def test_run_step_rejects_missing_published_outputs(config):
+def test_runner_rejects_missing_published_outputs(config):
     executor = _materializing_executor("dna.fa.gz")
 
     with pytest.raises(RuntimeError, match="did not publish expected output"):
-        runner.run_step("download-genome", config, force=True, executor=executor)
+        _run_download(config, force=True, executor=executor)
 
     paths = DownloadGenomeStep().output_paths(config)
     assert paths["dna"].exists()
     assert not paths["cdna"].exists()
 
 
-def test_run_step_rejects_unsupported_download_source(config):
+def test_runner_rejects_unsupported_download_source(config):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
     config["genome"]["source"] = "ucsc"
 
     with pytest.raises(ValueError, match=r"genome.source.*ensembl"):
-        runner.run_step(
-            "download-genome",
+        _run_download(
             config,
             force=True,
             executor=executor,
@@ -142,7 +148,7 @@ def test_run_step_rejects_unsupported_download_source(config):
     executor.run.assert_not_called()
 
 
-def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
+def test_forced_dry_run_does_not_cleanup_outputs(config, tmp_path):
     step = DownloadGenomeStep()
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
@@ -150,12 +156,12 @@ def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
         p.touch()
 
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run"):
-        runner.run_step("download-genome", config, force=True, dry_run=True)
+        _run_download(config, force=True, dry_run=True)
 
     assert all(path.exists() for path in step.output_paths(config).values())
 
 
-def test_run_step_removes_partial_outputs_before_execution(config):
+def test_runner_removes_partial_outputs_before_execution(config):
     step = DownloadGenomeStep()
     existing_output = step.output_paths(config)["dna"]
     existing_output.parent.mkdir(parents=True)
@@ -172,15 +178,14 @@ def test_run_step_removes_partial_outputs_before_execution(config):
         before_run=assert_stale_output_removed,
     )
 
-    runner.run_step(
-        "download-genome",
+    _run_download(
         config,
         force=True,
         executor=executor,
     )
 
 
-def test_run_step_missing_dependency_raises(config, monkeypatch):
+def test_non_recursive_run_rejects_missing_dependency(config, monkeypatch):
     step = DownloadGenomeStep()
 
     class MockBuildStep(Step):
@@ -215,14 +220,13 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
         "download-genome": step,
         "build-genome": mock_build,
     }
-    with patch("ASOkai._pipeline.runner.get_steps", return_value=registry), \
-         patch("ASOkai.Plugins._registry.get_steps", return_value=registry):
-        with pytest.raises(RuntimeError, match="'build-genome'.*required"):
-            runner.run_step(
-                "download-genome",
-                config,
-                non_recursive=True,
-            )
+    with pytest.raises(RuntimeError, match="'build-genome'.*required"):
+        runner.run_all(
+            [step],
+            config,
+            non_recursive=True,
+            registered_steps=registry,
+        )
 
 
 @pytest.fixture
@@ -253,14 +257,13 @@ def workflow_config(tmp_path):
     }
 
 
-def test_run_workflow_unknown_raises(workflow_config):
-    with pytest.raises(ValueError, match="Unknown workflow 'nonexistent'"):
-        runner.run_workflow("nonexistent", workflow_config)
-
-
-def test_run_workflow_dry_run_does_not_call_default_executor(workflow_config):
+def test_workflow_dry_run_does_not_call_default_executor(workflow_config):
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        runner.run_workflow("standard", workflow_config, dry_run=True)
+        runner.run_all(
+            [StandardWorkflow()],
+            workflow_config,
+            dry_run=True,
+        )
     mock_run.assert_not_called()
 
 
@@ -361,11 +364,91 @@ def test_export_all_includes_steps_even_when_outputs_exist(workflow_config, tmp_
     assert "step_download_genome:" in (export_dir / "run.cwl").read_text()
 
 
-def test_run_task_multistep_dry_run_returns_requested_outputs(workflow_config):
+def test_export_all_includes_only_goal_steps_by_default(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    for path in download.output_paths(workflow_config).values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    assert not (export_dir / "steps" / "download-genome.cwl").exists()
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert job["download-genome.dna"]["path"] == str(
+        download.output_paths(workflow_config)["dna"].resolve()
+    )
+
+
+def test_recursive_export_includes_complete_producer_closure(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    for path in download.output_paths(workflow_config).values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        recursive=True,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    assert (export_dir / "steps" / "download-genome.cwl").exists()
+    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert "download-genome.dna" not in job
+
+
+def test_export_does_not_require_input_override_to_exist(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    missing_override = tmp_path / "missing-dna.fa"
+    workflow_config["steps"] = {
+        create.name: {
+            "inputs": {
+                "dna": {"path_override": str(missing_override)},
+            },
+        },
+    }
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert job["create-target-gene.dna"]["path"] == str(
+        missing_override.resolve()
+    )
+
+
+def test_task_dry_run_returns_requested_outputs(workflow_config):
     executor = MagicMock()
 
-    result = runner.run_task(
-        "instantiate-target-gene",
+    result = runner.run_all(
+        [InstantiateTargetGeneTask()],
         workflow_config,
         dry_run=True,
         executor=executor,

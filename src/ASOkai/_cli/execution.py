@@ -13,7 +13,7 @@ from pathlib import Path
 
 import click
 
-from ASOkai.Plugins._registry import get_pipeline_units
+from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
 
@@ -31,34 +31,33 @@ def _collect_runnables(
     step_names: tuple[str, ...],
     task_names: tuple[str, ...],
     workflow_name: str | None,
+    catalog: PipelineCatalog,
 ) -> list:
     """Resolve CLI selections to registered runnable objects."""
-    steps, tasks, workflows = get_pipeline_units()
-
     runnables = []
     for name in flatten_option_values(step_names):
-        if name not in steps:
+        if name not in catalog.steps:
             raise click.BadParameter(
                 f"Unknown step '{name}'.",
                 param_hint="--steps",
             )
-        runnables.append(steps[name])
+        runnables.append(catalog.steps[name])
 
     for name in flatten_option_values(task_names):
-        if name not in tasks:
+        if name not in catalog.tasks:
             raise click.BadParameter(
                 f"Unknown task '{name}'.",
                 param_hint="--tasks",
             )
-        runnables.append(tasks[name])
+        runnables.append(catalog.tasks[name])
 
     if workflow_name:
-        if workflow_name not in workflows:
+        if workflow_name not in catalog.workflows:
             raise click.BadParameter(
                 f"Unknown workflow '{workflow_name}'.",
                 param_hint="--workflow",
             )
-        runnables.append(workflows[workflow_name])
+        runnables.append(catalog.workflows[workflow_name])
 
     if not runnables:
         raise click.UsageError(
@@ -149,13 +148,19 @@ def run_command(
     config_overrides: tuple,
 ) -> None:
     """Run selected steps, tasks, or a workflow."""
+    catalog = get_pipeline_catalog()
     runnables = _collect_runnables(
         step_names,
         task_names,
         workflow_name,
+        catalog,
     )
     try:
-        config = cfg.load(config_path)
+        config = cfg.load(
+            config_path,
+            plugin_schema_paths=catalog.config_schema_paths,
+            registered_steps=catalog.steps,
+        )
         overrides = parse_config_overrides(config_overrides)
         if overrides:
             cfg.apply_overrides(config, overrides)
@@ -167,6 +172,8 @@ def run_command(
             dry_run=dry_run,
             non_recursive=non_recursive,
             executor=runner.executor_from_name(executor_name),
+            registered_steps=catalog.steps,
+            config_schema_paths=catalog.config_schema_paths,
         )
     except (OSError, RuntimeError, ValueError) as error:
         raise click.ClickException(str(error)) from error
@@ -210,9 +217,9 @@ def run_command(
     help="Workflow to export.",
 )
 @click.option(
-    "--non-recursive",
+    "--recursive",
     is_flag=True,
-    help="Require step dependencies to exist instead of exporting missing ones.",
+    help="Include every producer needed by the selected goals.",
 )
 @click.option(
     "--outdir",
@@ -246,19 +253,25 @@ def export_command(
     step_names: tuple[str, ...],
     task_names: tuple[str, ...],
     workflow_name: str | None,
-    non_recursive: bool,
+    recursive: bool,
     outdir: Path | None,
     executor_name: str,
     config_overrides: tuple,
 ) -> None:
     """Export selected pipeline units as a runnable CWL bundle."""
+    catalog = get_pipeline_catalog()
     runnables = _collect_runnables(
         step_names,
         task_names,
         workflow_name,
+        catalog,
     )
     try:
-        config = cfg.load(config_path)
+        config = cfg.load(
+            config_path,
+            plugin_schema_paths=catalog.config_schema_paths,
+            registered_steps=catalog.steps,
+        )
         overrides = parse_config_overrides(config_overrides)
         if overrides:
             cfg.apply_overrides(config, overrides)
@@ -266,9 +279,11 @@ def export_command(
         export_directory = runner.export_all(
             runnables,
             config,
-            non_recursive=non_recursive,
+            recursive=recursive,
             outdir=outdir,
             runner_name=runner.runner_name_from_name(executor_name),
+            registered_steps=catalog.steps,
+            config_schema_paths=catalog.config_schema_paths,
         )
     except (OSError, RuntimeError, ValueError) as error:
         raise click.ClickException(str(error)) from error

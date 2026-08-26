@@ -14,7 +14,7 @@ from pathlib import Path
 
 import click
 
-from ASOkai.Plugins._registry import get_steps
+from ASOkai._pipeline.catalog import get_steps
 
 from .catalog import describe_command, list_command
 from .execution import export_command, run_command

@@ -9,12 +9,12 @@ License: LGPL-3.0-or-later
 """
 
 import pytest
-import json
 from dataclasses import dataclass
 
 from Bio.Seq import Seq
 
 from ASOkai.Utils import Serializable
+from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.contracts.json_schema import build_json_schema
 
 
@@ -69,6 +69,26 @@ class SerializableWithLocations(Serializable):
 
     def __init__(self, locations: list[ExternalLocation]):
         self.locations = locations
+        super().__init__()
+
+
+class SerializableWithSequences(Serializable):
+    """Test class containing sequence values inside a mapping."""
+
+    sequences: dict[str, Seq]
+
+    def __init__(self, sequences: dict[str, Seq]):
+        self.sequences = sequences
+        super().__init__()
+
+
+class SerializableWithOptionalSequence(Serializable):
+    """Test class containing a union-supported optional sequence."""
+
+    sequence: Seq | None
+
+    def __init__(self, sequence: Seq | None):
+        self.sequence = sequence
         super().__init__()
     
 
@@ -175,46 +195,6 @@ class TestSerializableNameMapping:
 
 @pytest.mark.unit
 @pytest.mark.serialization
-class TestSerializableFileOperations:
-    """Test file I/O operations."""
-    
-    def test_to_file(self, temp_json_file):
-        """Test writing to file."""
-        obj = SimpleSerializable(name="test", value=42)
-        obj.to_file(temp_json_file)
-        
-        # Verify file was created and contains valid JSON
-        with open(temp_json_file, 'r') as f:
-            data = json.load(f)
-        
-        assert data['name'] == 'test'
-        assert data['value'] == 42
-        
-    def test_from_file(self, temp_json_file):
-        """Test reading from file."""
-        # Write test data
-        obj = SimpleSerializable(name="test", value=42)
-        obj.to_file(temp_json_file)
-        
-        # Read back
-        reconstructed = SimpleSerializable.from_file(temp_json_file)
-        
-        assert isinstance(reconstructed, SimpleSerializable)
-        assert reconstructed.name == 'test'
-        assert reconstructed.value == 42
-        
-    def test_file_roundtrip(self, temp_json_file, sample_sequence):
-        """Test complete file roundtrip."""
-        original = SerializableWithMapping(sequence=sample_sequence)
-        original.to_file(temp_json_file)
-        
-        reconstructed = SerializableWithMapping.from_file(temp_json_file)
-        
-        assert str(reconstructed._sequence) == str(original._sequence)
-
-
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableComplexTypes:
     """Test serialization of complex nested types."""
     
@@ -236,13 +216,44 @@ class TestSerializableComplexTypes:
         
         assert data['items'] == [1, 2, 3, "four"]
         
-    def test_registered_type_in_dict(self, sample_sequence):
-        """External types in nested dicts are not supported by default."""
-        obj = SimpleSerializable(name="test", value=42)
-        setattr(obj, "sequences", {"seq1": sample_sequence})
-        
-        with pytest.raises(TypeError, match="Cannot serialize type Seq"):
-            obj.to_dict()
+    def test_sequence_values_roundtrip_inside_annotated_mapping(
+        self,
+        sample_sequence,
+    ):
+        original = SerializableWithSequences(
+            sequences={"seq1": sample_sequence},
+        )
+
+        contract = JsonFile(SerializableWithSequences)
+        serialized = original.to_dict()
+        reconstructed = contract.loads(contract.dumps(original))
+
+        assert serialized["sequences"] == {"seq1": str(sample_sequence)}
+        assert reconstructed.sequences == {"seq1": sample_sequence}
+
+    @pytest.mark.parametrize("sequence", [Seq("ACGT"), None])
+    def test_optional_sequence_roundtrips_through_its_json_contract(
+        self,
+        sequence,
+    ):
+        contract = JsonFile(SerializableWithOptionalSequence)
+
+        reconstructed = contract.loads(
+            contract.dumps(SerializableWithOptionalSequence(sequence)),
+        )
+
+        assert reconstructed.sequence == sequence
+
+    def test_sequence_mapping_annotation_produces_matching_schema(self):
+        schema = build_json_schema(SerializableWithSequences)
+
+        assert schema["properties"]["sequences"] == {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string",
+                "examples": ["ACGT"],
+            },
+        }
 
     def test_dataclass_values_roundtrip_from_constructor_annotations(self):
         original = SerializableWithLocations(

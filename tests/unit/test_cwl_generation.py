@@ -23,7 +23,7 @@ from ASOkai.Plugins import (
     Step,
     StepSpec,
 )
-from ASOkai.Plugins._registry import get_steps
+from ASOkai._pipeline.catalog import get_steps
 from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
     StepInputBinding,

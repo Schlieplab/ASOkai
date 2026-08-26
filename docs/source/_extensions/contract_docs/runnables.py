@@ -27,7 +27,7 @@ from .rendering import (
 
 def get_built_in_runnables(kind: str) -> tuple[Any, ...]:
     """Return built-in tasks or workflows in registry order."""
-    from ASOkai.Plugins._registry import (
+    from ASOkai._pipeline.catalog import (
         _BUILTIN_TASKS,
         _BUILTIN_WORKFLOWS,
     )
@@ -55,13 +55,13 @@ def get_built_in_runnable(kind: str, name: str) -> Any:
 
 def _runnable_documentation_sources() -> list[object]:
     """Return declarations whose values feed runnable references."""
-    from ASOkai.Plugins import _registry
+    from ASOkai._pipeline import catalog
 
     return [
-        _registry,
-        *_registry._BUILTIN_STEPS,
-        *_registry._BUILTIN_TASKS,
-        *_registry._BUILTIN_WORKFLOWS,
+        catalog,
+        *catalog._BUILTIN_STEPS,
+        *catalog._BUILTIN_TASKS,
+        *catalog._BUILTIN_WORKFLOWS,
     ]
 
 

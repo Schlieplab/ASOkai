@@ -30,6 +30,7 @@ def validate_plugin_instance(kind: str, instance: object) -> None:
     if isinstance(instance, Step):
         if type(instance).run_from_args is Step.run_from_args:
             raise TypeError("step must implement run_from_args().")
+        instance.validate_output_declaration()
         instance.build_parser()
         if isinstance(instance, AnalysisStep):
             _validate_analysis_step(instance)
@@ -60,8 +61,6 @@ def _validate_analysis_step(step: AnalysisStep) -> None:
         or inspect.isabstract(analysis_class)
     ):
         raise TypeError("analysis_cls must be a concrete Analysis subclass.")
-    if not step.spec.outputs:
-        raise ValueError("an analysis step must declare a primary CSV output.")
     primary_output = step.spec.outputs[0]
     if not isinstance(primary_output.file_type, CsvFile):
         raise TypeError("an analysis step's first output must use CsvFile.")

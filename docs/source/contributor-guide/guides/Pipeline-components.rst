@@ -51,6 +51,9 @@ From this declaration ASOkai derives:
 - output filenames and publication paths; and
 - the generated pipeline-reference documentation.
 
+See :ref:`generated-step-reference` for the declarations used by generated
+pages and the schema form for conditional parameter alternatives.
+
 Dependencies are not listed separately. A ``FileInput`` points to a producer
 step's exact ``FileOutput`` object, and that connection identifies both the
 dependency and the shared file contract.

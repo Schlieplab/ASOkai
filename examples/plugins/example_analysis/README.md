@@ -34,3 +34,8 @@ describes the plugin-owned configuration values, and `pyproject.toml` makes the
 step and schema discoverable after installation. A step may override
 `validate_parameters` when it needs a relationship between scalar parameters
 that the YAML schema cannot express.
+
+The same declarations can drive the plugin's own Sphinx reference. Reusing
+ASOkai's contract renderer is optional and does not add the plugin to ASOkai's
+static documentation; the plugin remains responsible for its documentation
+build and example configuration.

@@ -41,7 +41,10 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
 class ExampleAnalysis(SiteSpecificAnalysis):
-    """Replace this calculation with the new site-specific analysis."""
+    """Replace this calculation with the new site-specific analysis.
+
+    - **example_value**: Length of the target-site sequence.
+    """
 
     def __init__(self, sites: list, **kwargs) -> None:
         super().__init__(sites, **kwargs)

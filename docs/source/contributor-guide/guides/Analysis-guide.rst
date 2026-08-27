@@ -139,6 +139,115 @@ Use ``StepSpec.compatible_with`` only for real biological applicability
 restrictions, such as a mechanism or modality required by the analysis. Omit
 it when the analysis is generally applicable.
 
+.. _generated-step-reference:
+
+Generated reference documentation
+---------------------------------
+
+The pipeline reference is generated from the same declarations that ASOkai
+uses at runtime. Contributors do not maintain a second documentation contract.
+The generated page reads the following sources:
+
+``Step.description``
+   Introduces the step.
+
+``StepSpec.compatible_with``
+   Creates the applicability section when the step has a biological
+   restriction.
+
+``ScalarParam`` and ``config.schema.yaml``
+   Select the configuration values used by the step and provide their types,
+   requirements, constraints, and descriptions.
+
+``FileInput.doc`` and ``FileOutput.doc``
+   Describe file dependencies and produced files. Their file types supply the
+   format and link JSON outputs to their serializable classes.
+
+``OutputPathTemplate``
+   Supplies the documented destination template and example output path.
+
+``CsvFile`` and the analysis class docstring
+   Declare output columns and their types. Describe a column in the analysis
+   class docstring with one named bullet::
+
+      class ExampleAnalysis(SiteSpecificAnalysis):
+          """Calculate one value for each target site.
+
+          - **example_value**: Length of the target-site sequence.
+          """
+
+   The bullet name must match a declared CSV column. Columns without a matching
+   bullet remain valid but have no generated meaning beyond their type and
+   role.
+
+Conditional parameter alternatives
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When one configuration value selects between parameter sets, express that
+relationship in the YAML schema. The reference renderer recognizes two or
+more sibling
+``allOf`` branches in which each ``if`` selects one string ``const`` and each
+``then`` declares the fields required, allowed, or forbidden for that value.
+It renders those alternatives as separate parameter subsections with separate
+configuration examples.
+
+For example, this schema separates ``simple`` and ``bounded`` modes without
+adding documentation-only declarations:
+
+.. code-block:: yaml
+
+   mode:
+     type: object
+     additionalProperties: false
+     required:
+       - type
+     properties:
+       type:
+         type: string
+         description: Calculation mode.
+       limit:
+         type: integer
+         minimum: 1
+         description: Maximum value used by bounded mode.
+     allOf:
+       - if:
+           required: [type]
+           properties:
+             type:
+               const: bounded
+         then:
+           required: [limit]
+       - if:
+           required: [type]
+           properties:
+             type:
+               const: simple
+         then:
+           not:
+             anyOf:
+               - required: [limit]
+
+The selector and conditional fields must also be referenced by the step's
+``ScalarParam`` declarations; unused schema fields are not added to that
+step's page. Other valid YAML-schema conditions still validate configuration,
+but the renderer does not turn conditions outside this documented form into
+separate subsections. An ``x-error-message`` on such a condition can provide
+an ordinary parameter rule instead.
+
+Built-in pages use ``examples/config.example.yaml`` for rendered values and
+example paths, so every built-in configuration field should have a realistic
+example there.
+
+Plugin documentation
+~~~~~~~~~~~~~~~~~~~~
+
+Installed plugins are not inserted into ASOkai's static documentation build.
+A plugin may nevertheless reuse ASOkai's contract renderer in its own Sphinx
+documentation and supply its registered step, schema, and example
+configuration there. This is optional: the runtime plugin contract requires
+the ``asokai.steps`` entry point and, when the plugin owns configuration, the
+``asokai.config_schemas`` entry point; it does not require Sphinx documentation.
+
 Registration
 ------------
 
@@ -149,9 +258,9 @@ Built-in analysis steps live in
 Add a built-in analysis class to the API page matching its scope:
 ``docs/source/api/modules/Analysis/site-specific.rst``,
 ``target-specific.rst``, or ``genome-wide.rst``. Add an ``autoclass`` entry
-for the class exported from ``ASOkai.Analysis``. Do not create a separate step
-reference page; registration generates that page automatically from the step
-contract.
+for the class exported from ``ASOkai.Analysis``. Add a minimal step page under
+``docs/source/steps`` containing ``asokai-step-reference`` with the registered
+step name; the directive generates the page contents from the step contract.
 
 An independently installed plugin does not modify ASOkai's registry. It
 publishes the step through the ``asokai.steps`` Python entry-point group.
@@ -178,6 +287,5 @@ Run the full test suite before submitting a change:
 
    pytest
 
-The pipeline-reference pages are generated from step declarations. Keep the
-step description, parameter documentation, file contracts, and analysis class
-docstrings clear because those declarations are also the documentation source.
+The pipeline-reference pages are generated from step declarations. Keep those
+declarations clear because they are also the documentation source.

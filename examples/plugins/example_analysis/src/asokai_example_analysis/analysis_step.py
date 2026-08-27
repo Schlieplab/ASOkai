@@ -29,7 +29,11 @@ from ASOkai.Plugins import (
 
 
 class ExampleAnalysis(SiteSpecificAnalysis):
-    """Report sequence length and whether it reaches a configured minimum."""
+    """Report sequence length and whether it reaches a configured minimum.
+
+    - **sequence_length**: Number of nucleotides in the target-site sequence.
+    - **passes_minimum**: Whether the sequence reaches the configured minimum.
+    """
 
     def __init__(
         self,

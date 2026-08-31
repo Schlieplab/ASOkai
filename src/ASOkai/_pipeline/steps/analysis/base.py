@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
-from ASOkai._types import Scalar
+from ASOkai.Types import Scalar
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileOutput
 from ASOkai._pipeline.steps.base import Step

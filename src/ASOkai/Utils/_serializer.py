@@ -28,7 +28,7 @@ from typing import (
 
 from Bio.Seq import Seq
 
-from .._types import Scalar
+from ..Types import Scalar
 
 class Serializable:
     """

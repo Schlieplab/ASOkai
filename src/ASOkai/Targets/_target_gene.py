@@ -14,7 +14,7 @@ from GenomeUtils.Genome import Chromosome, Gene, Genome, Locus
 
 from ..Sites import Site
 from ..Utils import Serializable
-from .._types import Strand
+from ..Types import Strand
 
 
 class TargetGene(Serializable, Gene):

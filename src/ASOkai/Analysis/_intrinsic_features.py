@@ -7,7 +7,7 @@ Version: 0.1.1
 Description: This file defines the IntrinsicFeaturesAnalysis class for analyzing intrinsic features of target sites.
 License: LGPL-3.0-or-later
 """
-from .._types import Scalar
+from ..Types import Scalar
 from ._base import SiteSpecificAnalysis
 
 

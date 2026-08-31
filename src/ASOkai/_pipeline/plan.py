@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from ASOkai._types import Scalar
+from ASOkai.Types import Scalar
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.execution import (

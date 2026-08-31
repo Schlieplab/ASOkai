@@ -18,7 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Sequence, TypeAlias, cast
 
-from ASOkai._types import Scalar
+from ASOkai.Types import Scalar
 
 from .base import FileType
 

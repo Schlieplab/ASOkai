@@ -26,7 +26,7 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
-from ASOkai._types import Scalar
+from ASOkai.Types import Scalar
 from ASOkai.Analysis import TargetSpecificAnalysis
 from ASOkai.Targets import TargetGene
 from ASOkai._pipeline.contracts.file_types import CsvFile

@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from multiprocessing import get_context
 from typing import ClassVar
 
-from .._types import Scalar
+from ..Types import Scalar
 from ..Targets import TargetGene
 from GenomeUtils.Genome import Genome
 

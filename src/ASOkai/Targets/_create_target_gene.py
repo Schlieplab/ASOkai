@@ -14,7 +14,7 @@ from typing import cast
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Gene, Genome, Locus, TranscriptLocus
 
-from .._types import Strand, TargetRegion
+from ..Types import Strand, TargetRegion
 from ..Sites import GenomicSite, TranscriptSite
 from ._target_gene import TargetGene
 

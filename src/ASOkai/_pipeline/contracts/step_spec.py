@@ -18,7 +18,7 @@ from pathlib import PurePosixPath
 import re
 from typing import Any, Mapping, Sequence
 
-from ASOkai._types import Scalar
+from ASOkai.Types import Scalar
 from ASOkai._cwl.model import CwlCommandLineToolSpec, CwlToolArgument
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam

@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from ASOkai._types import TargetRegion
+from ASOkai.Types import TargetRegion
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput

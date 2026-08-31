@@ -10,6 +10,7 @@ from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
 from ASOkai.Plugins import AnalysisStep, CsvFile, FileInput, JsonFile, Step
+from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
@@ -35,6 +36,18 @@ def config(tmp_path):
 @pytest.fixture
 def step():
     return IntrinsicFeaturesStep()
+
+
+def _run(step, config, tmp_path):
+    return StepRun(
+        step.name,
+        step,
+        config,
+        inputs=tuple(
+            StepInputBinding(file_input, tmp_path / file_input.name)
+            for file_input in step.spec.inputs
+        ),
+    )
 
 
 def test_implements_protocol(step):
@@ -82,7 +95,7 @@ def test_config_map_keys(step):
 
 
 def test_output_paths_structure(step, config, tmp_path):
-    paths = step.output_paths(config)
+    paths = _run(step, config, tmp_path).output_paths()
     expected = (
         tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
         / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
@@ -96,7 +109,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         "genome": {"assembly_id": "GRCh38", "ensembl_release": 114, "species": "Homo_sapiens"},
         "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
     }
-    paths = step.output_paths(config)
+    paths = _run(step, config, tmp_path).output_paths()
     expected = (
         tmp_path / "GRCh38" / "targets" / "KRAS"
         / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.csv"
@@ -107,14 +120,16 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
 def test_cleanup(step, config, tmp_path):
     out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
     out.mkdir(parents=True)
-    for p in step.output_paths(config).values():
+    run = _run(step, config, tmp_path)
+    for p in run.output_paths().values():
         p.touch()
-    step.cleanup(config)
-    assert all(not path.exists() for path in step.output_paths(config).values())
+    run.cleanup_output_files()
+    assert all(not path.exists() for path in run.output_paths().values())
 
 
-def test_cwl_spec_generates_command_line_tool(step, config):
-    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
+def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
+    run = _run(step, config, tmp_path)
+    doc = yaml.safe_load(StepCwlGenerator().render(run))
 
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == ["ASOkai", "step", "intrinsic-features"]

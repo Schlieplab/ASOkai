@@ -26,6 +26,17 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 
 
+_GENOME_PATH_FIELDS = {
+    "assembly": TemplateField("genome.assembly_id"),
+    "source": TemplateField("genome.source"),
+    "release": TemplateField("genome.ensembl_release"),
+    "species": TemplateField(
+        "genome.species",
+        transform="species_case",
+    ),
+}
+
+
 class DownloadGenomeStep(CoreStep):
     name = "download-genome"
     description = "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
@@ -38,12 +49,7 @@ class DownloadGenomeStep(CoreStep):
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.dna.primary_assembly.fa.gz",
-            fields={
-                "species": TemplateField(
-                    "species",
-                    transform="species_case",
-                ),
-            },
+            fields=_GENOME_PATH_FIELDS,
         ),
         doc="Primary assembly DNA FASTA.",
     )
@@ -56,12 +62,7 @@ class DownloadGenomeStep(CoreStep):
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.cdna.all.fa.gz",
-            fields={
-                "species": TemplateField(
-                    "species",
-                    transform="species_case",
-                ),
-            },
+            fields=_GENOME_PATH_FIELDS,
         ),
         doc="All-transcript cDNA FASTA.",
     )
@@ -74,12 +75,7 @@ class DownloadGenomeStep(CoreStep):
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.{release}.gtf.gz",
-            fields={
-                "species": TemplateField(
-                    "species",
-                    transform="species_case",
-                ),
-            },
+            fields=_GENOME_PATH_FIELDS,
         ),
         doc="Gene annotation GTF.",
     )
@@ -92,12 +88,7 @@ class DownloadGenomeStep(CoreStep):
         destination=OutputPathTemplate(
             "{assembly}/genomes/{source}/{release}/"
             "{species}.{assembly}.{release}.gtf.db",
-            fields={
-                "species": TemplateField(
-                    "species",
-                    transform="species_case",
-                ),
-            },
+            fields=_GENOME_PATH_FIELDS,
         ),
         doc="Reusable annotation database built by gffutils.",
     )

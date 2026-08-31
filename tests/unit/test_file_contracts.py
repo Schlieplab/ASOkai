@@ -7,6 +7,7 @@ import pytest
 
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.base import Step
 
@@ -21,7 +22,13 @@ class ProducerStep(Step):
 class ConfigurableProducerStep(Step):
     name = "configurable-producer"
     description = "Test producer with a configurable output."
-    result_output = FileOutput("result", destination="{region}/result.json")
+    result_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "{region}/result.json",
+            fields={"region": TemplateField("target.region")},
+        ),
+    )
     spec = StepSpec(
         params=[
             ScalarParam(

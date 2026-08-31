@@ -43,12 +43,12 @@ class StepCwlGenerator(BaseCwlGenerator):
 
     def document(
         self,
-        step,
-        config: dict,
+        run: StepRun,
         *,
         resource_requirement: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        spec = step.cwl_spec(config)
+        step = run.step
+        spec = run.cwl_spec()
         doc: dict[str, Any] = {
             "cwlVersion": self.cwl_version,
             "class": "CommandLineTool",
@@ -73,16 +73,14 @@ class StepCwlGenerator(BaseCwlGenerator):
 
     def render(
         self,
-        step,
-        config: dict,
+        run: StepRun,
         *,
         shebang: bool = True,
         resource_requirement: dict[str, int] | None = None,
     ) -> str:
         text = self.dump(
             self.document(
-                step,
-                config,
+                run,
                 resource_requirement=resource_requirement,
             )
         )
@@ -156,10 +154,10 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
     """Resolve every planned output to a path relative to ``datadir``."""
     entries: list[PublicationEntry] = []
     for run in runs:
-        step = run.step
-        config = dict(run.config)
-        for output in step.spec.outputs:
-            relative = step.output_relative_path(output.name, config)
+        output_paths = run.output_paths()
+        datadir = Path(run.config["datadir"])
+        for output in run.step.spec.outputs:
+            relative = output_paths[output.name].relative_to(datadir)
             entries.append(
                 PublicationEntry(
                     run.output(output).qualified_name,
@@ -225,9 +223,7 @@ class JobCwlGenerator(BaseCwlGenerator):
         run_ids_to_execute = {run.run_id for run in runs}
         all_inputs: dict[str, Any] = {}
         for run in runs:
-            step = run.step
-            config = dict(run.config)
-            input_types = step.cwl_spec(config).input_types()
+            input_types = run.cwl_spec().input_types()
             for binding in run.inputs:
                 file_input = binding.file_input
                 source = binding.source
@@ -247,8 +243,7 @@ class JobCwlGenerator(BaseCwlGenerator):
 
         for run in runs:
             step = run.step
-            config = dict(run.config)
-            input_types = step.cwl_spec(config).input_types()
+            input_types = run.cwl_spec().input_types()
             for cwl_key in step.config_map:
                 _declare_workflow_input(
                     all_inputs,
@@ -408,7 +403,7 @@ def generate_cwl_bundle(
     for run in runs:
         step = run.step
         config = dict(run.config)
-        authored_requirement = step.cwl_spec(config).requirements.get(
+        authored_requirement = run.cwl_spec().requirements.get(
             "ResourceRequirement",
             {},
         )
@@ -418,8 +413,7 @@ def generate_cwl_bundle(
             authored_requirement,
         )
         step_cwls[step_cwl_filename(run)] = step_generator.render(
-            step,
-            config,
+            run,
             resource_requirement=resource_requirement,
         )
 

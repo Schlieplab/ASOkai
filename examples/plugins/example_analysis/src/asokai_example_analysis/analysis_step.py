@@ -76,9 +76,15 @@ class ExampleAnalysisStep(AnalysisStep):
             "{assembly}/targets/{target}/analysis/example/"
             "{target}_k{k}_{region}_min{minimum_length}_sequence_lengths.csv",
             fields={
+                "assembly": TemplateField("genome.assembly_id"),
                 "target": TemplateField.first_of(
-                    "target_id",
-                    "target_name",
+                    "target.target_id",
+                    "target.target_name",
+                ),
+                "k": TemplateField("target.k"),
+                "region": TemplateField("target.region"),
+                "minimum_length": TemplateField(
+                    "example_analysis.minimum_length"
                 ),
             },
         ),

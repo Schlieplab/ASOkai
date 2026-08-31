@@ -75,25 +75,24 @@ class StepSpec:
         cwl_inputs.extend(item.name for item in self.inputs)
         self._require_unique("generated CWL input", cwl_inputs)
 
+        declared_file_inputs = {item.name for item in self.inputs}
+        for output in self.outputs:
+            unknown_inputs = (
+                output.destination.input_names() - declared_file_inputs
+            )
+            if unknown_inputs:
+                names = ", ".join(sorted(unknown_inputs))
+                raise ValueError(
+                    f"Output '{output.name}' references undeclared file "
+                    f"input(s): {names}."
+                )
+
         cli_options = [param.cli_prefix for param in self.params]
         cli_options.extend(item.cli_prefix for item in self.inputs)
         cli_options.extend(output.cli_prefix for output in self.outputs)
         self._require_unique("CLI option", cli_options)
         if "--help" in cli_options:
             raise ValueError("StepSpec CLI option '--help' is reserved.")
-
-        declared_cwl_inputs = {
-            param.name for param in self.params if param.cwl
-        }
-        declared_cwl_inputs.update(item.name for item in self.inputs)
-        for output in self.outputs:
-            missing_inputs = output.destination.input_names() - declared_cwl_inputs
-            if missing_inputs:
-                names = ", ".join(sorted(missing_inputs))
-                raise ValueError(
-                    f"Output '{output.name}' path references undeclared CWL "
-                    f"input(s): {names}."
-                )
 
         reserved = {
             "cwlVersion",
@@ -174,12 +173,16 @@ class StepSpec:
 
     def to_cwl_tool_spec(
         self,
-        values: Mapping[str, Any] | None = None,
+        config: Mapping[str, Any] | None = None,
+        input_configurations: Mapping[
+            str,
+            Mapping[str, Any],
+        ] | None = None,
     ) -> CwlCommandLineToolSpec:
         """Return the low-level CommandLineTool spec generated from this step spec."""
-        values = values or {}
+        config = config or {}
         working_filenames = [
-            output.working_filename(values)
+            output.working_filename(config, input_configurations)
             for output in self.outputs
         ]
         self._require_unique("CWL output filename", working_filenames)
@@ -197,10 +200,16 @@ class StepSpec:
             requirements=deepcopy(self.requirements),
             arguments=[
                 *self.arguments,
-                *(output.to_cwl_argument(values) for output in self.outputs),
+                *(
+                    output.to_cwl_argument(config, input_configurations)
+                    for output in self.outputs
+                ),
             ],
             inputs=inputs,
-            outputs=[output.to_cwl_output(values) for output in self.outputs],
+            outputs=[
+                output.to_cwl_output(config, input_configurations)
+                for output in self.outputs
+            ],
             extra=deepcopy(self.extra),
         )
 
@@ -244,12 +253,16 @@ class StepSpec:
     def output_relative_path(
         self,
         name: str,
-        values: Mapping[str, Any],
+        config: Mapping[str, Any],
+        input_configurations: Mapping[
+            str,
+            Mapping[str, Any],
+        ] | None = None,
     ) -> PurePosixPath:
         """Render one declared path relative to the configured data directory."""
         for output in self.outputs:
             if output.name == name:
-                return output.destination.render(values)
+                return output.destination.render(config, input_configurations)
         raise KeyError(f"Unknown step output: {name!r}.")
 
     def build_parser(

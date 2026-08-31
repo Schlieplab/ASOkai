@@ -275,9 +275,10 @@ def validate_step_config(
                         )
 
         if not missing_parameter:
+            output_config = step._configuration_with_defaults(config)
             for output in step.spec.outputs:
                 try:
-                    step.output_relative_path(output.name, config)
+                    output.destination.validate_configuration(output_config)
                 except (KeyError, TypeError, ValueError) as error:
                     errors.append(
                         f"Step '{step.name}' output '{output.name}': {error}"
@@ -339,6 +340,8 @@ def validate_step_config_paths(
             for parameter in step.spec.params
             if parameter.config is not None
         ]
+        for output in step.spec.outputs:
+            paths.extend(output.destination.config_paths())
         for file_input in step.spec.inputs:
             for name in file_input.configurable_parameters:
                 parameter_path = file_input.configurable_parameter(name).config

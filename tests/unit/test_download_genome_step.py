@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 from ASOkai._cwl.generation import StepCwlGenerator
+from ASOkai._pipeline.contracts.execution import StepRun
 from ASOkai.Plugins import CoreStep, Step
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
@@ -35,6 +36,11 @@ def step():
     return DownloadGenomeStep()
 
 
+@pytest.fixture
+def run(step, config):
+    return StepRun(step.name, step, config)
+
+
 def test_implements_protocol(step):
     assert isinstance(step, Step)
     assert isinstance(step, CoreStep)
@@ -52,21 +58,22 @@ def test_config_map_keys(step):
     assert set(step.config_map.keys()) == {"assembly", "release", "source", "species"}
 
 
-def test_source_from_config(step, config, tmp_path):
-    assert step.output_paths(config)["dna"].parent == (
+def test_source_from_config(run, tmp_path):
+    assert run.output_paths()["dna"].parent == (
         tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     )
 
 
 def test_source_can_be_configured(step, config, tmp_path):
     config["genome"]["source"] = "ucsc"
-    assert step.output_paths(config)["dna"].parent == (
+    run = StepRun(step.name, step, config)
+    assert run.output_paths()["dna"].parent == (
         tmp_path / "GRCh38" / "genomes" / "ucsc" / "114"
     )
 
 
-def test_output_paths_structure(step, config, tmp_path):
-    paths = step.output_paths(config)
+def test_output_paths_structure(run, tmp_path):
+    paths = run.output_paths()
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     assert paths["dna"] == base / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
     assert paths["cdna"] == base / "Homo_sapiens.GRCh38.cdna.all.fa.gz"
@@ -74,31 +81,31 @@ def test_output_paths_structure(step, config, tmp_path):
     assert paths["db"] == base / "Homo_sapiens.GRCh38.114.gtf.db"
 
 
-def test_validate_output_files(step, config, tmp_path):
+def test_validate_output_files(run, tmp_path):
     with pytest.raises(FileNotFoundError, match="download-genome/dna"):
-        step.validate_output_files(config)
+        run.validate_output_files()
 
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
-    paths = step.output_paths(config)
+    paths = run.output_paths()
     for path in paths.values():
         path.touch()
 
-    assert step.validate_output_files(config) == paths
+    assert run.validate_output_files() == paths
 
 
-def test_cleanup(step, config, tmp_path):
+def test_cleanup(run, tmp_path):
     base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
     base.mkdir(parents=True)
-    for p in step.output_paths(config).values():
+    for p in run.output_paths().values():
         p.touch()
-    assert all(path.exists() for path in step.output_paths(config).values())
-    step.cleanup(config)
-    assert all(not path.exists() for path in step.output_paths(config).values())
+    assert all(path.exists() for path in run.output_paths().values())
+    run.cleanup_output_files()
+    assert all(not path.exists() for path in run.output_paths().values())
 
 
-def test_cwl_spec_generates_command_line_tool(step, config):
-    doc = yaml.safe_load(StepCwlGenerator().render(step, config))
+def test_cwl_spec_generates_command_line_tool(run):
+    doc = yaml.safe_load(StepCwlGenerator().render(run))
 
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == ["ASOkai", "step", "download-genome"]

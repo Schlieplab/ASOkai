@@ -37,10 +37,13 @@ class CreateTargetGeneStep(CoreStep):
         destination=OutputPathTemplate(
             "{assembly}/targets/{target}/{target}_k{k}_{region}.json",
             fields={
+                "assembly": TemplateField("genome.assembly_id"),
                 "target": TemplateField.first_of(
-                    "target_id",
-                    "target_name",
+                    "target.target_id",
+                    "target.target_name",
                 ),
+                "k": TemplateField("target.k"),
+                "region": TemplateField("target.region"),
             },
         ),
         doc="Serialized target gene object.",

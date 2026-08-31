@@ -5,8 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from ASOkai.Plugins import FileInput, Step, StepSpec
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
+    OutputPathTemplate,
+    Step,
+    StepSpec,
+    TemplateField,
+)
 from ASOkai._pipeline import config as cfg
+from ASOkai._pipeline.contracts.execution import StepRun
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
@@ -51,6 +59,23 @@ def test_load_rejects_invalid_yaml(tmp_path):
 
     with pytest.raises(ValueError, match="Invalid YAML configuration"):
         cfg.load(path)
+
+
+def test_output_path_config_must_be_declared_in_a_schema():
+    class UndeclaredOutputConfigStep(Step):
+        name = "undeclared-output-config"
+        description = "Uses an undeclared value only for its destination."
+        result_output = FileOutput(
+            "result",
+            destination=OutputPathTemplate(
+                "{label}.txt",
+                fields={"label": TemplateField("missing.label")},
+            ),
+        )
+        spec = StepSpec(outputs=[result_output])
+
+    with pytest.raises(ValueError, match=r"missing.label.*no registered"):
+        cfg.validate_step_config_paths([UndeclaredOutputConfigStep()])
 
 
 def test_resolve_top_level(sample_config):
@@ -310,7 +335,8 @@ def test_validate_step_config_uses_defaults_and_only_selected_steps(
 
     cfg.validate_step_config(config, [step])
 
-    assert step.output_relative_path("dna", config).parts[2] == "ensembl"
+    run = StepRun(step.name, step, config)
+    assert run.output_path(step.dna_output).parts[-3] == "ensembl"
 
 
 def test_validate_step_config_requires_selected_step_parameters(tmp_path):

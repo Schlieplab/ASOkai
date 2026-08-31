@@ -107,8 +107,8 @@ configuration. This is the default for core and analysis steps alike.
 An input can expose a small, explicit set of producer parameters when a
 consumer needs a differently configured producer output::
 
-   context_target_input = FileInput(
-       "context_target",
+   target_input = FileInput(
+       "target",
        source=CreateTargetGeneStep.target_gene_output,
        configurable_parameters=("region",),
    )
@@ -121,7 +121,7 @@ A user can then select the producer configuration below the consuming step::
    steps:
      example-analysis:
        inputs:
-         context_target:
+         target:
            parameters:
              region: pre-mrna
 
@@ -135,15 +135,17 @@ one run. Requests that differ in any of those values remain separate.
    steps:
      example-analysis:
        inputs:
-         context_target:
+         target:
            path_override: /path/to/target_gene.json
 
 An input may specify ``parameters`` or ``path_override``, never both. With
 neither, it uses the producer's main configuration.
 
-Output destinations use values from declared scalar parameters. A
-``TemplateField`` can define how one placeholder is selected or transformed
-without adding path-building logic to the step implementation.
+Output destinations read configuration values through ``TemplateField``
+without requiring a runtime ``ScalarParam``. ``InputConfigField`` reads a
+value from the resolved producer configuration selected for one file input.
+For ``path_override``, where no producer run exists, it reads the consumer's
+main configuration.
 
 Every parameter that can change an output's contents must be represented in
 that output's ``OutputPathTemplate``. Distinct parameter configurations must
@@ -152,9 +154,9 @@ mistaken for another run's output. Parameters that only affect execution,
 such as resource allocation, do not belong in the destination.
 
 The same rule applies to an input-specific producer configuration. If that
-choice changes a consumer's output contents, the consumer output destination
-must contain a declared value that distinguishes the choice. The producer's
-filename does not automatically namespace the consumer's outputs.
+choice changes a consumer's output contents, add an ``InputConfigField`` for
+that input to the consumer's destination. Output identity remains entirely
+configuration-driven; ASOkai does not infer it from filenames.
 
 Shared step lifecycle
 ---------------------

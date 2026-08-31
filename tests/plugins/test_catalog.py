@@ -187,6 +187,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "FileType",
         "GenerateASOCandidatesStep",
         "IntrinsicFeaturesStep",
+        "InputConfigField",
         "JsonFile",
         "OutputPathTemplate",
         "Runnable",

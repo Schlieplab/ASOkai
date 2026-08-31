@@ -110,23 +110,44 @@ class FileOutput(Param):
         """Return the generated argparse destination for this output path."""
         return f"{self.name}_output"
 
-    def working_filename(self, values: Mapping[str, Any]) -> str:
+    def working_filename(
+        self,
+        config: Mapping[str, Any],
+        input_configurations: Mapping[
+            str,
+            Mapping[str, Any],
+        ] | None = None,
+    ) -> str:
         """Derive the CWL work-directory filename from the final destination."""
-        return self.destination.render(values).name
+        return self.destination.render(config, input_configurations).name
 
-    def to_cwl_argument(self, values: Mapping[str, Any]) -> CwlToolArgument:
+    def to_cwl_argument(
+        self,
+        config: Mapping[str, Any],
+        input_configurations: Mapping[
+            str,
+            Mapping[str, Any],
+        ] | None = None,
+    ) -> CwlToolArgument:
         """Return the fixed command-line argument for this output path."""
         return CwlToolArgument(
             prefix=self.cli_prefix,
-            value_from=self.working_filename(values),
+            value_from=self.working_filename(config, input_configurations),
         )
 
-    def to_cwl_output(self, values: Mapping[str, Any]) -> CwlToolOutput:
+    def to_cwl_output(
+        self,
+        config: Mapping[str, Any],
+        input_configurations: Mapping[
+            str,
+            Mapping[str, Any],
+        ] | None = None,
+    ) -> CwlToolOutput:
         """Return the rendered tool output declaration."""
         return CwlToolOutput(
             self.name,
             "File",
-            self.working_filename(values),
+            self.working_filename(config, input_configurations),
             self.doc,
         )
 

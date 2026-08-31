@@ -26,12 +26,13 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
-from ASOkai._types import Scalar, TargetRegion
-from ASOkai.Analysis import SiteSpecificAnalysis
+from ASOkai._types import Scalar
+from ASOkai.Analysis import TargetSpecificAnalysis
+from ASOkai.Targets import TargetGene
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
-from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
+    InputConfigField,
     OutputPathTemplate,
     TemplateField,
 )
@@ -40,21 +41,28 @@ from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
-class ExampleAnalysis(SiteSpecificAnalysis):
-    """Replace this calculation with the new site-specific analysis.
+class ExampleAnalysis(TargetSpecificAnalysis):
+    """Replace this calculation with the new target-wide analysis.
 
-    - **example_value**: Length of the target-site sequence.
+    - **target_matches**: Number of equal sequences in the selected target.
     """
 
-    def __init__(self, sites: list, **kwargs) -> None:
-        super().__init__(sites, **kwargs)
-        # Add analysis-specific initialization here.
+    def __init__(
+        self,
+        target: TargetGene,
+        sites: list,
+        **kwargs,
+    ) -> None:
+        super().__init__(target=target, sites=sites, **kwargs)
+        # Add target-wide initialization here.
 
     def analyze(self, site) -> dict[str, Scalar]:
         # Add per-site analysis code here.
-        sequence = str(site.sequence or "")
         return {
-            "example_value": float(len(sequence)),
+            "target_matches": sum(
+                target_site.sequence == site.sequence
+                for target_site in self.target.sites
+            ),
         }
 
 
@@ -62,63 +70,57 @@ class ExampleAnalysisStep(AnalysisStep):
     """Replace the example names and declarations for the new step."""
 
     name = "example-analysis"
-    description = "Calculates one example value for every target site."
+    description = "Compares every main target site with a selected target."
     analysis_cls = ExampleAnalysis
 
-    target_gene_input = FileInput(
-        "target_gene",
+    sites_input = FileInput(
+        "sites",
         source=CreateTargetGeneStep.target_gene_output,
-        # Add configurable_parameters=("parameter_name",) only when users
-        # should be able to select a different producer configuration here.
+        doc="Main target containing the sites to analyze.",
+    )
+    target_input = FileInput(
+        "target",
+        source=CreateTargetGeneStep.target_gene_output,
+        configurable_parameters=("region",),
+        doc=(
+            "Target used for the target-wide comparison. Its region may be "
+            "configured independently from the main sites."
+        ),
     )
     analysis_output = FileOutput(
         "analysis",
         file_type=CsvFile(
             index={"site_id": str},
-            columns={"example_value": float},
+            columns={"target_matches": int},
         ),
         destination=OutputPathTemplate(
             template=(
-                "{assembly}/targets/{target}/analysis/example/"
-                "{target}_k{k}_{region}_example.csv"
+                "{assembly}/targets/{target_name}/analysis/example/"
+                "{target_name}_k{k}_{sites_region}_against_"
+                "{target_region}_example.csv"
             ),
             fields={
-                "target": TemplateField.first_of(
-                    "target_id",
-                    "target_name",
+                "assembly": TemplateField("genome.assembly_id"),
+                "target_name": TemplateField.first_of(
+                    "target.target_id",
+                    "target.target_name",
+                ),
+                "k": TemplateField("target.k"),
+                "sites_region": TemplateField("target.region"),
+                "target_region": InputConfigField(
+                    "target",
+                    "target.region",
                 ),
             },
         ),
     )
     spec = StepSpec(
-        params=[
-            ScalarParam(
-                "assembly",
-                str,
-                config="genome.assembly_id",
-            ),
-            ScalarParam(
-                "target_id",
-                str | None,
-                config="target.target_id",
-            ),
-            ScalarParam(
-                "target_name",
-                str | None,
-                config="target.target_name",
-            ),
-            ScalarParam("k", int, config="target.k"),
-            ScalarParam(
-                "region",
-                TargetRegion,
-                config="target.region",
-            ),
-        ],
-        inputs=[target_gene_input],
+        inputs=[sites_input, target_input],
         outputs=[analysis_output],
     )
 
     def analysis_kwargs(self, args) -> dict:
         return {
-            "sites": args.target_gene.sites,
+            "sites": args.sites.sites,
+            "target": args.target,
         }

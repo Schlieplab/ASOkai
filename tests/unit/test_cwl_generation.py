@@ -29,6 +29,10 @@ from ASOkai._pipeline.contracts.execution import (
     StepInputBinding,
     StepRun,
 )
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
 from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
@@ -114,7 +118,15 @@ def _configured_run_bundle(tmp_path: Path) -> GeneratedCwlBundle:
         "producer",
         StepSpec(
             params=[ScalarParam("mode", str, config="producer.mode")],
-            outputs=[FileOutput("result", destination="{mode}/result.txt")],
+            outputs=[
+                FileOutput(
+                    "result",
+                    destination=OutputPathTemplate(
+                        "{mode}/result.txt",
+                        fields={"mode": TemplateField("producer.mode")},
+                    ),
+                )
+            ],
         ),
     )
     main_run = StepRun(
@@ -144,7 +156,10 @@ def _shared_producer_plan(
     """Plan two consumers requesting the same configured producer run."""
     producer_output = FileOutput(
         "result",
-        destination="{mode}/result.txt",
+        destination=OutputPathTemplate(
+            "{mode}/result.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
     )
     producer = _spec_step(
         "producer",
@@ -201,6 +216,7 @@ def _validate_bundle_with_cwltool(
     executable = shutil.which("cwltool")
     if executable is None:
         pytest.skip("cwltool is not installed")
+    assert executable is not None
 
     steps_dir = directory / "steps"
     steps_dir.mkdir()
@@ -517,7 +533,7 @@ def test_step_rejects_reserved_n_processes_parameter(parameter):
     )
 
     with pytest.raises(ValueError, match="reserved.*n_processes"):
-        step.cwl_spec({})
+        StepRun(step.name, step, {}).cwl_spec()
     with pytest.raises(ValueError, match="reserved.*n_processes"):
         step.build_parser()
 
@@ -619,13 +635,15 @@ def test_reused_shared_producer_is_one_workflow_input(tmp_path):
 
 
 def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
-    for step in get_steps().values():
-        input_names = step.cwl_spec(workflow_config).input_names()
-        output_names = step.cwl_spec(workflow_config).output_names()
+    runs = _step_runs(list(get_steps().values()), workflow_config)
+    for run in runs:
+        step = run.step
+        input_names = run.cwl_spec().input_names()
+        output_names = run.cwl_spec().output_names()
 
         assert set(step.config_map).issubset(input_names)
         assert {item.name for item in step.spec.inputs}.issubset(input_names)
-        assert set(step.output_paths(workflow_config)) == output_names
+        assert set(run.output_paths()) == output_names
 
 
 def test_generate_cwl_qualifies_same_named_inputs_by_run(tmp_path):
@@ -724,7 +742,15 @@ def test_generate_cwl_rejects_conflicting_referenced_run_definition(
         "producer",
         StepSpec(
             params=[ScalarParam("mode", str, config="producer.mode")],
-            outputs=[FileOutput("result", destination="{mode}/result.txt")],
+            outputs=[
+                FileOutput(
+                    "result",
+                    destination=OutputPathTemplate(
+                        "{mode}/result.txt",
+                        fields={"mode": TemplateField("producer.mode")},
+                    ),
+                )
+            ],
         ),
     )
     consumer = _spec_step(

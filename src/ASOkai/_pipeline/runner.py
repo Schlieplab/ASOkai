@@ -72,7 +72,7 @@ def _validate_published_outputs(
     """Ensure the CWL publisher materialized valid planned outputs."""
     for run in runs:
         try:
-            run.step.validate_output_files(dict(run.config))
+            run.validate_output_files()
         except FileNotFoundError as error:
             raise RuntimeError(
                 f"CWL did not publish expected output(s) for "
@@ -88,7 +88,7 @@ def _requested_outputs(plan: ExecutionPlan) -> dict[str, Path]:
     """Return every requested output under its run-qualified name."""
     requested: dict[str, Path] = {}
     for run in plan.goals:
-        paths = run.step.output_paths(dict(run.config))
+        paths = run.output_paths()
         for output in run.step.spec.outputs:
             requested[run.output(output).qualified_name] = paths[output.name]
     return requested
@@ -209,10 +209,9 @@ def run_plan(
     logger.info("[%s] CWL job bundle written to %s", label, job_dir)
 
     for run in plan.runs_to_execute:
-        run_config = dict(run.config)
-        if any(path.exists() for path in run.step.output_paths(run_config).values()):
+        if any(path.exists() for path in run.output_paths().values()):
             logger.info("[%s] replacing outputs for '%s'.", label, run.run_id)
-            run.step.cleanup(run_config)
+            run.cleanup_output_files()
 
     if len(plan.runs_to_execute) == 1:
         logger.info("[%s] running '%s'.", label, last_run.run_id)

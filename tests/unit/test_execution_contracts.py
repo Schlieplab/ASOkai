@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from ASOkai.Plugins import FileInput, FileOutput, Step, StepSpec
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
+    InputConfigField,
+    OutputPathTemplate,
+    Step,
+    StepSpec,
+)
 from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
     StepInputBinding,
@@ -33,6 +40,28 @@ class ConsumerStep(Step):
     description = "Consume the test file."
     result_input = FileInput("result", source=ProducerStep.result_output)
     spec = StepSpec(inputs=[result_input])
+
+
+class InputConfiguredConsumerStep(Step):
+    name = "input-configured-consumer"
+    description = "Name an output from the selected producer configuration."
+    result_input = FileInput("result", source=ProducerStep.result_output)
+    summary_output = FileOutput(
+        "summary",
+        destination=OutputPathTemplate(
+            "summaries/{producer_mode}_summary.txt",
+            fields={
+                "producer_mode": InputConfigField(
+                    "result",
+                    "producer.mode",
+                )
+            },
+        ),
+    )
+    spec = StepSpec(
+        inputs=[result_input],
+        outputs=[summary_output],
+    )
 
 
 @pytest.mark.parametrize(
@@ -84,6 +113,58 @@ def test_input_binding_requires_its_declared_source_output():
             ConsumerStep.result_input,
             other_run.output(OtherProducerStep.result_output),
         )
+
+
+def test_step_run_uses_the_selected_producer_configuration(tmp_path):
+    producer_config = {
+        "datadir": str(tmp_path),
+        "producer": {"mode": "alternate"},
+    }
+    consumer_config = {
+        "datadir": str(tmp_path),
+        "producer": {"mode": "main"},
+    }
+    producer_run = StepRun("producer", ProducerStep(), producer_config)
+    consumer_run = StepRun(
+        "input-configured-consumer",
+        InputConfiguredConsumerStep(),
+        consumer_config,
+        inputs=(
+            StepInputBinding(
+                InputConfiguredConsumerStep.result_input,
+                producer_run.output(ProducerStep.result_output),
+            ),
+        ),
+    )
+
+    assert consumer_run.input_paths() == {
+        "result": tmp_path / "result.txt",
+    }
+    assert consumer_run.output_paths() == {
+        "summary": tmp_path / "summaries/alternate_summary.txt",
+    }
+
+
+def test_path_override_uses_main_config_not_the_filename(tmp_path):
+    selected_input = tmp_path / "filename-must-not-affect-output.json"
+    run = StepRun(
+        "input-configured-consumer",
+        InputConfiguredConsumerStep(),
+        {
+            "datadir": str(tmp_path),
+            "producer": {"mode": "main"},
+        },
+        inputs=(
+            StepInputBinding(
+                InputConfiguredConsumerStep.result_input,
+                selected_input,
+            ),
+        ),
+    )
+
+    assert run.output_paths() == {
+        "summary": tmp_path / "summaries/main_summary.txt",
+    }
 
 
 def test_execution_plan_normalizes_collections_and_reused_output_paths(tmp_path):

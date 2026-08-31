@@ -54,10 +54,13 @@ class IntrinsicFeaturesStep(AnalysisStep):
             "{assembly}/targets/{target}/analysis/intrinsic/"
             "{target}_k{k}_{region}_intrinsic.csv",
             fields={
+                "assembly": TemplateField("genome.assembly_id"),
                 "target": TemplateField.first_of(
-                    "target_id",
-                    "target_name",
+                    "target.target_id",
+                    "target.target_name",
                 ),
+                "k": TemplateField("target.k"),
+                "region": TemplateField("target.region"),
             },
         ),
         doc="Intrinsic features per target site.",

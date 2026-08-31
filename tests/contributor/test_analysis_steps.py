@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import importlib
 import inspect
 import pkgutil
@@ -26,6 +27,8 @@ from ASOkai._pipeline.contracts.json_schema import (
     build_json_schema,
     json_schema_errors,
 )
+from ASOkai._pipeline.contracts.execution import StepRunOutput
+from ASOkai._pipeline.plan import build_export_plan
 
 
 ROOT = Path(__file__).parents[2]
@@ -51,6 +54,10 @@ TEMPLATE_STEP = cast(
 BUILTIN_STEPS = tuple(pipeline_catalog._BUILTIN_STEPS)
 CONTRIBUTOR_STEPS = (*BUILTIN_STEPS, TEMPLATE_STEP)
 REGISTERED_STEPS = {step.name: step for step in BUILTIN_STEPS}
+CONTRIBUTOR_REGISTRY = {
+    **REGISTERED_STEPS,
+    TEMPLATE_STEP.name: TEMPLATE_STEP,
+}
 
 
 def _concrete_step_classes() -> set[type[Step]]:
@@ -110,8 +117,49 @@ def test_step_dependencies_use_registered_outputs(step: Step) -> None:
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_contract_builds_from_example_config(step: Step) -> None:
     validate_plugin_instance("step", step)
-    step.cwl_spec(EXAMPLE_CONFIG)
-    step.output_paths(EXAMPLE_CONFIG)
+    plan = build_export_plan(
+        [step],
+        EXAMPLE_CONFIG,
+        recursive=True,
+        _registry=CONTRIBUTOR_REGISTRY,
+    )
+    for run in plan.runs_to_execute:
+        run.cwl_spec()
+        run.output_paths()
     for output in step.spec.outputs:
         if isinstance(output.file_type, JsonFile) and output.file_type.value_type:
             build_json_schema(output.file_type.value_type)
+
+
+def test_target_wide_example_can_select_an_alternate_target_region() -> None:
+    config = deepcopy(EXAMPLE_CONFIG)
+    config.setdefault("steps", {})[TEMPLATE_STEP.name] = {
+        "inputs": {
+            "target": {
+                "parameters": {"region": "exonic"},
+            },
+        },
+    }
+    plan = build_export_plan(
+        [TEMPLATE_STEP],
+        config,
+        recursive=True,
+        _registry=CONTRIBUTOR_REGISTRY,
+    )
+    example_run = plan.goals[0]
+    bindings = {
+        binding.file_input.name: binding.source
+        for binding in example_run.inputs
+    }
+
+    assert isinstance(bindings["sites"], StepRunOutput)
+    assert isinstance(bindings["target"], StepRunOutput)
+    assert bindings["sites"].run.run_id == "create-target-gene"
+    assert bindings["target"].run.run_id == (
+        "example-analysis.create-target-gene"
+    )
+    assert bindings["sites"].run.config["target"]["region"] == "pre-mrna"
+    assert bindings["target"].run.config["target"]["region"] == "exonic"
+    assert example_run.output_paths()["analysis"].name == (
+        "ENSG00000133703_k16_pre-mrna_against_exonic_example.csv"
+    )

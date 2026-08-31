@@ -206,10 +206,18 @@ def _file_outputs_table(
     refdoc: str,
 ) -> nodes.table:
     rows = []
+    output_config = step._configuration_with_defaults(example_config)
+    example_input_configurations = {
+        file_input.name: output_config
+        for file_input in step.spec.inputs
+    }
     for output in step.spec.outputs:
         try:
             example_path = str(
-                step.output_relative_path(output.name, dict(example_config))
+                output.destination.render(
+                    output_config,
+                    example_input_configurations,
+                )
             )
         except (KeyError, TypeError, ValueError):
             example_path = "—"

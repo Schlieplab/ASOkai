@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -22,7 +23,12 @@ from ASOkai.Plugins import (
     Step,
     StepSpec,
 )
-from ASOkai._pipeline.contracts.execution import StepRunOutput
+from ASOkai._pipeline.contracts.execution import (
+    StepInputBinding,
+    StepRun,
+    StepRunOutput,
+)
+from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.plan import build_plan
 
 
@@ -30,7 +36,6 @@ def _make_step(
     name: str,
     dependencies: list[Step] | None = None,
     *,
-    outputs_valid: bool = False,
     output_names: list[str] | None = None,
     compatible_with: dict[str, list[str]] | None = None,
 ) -> Step:
@@ -54,11 +59,6 @@ def _make_step(
         compatible_with=compatible_with or {},
     )
 
-    def validate_output_files(self: Step, config: dict):
-        if not outputs_valid:
-            raise FileNotFoundError
-        return self.output_paths(config)
-
     step_type = type(
         f"_{name.replace('-', '_').title()}Step",
         (Step,),
@@ -66,11 +66,28 @@ def _make_step(
             "name": name,
             "description": "",
             "spec": spec,
-            "validate_output_files": validate_output_files,
             **{f"{output.name}_output": output for output in outputs},
         },
     )
     return step_type()
+
+
+def _materialize_outputs(step: Step, config: dict) -> None:
+    run = StepRun(
+        step.name,
+        step,
+        config,
+        inputs=tuple(
+            StepInputBinding(
+                file_input,
+                Path(config["datadir"]) / "inputs" / file_input.name,
+            )
+            for file_input in step.spec.inputs
+        ),
+    )
+    for path in run.output_paths().values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
 
 
 def test_planner_rejects_an_outputless_step(config):
@@ -104,7 +121,10 @@ def _make_configurable_producer_and_consumers(
     """Return consumers that can override one producer's mode parameter."""
     output = FileOutput(
         "result",
-        destination="{mode}/result.txt",
+        destination=OutputPathTemplate(
+            "{mode}/result.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
     )
     producer_type = type(
         "_ConfiguredProducerStep",
@@ -183,7 +203,10 @@ def _make_nested_configurable_steps() -> tuple[Step, Step, Step]:
     """Return a three-step chain with configurable producer inputs."""
     source_output = FileOutput(
         "source_result",
-        destination="{profile}/source.txt",
+        destination=OutputPathTemplate(
+            "{profile}/source.txt",
+            fields={"profile": TemplateField("source.profile")},
+        ),
     )
     source_type = type(
         "_NestedSourceStep",
@@ -201,7 +224,10 @@ def _make_nested_configurable_steps() -> tuple[Step, Step, Step]:
 
     producer_output = FileOutput(
         "producer_result",
-        destination="{mode}/producer.txt",
+        destination=OutputPathTemplate(
+            "{mode}/producer.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
     )
     producer_type = type(
         "_NestedProducerStep",
@@ -272,9 +298,9 @@ def test_missing_goal_is_scheduled(config):
 def test_valid_goal_output_is_reused(config):
     step = _make_step(
         "alpha",
-        outputs_valid=True,
         output_names=["result"],
     )
+    _materialize_outputs(step, config)
 
     plan = build_plan([step], config, _registry={step.name: step})
 
@@ -286,7 +312,8 @@ def test_valid_goal_output_is_reused(config):
 
 
 def test_force_schedules_valid_goal(config):
-    step = _make_step("alpha", outputs_valid=True)
+    step = _make_step("alpha")
+    _materialize_outputs(step, config)
 
     plan = build_plan(
         [step],
@@ -299,13 +326,14 @@ def test_force_schedules_valid_goal(config):
     assert plan.resolved_outputs == {}
 
 
-@pytest.mark.parametrize("outputs_valid", [False, True])
-def test_incompatible_goal_is_rejected_before_reuse(config, outputs_valid):
+@pytest.mark.parametrize("outputs_exist", [False, True])
+def test_incompatible_goal_is_rejected_before_reuse(config, outputs_exist):
     step = _make_step(
         "restricted",
-        outputs_valid=outputs_valid,
         compatible_with={"analysis.mode": ["supported"]},
     )
+    if outputs_exist:
+        _materialize_outputs(step, config)
     config["analysis"] = {"mode": "unsupported"}
 
     with pytest.raises(
@@ -334,9 +362,9 @@ def test_missing_dependencies_are_resolved_automatically(config):
 def test_valid_dependency_is_reused(config):
     dependency = _make_step(
         "dependency",
-        outputs_valid=True,
         output_names=["result"],
     )
+    _materialize_outputs(dependency, config)
     goal = _make_step("goal", [dependency])
 
     plan = build_plan(
@@ -353,7 +381,8 @@ def test_valid_dependency_is_reused(config):
 
 def test_reused_goal_does_not_require_its_missing_dependencies(config):
     dependency = _make_step("dependency")
-    goal = _make_step("goal", [dependency], outputs_valid=True)
+    goal = _make_step("goal", [dependency])
+    _materialize_outputs(goal, config)
 
     plan = build_plan(
         [goal],
@@ -426,8 +455,10 @@ def test_duplicate_goals_and_dependencies_share_one_run(config):
 
 
 def test_equal_port_names_from_different_runs_do_not_collide(config):
-    first = _make_step("first", outputs_valid=True, output_names=["result"])
-    second = _make_step("second", outputs_valid=True, output_names=["result"])
+    first = _make_step("first", output_names=["result"])
+    second = _make_step("second", output_names=["result"])
+    _materialize_outputs(first, config)
+    _materialize_outputs(second, config)
 
     plan = build_plan(
         [first, second],
@@ -464,7 +495,8 @@ def test_shadow_output_declaration_is_rejected(config):
 
 
 def test_non_recursive_reuses_valid_dependency(config):
-    dependency = _make_step("dependency", outputs_valid=True)
+    dependency = _make_step("dependency")
+    _materialize_outputs(dependency, config)
     goal = _make_step("goal", [dependency])
 
     plan = build_plan(
@@ -505,7 +537,8 @@ def test_explicit_goal_may_run_in_non_recursive_mode(config):
 
 
 def test_force_does_not_force_valid_dependency(config):
-    dependency = _make_step("dependency", outputs_valid=True)
+    dependency = _make_step("dependency")
+    _materialize_outputs(dependency, config)
     goal = _make_step("goal")
     goal_with_dependency = _make_step("goal", [dependency])
 
@@ -651,7 +684,10 @@ def test_one_consumer_can_request_two_configurations_of_one_producer(config):
         "consumer.second_result.producer",
         "consumer",
     ]
-    producer_runs = [binding.source.run for binding in plan.goals[0].inputs]
+    producer_runs = []
+    for binding in plan.goals[0].inputs:
+        assert isinstance(binding.source, StepRunOutput)
+        producer_runs.append(binding.source.run)
     assert [run.config["producer"]["mode"] for run in producer_runs] == [
         "one",
         "two",

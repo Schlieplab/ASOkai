@@ -173,7 +173,7 @@ class _PlanBuilder:
     def _existing_output_paths(self, run: StepRun) -> dict[str, Path] | None:
         """Return valid existing outputs, or ``None`` when the run is required."""
         try:
-            paths = run.step.validate_output_files(dict(run.config))
+            paths = run.validate_output_files()
         except (OSError, UnicodeError, TypeError, ValueError):
             return None
         logger.debug(
@@ -478,7 +478,7 @@ class _PlanBuilder:
         for run in producer_first_runs:
             if run in included_run_set:
                 continue
-            paths = run.step.output_paths(dict(run.config))
+            paths = run.output_paths()
             for output in run.step.spec.outputs:
                 external_outputs[run.output(output)] = paths[output.name]
 

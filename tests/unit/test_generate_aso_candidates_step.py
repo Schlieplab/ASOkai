@@ -12,6 +12,7 @@ from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
 from ASOkai.Plugins import CoreStep, FileInput, JsonFile, Step
+from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
@@ -47,8 +48,20 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def step():
+def step() -> GenerateASOCandidatesStep:
     return GenerateASOCandidatesStep()
+
+
+def _run(step, config, tmp_path):
+    return StepRun(
+        step.name,
+        step,
+        config,
+        inputs=tuple(
+            StepInputBinding(file_input, tmp_path / file_input.name)
+            for file_input in step.spec.inputs
+        ),
+    )
 
 
 def test_step_contract_and_dependency(step):
@@ -61,8 +74,11 @@ def test_step_contract_and_dependency(step):
         is CreateTargetGeneStep.target_gene_output
     )
     assert isinstance(step.spec.input("target_gene"), FileInput)
-    assert isinstance(step.target_gene_input.file_type, JsonFile)
-    assert step.target_gene_input.file_type.value_type is TargetGene
+    assert isinstance(GenerateASOCandidatesStep.target_gene_input.file_type, JsonFile)
+    assert (
+        GenerateASOCandidatesStep.target_gene_input.file_type.value_type
+        is TargetGene
+    )
 
 
 def test_config_and_input_mapping(step):
@@ -84,7 +100,7 @@ def test_config_and_input_mapping(step):
 
 
 def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
-    paths = step.output_paths(config)
+    paths = _run(step, config, tmp_path).output_paths()
     assert paths["therapeutics"] == (
         tmp_path
         / "GRCh38"
@@ -106,7 +122,7 @@ def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
 def test_output_path_uses_supplied_target_name(step, config, tmp_path):
     del config["target"]["target_id"]
 
-    paths = step.output_paths(config)
+    paths = _run(step, config, tmp_path).output_paths()
 
     assert paths["therapeutics"].name == (
         "KRAS_k16_pre-mrna_aso_gapmer_rnase-h1_therapeutics.json"
@@ -117,10 +133,10 @@ def test_output_path_uses_supplied_target_name(step, config, tmp_path):
     assert paths["therapeutics"].parent.parent.name == "KRAS"
 
 
-def test_output_path_supports_unmodified_asos(step, config):
+def test_output_path_supports_unmodified_asos(step, config, tmp_path):
     config["antisense"]["design"] = {"type": "unmodified"}
 
-    paths = step.output_paths(config)
+    paths = _run(step, config, tmp_path).output_paths()
 
     assert paths["therapeutics"].name == (
         "ENSG00000133703_k16_pre-mrna_aso_unmodified_"
@@ -132,8 +148,9 @@ def test_output_path_supports_unmodified_asos(step, config):
     )
 
 
-def test_cwl_contains_scalar_configuration_and_file_io(step, config):
-    document = yaml.safe_load(StepCwlGenerator().render(step, config))
+def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
+    run = _run(step, config, tmp_path)
+    document = yaml.safe_load(StepCwlGenerator().render(run))
 
     assert document["baseCommand"] == [
         "ASOkai",

@@ -16,6 +16,11 @@ import pytest
 
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import (
+    InputConfigField,
+    OutputPathTemplate,
+    TemplateField,
+)
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.base import Step
 
@@ -100,10 +105,45 @@ def test_step_spec_builds_one_parser_from_all_parameter_kinds(tmp_path):
     assert args.result_output == tmp_path / "result.json"
 
 
-def test_step_spec_rejects_undeclared_output_path_inputs():
-    with pytest.raises(ValueError, match="path references undeclared CWL input"):
+def test_output_path_configuration_does_not_create_a_cwl_input():
+    spec = StepSpec(
+        outputs=[
+            FileOutput(
+                "result",
+                destination=OutputPathTemplate(
+                    "{sample}.json",
+                    fields={"sample": TemplateField("section.sample")},
+                ),
+            )
+        ],
+    )
+
+    cwl_spec = spec.to_cwl_tool_spec(
+        {"section": {"sample": "example"}}
+    )
+
+    assert cwl_spec.input_names() == set()
+    assert cwl_spec.outputs[0].glob == "example.json"
+
+
+def test_output_path_can_reference_only_declared_file_inputs():
+    with pytest.raises(ValueError, match="undeclared file input.*missing"):
         StepSpec(
-            outputs=[FileOutput("result", destination="{missing}.json")],
+            inputs=[_file_input("source")],
+            outputs=[
+                FileOutput(
+                    "result",
+                    destination=OutputPathTemplate(
+                        "{source}.json",
+                        fields={
+                            "source": InputConfigField(
+                                "missing",
+                                "section.source",
+                            )
+                        },
+                    ),
+                )
+            ],
         )
 
 

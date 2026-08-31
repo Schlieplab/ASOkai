@@ -14,6 +14,7 @@ from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
+    InputConfigField,
     OutputPathTemplate,
     TemplateField,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "FileType",
     "GenerateASOCandidatesStep",
     "IntrinsicFeaturesStep",
+    "InputConfigField",
     "JsonFile",
     "OutputPathTemplate",
     "Runnable",

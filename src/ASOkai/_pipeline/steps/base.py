@@ -11,6 +11,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Mapping
@@ -145,11 +146,16 @@ class Step(Runnable):
                     f"'{_N_PROCESSES_PARAM.name}'."
                 )
 
-    def cwl_spec(self, config: dict) -> CwlCommandLineToolSpec:
-        """Return the generated lower-level CWL tool spec for this step."""
+    def _cwl_spec(
+        self,
+        config: Mapping[str, Any],
+        input_configurations: Mapping[str, Mapping[str, Any]],
+    ) -> CwlCommandLineToolSpec:
+        """Return the CWL spec for resolved configuration and file inputs."""
         self._validate_standard_parameters()
         spec = self.spec.to_cwl_tool_spec(
-            self.resolved_parameter_values(config),
+            config,
+            input_configurations,
         )
         if not self.supports_multiple_processes:
             return spec
@@ -208,37 +214,23 @@ class Step(Runnable):
                 pass
         return values
 
-    def output_relative_path(self, name: str, config: dict) -> Path:
-        """Render a declared output path relative to ``config['datadir']``."""
-        path = self.spec.output_relative_path(
-            name,
-            self.resolved_parameter_values(config),
-        )
-        return Path(*path.parts)
+    def _configuration_with_defaults(
+        self,
+        config: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return a configuration copy with this step's defaults applied."""
+        from ASOkai._pipeline import config as cfg
 
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        """Return all declared output paths below the configured data directory."""
-        datadir = Path(config["datadir"])
-        return {
-            output.name: datadir / self.output_relative_path(output.name, config)
-            for output in self.spec.outputs
-        }
-
-    def validate_output_files(self, config: dict) -> dict[str, Path]:
-        """Return output paths after validating every declared file contract."""
-        paths = self.output_paths(config)
-        for output in self.spec.outputs:
-            path = paths[output.name]
-            if not path.is_file():
-                raise FileNotFoundError(
-                    f"Output '{self.name}/{output.name}' was not written to "
-                    f"{path}."
+        resolved = deepcopy(dict(config))
+        overrides: dict[str, Any] = {}
+        for parameter in self.spec.params:
+            if parameter.config is None:
+                continue
+            try:
+                overrides[parameter.config] = cfg.resolve_parameter_value(
+                    config,
+                    parameter,
                 )
-            output.validate(path)
-        return paths
-
-    def cleanup(self, config: dict) -> None:
-        """Remove all declared output files that currently exist."""
-        for path in self.output_paths(config).values():
-            if path.exists():
-                path.unlink()
+            except KeyError:
+                continue
+        return cfg.apply_overrides(resolved, overrides)

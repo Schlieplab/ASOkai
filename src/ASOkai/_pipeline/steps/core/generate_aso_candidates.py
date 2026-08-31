@@ -26,6 +26,19 @@ from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
+_ASO_PATH_FIELDS = {
+    "assembly": TemplateField("genome.assembly_id"),
+    "target": TemplateField.first_of(
+        "target.target_id",
+        "target.target_name",
+    ),
+    "k": TemplateField("target.k"),
+    "region": TemplateField("target.region"),
+    "design": TemplateField("antisense.design.type"),
+    "mechanism": TemplateField("antisense.mechanism"),
+}
+
+
 class GenerateASOCandidatesStep(CoreStep):
     name = "generate-aso-candidates"
     description = "Generates ASO candidates for target sites."
@@ -41,9 +54,7 @@ class GenerateASOCandidatesStep(CoreStep):
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
             "therapeutics.json",
-            fields={
-                "target": TemplateField.first_of("target_id", "target_name"),
-            },
+            fields=_ASO_PATH_FIELDS,
         ),
         doc="Serialized ASO candidates.",
     )
@@ -54,9 +65,7 @@ class GenerateASOCandidatesStep(CoreStep):
             "{assembly}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
             "bindings.json",
-            fields={
-                "target": TemplateField.first_of("target_id", "target_name"),
-            },
+            fields=_ASO_PATH_FIELDS,
         ),
         doc=(
             "Serialized relationships between therapeutic IDs and input "

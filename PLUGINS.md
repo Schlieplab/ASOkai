@@ -1,201 +1,168 @@
-# Plugin Architecture for ASOkai
+# ASOkai plugins
 
-ASOkai supports external plugins to add custom steps, tasks, and workflows without modifying the core codebase. Plugins are discovered and loaded automatically via Python entry points.
+An ASOkai plugin is an independently installed Python package that contributes
+steps, tasks, workflows, or configuration schemas. ASOkai discovers these
+components through Python entry points; a plugin does not modify the ASOkai
+source tree or maintain hand-written CWL files.
 
-## How Plugins Work
+The complete maintained starting point is
+[`examples/plugins/example_analysis`](examples/plugins/example_analysis).
+Copy that package when creating an analysis plugin, then change its package
+name, step declaration, analysis implementation, and configuration schema.
 
-The internal registry loads plugins at runtime using `importlib.metadata.entry_points`. Your external package just needs to:
+## Package structure
 
-1. Implement a step using the contracts exported by `ASOkai.Plugins`
-2. Declare an entry point in your `pyproject.toml`
+A minimal analysis plugin contains:
 
-ASOkai will automatically discover and instantiate your plugin when the CLI runs.
+```text
+my_asokai_plugin/
+├── pyproject.toml
+└── src/
+    └── my_asokai_plugin/
+        ├── __init__.py
+        ├── analysis_step.py
+        └── config.schema.yaml
+```
 
-## Creating a Plugin Step
-
-### Step 1: Implement the `Step` Protocol
-
-Create a file in your external package, e.g. `my_plugin/steps/my_step.py`:
+The plugin imports its supported authoring contracts from `ASOkai.Plugins`:
 
 ```python
-"""my_plugin/steps/my_step.py"""
-from pathlib import Path
-from importlib.resources import files
-from ASOkai.Plugins import Step
-
-class MyCustomStep:
-    name = "my-custom-step"
-    description = "Does something custom."
-    dependencies: list[str] = ["some-other-step"]
-    config_map = {
-        "input1": "config.key1",
-        "input2": "config.key2",
-    }
-
-    @property
-    def cwl_path(self) -> str:
-        return str(files("my_plugin.cwl.steps").joinpath("my-custom-step.cwl"))
-
-    def outdir(self, config: dict) -> Path:
-        return Path(config["datadir"]) / "custom" / config.get("target_id", "default")
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        base = self.outdir(config)
-        return {
-            "output1": base / "result.json",
-        }
-
-    def outputs_exist(self, config: dict) -> bool:
-        return all(p.exists() for p in self.output_paths(config).values())
-
-    def cleanup(self, config: dict) -> None:
-        for p in self.output_paths(config).values():
-            if p.exists():
-                p.unlink()
+from ASOkai.Plugins import (
+    AnalysisStep,
+    CsvFile,
+    FileInput,
+    FileOutput,
+    ScalarParam,
+    StepSpec,
+)
 ```
 
-### Step 2: Implement the CLI Entrypoint
+`ASOkai.Plugins` is the public plugin interface. Packages whose names begin
+with an underscore, including `ASOkai._pipeline` and `ASOkai._cwl`, are
+internal implementation details and should not be imported by plugins.
 
-In the same file (or a separate one), add a `main()` function:
+## Declaring a step
+
+A step subclasses `Step`, `CoreStep`, or `AnalysisStep` and declares one
+`StepSpec`. The spec is the source of truth for its scalar parameters, file
+inputs, file outputs, compatibility, generated command line, and generated
+CWL.
+
+An analysis step normally provides:
+
+- a unique `name` and a useful `description`;
+- an `analysis_cls` implementing the scientific analysis;
+- `FileInput` values sourced from exact producer outputs;
+- one primary CSV `FileOutput`, followed by any additional outputs;
+- a `StepSpec` containing those declarations; and
+- `analysis_kwargs()` to pass loaded inputs and scalar parameters to the
+  analysis class.
+
+See
+[`analysis_step.py`](examples/plugins/example_analysis/src/asokai_example_analysis/analysis_step.py)
+for a working site-specific example. It also demonstrates typed CSV columns,
+configuration-backed scalar parameters, and output path templates.
+
+ASOkai derives dependencies from each `FileInput.source`; contributors do not
+maintain a second dependency list. It also generates the internal step CLI and
+CWL, creates output parent directories, loads typed inputs, validates written
+outputs, and publishes them to their declared destinations.
+
+### Fixed low-level arguments
+
+`CwlToolArgument` represents one fixed entry in the generated CWL
+`CommandLineTool.arguments` list:
 
 ```python
-import argparse
-import sys
+from ASOkai.Plugins import CwlToolArgument, StepSpec
 
-def main() -> int:
-    """Called by CWL baseCommand."""
-    parser = argparse.ArgumentParser(description="My custom step.")
-    parser.add_argument("--input1", required=True, help="First input.")
-    parser.add_argument("--input2", required=True, help="Second input.")
-    parser.add_argument("--outdir", required=True, type=Path, help="Output directory.")
-
-    args = parser.parse_args()
-    args.outdir.mkdir(parents=True, exist_ok=True)
-
-    # Your logic here
-    result = process_inputs(args.input1, args.input2)
-
-    output_path = args.outdir / "result.json"
-    with open(output_path, 'w') as f:
-        json.dump(result, f)
-
-    print(f"output1\t{output_path}")
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
+spec = StepSpec(
+    base_command=["external-tool"],
+    arguments=[
+        CwlToolArgument(prefix="--output-format", value_from="json"),
+    ],
+)
 ```
 
-### Step 3: Create the CWL Tool Definition
+This is an advanced escape hatch for a custom `base_command`. Ordinary ASOkai
+steps should use `ScalarParam`, `FileInput`, and `FileOutput`, which keep the
+generated CLI, configuration, documentation, and CWL synchronized.
 
-Create `my_plugin/cwl/steps/my-custom-step.cwl`:
+## Registering components
 
-```yaml
-#!/usr/bin/env cwl-runner
-cwlVersion: v1.2
-class: CommandLineTool
-
-baseCommand: my-custom-step
-
-inputs:
-  input1:
-    type: string
-    inputBinding:
-      prefix: --input1
-
-  input2:
-    type: string
-    inputBinding:
-      prefix: --input2
-
-outputs:
-  output1:
-    type: File
-    outputBinding:
-      glob: "result.json"
-```
-
-### Step 4: Declare Entry Points in `pyproject.toml`
-
-In your plugin package's `pyproject.toml`, declare the entry point:
+Register each contributed class in the corresponding entry-point group. The
+entry-point name must exactly match the class's `name`, and the class must be
+constructible without arguments.
 
 ```toml
 [project.entry-points."asokai.steps"]
-my-custom-step = "my_plugin.steps.my_step:MyCustomStep"
+my-analysis = "my_asokai_plugin.analysis_step:MyAnalysisStep"
 
-[project.scripts]
-my-custom-step = "my_plugin.steps.my_step:main"
+[project.entry-points."asokai.tasks"]
+my-task = "my_asokai_plugin.task:MyTask"
+
+[project.entry-points."asokai.workflows"]
+my-workflow = "my_asokai_plugin.workflow:MyWorkflow"
+```
+
+Only declare the groups the package actually contributes. A task contains
+registered step instances. A workflow contains registered steps, tasks, or
+other workflows. ASOkai validates these references when it builds the pipeline
+catalog.
+
+## Adding configuration
+
+If a step uses plugin-owned configuration paths, package a YAML schema and
+register its path:
+
+```python
+# my_asokai_plugin/__init__.py
+from pathlib import Path
+
+CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
+```
+
+```toml
+[project.entry-points."asokai.config_schemas"]
+my-plugin = "my_asokai_plugin:CONFIG_SCHEMA_PATH"
 
 [tool.setuptools.package-data]
-"my_plugin.cwl.steps" = ["*.cwl"]
+my_asokai_plugin = ["config.schema.yaml"]
 ```
 
-### Step 5: Install
+The schema describes only configuration owned by the plugin. Inputs sourced
+from another step already inherit that producer's contract and configuration.
+Override `validate_parameters()` only for relationships between resolved
+parameter values that a YAML schema cannot express clearly.
 
-Install your plugin in development mode:
+## Installing and checking a plugin
+
+Install the package into the same Conda environment as ASOkai:
 
 ```bash
-pip install -e /path/to/my_plugin
+python -m pip install -e /path/to/my_asokai_plugin
 ```
 
-### Step 6: Use It
-
-The step is now discoverable:
+ASOkai then discovers it automatically:
 
 ```bash
 ASOkai list steps
-ASOkai describe my-custom-step
-ASOkai run my-custom-step --config config.yaml
+ASOkai describe step my-analysis
+ASOkai run --steps my-analysis --config-file config.yaml
 ```
 
-## For Tasks and Workflows
+Before publishing, check that:
 
-Tasks and workflows do **not** ship static CWL files. ASOkai generates workflow CWL at runtime from your step definitions.
+- every entry-point name matches the declared component name;
+- every contributed class can be instantiated without arguments;
+- file inputs reuse exact registered producer outputs;
+- every referenced configuration path exists in ASOkai's schema or the
+  plugin's schema;
+- output filenames distinguish parameter values that change their contents;
+- the plugin's tests pass with the supported ASOkai version; and
+- installing the wheel includes `config.schema.yaml` and any other package
+  data.
 
-- **Runnable** (`ASOkai.Plugins.Runnable`): shared runnable contract.
-- **Step** (`ASOkai.Plugins.Step`): atomic pipeline unit.
-- **Task** (`ASOkai.Plugins.Task`): named collection of steps.
-- **Workflow** (`ASOkai.Plugins.Workflow`): collection of runnable members.
-
-The process is the same—use entry points `asokai.tasks` and `asokai.workflows` respectively:
-
-```toml
-[project.entry-points."asokai.tasks"]
-my-task = "my_plugin.tasks.my_task:MyCustomTask"
-
-[project.entry-points."asokai.workflows"]
-my-workflow = "my_plugin.workflows.my_workflow:MyCustomWorkflow"
-```
-
-## Key Points
-
-- **Protocol-based:** Everything implements `Runnable` at minimum. Steps add `dependencies`, `config_map`, `input_overrides`, `cli_module`, `cwl_path`, and `outdir`. Tasks add `steps`. Workflows add `members`.
-- **Entry points:** Declare in your `pyproject.toml` under `asokai.steps`, `asokai.tasks`, or `asokai.workflows`.
-- **CLI entrypoint:** Register a `[project.scripts]` entry for `baseCommand` to work.
-- **CWL files:** Use `importlib.resources.files()` to robustly locate your CWL files.
-- **No config parsing:** The CLI handles config loading and passing—your step receives resolved inputs via CLI arguments.
-
-## Example Plugin Structure
-
-```
-my_plugin/
-├── pyproject.toml
-├── my_plugin/
-│   ├── __init__.py
-│   ├── steps/
-│   │   ├── __init__.py
-│   │   └── my_step.py
-│   ├── tasks/
-│   │   ├── __init__.py
-│   │   └── my_task.py
-│   └── cwl/
-│       ├── __init__.py
-│       ├── steps/
-│       │   ├── __init__.py
-│       │   └── my-step.cwl
-│       └── tasks/
-│           ├── __init__.py
-│           └── my-task.cwl
-└── tests/
-    └── test_my_step.py
-```
+ASOkai's Sphinx contract-rendering extension can also be reused by a plugin,
+but the plugin owns its documentation build and decides which declarations to
+publish.

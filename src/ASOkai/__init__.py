@@ -14,7 +14,6 @@ from . import Targets
 from . import Biochemistry
 from . import Analysis
 from . import Utils
-from . import Plugins
 from .Utils import _attribute_registrations  # noqa: F401
 
 __all__ = [
@@ -25,5 +24,4 @@ __all__ = [
     "Biochemistry",
     "Analysis",
     "Utils",
-    "Plugins",
 ]

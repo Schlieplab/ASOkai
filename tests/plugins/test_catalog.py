@@ -7,7 +7,7 @@ import tomllib
 
 import pytest
 
-from ASOkai import Plugins
+import ASOkai.Plugins as Plugins
 from ASOkai.Plugins import (
     AnalysisStep,
     CsvFile,

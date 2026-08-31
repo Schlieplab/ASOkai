@@ -58,7 +58,13 @@ pythonVersion = "3.12"
 typeCheckingMode = "basic"
 extraPaths = ["src", "docs/source/_extensions"]
 include = ["src", "docs/source/_extensions", "examples/contributor_steps"]
-exclude = ["build", "docs/build"]
+exclude = [
+    "build",
+    "docs/build",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+]
 reportMissingImports = "none"
 reportMissingModuleSource = "none"
 

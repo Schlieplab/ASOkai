@@ -1,6 +1,12 @@
 repos:
   - repo: local
     hooks:
+      - id: check-python-types
+        name: Check Python types
+        entry: python -m pyright
+        language: system
+        pass_filenames: false
+        files: '^(src/ASOkai/|docs/source/_extensions/|examples/contributor_steps/|pyproject\.toml$|\.pre-commit-config\.yaml$)'
       - id: validate-asokai-contributor-steps
         name: Validate ASOkai contributor step contracts
         entry: python -m pytest -q tests/contributor/test_analysis_steps.py

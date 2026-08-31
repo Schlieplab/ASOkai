@@ -9,8 +9,6 @@ on:
       - ".github/workflows/main.yaml"
       - "**.py"
       - "pyproject.toml"
-      - "setup.py"
-      - "setup.cfg"
       - "environment.yaml"
   pull_request:
     paths:
@@ -18,8 +16,6 @@ on:
       - ".github/workflows/main.yaml"
       - "**.py"
       - "pyproject.toml"
-      - "setup.py"
-      - "setup.cfg"
       - "environment.yaml"
   workflow_dispatch:
 
@@ -35,20 +31,27 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: micromamba-shell {0}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Create ASOkai environment
+        uses: mamba-org/setup-micromamba@v3
         with:
-          python-version: "3.12"
+          environment-file: environment.yaml
+          cache-downloads: true
 
-      - name: Install package and documentation dependencies
+      - name: Install ASOkai and contributor dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Verify required executables
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          command -v kmc
+          command -v kmc_tools
 
       - name: Run test suite
         run: python -m pytest -q

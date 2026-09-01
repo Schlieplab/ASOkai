@@ -61,7 +61,8 @@ called.
 All wrappers accept ``kmc_tools`` from ``PATH`` by default or an explicit
 executable path. Shared execution options include ``t``, ``v``, ``hp``,
 ``debug``, ``check``, and ``cwd``. Operation-specific options follow the
-upstream ``kmc_tools`` command-line interface.
+upstream ``kmc_tools`` command-line interface. When ``check=True``, an
+unsuccessful process raises ``KMCTools.KMCToolsExecutionError``.
 
 KMC API
 -------
@@ -90,5 +91,9 @@ kmc_tools API
    :show-inheritance:
 
 .. autoclass:: ASOkai.Utils.KMCTools.Complex
+   :members:
+   :show-inheritance:
+
+.. autoexception:: ASOkai.Utils.KMCTools.KMCToolsExecutionError
    :members:
    :show-inheritance:

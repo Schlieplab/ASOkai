@@ -7,7 +7,7 @@ Version: 0.1.1
 Description: Public exports for the Utils subpackage.
 License: LGPL-3.0-or-later
 """
-from . import _kmc_tools as KMCTools
+from . import KMCTools
 from ._kmc import KMC, KMCExecutionError
 from ._serializer import Serializable
 

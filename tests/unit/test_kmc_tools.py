@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ASOkai.Utils._kmc_tools import Complex, Filter, Simple, Transform
-from ASOkai.Utils._kmc_tools._base import KMCToolsExecutionError
+from ASOkai.Utils import KMCTools
+from ASOkai.Utils.KMCTools import KMCToolsExecutionError
 
 
 @pytest.fixture
@@ -33,9 +33,14 @@ def tools_exe(fake_kmc_tools: Path) -> str:
     return str(fake_kmc_tools)
 
 
+def test_kmc_tools_namespace_supports_both_public_import_styles() -> None:
+    assert KMCTools.__name__ == "ASOkai.Utils.KMCTools"
+    assert KMCTools.KMCToolsExecutionError is KMCToolsExecutionError
+
+
 def test_resolve_executable_missing() -> None:
     with pytest.raises(FileNotFoundError, match="not found"):
-        Simple("___not_a_real_kmc_tools_binary___")
+        KMCTools.Simple("___not_a_real_kmc_tools_binary___")
 
 
 def test_transform_minimal_chain(tools_exe: str, tmp_path: Path) -> None:
@@ -45,8 +50,8 @@ def test_transform_minimal_chain(tools_exe: str, tmp_path: Path) -> None:
     out_d = tmp_path / "dump.txt"
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Transform(tools_exe).reduce(out_r, cx=10).histogram(out_h).dump(out_d).run(db, t=8)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Transform(tools_exe).reduce(out_r, cx=10).histogram(out_h).dump(out_d).run(db, t=8)
 
     argv = mock_run.call_args.args[0]
     assert argv[0] == tools_exe
@@ -60,8 +65,8 @@ def test_transform_minimal_chain(tools_exe: str, tmp_path: Path) -> None:
 def test_transform_run_input_ci_cx(tools_exe: str, tmp_path: Path) -> None:
     db = tmp_path / "kdb"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Transform(tools_exe).sort().run(db, ci=3, cx=100, v=True, hp=True)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Transform(tools_exe).sort().run(db, ci=3, cx=100, v=True, hp=True)
 
     argv = mock_run.call_args.args[0]
     assert "-v" in argv
@@ -76,8 +81,8 @@ def test_transform_run_input_ci_cx(tools_exe: str, tmp_path: Path) -> None:
 def test_transform_sort_without_output_path(tools_exe: str, tmp_path: Path) -> None:
     db = tmp_path / "kdb"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Transform(tools_exe).sort(ci=5).run(db)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Transform(tools_exe).sort(ci=5).run(db)
 
     argv = mock_run.call_args.args[0]
     tail = argv[argv.index("transform") + 1 :]
@@ -91,9 +96,9 @@ def test_transform_compact_dump_set_counts(tools_exe: str, tmp_path: Path) -> No
     sc_out = tmp_path / "sc.kmc"
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
         (
-            Transform(tools_exe)
+            KMCTools.Transform(tools_exe)
             .compact(comp_out, o="kff")
             .dump(dump_out, s=True)
             .set_counts(42, sc_out, o="kmc")
@@ -117,9 +122,9 @@ def test_simple_chained_union_intersect(tools_exe: str, tmp_path: Path) -> None:
     ix = tmp_path / "inter_out"
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
         (
-            Simple(tools_exe)
+            KMCTools.Simple(tools_exe)
             .union(u, cs=65536, oc="left", o="kff")
             .intersect(ix, oc="max")
             .run(km1, km2, input1_ci=3, input1_cx=70000)
@@ -158,11 +163,11 @@ def test_simple_each_operation_emits_name(
     tools_exe: str, tmp_path: Path, method: str, op_name: str
 ) -> None:
     a, b, o = tmp_path / "a", tmp_path / "b", tmp_path / "out"
-    s = Simple(tools_exe)
+    s = KMCTools.Simple(tools_exe)
     getattr(s, method)(o)
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
         s.run(a, b)
 
     argv = mock_run.call_args.args[0]
@@ -173,8 +178,8 @@ def test_simple_each_operation_emits_name(
 def test_simple_input2_ci_cx(tools_exe: str, tmp_path: Path) -> None:
     a, b, o = tmp_path / "a", tmp_path / "b", tmp_path / "o"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Simple(tools_exe).intersect(o).run(a, b, input2_ci=10, input2_cx=99)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Simple(tools_exe).intersect(o).run(a, b, input2_ci=10, input2_cx=99)
 
     argv = mock_run.call_args.args[0]
     a_idx = argv.index(str(a.resolve()))
@@ -187,8 +192,8 @@ def test_filter_flags_and_paths(tools_exe: str, tmp_path: Path) -> None:
     db, inp, outp = tmp_path / "kmc_db", tmp_path / "in.fq", tmp_path / "out.fq"
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Filter(tools_exe).run(
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Filter(tools_exe).run(
             db,
             inp,
             outp,
@@ -222,8 +227,8 @@ def test_filter_flags_and_paths(tools_exe: str, tmp_path: Path) -> None:
 def test_filter_no_trim_global_t_only(tools_exe: str, tmp_path: Path) -> None:
     db, inp, outp = tmp_path / "db", tmp_path / "i.fq", tmp_path / "o.fq"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Filter(tools_exe).run(db, inp, outp, t=8)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Filter(tools_exe).run(db, inp, outp, t=8)
 
     argv = mock_run.call_args.args[0]
     assert argv[0:3] == [tools_exe, "-t8", "filter"]
@@ -235,8 +240,8 @@ def test_complex(tools_exe: str, tmp_path: Path) -> None:
     ops_file.write_text("INPUT:\nset1 = a\nOUTPUT:\nout = set1\n")
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Complex(tools_exe).run(ops_file, t=2, v=True)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Complex(tools_exe).run(ops_file, t=2, v=True)
 
     argv = mock_run.call_args.args[0]
     assert argv[:4] == [tools_exe, "-t2", "-v", "complex"]
@@ -247,9 +252,9 @@ def test_run_failure_raises(tools_exe: str, tmp_path: Path) -> None:
     db = tmp_path / "db"
     bad = subprocess.CompletedProcess(args=[], returncode=2, stdout="o", stderr="e")
 
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=bad):
-        with pytest.raises(KMCToolsExecutionError) as exc_info:
-            Transform(tools_exe).sort().run(db, check=True, debug=False)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=bad):
+        with pytest.raises(KMCTools.KMCToolsExecutionError) as exc_info:
+            KMCTools.Transform(tools_exe).sort().run(db, check=True, debug=False)
 
     assert exc_info.value.returncode == 2
     assert exc_info.value.stderr == "e"
@@ -260,8 +265,8 @@ def test_run_check_false_returns_failed_process(tools_exe: str, tmp_path: Path) 
     db = tmp_path / "db"
     bad = subprocess.CompletedProcess(args=[], returncode=5, stdout="", stderr="")
 
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=bad):
-        proc = Transform(tools_exe).sort().run(db, check=False)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=bad):
+        proc = KMCTools.Transform(tools_exe).sort().run(db, check=False)
 
     assert proc.returncode == 5
 
@@ -272,8 +277,8 @@ def test_run_passes_cwd(tools_exe: str, tmp_path: Path) -> None:
     work.mkdir()
 
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Transform(tools_exe).sort().run(db, cwd=work)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Transform(tools_exe).sort().run(db, cwd=work)
 
     assert mock_run.call_args.kwargs["cwd"] == str(work.resolve())
 
@@ -282,8 +287,8 @@ def test_debug_false_captures_output(tools_exe: str, tmp_path: Path) -> None:
     db = tmp_path / "db"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
-        Transform(tools_exe).sort().run(db, debug=False)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
+        KMCTools.Transform(tools_exe).sort().run(db, debug=False)
 
     assert mock_run.call_args.kwargs.get("capture_output") is True
 
@@ -292,8 +297,8 @@ def test_same_instance_can_run_twice(tools_exe: str, tmp_path: Path) -> None:
     db1, db2 = tmp_path / "d1", tmp_path / "d2"
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-    tf = Transform(tools_exe)
-    with patch("ASOkai.Utils._kmc_tools._base.subprocess.run", return_value=completed) as mock_run:
+    tf = KMCTools.Transform(tools_exe)
+    with patch("ASOkai.Utils.KMCTools._base.subprocess.run", return_value=completed) as mock_run:
         tf.sort().run(db1)
         first_cmd = mock_run.call_args.args[0][:]
         tf.reduce(tmp_path / "o").run(db2)

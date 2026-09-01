@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/Utils/_kmc_tools/_filter.py
+Filename: src/ASOkai/Utils/KMCTools/_filter.py
 Author: Kian Jalilian
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1

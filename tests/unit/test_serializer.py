@@ -29,7 +29,10 @@ class ExternalLocation:
 
 class SimpleSerializable(Serializable):
     """Simple test class for serialization."""
-    
+
+    name: str
+    value: int
+
     def __init__(self, name: str, value: int, **kwargs):
         self.name = name
         self.value = value
@@ -38,7 +41,10 @@ class SimpleSerializable(Serializable):
 
 class SerializableWithExclusions(Serializable):
     """Test class with excluded attributes."""
-    
+
+    public: str
+    private_data: str | None
+    cache: dict | None
     _non_serializable_attrs = {'private_data', 'cache'}
     
     def __init__(
@@ -56,7 +62,9 @@ class SerializableWithExclusions(Serializable):
 
 class SerializableWithMapping(Serializable):
     """Test class with attribute name mapping."""
-    
+
+    _sequence: Seq
+
     def __init__(self, sequence: Seq, **kwargs):
         self._sequence = sequence
         super().__init__(**kwargs)
@@ -67,7 +75,7 @@ class SerializableWithLocations(Serializable):
 
     locations: list[ExternalLocation]
 
-    def __init__(self, locations: list[ExternalLocation]):
+    def __init__(self, locations):
         self.locations = locations
         super().__init__()
 
@@ -90,44 +98,78 @@ class SerializableWithOptionalSequence(Serializable):
     def __init__(self, sequence: Seq | None):
         self.sequence = sequence
         super().__init__()
-    
+
+
+class NestedItem(Serializable):
+    """Serializable value nested inside declared containers."""
+
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+        super().__init__()
+
+
+class SerializableWithNestedItems(Serializable):
+    """Serializable containing nested mappings and lists."""
+
+    groups: dict[str, list[NestedItem]]
+
+    def __init__(self, groups: dict[str, list[NestedItem]]):
+        self.groups = groups
+        super().__init__()
+
+
+class ClosedSerializable(Serializable):
+    """Serializable whose constructor does not accept extra fields."""
+
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+        super().__init__()
+
+
+class UnsupportedValue:
+    """Value without a supported serialized representation."""
+
+
+class SerializableWithUnsupportedValue(Serializable):
+    """Serializable with an unsupported declared field type."""
+
+    value: UnsupportedValue
+
+    def __init__(self, value: UnsupportedValue):
+        self.value = value
+        super().__init__()
+
+
+class SerializableWithTuple(Serializable):
+    """Serializable used to verify that tuples are not silently coerced."""
+
+    values: tuple[int, ...]
+
+    def __init__(self, values: tuple[int, ...]):
+        self.values = values
+        super().__init__()
+
 
 @pytest.mark.unit
 @pytest.mark.serialization
 class TestSerializableBasics:
     """Test basic serialization/deserialization."""
-    
-    def test_to_dict_basic(self):
-        """Test basic to_dict conversion."""
-        obj = SimpleSerializable(name="test", value=42)
-        data = obj.to_dict()
-        
-        assert data['__class__'] == 'SimpleSerializable'
-        assert data['__module__'] == 'tests.unit.test_serializer'
-        assert data['name'] == 'test'
-        assert data['value'] == 42
-        
-    def test_from_dict_basic(self):
-        """Test basic from_dict reconstruction."""
-        data = {
-            '__class__': 'SimpleSerializable',
-            '__module__': 'tests.unit.test_serializer',
-            'name': 'test',
-            'value': 42
-        }
-        
-        obj = SimpleSerializable.from_dict(data)
-        
-        assert isinstance(obj, SimpleSerializable)
-        assert obj.name == 'test'
-        assert obj.value == 42
-        
-    def test_roundtrip_basic(self):
-        """Test serialization -> deserialization roundtrip."""
+
+    def test_basic_shape_and_roundtrip(self):
         original = SimpleSerializable(name="test", value=42)
         data = original.to_dict()
         reconstructed = SimpleSerializable.from_dict(data)
-        
+
+        assert data == {
+            '__class__': 'SimpleSerializable',
+            '__module__': 'tests.unit.test_serializer',
+            'name': 'test',
+            'value': 42,
+        }
         assert reconstructed.name == original.name
         assert reconstructed.value == original.value
 
@@ -167,55 +209,45 @@ class TestSerializableExclusions:
 @pytest.mark.serialization
 class TestSerializableNameMapping:
     """Test attribute name mapping functionality."""
-    
-    def test_name_mapping_serialization(self, sample_sequence):
-        """Test that mapped names are serialized via registered adapter."""
+
+    def test_name_mapping_roundtrip(self, sample_sequence):
         obj = SerializableWithMapping(sequence=sample_sequence)
         data = obj.to_dict()
-        
-        # _sequence is stored as a plain string under the public key "sequence"
-        assert 'sequence' in data
+        obj = SerializableWithMapping.from_dict(data)
+
         assert data['sequence'] == str(sample_sequence)
         assert '_sequence' not in data
-        
-    def test_name_mapping_deserialization(self, sample_sequence):
-        """Test that mapped names are deserialized correctly via adapter."""
-        data = {
-            '__class__': 'SerializableWithMapping',
-            '__module__': 'tests.unit.test_serializer',
-            'sequence': str(sample_sequence),
-        }
-        
-        obj = SerializableWithMapping.from_dict(data)
-        
         assert hasattr(obj, '_sequence')
         assert isinstance(obj._sequence, Seq)
         assert str(obj._sequence) == str(sample_sequence)
+
+    def test_name_mapping_does_not_bypass_the_declared_type(self):
+        data = SerializableWithMapping(sequence=Seq("ACGT")).to_dict()
+        data["sequence"] = 4
+
+        with pytest.raises(TypeError, match="Seq values must be serialized"):
+            SerializableWithMapping.from_dict(data)
 
 
 @pytest.mark.unit
 @pytest.mark.serialization
 class TestSerializableComplexTypes:
     """Test serialization of complex nested types."""
-    
-    def test_nested_dict_serialization(self):
-        """Test serialization of nested dictionaries."""
-        obj = SimpleSerializable(name="test", value=42)
-        setattr(obj, "data", {"nested": {"key": "value"}})
-        
-        data = obj.to_dict()
-        
-        assert data['data']['nested']['key'] == 'value'
-        
-    def test_list_serialization(self):
-        """Test serialization of lists."""
-        obj = SimpleSerializable(name="test", value=42)
-        setattr(obj, "items", [1, 2, 3, "four"])
-        
-        data = obj.to_dict()
-        
-        assert data['items'] == [1, 2, 3, "four"]
-        
+
+    def test_nested_serializable_values_roundtrip(self):
+        original = SerializableWithNestedItems(
+            groups={"first": [NestedItem(1), NestedItem(2)]},
+        )
+        contract = JsonFile(SerializableWithNestedItems)
+
+        reconstructed = contract.loads(contract.dumps(original))
+
+        assert [item.value for item in reconstructed.groups["first"]] == [1, 2]
+        assert all(
+            isinstance(item, NestedItem)
+            for item in reconstructed.groups["first"]
+        )
+
     def test_sequence_values_roundtrip_inside_annotated_mapping(
         self,
         sample_sequence,
@@ -255,13 +287,14 @@ class TestSerializableComplexTypes:
             },
         }
 
-    def test_dataclass_values_roundtrip_from_constructor_annotations(self):
+    def test_dataclass_values_roundtrip_from_class_annotations(self):
         original = SerializableWithLocations(
             locations=[ExternalLocation("reference-1", 10, 20)]
         )
+        contract = JsonFile(SerializableWithLocations)
 
         serialized = original.to_dict()
-        reconstructed = SerializableWithLocations.from_dict(serialized)
+        reconstructed = contract.loads(contract.dumps(original))
 
         assert serialized["locations"] == [
             {
@@ -288,3 +321,65 @@ class TestSerializableComplexTypes:
                 },
             },
         }
+
+
+@pytest.mark.unit
+@pytest.mark.serialization
+class TestSerializableInputValidation:
+    """Test strict handling of serialized input boundaries."""
+
+    def test_unexpected_field_is_rejected_without_kwargs(self):
+        data = ClosedSerializable(1).to_dict()
+        data["unexpected"] = 2
+
+        with pytest.raises(ValueError, match="Unexpected serialized field"):
+            ClosedSerializable.from_dict(data)
+
+    def test_extra_scalar_kwargs_roundtrip(self):
+        original = SimpleSerializable(
+            name="test",
+            value=42,
+            source="external",
+            score=0.75,
+        )
+
+        reconstructed = SimpleSerializable.from_dict(original.to_dict())
+
+        assert reconstructed.source == "external"
+        assert reconstructed.score == 0.75
+
+    def test_non_scalar_extra_kwargs_are_rejected(self):
+        with pytest.raises(TypeError, match="must be a scalar"):
+            SimpleSerializable(
+                name="test",
+                value=42,
+                metadata={"source": "external"},
+            )
+
+        data = SimpleSerializable(name="test", value=42).to_dict()
+        data["metadata"] = {"source": "external"}
+        with pytest.raises(TypeError, match="must be a scalar"):
+            SimpleSerializable.from_dict(data)
+
+    def test_unknown_implementation_is_rejected_without_importing_it(self):
+        data = SimpleSerializable(name="test", value=42).to_dict()
+        data["__module__"] = "package_that_is_not_installed"
+
+        with pytest.raises(ValueError, match="Unknown SimpleSerializable"):
+            SimpleSerializable.from_dict(data)
+
+    def test_unsupported_declared_type_is_rejected(self):
+        data = {
+            "__class__": "SerializableWithUnsupportedValue",
+            "__module__": "tests.unit.test_serializer",
+            "value": "unsupported",
+        }
+
+        with pytest.raises(TypeError, match="Cannot deserialize values annotated"):
+            SerializableWithUnsupportedValue.from_dict(data)
+
+    def test_tuple_values_are_rejected_instead_of_coerced_to_lists(self):
+        value = SerializableWithTuple((1, 2))
+
+        with pytest.raises(TypeError, match="Cannot serialize type tuple"):
+            value.to_dict()

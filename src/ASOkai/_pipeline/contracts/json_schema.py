@@ -11,14 +11,12 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import inspect
-import sys
 from abc import ABC
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import fields, is_dataclass
-from types import NoneType, SimpleNamespace, UnionType
+from types import NoneType, UnionType
 from typing import (
     Any,
-    ClassVar,
     Literal,
     TypeAlias,
     Union,
@@ -198,7 +196,7 @@ def _build_object_schema(
     serializable_type: type[Serializable],
 ) -> JsonSchema:
     """Build the object schema for one concrete Serializable class."""
-    serialized_fields = _serialized_fields(serializable_type)
+    serialized_fields = serializable_type._serialized_field_types()
     properties = {
         field_name: _build_schema(
             field_type,
@@ -278,70 +276,6 @@ def _schema_accepts_default(schema: Mapping[str, Any], value: Any) -> bool:
     if isinstance(declared_type, list):
         return any(accepted_types.get(item, False) for item in declared_type)
     return False
-
-
-def _serialized_fields(
-    serializable_type: type[Serializable],
-) -> dict[str, Any]:
-    """Collect serialized field annotations from the full class hierarchy."""
-    serialized_fields: dict[str, Any] = {}
-    attribute_serializers = (
-        serializable_type._registered_attribute_serializers()
-    )
-    serialized_private_fields = attribute_serializers.keys()
-    for class_in_hierarchy in reversed(serializable_type.__mro__):
-        for field_name, field_type in _declared_field_types(
-            class_in_hierarchy,
-            serialized_private_fields=serialized_private_fields,
-        ).items():
-            serializer = attribute_serializers.get(field_name)
-            if serializer is None:
-                serialized_fields[field_name] = field_type
-                continue
-
-            serialized_name, _, flatten = serializer
-            if flatten:
-                for flattened_class in reversed(field_type.__mro__):
-                    serialized_fields.update(
-                        _declared_field_types(flattened_class)
-                    )
-                continue
-            serialized_fields[serialized_name] = field_type
-    return serialized_fields
-
-
-def _declared_field_types(
-    declaring_class: type[Any],
-    *,
-    serialized_private_fields: Iterable[str] = (),
-) -> dict[str, Any]:
-    """Resolve the relevant fields declared directly by one class."""
-    serialized_private_field_names = set(serialized_private_fields)
-    annotations = {
-        field_name: annotation
-        for field_name, annotation in declaring_class.__dict__.get(
-            "__annotations__",
-            {},
-        ).items()
-        if (
-            not field_name.startswith("_")
-            or field_name in serialized_private_field_names
-        )
-    }
-    if not annotations:
-        return {}
-
-    annotation_holder = SimpleNamespace(__annotations__=annotations)
-    resolved_fields = get_type_hints(
-        annotation_holder,
-        globalns=vars(sys.modules[declaring_class.__module__]),
-        localns=dict(vars(declaring_class)),
-    )
-    return {
-        field_name: field_type
-        for field_name, field_type in resolved_fields.items()
-        if get_origin(field_type) is not ClassVar
-    }
 
 
 def _accepts_extra_scalars(

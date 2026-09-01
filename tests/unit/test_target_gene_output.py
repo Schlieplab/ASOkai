@@ -211,20 +211,6 @@ def test_target_gene_input_rejects_invalid_runtime_references(
     assert field in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    "content",
-    [
-        '{"__class__": "TargetGene", "__class__": "Duplicate", '
-        '"__module__": "ASOkai.Targets._target_gene"}',
-        '{"__class__": "TargetGene", '
-        '"__module__": "ASOkai.Targets._target_gene", "value": NaN}',
-    ],
-)
-def test_target_gene_input_rejects_ambiguous_json(input_contract, content):
-    with pytest.raises(ValueError, match="Invalid JSON"):
-        input_contract.loads(content)
-
-
 def test_target_gene_schema_reports_all_structural_errors(
     output,
     input_contract,

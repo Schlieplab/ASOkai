@@ -81,6 +81,33 @@ class SerializableWithLocations(Serializable):
         super().__init__()
 
 
+@dataclass
+class SerializableDataclass(Serializable):
+    """Dataclass that retains the Serializable tagged representation."""
+
+    value: int
+
+
+class SerializableWithSerializableDataclass(Serializable):
+    """Serializable containing another Serializable implemented as a dataclass."""
+
+    item: SerializableDataclass
+
+    def __init__(self, item: SerializableDataclass):
+        self.item = item
+        super().__init__()
+
+
+class SerializableWithDefault(Serializable):
+    """Serializable with a JSON-compatible constructor default."""
+
+    label: str
+
+    def __init__(self, label: str = "default"):
+        self.label = label
+        super().__init__()
+
+
 class SerializableWithSequences(Serializable):
     """Test class containing sequence values inside a mapping."""
 
@@ -323,6 +350,28 @@ class TestSerializableComplexTypes:
             },
         }
 
+    def test_serializable_dataclass_uses_the_tagged_object_contract(self):
+        contract = JsonFile(SerializableWithSerializableDataclass)
+
+        reconstructed = contract.loads(
+            contract.dumps(
+                SerializableWithSerializableDataclass(
+                    SerializableDataclass(1),
+                )
+            )
+        )
+
+        assert isinstance(reconstructed.item, SerializableDataclass)
+        assert reconstructed.item.value == 1
+
+    def test_constructor_default_is_added_to_its_field_schema(self):
+        schema = build_json_schema(SerializableWithDefault)
+
+        assert schema["properties"]["label"] == {
+            "type": "string",
+            "default": "default",
+        }
+
 
 @pytest.mark.unit
 @pytest.mark.serialization
@@ -335,6 +384,13 @@ class TestSerializableInputValidation:
 
         with pytest.raises(ValueError, match="Unexpected serialized field"):
             ClosedSerializable.from_dict(data)
+
+    def test_json_contract_rejects_extra_fields_without_kwargs(self):
+        value = ClosedSerializable(1)
+        setattr(value, "unexpected", 2)
+
+        with pytest.raises(ValueError, match="Additional properties"):
+            JsonFile(ClosedSerializable).dumps(value)
 
     def test_extra_metadata_kwargs_roundtrip(self):
         original = SimpleSerializable(

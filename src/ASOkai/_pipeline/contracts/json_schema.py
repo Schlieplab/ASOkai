@@ -146,9 +146,6 @@ def _build_schema(
             "examples": ["A"],
         }
 
-    if isinstance(expected_type, type) and is_dataclass(expected_type):
-        return _build_dataclass_schema(expected_type)
-
     if isinstance(expected_type, type) and issubclass(
         expected_type,
         Serializable,
@@ -163,6 +160,9 @@ def _build_schema(
             for allowed_type in allowed_types
         ]
         return schemas[0] if len(schemas) == 1 else {"oneOf": schemas}
+
+    if isinstance(expected_type, type) and is_dataclass(expected_type):
+        return _build_dataclass_schema(expected_type)
 
     raise TypeError(
         f"{expected_type!r} has no JSON representation."
@@ -200,7 +200,8 @@ def _build_object_schema(
         )
         for field_name, field_type in serialized_fields.items()
     }
-    _add_constructor_defaults(serializable_type, properties)
+    constructor_parameters = serializable_type._constructor_parameters()
+    _add_constructor_defaults(constructor_parameters, properties)
     schema: JsonSchema = {
         "type": "object",
         "additionalProperties": (
@@ -220,7 +221,7 @@ def _build_object_schema(
         },
     }
     constructor_only_parameters = _constructor_only_parameters(
-        serializable_type,
+        constructor_parameters,
         serialized_fields,
     )
     if constructor_only_parameters:
@@ -231,13 +232,12 @@ def _build_object_schema(
 
 
 def _add_constructor_defaults(
-    serializable_type: type[Serializable],
+    constructor_parameters: Mapping[str, inspect.Parameter],
     properties: Mapping[str, JsonSchema],
 ) -> None:
     """Add compatible constructor defaults as schema examples."""
-    parameters = inspect.signature(serializable_type.__init__).parameters
     for field_name, field_schema in properties.items():
-        parameter = parameters.get(field_name)
+        parameter = constructor_parameters.get(field_name)
         if parameter is None or parameter.default is inspect.Parameter.empty:
             continue
         if _schema_accepts_default(field_schema, parameter.default):
@@ -246,45 +246,17 @@ def _add_constructor_defaults(
 
 def _schema_accepts_default(schema: Mapping[str, Any], value: Any) -> bool:
     """Return whether a JSON-compatible default matches a field schema."""
-    alternatives = schema.get("oneOf", schema.get("anyOf"))
-    if isinstance(alternatives, list):
-        return any(
-            isinstance(alternative, Mapping)
-            and _schema_accepts_default(alternative, value)
-            for alternative in alternatives
-        )
-    if "const" in schema:
-        return value == schema["const"]
-    if isinstance(schema.get("enum"), list):
-        return value in schema["enum"]
-
-    declared_type = schema.get("type")
-    accepted_types = {
-        "null": value is None,
-        "boolean": type(value) is bool,
-        "integer": type(value) is int,
-        "number": type(value) in (int, float) and type(value) is not bool,
-        "string": type(value) is str,
-        "array": type(value) is list,
-        "object": type(value) is dict,
-    }
-    if isinstance(declared_type, str):
-        return accepted_types.get(declared_type, False)
-    if isinstance(declared_type, list):
-        return any(accepted_types.get(item, False) for item in declared_type)
-    return False
+    return not json_schema_errors(dict(schema), value)
 
 
 def _constructor_only_parameters(
-    serializable_type: type[Serializable],
+    constructor_parameters: Mapping[str, inspect.Parameter],
     serialized_fields: Mapping[str, Any],
 ) -> list[str]:
     """Return explicit constructor parameters excluded from serialization."""
     return sorted(
         parameter_name
-        for parameter_name, parameter in inspect.signature(
-            serializable_type.__init__
-        ).parameters.items()
+        for parameter_name, parameter in constructor_parameters.items()
         if (
             parameter_name not in serialized_fields
             and parameter_name != "self"
@@ -309,15 +281,11 @@ def _concrete_serializable_types(
             and candidate.__module__.partition(".")[0] == package_name
         )
 
-    allowed_types: set[type[Serializable]] = set()
-    if is_supported_implementation(declared_type):
-        allowed_types.add(declared_type)
-    subclasses_to_check = list(declared_type.__subclasses__())
-    while subclasses_to_check:
-        subclass = subclasses_to_check.pop()
-        subclasses_to_check.extend(subclass.__subclasses__())
-        if is_supported_implementation(subclass):
-            allowed_types.add(subclass)
+    allowed_types = {
+        candidate
+        for candidate in declared_type._known_serializable_types()
+        if is_supported_implementation(candidate)
+    }
     if not allowed_types:
         raise TypeError(
             f"{declared_type.__name__} has no concrete Serializable "

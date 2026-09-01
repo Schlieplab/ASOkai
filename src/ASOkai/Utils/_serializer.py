@@ -101,14 +101,36 @@ class Serializable:
         return serialized_fields
 
     @classmethod
+    def _constructor_parameters(
+        cls,
+    ) -> Mapping[str, inspect.Parameter]:
+        """Return the parameters accepted by this type's constructor."""
+        return inspect.signature(cls.__init__).parameters
+
+    @classmethod
     def _accepts_extra_fields(cls) -> bool:
         """Return whether the constructor accepts keyword metadata."""
         return any(
             parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in inspect.signature(
-                cls.__init__
-            ).parameters.values()
+            for parameter in cls._constructor_parameters().values()
         )
+
+    @classmethod
+    def _known_serializable_types(
+        cls,
+    ) -> tuple[type[Serializable], ...]:
+        """Return this type and every currently loaded Serializable subtype."""
+        known_types: list[type[Serializable]] = []
+        pending = [cls]
+        seen: set[type[Serializable]] = set()
+        while pending:
+            candidate = pending.pop()
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            known_types.append(candidate)
+            pending.extend(candidate.__subclasses__())
+        return tuple(known_types)
 
     def __init__(self, **kwargs: Any) -> None:
         """
@@ -281,6 +303,14 @@ class Serializable:
                 for key, value in value_data.items()
             }
 
+        if (
+            isinstance(expected_type, type)
+            and issubclass(expected_type, Serializable)
+        ):
+            if not isinstance(value_data, dict):
+                raise TypeError("Expected a serialized object mapping.")
+            return expected_type.from_dict(value_data)
+
         if isinstance(expected_type, type) and is_dataclass(expected_type):
             if not isinstance(value_data, dict):
                 raise TypeError("Expected a dataclass mapping.")
@@ -306,14 +336,6 @@ class Serializable:
             }
             return expected_type(**constructor_values)
 
-        if (
-            isinstance(expected_type, type)
-            and issubclass(expected_type, Serializable)
-        ):
-            if not isinstance(value_data, dict):
-                raise TypeError("Expected a serialized object mapping.")
-            return expected_type.from_dict(value_data)
-
         raise TypeError(
             f"Cannot deserialize values annotated as {expected_type!r}."
         )
@@ -337,8 +359,7 @@ class Serializable:
             class_name,
         )
 
-        sig = inspect.signature(cls_from_data.__init__)
-        constructor_parameters = sig.parameters
+        constructor_parameters = cls_from_data._constructor_parameters()
         accepts_extra_fields = cls_from_data._accepts_extra_fields()
         serialized_field_types = cls_from_data._serialized_field_types()
         init_args: dict[str, Any] = {}
@@ -397,20 +418,9 @@ class Serializable:
                 "Serialized __module__ and __class__ values must be strings."
             )
 
-        candidates: list[type[Serializable]] = []
-        pending = [cls]
-        seen: set[type[Serializable]] = set()
-        while pending:
-            candidate = pending.pop()
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            candidates.append(candidate)
-            pending.extend(candidate.__subclasses__())
-
         matches = [
             candidate
-            for candidate in candidates
+            for candidate in cls._known_serializable_types()
             if (
                 candidate.__module__ == module_name
                 and candidate.__name__ == class_name

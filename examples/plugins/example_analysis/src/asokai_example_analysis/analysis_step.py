@@ -13,6 +13,8 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
+from collections.abc import Iterable
+
 from ASOkai import Types
 from ASOkai.Analysis import SiteSpecificAnalysis
 from ASOkai.Plugins import (
@@ -26,6 +28,7 @@ from ASOkai.Plugins import (
     StepSpec,
     TemplateField,
 )
+from ASOkai.Sites import Site
 
 
 class ExampleAnalysis(SiteSpecificAnalysis):
@@ -37,15 +40,15 @@ class ExampleAnalysis(SiteSpecificAnalysis):
 
     def __init__(
         self,
-        sites: list,
+        sites: Iterable[Site],
         minimum_length: int,
         n_processes: int = 1,
     ) -> None:
         super().__init__(sites, n_processes=n_processes)
         self.minimum_length = minimum_length
 
-    def analyze(self, site) -> dict[str, Types.Scalar]:
-        sequence_length = len(str(site.sequence or ""))
+    def analyze(self, site: Site) -> dict[str, Types.Scalar]:
+        sequence_length = len(site.sequence)
         return {
             "sequence_length": sequence_length,
             "passes_minimum": sequence_length >= self.minimum_length,

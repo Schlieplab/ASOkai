@@ -26,8 +26,11 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
+from collections.abc import Iterable
+
 from ASOkai.Types import Scalar
 from ASOkai.Analysis import TargetSpecificAnalysis
+from ASOkai.Sites import Site
 from ASOkai.Targets import TargetGene
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
@@ -50,13 +53,13 @@ class ExampleAnalysis(TargetSpecificAnalysis):
     def __init__(
         self,
         target: TargetGene,
-        sites: list,
+        sites: Iterable[Site],
         **kwargs,
     ) -> None:
         super().__init__(target=target, sites=sites, **kwargs)
         # Add target-wide initialization here.
 
-    def analyze(self, site) -> dict[str, Scalar]:
+    def analyze(self, site: Site) -> dict[str, Scalar]:
         # Add per-site analysis code here.
         return {
             "target_matches": sum(

@@ -8,9 +8,9 @@ Description: Tests for generic analysis base-class execution.
 License: LGPL-3.0-or-later
 """
 
-import inspect
-from typing import cast
+from typing import Any, cast
 
+from Bio.Seq import Seq
 import pytest
 from GenomeUtils.Genome import Genome
 
@@ -20,27 +20,31 @@ from ASOkai.Analysis import (
     SiteSpecificAnalysis,
     TargetSpecificAnalysis,
 )
+from ASOkai.Sites import Site
 from ASOkai.Targets import TargetGene
+from ASOkai.Types import Scalar
 
 
-class FakeSite:
-    def __init__(self, id, sequence="AT"):
-        self.id = id
-        self.sequence = sequence
+class FakeSite(Site):
+    def __init__(self, id: str, sequence: str = "AT") -> None:
+        super().__init__(id=id, sequence=Seq(sequence))
+
+    def __repr__(self) -> str:
+        return f"FakeSite(id={self.id!r})"
 
 
 class CountingAnalysis(SiteSpecificAnalysis):
-    def analyze(self, site):
+    def analyze(self, site: Site) -> dict[str, Scalar]:
         return {"length": len(site.sequence)}
 
 
 class ContextTargetAnalysis(TargetSpecificAnalysis):
-    def analyze(self, site):
+    def analyze(self, site: Site) -> dict[str, Scalar]:
         return {"target_id": self.target.id, "site_id": site.id}
 
 
 class ContextGenomeAnalysis(GenomeWideAnalysis):
-    def analyze(self, site):
+    def analyze(self, site: Site) -> dict[str, Scalar]:
         return {
             "genome_id": self.genome.id,
             "target_id": self.target.id,
@@ -58,20 +62,20 @@ class FakeGenome:
         self.id = id
 
 
-def test_site_specific_run_calls_analyze_for_each_site():
-    analysis = CountingAnalysis(sites=[FakeSite("a", "AT"), FakeSite("b", "ATCG")])
+def test_site_specific_run_copies_sites_and_analyzes_each_one():
+    sites = [FakeSite("a", "AT"), FakeSite("b", "ATCG")]
+    analysis = CountingAnalysis(sites=sites)
+    sites.clear()
 
     assert isinstance(analysis, Analysis)
     assert analysis.run() == {
         "a": {"length": 2},
         "b": {"length": 4},
     }
-
-
-def test_site_specific_requires_sites():
-    sites_parameter = inspect.signature(CountingAnalysis).parameters["sites"]
-
-    assert sites_parameter.default is inspect.Parameter.empty
+    assert analysis() == {
+        "a": {"length": 2},
+        "b": {"length": 4},
+    }
 
 
 def test_site_specific_multiprocessing_matches_serial():
@@ -83,9 +87,27 @@ def test_site_specific_multiprocessing_matches_serial():
     ).run()
 
 
-def test_analysis_rejects_invalid_process_count():
+@pytest.mark.parametrize("n_processes", [True, False, 0, -1, 1.5, "2"])
+def test_analysis_rejects_invalid_process_count(n_processes):
     with pytest.raises(ValueError, match="n_processes"):
-        CountingAnalysis(sites=[FakeSite("a")], n_processes=0)
+        CountingAnalysis(sites=[FakeSite("a")], n_processes=n_processes)
+
+
+def test_analysis_rejects_duplicate_site_ids():
+    with pytest.raises(ValueError, match="Duplicate analysis site ID: 'a'"):
+        CountingAnalysis(sites=[FakeSite("a"), FakeSite("a")])
+
+
+def test_analysis_rejects_unknown_constructor_arguments():
+    with pytest.raises(TypeError, match="unexpected"):
+        cast(Any, CountingAnalysis)(
+            sites=[FakeSite("a")],
+            unexpected=True,
+        )
+
+
+def test_empty_parallel_analysis_returns_no_results():
+    assert CountingAnalysis(sites=[], n_processes=2).run() == {}
 
 
 def test_target_specific_run_exposes_target_context():

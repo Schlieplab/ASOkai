@@ -5,7 +5,7 @@ from Bio.Seq import Seq
 from GenomeUtils.Genome import TranscriptLocus
 import pytest
 import yaml
-from ASOkai.Analysis import IntrinsicFeaturesAnalysis, SiteSpecificAnalysis
+from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
@@ -146,55 +146,6 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     )
 
 
-def test_intrinsic_features_analysis_returns_site_keyed_results():
-    class FakeSite:
-        def __init__(self, id, sequence):
-            self.id = id
-            self.sequence = sequence
-
-    sites = [
-        FakeSite("site-1", "GCGT"),
-        FakeSite("site-2", "TTAA"),
-    ]
-
-    analysis = IntrinsicFeaturesAnalysis(sites=sites)
-
-    assert isinstance(analysis, SiteSpecificAnalysis)
-    assert analysis.run() == {
-        "site-1": {
-            "GC_content": 0.75,
-            "AT_content": 0.25,
-            "T_count": 1,
-            "CpG_count": 1,
-            "T_content": 0.25,
-            "CpG_content": 0.25,
-        },
-        "site-2": {
-            "GC_content": 0.0,
-            "AT_content": 1.0,
-            "T_count": 2,
-            "CpG_count": 0,
-            "T_content": 0.5,
-            "CpG_content": 0.0,
-        },
-    }
-
-
-def test_intrinsic_features_analysis_analyzes_one_site():
-    class FakeSite:
-        id = "site-1"
-        sequence = "GCGT"
-
-    assert IntrinsicFeaturesAnalysis(sites=[FakeSite()]).analyze(FakeSite()) == {
-        "GC_content": 0.75,
-        "AT_content": 0.25,
-        "T_count": 1,
-        "CpG_count": 1,
-        "T_content": 0.25,
-        "CpG_content": 0.25,
-    }
-
-
 def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
     site = TranscriptSite(
         id="site-1",
@@ -223,7 +174,7 @@ def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
             "--target-gene", str(target_input),
             "--assembly", "GRCh38",
             "--target-id", "ENSG00000133703",
-            "--k", "16",
+            "--k", "4",
             "--region", "pre-mrna",
             "--intrinsic-features-output", str(output),
         ]

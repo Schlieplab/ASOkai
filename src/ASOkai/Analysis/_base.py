@@ -8,12 +8,15 @@ Description: This file defines the base classes for different analysis types.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from multiprocessing import get_context
 from typing import ClassVar
 
-from ..Types import Scalar
-from ..Targets import TargetGene
 from GenomeUtils.Genome import Genome
+
+from ..Sites import Site
+from ..Targets import TargetGene
+from ..Types import Scalar
 
 
 class Analysis(ABC):
@@ -21,31 +24,42 @@ class Analysis(ABC):
 
     scope_label: ClassVar[str | None] = None
 
-    def __init__(self, sites: list, n_processes: int = 1, **kwargs):
-        if n_processes < 1:
-            raise ValueError("n_processes must be >= 1.")
+    def __init__(
+        self,
+        sites: Iterable[Site],
+        n_processes: int = 1,
+    ) -> None:
+        if type(n_processes) is not int or n_processes < 1:
+            raise ValueError("n_processes must be a positive integer.")
         self.sites = list(sites)
+        seen_site_ids: set[str] = set()
+        for site in self.sites:
+            if site.id in seen_site_ids:
+                raise ValueError(f"Duplicate analysis site ID: {site.id!r}.")
+            seen_site_ids.add(site.id)
         self.n_processes = n_processes
-        self.kwargs = kwargs
 
     def run(self) -> dict[str, dict[str, Scalar]]:
         """Execute this analysis over all configured sites."""
+        if not self.sites:
+            return {}
         if self.n_processes == 1:
             return dict(self._analyze_site(site) for site in self.sites)
 
         with get_context("spawn").Pool(processes=self.n_processes) as pool:
             return dict(pool.map(self._analyze_site, self.sites))
 
-    def _analyze_site(self, site) -> tuple[str, dict[str, Scalar]]:
+    def _analyze_site(self, site: Site) -> tuple[str, dict[str, Scalar]]:
         return site.id, self.analyze(site)
 
     @abstractmethod
-    def analyze(self, site) -> dict[str, Scalar]:
+    def analyze(self, site: Site) -> dict[str, Scalar]:
         """Analyze one site and return CSV-compatible scalar values."""
         ...
 
-    def __call__(self, *args, **kwargs):
-        return self.run(*args, **kwargs)
+    def __call__(self) -> dict[str, dict[str, Scalar]]:
+        """Execute this analysis over all configured sites."""
+        return self.run()
 
 
 class SiteSpecificAnalysis(Analysis):
@@ -62,11 +76,10 @@ class TargetSpecificAnalysis(Analysis):
     def __init__(
         self,
         target: TargetGene,
-        sites: list,
+        sites: Iterable[Site],
         n_processes: int = 1,
-        **kwargs,
-    ):
-        super().__init__(sites, n_processes=n_processes, **kwargs)
+    ) -> None:
+        super().__init__(sites, n_processes=n_processes)
         self.target = target
 
 
@@ -79,10 +92,9 @@ class GenomeWideAnalysis(Analysis):
         self,
         genome: Genome,
         target: TargetGene,
-        sites: list,
+        sites: Iterable[Site],
         n_processes: int = 1,
-        **kwargs,
-    ):
-        super().__init__(sites, n_processes=n_processes, **kwargs)
+    ) -> None:
+        super().__init__(sites, n_processes=n_processes)
         self.genome = genome
         self.target = target

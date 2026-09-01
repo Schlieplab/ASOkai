@@ -30,10 +30,7 @@ _GENOME_PATH_FIELDS = {
     "assembly": TemplateField("genome.assembly_id"),
     "source": TemplateField("genome.source"),
     "release": TemplateField("genome.ensembl_release"),
-    "species": TemplateField(
-        "genome.species",
-        transform="species_case",
-    ),
+    "species": TemplateField("genome.species"),
 }
 
 

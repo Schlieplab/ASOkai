@@ -56,6 +56,20 @@ def _literal_values(annotation: Any) -> tuple[Any, ...]:
     return ()
 
 
+def _validate_annotation(annotation: Any) -> None:
+    """Require one supported scalar or optional scalar annotation."""
+    if _strip_optional(annotation) is bool and _is_optional(annotation):
+        raise TypeError(
+            "ScalarParam boolean flags cannot use an optional annotation."
+        )
+    literal_values = _literal_values(annotation)
+    if literal_values and any(
+        type(value) is not str for value in literal_values
+    ):
+        raise TypeError("ScalarParam Literal values must all be strings.")
+    _cwl_type_for_annotation(annotation)
+
+
 def _cwl_type_for_annotation(annotation: Any) -> Any:
     """Infer a CWL type declaration from a Python annotation."""
     optional = _is_optional(annotation)
@@ -75,8 +89,6 @@ def _cwl_type_for_annotation(annotation: Any) -> Any:
         cwl_type = "double"
     elif base is bool:
         cwl_type = "boolean"
-    elif base is Path:
-        cwl_type = "File"
     else:
         raise TypeError(f"Unsupported CWL parameter annotation: {annotation!r}")
 
@@ -96,20 +108,7 @@ def _argparse_type_for_annotation(annotation: Any) -> Any:
         return int
     if base is float:
         return float
-    if base is bool:
-        return _parse_boolean
-    if base is Path:
-        return Path
     return None
-
-
-def _parse_boolean(value: str) -> bool:
-    """Parse the lowercase boolean spelling used by ASOkai configuration."""
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    raise argparse.ArgumentTypeError("expected 'true' or 'false'")
 
 
 def _argparse_choices_for_annotation(annotation: Any) -> tuple[Any, ...] | None:
@@ -150,15 +149,29 @@ class ScalarParam(Param):
     prefix: str | None = None
     doc: str | None = None
     default: Any = _UNSET
-    required: bool | None = None
-    cwl: bool = True
-    cwl_type: Any = _UNSET
-    parser_annotation: Any = _UNSET
 
     def __post_init__(self) -> None:
         if _strip_optional(self.annotation) is Path:
             raise TypeError(
                 f"Parameter '{self.name}' is path-like; use FileInput instead."
+            )
+        _validate_annotation(self.annotation)
+        if self.config is not None and (
+            type(self.config) is not str
+            or not self.config.strip()
+            or any(not part.strip() for part in self.config.split("."))
+        ):
+            raise ValueError(
+                f"Parameter '{self.name}' config must be a non-blank "
+                "dotted path."
+            )
+        if self.annotation is bool and self.default is _UNSET:
+            object.__setattr__(self, "default", False)
+        if self.default is not _UNSET:
+            self.validate(self.default)
+        if self.annotation is bool and self.default is not False:
+            raise ValueError(
+                f"Boolean flag parameter '{self.name}' must default to false."
             )
 
     @property
@@ -168,31 +181,21 @@ class ScalarParam(Param):
 
     def inferred_cwl_type(self) -> Any:
         """Return this parameter's CWL type."""
-        if self.cwl_type is not _UNSET:
-            return deepcopy(self.cwl_type)
         return _cwl_type_for_annotation(self.annotation)
-
-    def inferred_parser_annotation(self) -> Any:
-        """Return the annotation used for argparse behavior."""
-        if self.parser_annotation is not _UNSET:
-            return self.parser_annotation
-        return self.annotation
 
     def parser_required(self) -> bool:
         """Return whether argparse should require this parameter."""
-        if self.required is not None:
-            return self.required
         if self.default is not _UNSET:
             return False
-        return not _is_optional(self.inferred_parser_annotation())
+        return not _is_optional(self.annotation)
 
     def parser_type(self) -> Any:
         """Return the argparse type callable inferred for this parameter."""
-        return _argparse_type_for_annotation(self.inferred_parser_annotation())
+        return _argparse_type_for_annotation(self.annotation)
 
     def parser_choices(self) -> tuple[Any, ...] | None:
         """Return argparse choices inferred for this parameter."""
-        return _argparse_choices_for_annotation(self.inferred_parser_annotation())
+        return _argparse_choices_for_annotation(self.annotation)
 
     def validate(self, value: Any) -> None:
         """Validate one resolved scalar value against this parameter contract."""
@@ -230,10 +233,8 @@ class ScalarParam(Param):
             f"{annotation!r}"
         )
 
-    def to_cwl_input(self) -> CwlToolInput | None:
-        """Return this parameter as a rendered tool input, if needed."""
-        if not self.cwl:
-            return None
+    def to_cwl_input(self) -> CwlToolInput:
+        """Return this parameter as a rendered tool input."""
         return CwlToolInput(
             self.name,
             self.inferred_cwl_type(),
@@ -248,12 +249,15 @@ class ScalarParam(Param):
             "dest": self.name,
             "required": self.parser_required(),
         }
-        parser_type = self.parser_type()
-        choices = self.parser_choices()
-        if parser_type is not None:
-            kwargs["type"] = parser_type
-        if choices is not None:
-            kwargs["choices"] = choices
+        if self.annotation is bool:
+            kwargs["action"] = "store_true"
+        else:
+            parser_type = self.parser_type()
+            choices = self.parser_choices()
+            if parser_type is not None:
+                kwargs["type"] = parser_type
+            if choices is not None:
+                kwargs["choices"] = choices
         if self.default is not _UNSET:
             kwargs["default"] = deepcopy(self.default)
         if self.doc:

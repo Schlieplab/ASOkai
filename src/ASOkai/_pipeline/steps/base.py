@@ -160,8 +160,6 @@ class Step(Runnable):
         if not self.supports_multiple_processes:
             return spec
         n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
-        if n_processes_input is None:
-            raise RuntimeError("The standard n_processes parameter must be a CWL input.")
         return replace(spec, inputs=[*spec.inputs, n_processes_input])
 
     def build_parser(self, *, description: str | None = None):

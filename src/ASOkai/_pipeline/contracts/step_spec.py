@@ -71,10 +71,6 @@ class StepSpec:
         authored_inputs.extend(item.name for item in self.inputs)
         self._require_unique("parameter/input", authored_inputs)
 
-        cwl_inputs = [param.name for param in self.params if param.cwl]
-        cwl_inputs.extend(item.name for item in self.inputs)
-        self._require_unique("generated CWL input", cwl_inputs)
-
         declared_file_inputs = {item.name for item in self.inputs}
         for output in self.outputs:
             unknown_inputs = (
@@ -186,11 +182,7 @@ class StepSpec:
             for output in self.outputs
         ]
         self._require_unique("CWL output filename", working_filenames)
-        inputs = [
-            item
-            for param in self.params
-            if (item := param.to_cwl_input()) is not None
-        ]
+        inputs = [param.to_cwl_input() for param in self.params]
         inputs.extend(
             input_param.to_cwl_input()
             for input_param in self.inputs
@@ -218,7 +210,7 @@ class StepSpec:
         return {
             param.name: param.config
             for param in self.params
-            if param.cwl and param.config
+            if param.config
         }
 
     def input(self, name: str) -> FileInput:

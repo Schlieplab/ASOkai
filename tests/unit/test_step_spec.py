@@ -38,7 +38,10 @@ def _file_input(name: str = "input_file") -> FileInput:
 
 def test_step_spec_generates_declared_cwl_ports():
     spec = StepSpec(
-        params=[ScalarParam("label", str)],
+        params=[
+            ScalarParam("label", str),
+            ScalarParam("enabled", bool),
+        ],
         inputs=[_file_input()],
         outputs=[FileOutput("result", destination="result.json")],
     )
@@ -47,6 +50,7 @@ def test_step_spec_generates_declared_cwl_ports():
 
     assert cwl_spec.input_types() == {
         "label": "string",
+        "enabled": "boolean",
         "input_file": "File",
     }
     assert cwl_spec.output_names() == {"result"}
@@ -57,7 +61,6 @@ def test_step_spec_derives_config_maps():
         params=[
             ScalarParam("configured", str, config="section.value"),
             ScalarParam("unconfigured", str),
-            ScalarParam("internal", str, config="section.internal", cwl=False),
         ],
     )
 

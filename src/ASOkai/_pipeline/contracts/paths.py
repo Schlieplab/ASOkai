@@ -11,12 +11,9 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from string import Formatter
-from typing import Any, Literal, Mapping
-
-
-TemplateTransform = Literal["identity", "species_case"]
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -25,7 +22,6 @@ class TemplateField:
 
     config_path: str
     fallbacks: tuple[str, ...] = ()
-    transform: TemplateTransform = "identity"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fallbacks", tuple(self.fallbacks))
@@ -39,28 +35,25 @@ class TemplateField:
                     "TemplateField configuration paths must be non-blank "
                     "dotted paths."
                 )
-        if self.transform not in ("identity", "species_case"):
-            raise ValueError(f"Unknown template transform: {self.transform!r}.")
 
     @classmethod
     def first_of(
         cls,
         *config_paths: str,
-        transform: TemplateTransform = "identity",
     ) -> TemplateField:
         """Return a field that uses the first non-empty configured value."""
         if not config_paths:
             raise ValueError(
                 "TemplateField.first_of requires at least one config path."
             )
-        return cls(config_paths[0], tuple(config_paths[1:]), transform)
+        return cls(config_paths[0], tuple(config_paths[1:]))
 
     def config_paths(self) -> tuple[str, ...]:
         """Return every configuration path this field may read."""
         return (self.config_path, *self.fallbacks)
 
-    def resolve(self, config: Mapping[str, Any]) -> Any:
-        """Resolve and transform this field from validated configuration."""
+    def resolve(self, config: Mapping[str, Any]) -> str | int | float | bool:
+        """Resolve one scalar field from validated configuration."""
         from ASOkai._pipeline.config import resolve
 
         value = None
@@ -78,11 +71,11 @@ class TemplateField:
                 "No value is available for template configuration path(s): "
                 f"{names}."
             )
-        if self.transform == "species_case":
-            parts = str(value).split("_")
-            return "_".join(
-                part.capitalize() if index == 0 else part.lower()
-                for index, part in enumerate(parts)
+        if type(value) not in (str, int, float, bool):
+            names = ", ".join(self.config_paths())
+            raise TypeError(
+                "Output path configuration value must be scalar for path(s): "
+                f"{names}."
             )
         return value
 
@@ -106,7 +99,7 @@ class InputConfigField:
     def resolve(
         self,
         input_configurations: Mapping[str, Mapping[str, Any]],
-    ) -> Any:
+    ) -> str | int | float | bool:
         """Resolve the field from the selected input's configuration."""
         try:
             input_config = input_configurations[self.input_name]
@@ -193,7 +186,7 @@ class OutputPathTemplate:
         }
 
     def validate_configuration(self, config: Mapping[str, Any]) -> None:
-        """Validate every configuration-backed template field."""
+        """Validate template fields against the main configuration."""
         for template_field in self.fields.values():
             if isinstance(template_field, TemplateField):
                 template_field.resolve(config)
@@ -220,7 +213,15 @@ class OutputPathTemplate:
                 else:
                     value = template_field.resolve(config)
                 rendered.append(str(value))
-        path = PurePosixPath("".join(rendered))
-        if path.is_absolute() or not path.parts or ".." in path.parts:
+        rendered_path = "".join(rendered)
+        path = PurePosixPath(rendered_path)
+        windows_path = PureWindowsPath(rendered_path)
+        if (
+            path.is_absolute()
+            or not path.parts
+            or ".." in path.parts
+            or "\\" in rendered_path
+            or bool(windows_path.drive)
+        ):
             raise ValueError(f"Output path must stay below datadir: {path!s}.")
         return path

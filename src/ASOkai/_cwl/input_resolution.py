@@ -51,7 +51,7 @@ def resolve_run_inputs(
     resolved: dict[str, ResolvedInput] = {}
     parameter_values = run.step.resolved_parameter_values(run.config)
     for parameter in run.step.spec.params:
-        if not parameter.cwl or parameter.config is None:
+        if parameter.config is None:
             continue
         if parameter.name not in parameter_values:
             continue

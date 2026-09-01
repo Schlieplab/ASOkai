@@ -201,7 +201,7 @@ def _describe_step_config_keys(step) -> None:
     config_params = [
         param
         for param in step.spec.params
-        if param.cwl and param.config
+        if param.config
     ]
     if not config_params:
         return

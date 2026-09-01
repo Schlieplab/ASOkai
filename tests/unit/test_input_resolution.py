@@ -21,6 +21,16 @@ from ASOkai._cwl.input_resolution import (
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 
 
+class _BooleanStep(Step):
+    name = "boolean-step"
+    description = "Exercise native boolean CWL inputs."
+    result_output = FileOutput("result", destination="boolean-step/result.txt")
+    spec = StepSpec(
+        params=[ScalarParam("enabled", bool, config="feature.enabled")],
+        outputs=[result_output],
+    )
+
+
 def _fake_step(
     name: str,
     *,
@@ -94,6 +104,20 @@ def _run(
         config=config,
         inputs=tuple(bindings),
     )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_boolean_flags_remain_native_cwl_values(tmp_path, enabled):
+    run = StepRun(
+        _BooleanStep.name,
+        _BooleanStep(),
+        {
+            "datadir": str(tmp_path),
+            "feature": {"enabled": enabled},
+        },
+    )
+
+    assert resolve_run_inputs(run)["enabled"].cwl_value is enabled
 
 
 def test_path_binding_is_resolved_as_input_override(tmp_path):

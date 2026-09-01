@@ -61,10 +61,13 @@ dependency and the shared file contract.
 Scalar parameters
 ~~~~~~~~~~~~~~~~~
 
-``ScalarParam`` declares a named ``str``, ``int``, ``float``, ``bool``, enum,
-or optional scalar value. Its ``config`` path maps the parameter to a value in
-the validated YAML configuration. Defaults and choices belong in the
-declaration when they are part of the command-line contract.
+``ScalarParam`` declares a named ``str``, ``int``, ``float``, ``bool``, string
+enum, or optional non-boolean scalar value. Its ``config`` path maps the
+parameter to a value in the validated YAML configuration. Defaults and choices
+belong in the declaration when they are part of the command-line contract.
+A ``bool`` parameter is a presence flag: it defaults to ``False``, and a true
+value emits its option, such as ``--enabled``, without a following value.
+Generated CWL represents it as a native Boolean input.
 
 Steps must not declare ``n_processes`` themselves. Analysis steps support
 parallel worker threads by default; a core step opts in with

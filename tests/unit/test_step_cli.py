@@ -96,7 +96,6 @@ def test_step_resolves_available_config_backed_parameters():
                     "internal",
                     int,
                     config="values.internal",
-                    cwl=False,
                 ),
                 ScalarParam("missing", str, config="values.missing"),
                 ScalarParam("unconfigured", str),

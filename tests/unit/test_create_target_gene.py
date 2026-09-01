@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Tests for target-gene construction and site extraction."""
 
+from typing import cast
 from unittest.mock import MagicMock
 
 from Bio.Seq import Seq
@@ -16,8 +17,9 @@ from GenomeUtils.Genome import (
 )
 import pytest
 
-from ASOkai.Sites import TranscriptSite
-from ASOkai.Targets import create_target_gene
+from ASOkai.Sites import GenomicSite, TranscriptSite
+from ASOkai.Targets import TargetGene, create_target_gene
+from ASOkai.Types import TargetRegion
 
 
 def _transcript(
@@ -51,8 +53,26 @@ def _transcript(
     return transcript
 
 
+def _genomic_sites(target: TargetGene) -> list[GenomicSite]:
+    """Return target sites after asserting their genomic subtype."""
+    assert all(isinstance(site, GenomicSite) for site in target.sites)
+    return [
+        site for site in target.sites
+        if isinstance(site, GenomicSite)
+    ]
+
+
+def _transcript_sites(target: TargetGene) -> list[TranscriptSite]:
+    """Return target sites after asserting their transcript subtype."""
+    assert all(isinstance(site, TranscriptSite) for site in target.sites)
+    return [
+        site for site in target.sites
+        if isinstance(site, TranscriptSite)
+    ]
+
+
 @pytest.fixture
-def genome_and_gene(sample_sequence):
+def genome_and_gene():
     gene = MagicMock()
     gene.id = "ENSG00000133703"
     gene.name = "KRAS"
@@ -60,14 +80,14 @@ def genome_and_gene(sample_sequence):
     gene.start = 100
     gene.end = 500
     gene.strand = "+"
-    gene.sequence = sample_sequence
+    gene.sequence = Seq("A" * 401)
     gene.transcripts = []
     gene.get_chromosome.return_value = None
 
     genome = MagicMock()
     genome.gene_by_id.return_value = gene
     genome.gene_by_name.return_value = gene
-    genome.get_sequence_by_locus.return_value = sample_sequence
+    genome.get_sequence_by_locus.return_value = gene.sequence
     return genome, gene
 
 
@@ -94,13 +114,41 @@ def test_requires_exactly_one_gene_identifier(
         )
 
 
+@pytest.mark.parametrize("site_length", [0, -1])
+def test_requires_a_positive_site_length(genome_and_gene, site_length):
+    genome, _ = genome_and_gene
+
+    with pytest.raises(ValueError, match="site_length must be at least 1"):
+        create_target_gene(
+            genome,
+            target_id="ENSG00000133703",
+            site_length=site_length,
+        )
+
+    genome.gene_by_id.assert_not_called()
+
+
+def test_rejects_an_unknown_region_before_gene_lookup(genome_and_gene):
+    genome, _ = genome_and_gene
+
+    with pytest.raises(ValueError, match="Invalid region: unknown"):
+        create_target_gene(
+            genome,
+            target_id="ENSG00000133703",
+            site_length=16,
+            region=cast(TargetRegion, "unknown"),
+        )
+
+    genome.gene_by_id.assert_not_called()
+
+
 def test_creates_gene_and_sites_by_gene_id(genome_and_gene):
     genome, gene = genome_and_gene
 
     result = create_target_gene(
         genome,
         target_id="ENSG00000133703",
-        site_length=16,
+        site_length=401,
         region="pre-mrna",
     )
 
@@ -117,7 +165,7 @@ def test_creates_gene_and_sites_by_gene_name(genome_and_gene):
     result = create_target_gene(
         genome,
         target_name="KRAS",
-        site_length=16,
+        site_length=401,
         region="pre-mrna",
     )
 
@@ -125,6 +173,33 @@ def test_creates_gene_and_sites_by_gene_name(genome_and_gene):
     genome.gene_by_id.assert_not_called()
     assert result.id == gene.id
     assert result.sites[0].id == "ASOkai-KRAS-Premrna-S00001"
+
+
+def test_pre_mrna_extraction_creates_every_overlapping_genomic_window(
+    genome_and_gene,
+):
+    genome, gene = genome_and_gene
+    gene.end = 105
+    gene.sequence = Seq("AACGTA")
+    genome.get_sequence_by_locus.side_effect = lambda locus: gene.sequence[
+        locus.start - gene.start:locus.end - gene.start + 1
+    ]
+
+    result = create_target_gene(
+        genome,
+        target_id="ENSG00000133703",
+        site_length=4,
+        region="pre-mrna",
+    )
+    sites = _genomic_sites(result)
+
+    assert [site.start for site in sites] == [100, 101, 102]
+    assert [site.end for site in sites] == [103, 104, 105]
+    assert [str(site.sequence) for site in sites] == [
+        "AACG",
+        "ACGT",
+        "CGTA",
+    ]
 
 
 def test_exonic_extraction_creates_one_site_per_unique_genomic_locus(
@@ -145,9 +220,10 @@ def test_exonic_extraction_creates_one_site_per_unique_genomic_locus(
         site_length=4,
         region="exonic",
     )
+    sites = _genomic_sites(result)
 
-    assert [site.start for site in result.sites] == list(range(100, 107))
-    assert [site.id for site in result.sites] == [
+    assert [site.start for site in sites] == list(range(100, 107))
+    assert [site.id for site in sites] == [
         f"ASOkai-ENSG00000133703-Exon-S{number:05d}"
         for number in range(1, 8)
     ]
@@ -208,10 +284,11 @@ def test_negative_strand_exonic_sites_use_reference_order_and_site_orientation()
         site_length=4,
         region="exonic",
     )
+    sites = _genomic_sites(result)
 
-    assert [site.start for site in result.sites] == [100, 101, 102]
-    assert [site.strand for site in result.sites] == ["-", "-", "-"]
-    assert [str(site.sequence) for site in result.sites] == [
+    assert [site.start for site in sites] == [100, 101, 102]
+    assert [site.strand for site in sites] == ["-", "-", "-"]
+    assert [str(site.sequence) for site in sites] == [
         "CGTT",
         "ACGT",
         "TACG",
@@ -251,16 +328,16 @@ def test_transcriptomic_extraction_includes_overlapping_and_junction_sites(
         site_length=4,
         region="transcriptomic",
     )
+    sites = _transcript_sites(result)
 
-    assert all(isinstance(site, TranscriptSite) for site in result.sites)
-    assert [str(site.sequence) for site in result.sites] == [
+    assert [str(site.sequence) for site in sites] == [
         "AACC",
         "ACCG",
         "CCGG",
         "CGGT",
         "GGTT",
     ]
-    assert [site.loci for site in result.sites] == [
+    assert [site.loci for site in sites] == [
         [TranscriptLocus("ENST00000001", start, start + 4)]
         for start in range(5)
     ]
@@ -289,9 +366,10 @@ def test_transcriptomic_extraction_merges_sites_shared_by_transcripts(
         site_length=4,
         region="transcriptomic",
     )
+    sites = _transcript_sites(result)
 
-    assert len(result.sites) == 5
-    assert result.sites[1].loci == [
+    assert len(sites) == 5
+    assert sites[1].loci == [
         TranscriptLocus("ENST00000001", 1, 5),
         TranscriptLocus("ENST00000002", 1, 5),
     ]
@@ -313,7 +391,7 @@ def test_shared_site_can_have_different_coordinates_on_each_transcript(
         region="transcriptomic",
     )
 
-    shared_site = result.sites[0]
+    shared_site = _transcript_sites(result)[0]
     assert shared_site.sequence == Seq("ACGT")
     assert shared_site.loci == [
         TranscriptLocus("ENST00000001", 0, 4),
@@ -336,9 +414,10 @@ def test_transcriptomic_extraction_keeps_equal_sequences_at_distinct_loci(
         site_length=4,
         region="transcriptomic",
     )
+    sites = _transcript_sites(result)
 
-    assert len(result.sites) == 2
-    assert [site.loci[0].transcript_id for site in result.sites] == [
+    assert len(sites) == 2
+    assert [site.loci[0].transcript_id for site in sites] == [
         "ENST00000001",
         "ENST00000002",
     ]
@@ -363,15 +442,16 @@ def test_transcriptomic_extraction_supports_negative_strand_transcripts(
         site_length=4,
         region="transcriptomic",
     )
+    sites = _transcript_sites(result)
 
-    assert [str(site.sequence) for site in result.sites] == [
+    assert [str(site.sequence) for site in sites] == [
         "AACC",
         "ACCG",
         "CCGG",
         "CGGT",
         "GGTT",
     ]
-    assert result.sites[1].loci == [
+    assert sites[1].loci == [
         TranscriptLocus("ENST00000001", 1, 5)
     ]
 

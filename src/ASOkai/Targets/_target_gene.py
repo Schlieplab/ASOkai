@@ -7,14 +7,14 @@ Version: 0.1.1
 Description: Target gene and its extracted target sites.
 License: LGPL-3.0-or-later
 """
-from typing import Mapping, cast
+from typing import Mapping
 
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Chromosome, Gene, Genome, Locus
 
 from ..Sites import Site
-from ..Utils import Serializable
 from ..Types import Strand
+from ..Utils import Serializable
 
 
 class TargetGene(Serializable, Gene):
@@ -60,9 +60,20 @@ class TargetGene(Serializable, Gene):
             genome: Optional parent genome reference.
             chromosome: Optional parent chromosome reference.
             **kwargs: Additional scalar values retained during serialization.
+
+        Raises:
+            ValueError: If the sequence length differs from the locus length,
+                or a site mapping key differs from that site's ID.
         """
         self._sequence = sequence
         self._sites = dict(sites)
+        for site_id, site in self._sites.items():
+            if site_id != site.id:
+                raise ValueError(
+                    f"Target site mapping key {site_id!r} must match site "
+                    f"ID {site.id!r}."
+                )
+
         Serializable.__init__(self, **kwargs)
         Gene.__init__(
             self,
@@ -72,9 +83,14 @@ class TargetGene(Serializable, Gene):
             start,
             end,
             strand,
-            genome=cast(Genome, genome),
-            chromosome=cast(Chromosome, chromosome),
+            genome=genome,
+            chromosome=chromosome,
         )
+        if len(sequence) != len(self.locus):
+            raise ValueError(
+                "The target-gene locus must have the same length as the "
+                "target-gene sequence."
+            )
 
     @property
     def sequence(self) -> Seq:

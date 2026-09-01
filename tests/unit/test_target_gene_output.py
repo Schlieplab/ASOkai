@@ -162,7 +162,7 @@ def test_target_gene_input_rejects_invalid_core_fields(
         input_contract.loads(json.dumps(payload))
 
 
-def test_target_gene_schema_does_not_enforce_site_key_relationships(
+def test_target_gene_input_rejects_site_key_mismatch(
     output,
     input_contract,
     target_gene,
@@ -170,9 +170,8 @@ def test_target_gene_schema_does_not_enforce_site_key_relationships(
     payload = json.loads(output.dumps(target_gene))
     payload["sites"]["wrong-key"] = payload["sites"].pop("genomic-site")
 
-    restored = input_contract.loads(json.dumps(payload))
-
-    assert restored.site_by_id("wrong-key").id == "genomic-site"
+    with pytest.raises(ValueError, match="must match site ID 'genomic-site'"):
+        input_contract.loads(json.dumps(payload))
 
 
 def test_target_gene_input_rejects_non_site_values(
@@ -248,17 +247,6 @@ def test_target_gene_input_rejects_a_locus_with_the_wrong_site_length(
 def test_target_gene_input_rejects_ambiguous_json(input_contract, content):
     with pytest.raises(ValueError, match="Invalid JSON"):
         input_contract.loads(content)
-
-
-def test_target_gene_output_schema_does_not_enforce_site_key_relationships(
-    output,
-    target_gene,
-):
-    target_gene._sites["wrong-key"] = target_gene._sites.pop("genomic-site")
-
-    content = output.dumps(target_gene)
-
-    assert json.loads(content)["sites"]["wrong-key"]["id"] == "genomic-site"
 
 
 def test_target_gene_schema_reports_all_structural_errors(

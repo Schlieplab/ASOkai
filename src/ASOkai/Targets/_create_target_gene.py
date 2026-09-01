@@ -72,11 +72,11 @@ def _extract_pre_mrna_sites(
 ) -> dict[str, GenomicSite]:
     """Extract every target site from the gene's genomic span."""
     sites: dict[str, GenomicSite] = {}
+    strand = _validated_strand(gene.strand)
     for offset in range(len(gene.sequence) - site_length + 1):
         site_id = next(site_ids)
         start = gene.start + offset
         end = start + site_length - 1
-        strand = _validated_strand(gene.strand)
         site = GenomicSite(
             id=site_id,
             chr=gene.chr,
@@ -145,9 +145,30 @@ def create_target_gene(
     site_length: int,
     region: TargetRegion = "exonic",
 ) -> TargetGene:
-    """Create a target gene and extract its target sites from a genome."""
+    """Create a target gene and extract all sites in one target region.
+
+    Args:
+        genome: Indexed genome containing the requested gene.
+        target_id: Gene identifier. Mutually exclusive with ``target_name``.
+        target_name: Gene name. Mutually exclusive with ``target_id``.
+        site_length: Positive target-site length in nucleotides.
+        region: ``exonic`` for sites contained within individual exons,
+            ``pre-mrna`` for the complete genomic gene span, or
+            ``transcriptomic`` for spliced transcript sequences.
+
+    Returns:
+        A target-gene snapshot containing sites in deterministic order.
+
+    Raises:
+        ValueError: If the identifier selection, site length, region, or
+            extracted domain data is invalid.
+    """
     if (target_id is None) == (target_name is None):
         raise ValueError("Provide exactly one of target_id or target_name")
+    if site_length < 1:
+        raise ValueError("site_length must be at least 1")
+    if region not in ("exonic", "pre-mrna", "transcriptomic"):
+        raise ValueError(f"Invalid region: {region}")
 
     if target_id is not None:
         gene = genome.gene_by_id(target_id)
@@ -171,14 +192,12 @@ def create_target_gene(
             site_length,
             _site_ids(target_label, "Premrna"),
         )
-    elif region == "transcriptomic":
+    else:
         sites = _extract_transcript_sites(
             gene,
             site_length,
             _site_ids(target_label, "Transcript"),
         )
-    else:
-        raise ValueError(f"Invalid region: {region}")
 
     return TargetGene(
         id=gene.id,

@@ -24,23 +24,25 @@ def sites(sample_sequence):
 
 
 @pytest.fixture
-def target_gene(sample_sequence, sites):
+def target_gene(sites):
     return TargetGene(
         id="ENSG00000001",
         name="TEST_GENE",
         chr="12",
         start=100,
-        end=1000,
+        end=155,
         strand="+",
-        sequence=sample_sequence,
+        sequence=Seq("A" * 56),
         sites=sites,
     )
 
 
-def test_target_gene_contains_gene_data_and_sites(target_gene, sample_sequence):
+def test_target_gene_contains_gene_data_and_copies_sites(target_gene, sites):
+    sites.clear()
+
     assert target_gene.id == "ENSG00000001"
     assert target_gene.name == "TEST_GENE"
-    assert target_gene.sequence == sample_sequence
+    assert target_gene.sequence == Seq("A" * 56)
     assert [site.id for site in target_gene.sites] == [
         "site-0",
         "site-1",
@@ -48,11 +50,44 @@ def test_target_gene_contains_gene_data_and_sites(target_gene, sample_sequence):
     ]
 
 
-def test_target_gene_serializes_sequence_and_sites(target_gene):
-    document = target_gene.to_dict()
+def test_target_gene_requires_sequence_to_match_locus_length():
+    with pytest.raises(
+        ValueError,
+        match="same length as the target-gene sequence",
+    ):
+        TargetGene(
+            id="ENSG00000001",
+            name="TEST_GENE",
+            chr="12",
+            start=1,
+            end=4,
+            strand="+",
+            sequence=Seq("A"),
+            sites={},
+        )
 
-    assert document["sequence"] == str(target_gene.sequence)
-    assert set(document["sites"]) == {"site-0", "site-1", "site-2"}
+
+def test_target_gene_requires_site_keys_to_match_site_ids(sample_sequence):
+    site = GenomicSite(
+        id="site-id",
+        chr="12",
+        start=1,
+        end=16,
+        strand="+",
+        sequence=sample_sequence,
+    )
+
+    with pytest.raises(ValueError, match="must match site ID 'site-id'"):
+        TargetGene(
+            id="ENSG00000001",
+            name="TEST_GENE",
+            chr="12",
+            start=1,
+            end=16,
+            strand="+",
+            sequence=sample_sequence,
+            sites={"wrong-key": site},
+        )
 
 
 def test_target_gene_finds_site_by_id(target_gene):
@@ -81,19 +116,3 @@ def test_target_gene_adds_and_removes_sites(target_gene):
     target_gene.remove_site("new-site")
     with pytest.raises(ValueError, match="not found"):
         target_gene.remove_site("new-site")
-
-
-def test_target_gene_retains_additional_scalar_values(sample_sequence):
-    gene = TargetGene(
-        id="ENSG00000001",
-        name="TEST_GENE",
-        chr="12",
-        start=100,
-        end=1000,
-        strand="+",
-        sequence=sample_sequence,
-        sites={},
-        source="example",
-    )
-
-    assert gene.source == "example"

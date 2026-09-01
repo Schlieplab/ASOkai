@@ -142,8 +142,7 @@ class StepRun:
         output: FileOutput,
         input_configurations: Mapping[str, Mapping[str, Any]],
     ) -> Path:
-        relative_path = self.step.spec.output_relative_path(
-            output.name,
+        relative_path = output.destination.render(
             self.config,
             input_configurations,
         )
@@ -194,14 +193,10 @@ class StepRunOutput:
             raise TypeError("StepRunOutput.run must be a StepRun.")
         if not isinstance(self.output, FileOutput):
             raise TypeError("StepRunOutput.output must be a FileOutput.")
-        try:
-            declared_output = self.run.step.spec.output(self.output.name)
-        except KeyError as error:
-            raise ValueError(
-                f"Output '{self.output.name}' does not belong to step "
-                f"'{self.run.step.name}'."
-            ) from error
-        if declared_output is not self.output:
+        if all(
+            declared_output is not self.output
+            for declared_output in self.run.step.spec.outputs
+        ):
             raise ValueError(
                 f"Output '{self.output.name}' does not belong to step "
                 f"'{self.run.step.name}'."

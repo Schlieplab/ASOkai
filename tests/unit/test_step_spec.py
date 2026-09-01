@@ -10,10 +10,11 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal, cast
 
 import pytest
 
+from ASOkai._cwl.model import CwlToolArgument
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
@@ -75,6 +76,67 @@ def test_step_spec_normalizes_declared_compatibility():
     assert spec.compatible_with == {
         "antisense.mechanism": ("rnase-h1",),
     }
+
+
+@pytest.mark.parametrize(
+    ("field_name", "message"),
+    [
+        ("params", "ScalarParam"),
+        ("inputs", "FileInput"),
+        ("outputs", "FileOutput"),
+        ("arguments", "CwlToolArgument"),
+    ],
+)
+def test_step_spec_rejects_wrong_declaration_types(field_name, message):
+    with pytest.raises(TypeError, match=message):
+        StepSpec(**cast(Any, {field_name: ["wrong-type"]}))
+
+
+@pytest.mark.parametrize(
+    ("base_command", "error_type", "message"),
+    [
+        ([], ValueError, "must not be empty"),
+        (["tool", 1], TypeError, "only strings"),
+        (["tool", ""], ValueError, "non-blank strings"),
+    ],
+)
+def test_step_spec_rejects_invalid_base_commands(
+    base_command,
+    error_type,
+    message,
+):
+    with pytest.raises(error_type, match=message):
+        StepSpec(base_command=cast(Any, base_command))
+
+
+def test_step_spec_copies_authored_and_generated_cwl_metadata():
+    base_command = ["external-tool"]
+    requirements = {"CustomRequirement": {"values": [1]}}
+    extra = {"hints": {"enabled": True}}
+    spec = StepSpec(
+        base_command=base_command,
+        requirements=requirements,
+        arguments=[CwlToolArgument(prefix="--mode", value_from="fixed")],
+        extra=extra,
+    )
+
+    base_command.append("authored-change")
+    requirements["CustomRequirement"]["values"].append(2)
+    extra["hints"]["enabled"] = False
+
+    assert spec.base_command == ("external-tool",)
+    assert spec.requirements == {"CustomRequirement": {"values": [1]}}
+    assert spec.extra == {"hints": {"enabled": True}}
+
+    generated = spec.to_cwl_tool_spec()
+    assert generated.base_command is not None
+    generated.base_command.append("generated-change")
+    generated.requirements["CustomRequirement"]["values"].append(3)
+    generated.extra["hints"]["enabled"] = False
+
+    assert spec.base_command == ("external-tool",)
+    assert spec.requirements == {"CustomRequirement": {"values": [1]}}
+    assert spec.extra == {"hints": {"enabled": True}}
 
 
 def test_step_spec_rejects_empty_compatibility_values():

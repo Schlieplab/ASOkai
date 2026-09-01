@@ -14,7 +14,6 @@ import argparse
 from copy import deepcopy
 from dataclasses import dataclass, field
 import keyword
-from pathlib import PurePosixPath
 import re
 from typing import Any, Mapping, Sequence
 
@@ -34,10 +33,10 @@ class StepSpec:
     inputs: Sequence[FileInput] = field(default_factory=tuple)
     outputs: Sequence[FileOutput] = field(default_factory=tuple)
     compatible_with: Mapping[str, Sequence[Scalar]] = field(default_factory=dict)
-    base_command: list[str] | None = None
-    requirements: dict[str, Any] = field(default_factory=dict)
+    base_command: Sequence[str] | None = None
+    requirements: Mapping[str, Any] = field(default_factory=dict)
     arguments: Sequence[CwlToolArgument] = field(default_factory=tuple)
-    extra: dict[str, Any] = field(default_factory=dict)
+    extra: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Reject declarations that would produce ambiguous CLI or CWL ports."""
@@ -45,6 +44,57 @@ class StepSpec:
         object.__setattr__(self, "inputs", tuple(self.inputs))
         object.__setattr__(self, "outputs", tuple(self.outputs))
         object.__setattr__(self, "arguments", tuple(self.arguments))
+        if any(not isinstance(param, ScalarParam) for param in self.params):
+            raise TypeError(
+                "StepSpec.params must contain only ScalarParam values."
+            )
+        if any(not isinstance(item, FileInput) for item in self.inputs):
+            raise TypeError(
+                "StepSpec.inputs must contain only FileInput values."
+            )
+        if any(not isinstance(output, FileOutput) for output in self.outputs):
+            raise TypeError(
+                "StepSpec.outputs must contain only FileOutput values."
+            )
+        if any(
+            not isinstance(argument, CwlToolArgument)
+            for argument in self.arguments
+        ):
+            raise TypeError(
+                "StepSpec.arguments must contain only CwlToolArgument values."
+            )
+
+        if self.base_command is not None:
+            if isinstance(self.base_command, (str, bytes)) or not isinstance(
+                self.base_command,
+                Sequence,
+            ):
+                raise TypeError(
+                    "StepSpec.base_command must be a sequence of strings."
+                )
+            base_command = tuple(self.base_command)
+            if not base_command:
+                raise ValueError("StepSpec.base_command must not be empty.")
+            if any(type(part) is not str for part in base_command):
+                raise TypeError(
+                    "StepSpec.base_command must contain only strings."
+                )
+            if any(not part.strip() for part in base_command):
+                raise ValueError(
+                    "StepSpec.base_command must contain only non-blank strings."
+                )
+            object.__setattr__(self, "base_command", base_command)
+
+        if not isinstance(self.requirements, Mapping):
+            raise TypeError("StepSpec.requirements must be a mapping.")
+        if not isinstance(self.extra, Mapping):
+            raise TypeError("StepSpec.extra must be a mapping.")
+        object.__setattr__(
+            self,
+            "requirements",
+            deepcopy(dict(self.requirements)),
+        )
+        object.__setattr__(self, "extra", deepcopy(dict(self.extra)))
         object.__setattr__(
             self,
             "compatible_with",
@@ -188,8 +238,12 @@ class StepSpec:
             for input_param in self.inputs
         )
         return CwlCommandLineToolSpec(
-            base_command=self.base_command,
-            requirements=deepcopy(self.requirements),
+            base_command=(
+                list(self.base_command)
+                if self.base_command is not None
+                else None
+            ),
+            requirements=deepcopy(dict(self.requirements)),
             arguments=[
                 *self.arguments,
                 *(
@@ -202,7 +256,7 @@ class StepSpec:
                 output.to_cwl_output(config, input_configurations)
                 for output in self.outputs
             ],
-            extra=deepcopy(self.extra),
+            extra=deepcopy(dict(self.extra)),
         )
 
     def config_map(self) -> dict[str, str]:
@@ -237,25 +291,6 @@ class StepSpec:
     def dependencies(self) -> tuple[str, ...]:
         """Return producer step names, derived from source outputs."""
         return tuple(dict.fromkeys(item.source.producer for item in self.inputs))
-
-    def output_names(self) -> tuple[str, ...]:
-        """Return produced output names in declaration order."""
-        return tuple(output.name for output in self.outputs)
-
-    def output_relative_path(
-        self,
-        name: str,
-        config: Mapping[str, Any],
-        input_configurations: Mapping[
-            str,
-            Mapping[str, Any],
-        ] | None = None,
-    ) -> PurePosixPath:
-        """Render one declared path relative to the configured data directory."""
-        for output in self.outputs:
-            if output.name == name:
-                return output.destination.render(config, input_configurations)
-        raise KeyError(f"Unknown step output: {name!r}.")
 
     def build_parser(
         self,

@@ -104,11 +104,6 @@ def _cwl_step_id(step_name: str) -> str:
     return f"step_{step_name.replace('-', '_')}"
 
 
-def _output_names(step: Step) -> tuple[str, ...]:
-    """Return CWL output names from the step specification."""
-    return step.spec.output_names()
-
-
 def _validate_planned_runs(runs: list[StepRun]) -> None:
     """Reject conflicting run definitions in one generated workflow."""
     by_id: dict[str, StepRun] = {}
@@ -287,7 +282,7 @@ class JobCwlGenerator(BaseCwlGenerator):
             cwl_steps[_cwl_step_id(run.run_id)] = {
                 "run": step_cwl_run_path(run),
                 "in": in_map,
-                "out": list(_output_names(step)),
+                "out": [output.name for output in step.spec.outputs],
             }
 
         publisher_outputs = _publisher_output_ids(publication_plan)

@@ -284,7 +284,7 @@ class TestSerializableComplexTypes:
             "type": "object",
             "additionalProperties": {
                 "type": "string",
-                "examples": ["ACGT"],
+                "examples": ["A"],
             },
         }
 

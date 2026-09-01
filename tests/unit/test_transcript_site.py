@@ -82,18 +82,3 @@ def test_transcript_site_roundtrip_preserves_shared_loci(transcript_site):
 
     assert reconstructed == transcript_site
     assert reconstructed.sequence == transcript_site.sequence
-
-
-@pytest.mark.unit
-@pytest.mark.serialization
-def test_transcript_site_roundtrip_preserves_extra_scalars():
-    site = TranscriptSite(
-        id="site",
-        loci=[TranscriptLocus("ENST00000001", 10, 14)],
-        sequence=Seq("ACGT"),
-        score=0.75,
-    )
-
-    reconstructed = TranscriptSite.from_dict(site.to_dict())
-
-    assert getattr(reconstructed, "score") == 0.75

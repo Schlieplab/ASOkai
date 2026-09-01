@@ -62,6 +62,7 @@ class TranscriptSite(Site):
         )
 
     def __eq__(self, other: object) -> bool:
+        """Compare transcript-site identity using the ID and sorted loci."""
         if not isinstance(other, TranscriptSite):
             return NotImplemented
         return self.id == other.id and self.loci == other.loci

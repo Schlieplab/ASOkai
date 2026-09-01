@@ -146,7 +146,7 @@ def _build_schema(
     if expected_type is Seq:
         return {
             "type": "string",
-            "examples": ["ACGT"],
+            "examples": ["A"],
         }
 
     if isinstance(expected_type, type) and is_dataclass(expected_type):

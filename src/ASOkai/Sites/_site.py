@@ -8,8 +8,9 @@ Description: This file defines the base Site class.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
+
 from Bio.Seq import Seq
-from typing import Dict
+
 from ..Utils import Serializable
 
 
@@ -20,21 +21,17 @@ class Site(Serializable, ABC):
     _sequence: Seq
     _serialized_names = {"_sequence": "sequence"}
 
-    def __init__(self,
-                 id: str,
-                 sequence: Seq,
-                 **kwargs):
-        """
-        Initializes a Site object.
+    def __init__(self, id: str, sequence: Seq, **kwargs):
+        """Initialize a site.
 
         Args:
-            id: The ID of the site.
-            sequence: The sequence of the site.
-            kwargs: Additional keyword arguments.
+            id: Stable site identifier.
+            sequence: Site sequence in the 5'-to-3' direction.
+            kwargs: Additional scalar attributes.
         """
         self.id = id
         self._sequence = sequence
-        
+
         Serializable.__init__(self, **kwargs)
 
     @property
@@ -46,5 +43,3 @@ class Site(Serializable, ABC):
     def __repr__(self) -> str:
         """Return a string representation of this site."""
         raise NotImplementedError
-
-    

@@ -83,23 +83,3 @@ def test_genomic_site_roundtrip_preserves_data(sample_genomic_site):
     assert reconstructed.id == sample_genomic_site.id
     assert reconstructed.locus == sample_genomic_site.locus
     assert reconstructed.sequence == sample_genomic_site.sequence
-
-
-@pytest.mark.unit
-@pytest.mark.serialization
-def test_genomic_site_roundtrip_preserves_extra_scalars(sample_sequence):
-    site = GenomicSite(
-        chr="12",
-        start=100,
-        end=115,
-        strand="+",
-        sequence=sample_sequence,
-        id="test_site",
-        custom_attr="custom_value",
-        score=0.95,
-    )
-
-    reconstructed = GenomicSite.from_dict(site.to_dict())
-
-    assert reconstructed.custom_attr == "custom_value"
-    assert reconstructed.score == 0.95

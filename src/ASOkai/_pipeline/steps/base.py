@@ -87,7 +87,7 @@ class Step(Runnable):
             for attribute_name, value in cls.__dict__.items()
             if isinstance(value, FileOutput)
         }
-        bindings: list[tuple[FileOutput, str]] = []
+        bindings: list[FileOutput] = []
         for output in spec.outputs:
             attribute_names = [
                 attribute_name
@@ -99,7 +99,7 @@ class Step(Runnable):
                     f"Step '{cls.name}' output '{output.name}' must be declared "
                     "once as a class attribute and reused in StepSpec.outputs."
                 )
-            bindings.append((output, attribute_names[0]))
+            bindings.append(output)
 
         undeclared = [
             attribute_name
@@ -113,10 +113,10 @@ class Step(Runnable):
                 f"StepSpec.outputs: {names}."
             )
 
-        for output, attribute_name in bindings:
-            output._validate_binding(cls, attribute_name)
-        for output, attribute_name in bindings:
-            output._bind_to(cls, attribute_name)
+        for output in bindings:
+            output._validate_binding(cls)
+        for output in bindings:
+            output._bind_to(cls)
 
     @property
     def dependencies(self) -> list[str]:

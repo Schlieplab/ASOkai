@@ -18,7 +18,6 @@ from typing import Any, Mapping
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
 from ASOkai._pipeline.contracts.file_types import FileType
 from ASOkai._pipeline.contracts.parameters import (
-    Param,
     ScalarParam,
     _flag_for_name,
 )
@@ -26,9 +25,10 @@ from ASOkai._pipeline.contracts.paths import OutputPathTemplate
 
 
 @dataclass(frozen=True, init=False, eq=False)
-class FileOutput(Param):
+class FileOutput:
     """A produced file and the complete contract inherited by its consumers."""
 
+    name: str
     destination: OutputPathTemplate
     file_type: FileType
     doc: str | None = None
@@ -58,26 +58,16 @@ class FileOutput(Param):
         object.__setattr__(self, "doc", doc)
         object.__setattr__(self, "_owner", None)
 
-    def _validate_binding(
-        self,
-        owner: type[Any],
-        attribute_name: str,
-    ) -> None:
+    def _validate_binding(self, owner: type[Any]) -> None:
         """Validate a proposed producer-step binding without mutating it."""
-        owner_name = getattr(owner, "name", None)
-        if type(owner_name) is not str or not owner_name.strip():
-            raise TypeError(f"FileOutput '{self.name}' requires a named owner.")
-        if type(attribute_name) is not str or not attribute_name.strip():
-            raise TypeError(f"FileOutput '{self.name}' requires an attribute name.")
         if self._owner is not None and self._owner is not owner:
             raise ValueError(
                 f"FileOutput '{self.name}' is already owned by "
                 f"'{self._owner.name}'."
             )
 
-    def _bind_to(self, owner: type[Any], attribute_name: str) -> None:
-        """Bind this output to exactly one producer-step attribute."""
-        self._validate_binding(owner, attribute_name)
+    def _bind_to(self, owner: type[Any]) -> None:
+        """Bind this output after its proposed owner has been validated."""
         object.__setattr__(self, "_owner", owner)
 
     def _require_bound(self) -> None:
@@ -176,9 +166,10 @@ class FileOutput(Param):
 
 
 @dataclass(frozen=True)
-class FileInput(Param):
+class FileInput:
     """A file input that inherits its behavior from a producer output."""
 
+    name: str
     source: FileOutput
     configurable_parameters: tuple[str, ...] = ()
     prefix: str | None = None
@@ -341,18 +332,6 @@ class FileInput(Param):
         """Return this input's command-line flag."""
         return self.prefix or _flag_for_name(self.name)
 
-    def parser_required(self) -> bool:
-        """File inputs are always required by the step command."""
-        return True
-
-    def parser_type(self) -> Any:
-        """Return the file type's argparse converter for this input."""
-        return self._parse_argument
-
-    def parser_choices(self) -> tuple[Any, ...] | None:
-        """File inputs do not define argparse choices."""
-        return None
-
     def to_cwl_input(self) -> CwlToolInput:
         """Return this input as a CWL File."""
         return CwlToolInput(
@@ -367,7 +346,7 @@ class FileInput(Param):
         kwargs: dict[str, Any] = {
             "dest": self.name,
             "required": True,
-            "type": self.parser_type(),
+            "type": self._parse_argument,
         }
         if self.doc:
             kwargs["help"] = self.doc

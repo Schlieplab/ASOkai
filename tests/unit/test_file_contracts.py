@@ -57,6 +57,24 @@ def test_file_input_inherits_its_exact_producer_output():
     assert file_input.file_type is ProducerStep.result_output.file_type
 
 
+def test_file_output_cannot_be_shared_by_two_producer_steps():
+    output = FileOutput("result", destination="result.json")
+
+    class FirstProducerStep(Step):
+        name = "first-producer"
+        description = "First test producer."
+        result_output = output
+        spec = StepSpec(outputs=[result_output])
+
+    with pytest.raises(ValueError, match="already owned by 'first-producer'"):
+
+        class SecondProducerStep(Step):
+            name = "second-producer"
+            description = "Second test producer."
+            result_output = output
+            spec = StepSpec(outputs=[result_output])
+
+
 def test_file_input_reads_path_or_parameter_configuration(tmp_path):
     file_input = _configurable_input()
     path_override = tmp_path / "target.json"

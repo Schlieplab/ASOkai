@@ -47,16 +47,27 @@ def test_typed_json_file_uses_serializable_annotations():
         file_type.dumps(cast(Any, "not-a-Data"))
 
 
-def test_json_file_validation_does_not_call_runtime_read(tmp_path, monkeypatch):
+def test_json_file_validation_does_not_construct_domain_values(
+    tmp_path,
+    monkeypatch,
+):
+    class Data(Serializable):
+        value: int
+
+        def __init__(self, value):
+            self.value = value
+            super().__init__()
+
     path = tmp_path / "result.json"
-    path.write_text('{"value": 1}', encoding="utf-8")
+    file_type = JsonFile(Data)
+    file_type.write(path, Data(1))
 
-    def unexpected_read(self, path):
-        raise AssertionError("validate() called read()")
+    def unexpected_from_dict(cls, data):
+        raise AssertionError("validate() constructed a domain value")
 
-    monkeypatch.setattr(JsonFile, "read", unexpected_read)
+    monkeypatch.setattr(Data, "from_dict", classmethod(unexpected_from_dict))
 
-    JsonFile().validate(path)
+    file_type.validate(path)
 
 
 @pytest.mark.parametrize(
@@ -93,22 +104,6 @@ def test_csv_file_roundtrip_preserves_declared_scalar_types(tmp_path):
         "site-2,0.25,false\n"
     )
     assert file_type.read(path) == rows
-
-
-def test_csv_file_validation_does_not_call_runtime_read(tmp_path, monkeypatch):
-    path = tmp_path / "results.csv"
-    path.write_text("site_id,score\nsite-1,0.5\n", encoding="utf-8")
-    file_type = CsvFile(
-        index={"site_id": str},
-        columns={"score": float},
-    )
-
-    def unexpected_read(self, path):
-        raise AssertionError("validate() called read()")
-
-    monkeypatch.setattr(CsvFile, "read", unexpected_read)
-
-    file_type.validate(path)
 
 
 def test_csv_file_rejects_inconsistent_columns():

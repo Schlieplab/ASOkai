@@ -31,14 +31,14 @@ CsvTable: TypeAlias = Sequence[CsvRow]
 class CsvFile(FileType):
     """A CSV table with explicitly typed index and data columns."""
 
-    index: Mapping[str, type[Scalar]]
-    columns: Mapping[str, type[Scalar]]
+    index: Mapping[str, type[str | int | float | bool]]
+    columns: Mapping[str, type[str | int | float | bool]]
 
     def __init__(
         self,
         *,
-        index: Mapping[str, type[Scalar]],
-        columns: Mapping[str, type[Scalar]],
+        index: Mapping[str, type[str | int | float | bool]],
+        columns: Mapping[str, type[str | int | float | bool]],
     ) -> None:
         object.__setattr__(self, "media_type", "text/csv")
         object.__setattr__(self, "format_name", "CSV")
@@ -62,8 +62,8 @@ class CsvFile(FileType):
     @staticmethod
     def _validate_column_types(
         group_name: str,
-        column_types: Mapping[str, type[Scalar]],
-    ) -> Mapping[str, type[Scalar]]:
+        column_types: Mapping[str, type[str | int | float | bool]],
+    ) -> Mapping[str, type[str | int | float | bool]]:
         """Return one validated group of ordered CSV column types."""
         if not isinstance(column_types, Mapping):
             raise TypeError(
@@ -86,7 +86,7 @@ class CsvFile(FileType):
         return MappingProxyType(normalized)
 
     @property
-    def field_types(self) -> dict[str, type[Scalar]]:
+    def field_types(self) -> dict[str, type[str | int | float | bool]]:
         """Return all CSV fields in their serialized order."""
         return {
             **self.index,
@@ -120,7 +120,7 @@ class CsvFile(FileType):
     @staticmethod
     def _decode_cell(
         value: str,
-        expected_type: type[Scalar],
+        expected_type: type[str | int | float | bool],
         *,
         source: str,
         row_number: int,
@@ -157,7 +157,7 @@ class CsvFile(FileType):
     @staticmethod
     def _encode_cell(
         value: Scalar,
-        expected_type: type[Scalar],
+        expected_type: type[str | int | float | bool],
         *,
         row_number: int,
         column_name: str,

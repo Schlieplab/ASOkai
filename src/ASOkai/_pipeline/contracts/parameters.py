@@ -11,7 +11,6 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import argparse
-from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,32 +117,10 @@ def _argparse_choices_for_annotation(annotation: Any) -> tuple[Any, ...] | None:
 
 
 @dataclass(frozen=True)
-class Param(ABC):
-    """Base contract shared by scalar, input-file, and output-file parameters."""
-
-    name: str
-
-    @property
-    @abstractmethod
-    def cli_prefix(self) -> str:
-        """Return this parameter's command-line flag."""
-        ...
-
-    @abstractmethod
-    def add_to_parser(self, parser: argparse.ArgumentParser) -> None:
-        """Add this parameter as an argparse option."""
-        ...
-
-    @abstractmethod
-    def validate(self, value: Any) -> None:
-        """Validate one value against this parameter's contract."""
-        ...
-
-
-@dataclass(frozen=True)
-class ScalarParam(Param):
+class ScalarParam:
     """A scalar step parameter that can produce CWL, CLI, and config metadata."""
 
+    name: str
     annotation: Any
     config: str | None = None
     prefix: str | None = None

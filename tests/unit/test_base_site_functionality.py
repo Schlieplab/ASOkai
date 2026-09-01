@@ -29,16 +29,16 @@ class TestSiteBase:
     def test_site_is_abstract(self):
         assert inspect.isabstract(Site)
 
-    def test_site_exposes_sequence_and_scalar_attributes(
+    def test_site_exposes_sequence_and_metadata_attributes(
         self,
         sample_sequence,
     ):
         site = ConcreteSite(
             id="test_site",
             sequence=sample_sequence,
-            score=0.75,
+            metadata={"tags": ["reviewed"]},
         )
 
         assert site.id == "test_site"
         assert site.sequence is sample_sequence
-        assert getattr(site, "score") == 0.75
+        assert getattr(site, "metadata") == {"tags": ["reviewed"]}

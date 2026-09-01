@@ -33,7 +33,7 @@ class TranscriptSite(Site):
             sequence: Site sequence in the 5'-to-3' direction.
             id: Stable site identifier. When omitted, it is derived from the
                 first transcript locus.
-            kwargs: Additional scalar attributes.
+            kwargs: Additional serializable metadata attributes.
         """
         if not loci:
             raise ValueError("A transcript site requires at least one locus.")

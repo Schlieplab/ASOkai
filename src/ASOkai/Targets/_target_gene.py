@@ -59,7 +59,7 @@ class TargetGene(Serializable, Gene):
             sites: Target sites keyed by their unique site IDs.
             genome: Optional parent genome reference.
             chromosome: Optional parent chromosome reference.
-            **kwargs: Additional scalar values retained during serialization.
+            **kwargs: Additional serializable metadata attributes.
 
         Raises:
             ValueError: If the sequence length differs from the locus length,

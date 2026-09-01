@@ -30,7 +30,7 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
             id: Unique therapeutic identifier.
             sequence: Antisense-strand sequence in the 5' to 3' direction.
             mechanism: Mechanism through which the ASO acts.
-            kwargs: Additional scalar values retained during serialization.
+            kwargs: Additional serializable metadata attributes.
         """
         super().__init__(
             id=id,

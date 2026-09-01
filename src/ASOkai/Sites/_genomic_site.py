@@ -45,7 +45,7 @@ class GenomicSite(Site, GenomeElement):
             id: Stable site identifier. Constructors derive it from the locus
                 when omitted.
             genome: Optional genome containing the site.
-            kwargs: Additional scalar attributes.
+            kwargs: Additional serializable metadata attributes.
 
         Raises:
             ValueError: If the sequence and locus lengths differ.

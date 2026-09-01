@@ -38,7 +38,7 @@ class siRNA(AntisenseTherapeutic):
             antisense_strand: Guide strand stored in the 5' to 3' direction.
             sense_strand: Passenger strand stored in the 5' to 3' direction.
             mechanism: Mechanism through which the siRNA acts.
-            kwargs: Additional scalar values retained during serialization.
+            kwargs: Additional serializable metadata attributes.
         """
         self._antisense_strand = antisense_strand
         self._sense_strand = sense_strand

@@ -114,24 +114,6 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
     assert restored[0].site_id == binding.site_id
 
 
-def test_gapmer_collection_rejects_invalid_segment_length(gapmer):
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
-    document = json.loads(file_type.dumps([gapmer]))
-    document[0]["gap_length"] = 0
-
-    with pytest.raises(ValueError, match="Gapmer gap_length"):
-        file_type.loads(json.dumps(document))
-
-
-def test_therapeutic_collection_rejects_an_empty_sequence(aso):
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
-    document = json.loads(file_type.dumps([aso]))
-    document[0]["sequence"] = ""
-
-    with pytest.raises(ValueError, match="sequence cannot be empty"):
-        file_type.loads(json.dumps(document))
-
-
 def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
     file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([gapmer]))

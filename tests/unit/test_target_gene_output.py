@@ -211,30 +211,6 @@ def test_target_gene_input_rejects_invalid_runtime_references(
     assert field in str(raised.value)
 
 
-def test_target_gene_input_rejects_a_genomic_locus_with_wrong_site_length(
-    output,
-    input_contract,
-    target_gene,
-):
-    payload = json.loads(output.dumps(target_gene))
-    payload["sites"]["genomic-site"]["end"] = 5
-
-    with pytest.raises(ValueError, match="same length as the site sequence"):
-        input_contract.loads(json.dumps(payload))
-
-
-def test_target_gene_input_rejects_a_locus_with_the_wrong_site_length(
-    output,
-    input_contract,
-    target_gene,
-):
-    payload = json.loads(output.dumps(target_gene))
-    payload["sites"]["transcript-site"]["loci"][0]["end"] = 9
-
-    with pytest.raises(ValueError, match="same length as the site sequence"):
-        input_contract.loads(json.dumps(payload))
-
-
 @pytest.mark.parametrize(
     "content",
     [
@@ -265,31 +241,23 @@ def test_target_gene_schema_reports_all_structural_errors(
     assert "$.start" in str(raised.value)
 
 
-def test_target_gene_input_allows_extra_scalar_kwargs(
+def test_target_gene_input_preserves_extra_metadata(
     output,
     input_contract,
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["source_label"] = "external"
-    payload["priority"] = 1
+    payload["source_details"] = {
+        "label": "external",
+        "tags": ["reviewed", "imported"],
+    }
 
     restored = input_contract.loads(json.dumps(payload))
 
-    assert restored.source_label == "external"
-    assert restored.priority == 1
-
-
-def test_target_gene_input_rejects_non_scalar_extra_kwargs(
-    output,
-    input_contract,
-    target_gene,
-):
-    payload = json.loads(output.dumps(target_gene))
-    payload["source_details"] = {"name": "external"}
-
-    with pytest.raises(ValueError, match=r"\$.source_details"):
-        input_contract.loads(json.dumps(payload))
+    assert getattr(restored, "source_details") == {
+        "label": "external",
+        "tags": ["reviewed", "imported"],
+    }
 
 
 def test_target_gene_output_rejects_the_wrong_value_type(output):

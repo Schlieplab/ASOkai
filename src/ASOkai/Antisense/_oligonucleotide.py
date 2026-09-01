@@ -24,7 +24,7 @@ class Oligonucleotide(Serializable):
 
         Args:
             sequence: Nucleotide sequence stored in the 5' to 3' direction.
-            kwargs: Additional scalar values retained during serialization.
+            kwargs: Additional serializable metadata attributes.
 
         Raises:
             ValueError: If ``sequence`` is empty.

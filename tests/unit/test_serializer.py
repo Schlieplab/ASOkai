@@ -336,31 +336,24 @@ class TestSerializableInputValidation:
         with pytest.raises(ValueError, match="Unexpected serialized field"):
             ClosedSerializable.from_dict(data)
 
-    def test_extra_scalar_kwargs_roundtrip(self):
+    def test_extra_metadata_kwargs_roundtrip(self):
         original = SimpleSerializable(
             name="test",
             value=42,
-            source="external",
-            score=0.75,
+            metadata={
+                "source": "external",
+                "tags": ["reviewed", "imported"],
+                "details": {"priority": 1},
+            },
         )
 
         reconstructed = SimpleSerializable.from_dict(original.to_dict())
 
-        assert getattr(reconstructed, "source") == "external"
-        assert getattr(reconstructed, "score") == 0.75
-
-    def test_non_scalar_extra_kwargs_are_rejected(self):
-        with pytest.raises(TypeError, match="must be a scalar"):
-            SimpleSerializable(
-                name="test",
-                value=42,
-                metadata={"source": "external"},
-            )
-
-        data = SimpleSerializable(name="test", value=42).to_dict()
-        data["metadata"] = {"source": "external"}
-        with pytest.raises(TypeError, match="must be a scalar"):
-            SimpleSerializable.from_dict(data)
+        assert getattr(reconstructed, "metadata") == {
+            "source": "external",
+            "tags": ["reviewed", "imported"],
+            "details": {"priority": 1},
+        }
 
     def test_unknown_implementation_is_rejected_without_importing_it(self):
         data = SimpleSerializable(name="test", value=42).to_dict()

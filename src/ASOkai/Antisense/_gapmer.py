@@ -40,7 +40,7 @@ class Gapmer(ASO):
             left_wing_length: Number of nucleotides in the left wing.
             gap_length: Number of nucleotides in the central gap.
             right_wing_length: Number of nucleotides in the right wing.
-            kwargs: Additional scalar values retained during serialization.
+            kwargs: Additional serializable metadata attributes.
 
         Raises:
             ValueError: If a segment length is not a positive integer or the

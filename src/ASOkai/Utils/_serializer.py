@@ -100,17 +100,23 @@ class Serializable:
 
         return serialized_fields
 
-    def __init__(self, **kwargs: Scalar) -> None:
+    @classmethod
+    def _accepts_extra_fields(cls) -> bool:
+        """Return whether the constructor accepts keyword metadata."""
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in inspect.signature(
+                cls.__init__
+            ).parameters.values()
+        )
+
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize with keyword arguments.
-        Extra scalar values are retained as instance attributes.
+        Extra values are retained as instance attributes and validated when
+        serialized.
         """
         for key, value in kwargs.items():
-            if not _is_scalar(value):
-                raise TypeError(
-                    f"Extra Serializable attribute {key!r} must be a scalar; "
-                    f"received {type(value).__name__}."
-                )
             setattr(self, key, value)
 
     def to_dict(self) -> dict[str, Any]:
@@ -333,10 +339,7 @@ class Serializable:
 
         sig = inspect.signature(cls_from_data.__init__)
         constructor_parameters = sig.parameters
-        accepts_extra_scalars = any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in constructor_parameters.values()
-        )
+        accepts_extra_fields = cls_from_data._accepts_extra_fields()
         serialized_field_types = cls_from_data._serialized_field_types()
         init_args: dict[str, Any] = {}
 
@@ -351,21 +354,18 @@ class Serializable:
                         f"Constructor parameter {serialized_name!r} is not a "
                         f"serialized field of {cls_from_data.__name__}."
                     )
-                if not accepts_extra_scalars:
+                if not accepts_extra_fields:
                     raise ValueError(
                         f"Unexpected serialized field {serialized_name!r} for "
                         f"{cls_from_data.__name__}."
                     )
-                if not _is_scalar(value):
-                    raise TypeError(
-                        f"Extra serialized field {serialized_name!r} must be "
-                        f"a scalar; received {type(value).__name__}."
-                    )
-                init_args[serialized_name] = value
+                init_args[serialized_name] = cls_from_data._deserialize_value(
+                    value
+                )
                 continue
 
             parameter = constructor_parameters.get(serialized_name)
-            if parameter is None and not accepts_extra_scalars:
+            if parameter is None and not accepts_extra_fields:
                 raise ValueError(
                     f"Serialized field {serialized_name!r} does not map to "
                     f"a constructor argument of {cls_from_data.__name__}."
@@ -464,5 +464,5 @@ def _declared_field_types(
 
 
 def _is_scalar(value: Any) -> bool:
-    """Return whether a value is supported as an extra serialized scalar."""
+    """Return whether a value is a supported serialized scalar."""
     return value is None or type(value) in (str, int, float, bool)

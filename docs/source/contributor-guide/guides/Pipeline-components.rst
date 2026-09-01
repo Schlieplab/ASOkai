@@ -88,7 +88,7 @@ The file type owns serialization and validation:
 ``JsonFile``
    A JSON contract backed by a serializable class. Its recursively generated
    schema validates nested serializable objects, scalar fields, sequences,
-   mappings, and permitted extra scalar keyword arguments.
+   mappings, and permitted extra serializable keyword arguments.
 
 ``CsvFile``
    A table contract with ordered index and data columns. Every column declares

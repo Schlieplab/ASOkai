@@ -27,7 +27,7 @@ class Site(Serializable, ABC):
         Args:
             id: Stable site identifier.
             sequence: Site sequence in the 5'-to-3' direction.
-            kwargs: Additional scalar attributes.
+            kwargs: Additional serializable metadata attributes.
         """
         self.id = id
         self._sequence = sequence

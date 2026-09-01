@@ -41,9 +41,6 @@ JsonData: TypeAlias = (
     | Mapping[str, "JsonData"]
     | Sequence["JsonData"]
 )
-_JSON_SCALAR_SCHEMA: JsonSchema = {
-    "type": ["string", "number", "boolean", "null"],
-}
 
 
 def build_json_schema(expected_type: Any) -> JsonSchema:
@@ -207,8 +204,8 @@ def _build_object_schema(
     schema: JsonSchema = {
         "type": "object",
         "additionalProperties": (
-            _JSON_SCALAR_SCHEMA
-            if _accepts_extra_scalars(serializable_type)
+            True
+            if serializable_type._accepts_extra_fields()
             else False
         ),
         "required": [
@@ -276,18 +273,6 @@ def _schema_accepts_default(schema: Mapping[str, Any], value: Any) -> bool:
     if isinstance(declared_type, list):
         return any(accepted_types.get(item, False) for item in declared_type)
     return False
-
-
-def _accepts_extra_scalars(
-    serializable_type: type[Serializable],
-) -> bool:
-    """Return whether the constructor accepts arbitrary keyword values."""
-    return any(
-        parameter.kind is inspect.Parameter.VAR_KEYWORD
-        for parameter in inspect.signature(
-            serializable_type.__init__
-        ).parameters.values()
-    )
 
 
 def _constructor_only_parameters(

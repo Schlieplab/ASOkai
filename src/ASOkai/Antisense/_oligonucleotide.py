@@ -17,6 +17,7 @@ class Oligonucleotide(Serializable):
     """A single oligonucleotide strand stored 5' to 3' using ``ACGT``."""
 
     _sequence: Seq
+    _serialized_names = {"_sequence": "sequence"}
 
     def __init__(self, sequence: Seq, **kwargs):
         """Initialize one oligonucleotide strand.

@@ -18,6 +18,10 @@ class siRNA(AntisenseTherapeutic):
 
     _antisense_strand: Oligonucleotide
     _sense_strand: Oligonucleotide
+    _serialized_names = {
+        "_antisense_strand": "antisense_strand",
+        "_sense_strand": "sense_strand",
+    }
 
     def __init__(
         self,

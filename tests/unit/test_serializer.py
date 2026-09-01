@@ -64,6 +64,7 @@ class SerializableWithMapping(Serializable):
     """Test class with attribute name mapping."""
 
     _sequence: Seq
+    _serialized_names = {"_sequence": "sequence"}
 
     def __init__(self, sequence: Seq, **kwargs):
         self._sequence = sequence
@@ -345,8 +346,8 @@ class TestSerializableInputValidation:
 
         reconstructed = SimpleSerializable.from_dict(original.to_dict())
 
-        assert reconstructed.source == "external"
-        assert reconstructed.score == 0.75
+        assert getattr(reconstructed, "source") == "external"
+        assert getattr(reconstructed, "score") == 0.75
 
     def test_non_scalar_extra_kwargs_are_rejected(self):
         with pytest.raises(TypeError, match="must be a scalar"):

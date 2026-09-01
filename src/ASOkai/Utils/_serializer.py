@@ -16,7 +16,6 @@ from dataclasses import fields, is_dataclass
 from types import NoneType, SimpleNamespace, UnionType
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Literal,
     Self,
@@ -37,64 +36,40 @@ class Serializable:
     Base class for objects that can be serialized to a dictionary.
     """
     
-    # Class-level registry for external types
-    # Maps *internal instance attribute name* -> (serialized_key, serialize_func, flatten)
-    _attribute_serializers: dict[
-        str,
-        tuple[str, Callable[[Any], Any], bool],
-    ] = {}
-    # Maps *__init__ parameter / incoming key name* -> (init_arg_name, deserialize_func)
-    _attribute_deserializers: dict[
-        str,
-        tuple[str, Callable[[Any], Any]],
-    ] = {}
-    
-    # Attributes to exclude from serialization
-    _non_serializable_attrs: set[str] = set()
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Give each subclass its own attribute-adapter declarations."""
-        super().__init_subclass__(**kwargs)
-        cls._attribute_serializers = {}
-        cls._attribute_deserializers = {}
+    _serialized_names: ClassVar[dict[str, str]] = {}
+    _flattened_attributes: ClassVar[frozenset[str]] = frozenset()
+    _non_serializable_attrs: ClassVar[set[str]] = set()
 
     @classmethod
-    def _registered_attribute_serializers(
-        cls,
-    ) -> dict[str, tuple[str, Callable[[Any], Any], bool]]:
-        """Return inherited serializers without sharing mutable registries."""
-        serializers: dict[
-            str,
-            tuple[str, Callable[[Any], Any], bool],
-        ] = {}
+    def _inherited_serialized_names(cls) -> dict[str, str]:
+        """Return attribute-to-document names declared across the hierarchy."""
+        serialized_names: dict[str, str] = {}
         for base in reversed(cls.__mro__):
-            serializers.update(
-                base.__dict__.get("_attribute_serializers", {})
+            serialized_names.update(
+                base.__dict__.get("_serialized_names", {})
             )
-        return serializers
+        return serialized_names
 
     @classmethod
-    def _registered_attribute_deserializers(
-        cls,
-    ) -> dict[str, tuple[str, Callable[[Any], Any]]]:
-        """Return inherited deserializers without sharing mutable registries."""
-        deserializers: dict[
-            str,
-            tuple[str, Callable[[Any], Any]],
-        ] = {}
+    def _inherited_flattened_attributes(cls) -> frozenset[str]:
+        """Return flattened attribute names declared across the hierarchy."""
+        flattened_attributes: set[str] = set()
         for base in reversed(cls.__mro__):
-            deserializers.update(
-                base.__dict__.get("_attribute_deserializers", {})
+            flattened_attributes.update(
+                base.__dict__.get("_flattened_attributes", frozenset())
             )
-        return deserializers
-    
+        return frozenset(flattened_attributes)
 
     @classmethod
     def _serialized_field_types(cls) -> dict[str, Any]:
         """Return serialized field names and their declared Python types."""
         serialized_fields: dict[str, Any] = {}
-        attribute_serializers = cls._registered_attribute_serializers()
-        serialized_private_fields = attribute_serializers.keys()
+        serialized_names = cls._inherited_serialized_names()
+        flattened_attributes = cls._inherited_flattened_attributes()
+        serialized_private_fields = {
+            *serialized_names,
+            *flattened_attributes,
+        }
 
         for class_in_hierarchy in reversed(cls.__mro__):
             declared_fields = _declared_field_types(
@@ -105,13 +80,11 @@ class Serializable:
                 if field_name in cls._non_serializable_attrs:
                     continue
 
-                serializer = attribute_serializers.get(field_name)
-                if serializer is None:
-                    serialized_fields[field_name] = field_type
-                    continue
-
-                serialized_name, _, flatten = serializer
-                if not flatten:
+                if field_name not in flattened_attributes:
+                    serialized_name = serialized_names.get(
+                        field_name,
+                        field_name,
+                    )
                     serialized_fields[serialized_name] = field_type
                     continue
 
@@ -140,36 +113,6 @@ class Serializable:
                 )
             setattr(self, key, value)
 
-    @classmethod
-    def register_attribute(
-        cls,
-        attribute_name: str,
-        serialized_attribute_name: str | None = None,
-        deserialized_attribute_name: str | None = None,
-        serialize: Callable[[Any], Any] | None = None,
-        deserialize: Callable[[Any], Any] | None = None,
-        flatten: bool = False) -> None:
-        """
-        Register an external attribute for serialization/deserialization.
-        
-        Args:
-            attribute_name: The name of the attribute to register.
-            serialized_attribute_name: The name of the attribute to use for serialization.
-            deserialized_attribute_name: The name of the attribute to use for deserialization.
-            serialize: A function that takes an instance and returns the value of the attribute.
-            deserialize: A function that takes a value and returns the instance.
-            flatten: If True, the attribute is serialized as a top-level key instead of a nested dict.
-        """
-        if serialized_attribute_name is None:
-            serialized_attribute_name = attribute_name
-        if deserialized_attribute_name is None:
-            deserialized_attribute_name = serialized_attribute_name
-
-        if serialize is not None:
-            cls._attribute_serializers[attribute_name] = (serialized_attribute_name, serialize, flatten)
-        if deserialize is not None:
-            cls._attribute_deserializers[serialized_attribute_name] = (deserialized_attribute_name, deserialize)
-
     def to_dict(self) -> dict[str, Any]:
         """ 
         Convert the object to a dictionary.
@@ -192,14 +135,20 @@ class Serializable:
         """
         if attribute_name in self._non_serializable_attrs:
             return {}
-        serializers = type(self)._registered_attribute_serializers()
-        if attribute_name in serializers:
-            serialize_attribute_name, serialize_func, flatten = serializers[attribute_name]
-            if flatten:
-                return serialize_func(value)
-            else:
-                return {serialize_attribute_name: serialize_func(value)}
-        return {attribute_name: self._serialize_value(value)}
+        if attribute_name in type(self)._inherited_flattened_attributes():
+            serialized_value = self._serialize_value(value)
+            if not isinstance(serialized_value, dict):
+                raise TypeError(
+                    f"Flattened attribute {attribute_name!r} must serialize "
+                    "to a mapping."
+                )
+            return serialized_value
+
+        serialized_name = type(self)._inherited_serialized_names().get(
+            attribute_name,
+            attribute_name,
+        )
+        return {serialized_name: self._serialize_value(value)}
 
 
     def _serialize_value(self, value: Any) -> Any:
@@ -364,30 +313,6 @@ class Serializable:
         )
 
     @classmethod
-    def _deserialize_attribute(
-        cls,
-        attribute_name: str,
-        value: Any,
-        expected_type: Any = Any,
-    ) -> Any:
-        """
-        Deserialize an attribute from a dictionary.
-        """
-        deserializers = cls._registered_attribute_deserializers()
-        if attribute_name in deserializers:
-            deserialize_attribute_name, deserialize_func = deserializers[attribute_name]
-            deserialized_value = (
-                deserialize_func(value)
-                if expected_type is Any
-                else cls._deserialize_value(value, expected_type)
-            )
-            return {deserialize_attribute_name: deserialized_value}
-
-        return {
-            attribute_name: cls._deserialize_value(value, expected_type)
-        }
-
-    @classmethod
     def from_dict(
         cls,
         data: dict[str, Any],
@@ -439,32 +364,24 @@ class Serializable:
                 init_args[serialized_name] = value
                 continue
 
-            decoded_attributes = cls_from_data._deserialize_attribute(
-                serialized_name,
+            parameter = constructor_parameters.get(serialized_name)
+            if parameter is None and not accepts_extra_scalars:
+                raise ValueError(
+                    f"Serialized field {serialized_name!r} does not map to "
+                    f"a constructor argument of {cls_from_data.__name__}."
+                )
+            if (
+                parameter is not None
+                and parameter.kind is inspect.Parameter.POSITIONAL_ONLY
+            ):
+                raise TypeError(
+                    f"Serializable constructor argument {serialized_name!r} "
+                    "cannot be positional-only."
+                )
+            init_args[serialized_name] = cls_from_data._deserialize_value(
                 value,
                 serialized_field_types[serialized_name],
             )
-            for constructor_name, decoded_value in decoded_attributes.items():
-                parameter = constructor_parameters.get(constructor_name)
-                if parameter is None and not accepts_extra_scalars:
-                    raise ValueError(
-                        f"Serialized field {serialized_name!r} does not map to "
-                        f"a constructor argument of {cls_from_data.__name__}."
-                    )
-                if (
-                    parameter is not None
-                    and parameter.kind is inspect.Parameter.POSITIONAL_ONLY
-                ):
-                    raise TypeError(
-                        f"Serializable constructor argument {constructor_name!r} "
-                        "cannot be positional-only."
-                    )
-                if constructor_name in init_args:
-                    raise ValueError(
-                        f"Multiple serialized fields map to constructor argument "
-                        f"{constructor_name!r}."
-                    )
-                init_args[constructor_name] = decoded_value
 
         return cast(Self, cls_from_data(**init_args))
 

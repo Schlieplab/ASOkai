@@ -25,6 +25,11 @@ class TargetGene(Serializable, Gene):
     locus: Locus
     _sequence: Seq
     _sites: dict[str, Site]
+    _serialized_names = {
+        "_sequence": "sequence",
+        "_sites": "sites",
+    }
+    _flattened_attributes = frozenset({"locus"})
     _non_serializable_attrs = {"_genome", "_parent", "_children"}
 
     def __init__(

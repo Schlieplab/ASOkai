@@ -20,6 +20,7 @@ class GenomicSite(Site, GenomeElement):
     locus: Locus
 
     # Attributes to exclude from serialization (references to large/circular objects)
+    _flattened_attributes = frozenset({"locus"})
     _non_serializable_attrs = {'_genome', '_parent', '_children'}
     
     def __init__(self, 

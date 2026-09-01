@@ -18,6 +18,7 @@ class Site(Serializable, ABC):
 
     id: str
     _sequence: Seq
+    _serialized_names = {"_sequence": "sequence"}
 
     def __init__(self,
                  id: str,

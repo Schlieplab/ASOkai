@@ -36,8 +36,7 @@ tests/
     ├── test_target_gene.py
     ├── test_target_gene_creator_functionality.py
     ├── test_transcript_site.py
-    ├── test_transcript_site_functionality.py
-    └── test_type_registrations.py
+    └── test_transcript_site_functionality.py
 ```
 
 ## Running Tests
@@ -62,7 +61,7 @@ or node selectors unless a marker is present on the tests you want.
 
 ## Coverage Areas
 
-- Serialization and type adapters: `Serializable`, `Bio.Seq.Seq`,
+- Serialization contracts: `Serializable`, `Bio.Seq.Seq`,
   `GenomeUtils.Locus`, nested containers, and typed `JsonFile` roundtrips.
 - Domain objects: genomic and transcript sites, targets, target genes, target
   creators, site IDs, edge coordinates, special identifiers, and empty inputs.

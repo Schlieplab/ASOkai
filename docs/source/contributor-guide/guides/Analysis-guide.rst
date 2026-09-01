@@ -39,8 +39,9 @@ required context:
 Implement :meth:`~ASOkai.Analysis.Analysis.analyze`. It returns a mapping from
 column names to scalar values for one site. The inherited
 :meth:`~ASOkai.Analysis.Analysis.run` method applies that calculation to all
-sites and handles multiprocessing, so contributors normally do not override
-it.
+sites and handles shared-memory worker threads, so contributors normally do
+not override it. When more than one worker is configured, ``analyze`` may run
+concurrently and must treat its analysis context and sites as read-only.
 
 Declare the pipeline contract
 -----------------------------
@@ -108,7 +109,7 @@ contributor should not open or deserialize it again.
 The ``AnalysisStep`` base class then:
 
 1. constructs the analysis;
-2. supplies the configured process count;
+2. supplies the configured analysis-worker count through ``n_processes``;
 3. calls ``run``;
 4. converts the site-keyed results to primary CSV rows; and
 5. validates and writes every declared output.

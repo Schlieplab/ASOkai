@@ -192,8 +192,8 @@ properties:
             type: integer
             minimum: 1
             description: >-
-              Default number of processes for steps that support multiple
-              processes.
+              Default number of parallel workers for steps that support
+              concurrent execution.
           memory_mb:
             type: integer
             minimum: 1
@@ -206,8 +206,8 @@ properties:
           type: integer
           minimum: 1
           description: >-
-            Number of processes allocated to a step that supports multiple
-            processes.
+            Number of parallel workers allocated to a step that supports
+            concurrent execution.
         memory_mb:
           type: integer
           minimum: 1

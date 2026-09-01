@@ -466,7 +466,7 @@ def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
     }
     assert intrinsic["inputs"]["n_processes"] == {
         "type": "int",
-        "doc": "Number of processes allocated to this step.",
+        "doc": "Number of parallel workers allocated to this step.",
         "default": 1,
         "inputBinding": {"prefix": "--n-processes"},
     }

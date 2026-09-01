@@ -67,10 +67,11 @@ the validated YAML configuration. Defaults and choices belong in the
 declaration when they are part of the command-line contract.
 
 Steps must not declare ``n_processes`` themselves. Analysis steps support
-multiprocessing by default; a core step opts in with
+parallel worker threads by default; a core step opts in with
 ``supports_multiple_processes = True`` only when its runtime consumes
-``args.n_processes``. ASOkai then supplies the standard process argument and
-resolves its value from the shared resource configuration.
+``args.n_processes``. ASOkai then supplies the standard worker-count argument
+and resolves its value from the shared resource configuration. The
+``n_processes`` name is retained for configuration compatibility.
 
 File contracts
 ~~~~~~~~~~~~~~

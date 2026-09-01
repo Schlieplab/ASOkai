@@ -27,7 +27,7 @@ _N_PROCESSES_PARAM = ScalarParam(
     "n_processes",
     int,
     default=1,
-    doc="Number of processes allocated to this step.",
+    doc="Number of parallel workers allocated to this step.",
 )
 
 

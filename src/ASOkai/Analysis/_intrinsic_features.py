@@ -50,7 +50,7 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             sites: Sites to analyze.
             features: Features to calculate. Defaults to every supported
                 feature.
-            n_processes: Number of worker processes used by ``run``.
+            n_processes: Maximum number of worker threads used by ``run``.
 
         Raises:
             ValueError: If an unknown feature is requested.

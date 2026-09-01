@@ -8,6 +8,7 @@ Description: Tests for generic analysis base-class execution.
 License: LGPL-3.0-or-later
 """
 
+from threading import Lock
 from typing import Any, cast
 
 from Bio.Seq import Seq
@@ -60,6 +61,7 @@ class FakeTarget:
 class FakeGenome:
     def __init__(self, id):
         self.id = id
+        self.unpicklable_state = Lock()
 
 
 def test_site_specific_run_copies_sites_and_analyzes_each_one():
@@ -78,7 +80,7 @@ def test_site_specific_run_copies_sites_and_analyzes_each_one():
     }
 
 
-def test_site_specific_multiprocessing_matches_serial():
+def test_site_specific_thread_pool_matches_serial():
     sites = [FakeSite("a", "AT"), FakeSite("b", "ATCG")]
 
     assert CountingAnalysis(sites=sites, n_processes=2).run() == CountingAnalysis(
@@ -106,7 +108,7 @@ def test_analysis_rejects_unknown_constructor_arguments():
         )
 
 
-def test_empty_parallel_analysis_returns_no_results():
+def test_empty_threaded_analysis_returns_no_results():
     assert CountingAnalysis(sites=[], n_processes=2).run() == {}
 
 
@@ -119,13 +121,14 @@ def test_target_specific_run_exposes_target_context():
     }
 
 
-def test_genome_wide_run_exposes_genome_and_target_context():
+def test_genome_wide_threads_share_unpicklable_genome_and_target_context():
     genome = cast(Genome, FakeGenome("genome-1"))
     target = cast(TargetGene, FakeTarget("target-1"))
     analysis = ContextGenomeAnalysis(
         genome=genome,
         target=target,
-        sites=[FakeSite("site-1")],
+        sites=[FakeSite("site-1"), FakeSite("site-2")],
+        n_processes=2,
     )
 
     assert analysis.run() == {
@@ -133,5 +136,10 @@ def test_genome_wide_run_exposes_genome_and_target_context():
             "genome_id": "genome-1",
             "target_id": "target-1",
             "site_id": "site-1",
+        },
+        "site-2": {
+            "genome_id": "genome-1",
+            "target_id": "target-1",
+            "site_id": "site-2",
         },
     }

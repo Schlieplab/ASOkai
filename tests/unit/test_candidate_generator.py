@@ -50,12 +50,6 @@ class ExampleRNAInterferenceMechanism(MechanismOfAction):
     """Test-only mechanism for siRNA candidate construction."""
 
 
-def test_candidate_generators_follow_the_modality_hierarchy():
-    assert issubclass(ASOCandidateGenerator, AntisenseCandidateGenerator)
-    assert issubclass(GapmerCandidateGenerator, ASOCandidateGenerator)
-    assert issubclass(SiRNACandidateGenerator, AntisenseCandidateGenerator)
-
-
 def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
     site = TranscriptSite(
         id="target-S00001",
@@ -116,6 +110,15 @@ def test_aso_generator_preserves_the_site_for_each_binding():
     therapeutics, bindings = generator.generate([first_site, second_site])
 
     assert len(therapeutics) == 2
+    assert all(isinstance(therapeutic, ASO) for therapeutic in therapeutics)
+    assert [therapeutic.id for therapeutic in therapeutics] == [
+        "target-S00001-ASO",
+        "target-S00002-ASO",
+    ]
+    assert [therapeutic.sequence for therapeutic in therapeutics] == [
+        first_site.sequence.reverse_complement(),
+        second_site.sequence.reverse_complement(),
+    ]
     assert [
         (binding.therapeutic_id, binding.site_id) for binding in bindings
     ] == [

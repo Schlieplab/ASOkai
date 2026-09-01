@@ -123,6 +123,24 @@ def test_gapmer_collection_rejects_invalid_segment_length(gapmer):
         file_type.loads(json.dumps(document))
 
 
+def test_therapeutic_collection_rejects_an_empty_sequence(aso):
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    document = json.loads(file_type.dumps([aso]))
+    document[0]["sequence"] = ""
+
+    with pytest.raises(ValueError, match="sequence cannot be empty"):
+        file_type.loads(json.dumps(document))
+
+
+def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    document = json.loads(file_type.dumps([gapmer]))
+    document[0]["gap_length"] = 1
+
+    with pytest.raises(ValueError, match="must equal the sequence length"):
+        file_type.loads(json.dumps(document))
+
+
 def test_binding_collection_rejects_invalid_ids():
     file_type = GenerateASOCandidatesStep.bindings_output.file_type
     document = json.loads(file_type.dumps([Binding("aso-1", "site-1")]))

@@ -11,14 +11,7 @@ License: LGPL-3.0-or-later
 from ASOkai.Antisense import Binding
 
 
-def test_binding_references_one_therapeutic_and_site():
-    binding = Binding(therapeutic_id="aso-1", site_id="site-1")
-
-    assert binding.therapeutic_id == "aso-1"
-    assert binding.site_id == "site-1"
-
-
-def test_binding_serialization_roundtrip():
+def test_binding_references_and_serializes_one_therapeutic_and_site():
     binding = Binding(therapeutic_id="aso-1", site_id="site-1")
 
     data = binding.to_dict()

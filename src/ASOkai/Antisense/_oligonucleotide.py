@@ -25,7 +25,12 @@ class Oligonucleotide(Serializable):
         Args:
             sequence: Nucleotide sequence stored in the 5' to 3' direction.
             kwargs: Additional scalar values retained during serialization.
+
+        Raises:
+            ValueError: If ``sequence`` is empty.
         """
+        if not sequence:
+            raise ValueError("Oligonucleotide sequence cannot be empty.")
         self._sequence = sequence
         super().__init__(**kwargs)
 

@@ -11,6 +11,7 @@ License: LGPL-3.0-or-later
 import inspect
 
 from Bio.Seq import Seq
+import pytest
 
 from ASOkai.Antisense import ASO, AntisenseTherapeutic, Oligonucleotide, siRNA
 from ASOkai.Biochemistry import MechanismOfAction
@@ -24,16 +25,18 @@ def make_mechanism():
     return ExampleMechanism(name="RNA degradation")
 
 
-def test_aso_is_an_oligonucleotide():
+def test_aso_combines_oligonucleotide_and_therapeutic_contracts():
     assert issubclass(ASO, Oligonucleotide)
-
-
-def test_aso_is_an_antisense_therapeutic():
     assert issubclass(ASO, AntisenseTherapeutic)
 
 
 def test_antisense_therapeutic_is_abstract():
     assert inspect.isabstract(AntisenseTherapeutic)
+
+
+def test_oligonucleotide_requires_a_sequence():
+    with pytest.raises(ValueError, match="sequence cannot be empty"):
+        Oligonucleotide(sequence=Seq(""))
 
 
 def test_aso_is_its_own_antisense_strand():
@@ -63,21 +66,6 @@ def test_sirna_sequence_is_the_antisense_sequence():
 
     assert sirna.sequence == antisense.sequence
     assert sirna.sense_strand.sequence == sense.sequence
-
-
-def test_aso_serialization_roundtrip():
-    aso = ASO(
-        id="aso-1",
-        sequence=Seq("ATGC"),
-        mechanism=make_mechanism(),
-    )
-
-    reconstructed = ASO.from_dict(aso.to_dict())
-
-    assert isinstance(reconstructed, ASO)
-    assert reconstructed.id == aso.id
-    assert reconstructed.sequence == aso.sequence
-    assert isinstance(reconstructed.mechanism, ExampleMechanism)
 
 
 def test_sirna_serialization_roundtrip():

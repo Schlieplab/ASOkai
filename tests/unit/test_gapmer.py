@@ -31,10 +31,10 @@ def make_gapmer(
 
 
 def test_gapmer_stores_its_layout():
-    gapmer = make_gapmer(3, 6, 3)
+    gapmer = make_gapmer(3, 10, 3)
 
     assert isinstance(gapmer, ASO)
-    assert gapmer.layout == "3-6-3"
+    assert gapmer.layout == "3-10-3"
 
 
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
@@ -55,19 +55,27 @@ def test_gapmer_rejects_invalid_segment_lengths(field, value):
 
 
 def test_gapmer_supports_asymmetric_layouts():
-    gapmer = make_gapmer(3, 10, 5)
+    gapmer = make_gapmer(3, 8, 5)
 
-    assert gapmer.lengths == (3, 10, 5)
+    assert gapmer.lengths == (3, 8, 5)
     assert gapmer.left_wing_length == 3
-    assert gapmer.gap_length == 10
+    assert gapmer.gap_length == 8
     assert gapmer.right_wing_length == 5
 
 
+def test_gapmer_requires_segments_to_cover_the_sequence():
+    with pytest.raises(
+        ValueError,
+        match=r"sequence length \(16\); received 3",
+    ):
+        make_gapmer(1, 1, 1)
+
+
 def test_gapmer_serialization_roundtrip():
-    reconstructed = Gapmer.from_dict(make_gapmer(3, 10, 5).to_dict())
+    reconstructed = Gapmer.from_dict(make_gapmer(3, 8, 5).to_dict())
 
     assert isinstance(reconstructed, Gapmer)
-    assert reconstructed.layout == "3-10-5"
-    assert reconstructed.lengths == (3, 10, 5)
+    assert reconstructed.layout == "3-8-5"
+    assert reconstructed.lengths == (3, 8, 5)
     assert reconstructed.sequence == Seq("A" * 16)
     assert isinstance(reconstructed.mechanism, RNaseH1Mechanism)

@@ -41,6 +41,10 @@ class Gapmer(ASO):
             gap_length: Number of nucleotides in the central gap.
             right_wing_length: Number of nucleotides in the right wing.
             kwargs: Additional scalar values retained during serialization.
+
+        Raises:
+            ValueError: If a segment length is not a positive integer or the
+                segment lengths do not sum to the sequence length.
         """
         self.left_wing_length = _positive_length(
             "left_wing_length",
@@ -51,6 +55,12 @@ class Gapmer(ASO):
             "right_wing_length",
             right_wing_length,
         )
+        design_length = sum(self.lengths)
+        if design_length != len(sequence):
+            raise ValueError(
+                "Gapmer segment lengths must equal the sequence length "
+                f"({len(sequence)}); received {design_length}."
+            )
         super().__init__(
             id=id,
             sequence=sequence,

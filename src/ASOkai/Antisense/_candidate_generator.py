@@ -33,6 +33,7 @@ class AntisenseCandidateGenerator(ABC):
         self,
         sites: Iterable[Site],
     ) -> tuple[list[AntisenseTherapeutic], list[Binding]]:
+        """Generate candidates and their site bindings in input order."""
         therapeutics: list[AntisenseTherapeutic] = []
         bindings: list[Binding] = []
         for site in sites:
@@ -46,9 +47,11 @@ class ASOCandidateGenerator(AntisenseCandidateGenerator):
     """Generate one 5'-to-3' reverse-complement ASO for each target site."""
 
     def __init__(self, mechanism: MechanismOfAction):
+        """Initialize an unmodified-ASO generator for one mechanism."""
         self.mechanism = mechanism
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
+        """Return one reverse-complement ASO for ``site``."""
         return [
             ASO(
                 id=f"{site.id}-ASO",
@@ -68,12 +71,14 @@ class GapmerCandidateGenerator(ASOCandidateGenerator):
         gap_length: int,
         right_wing_length: int,
     ):
+        """Initialize a gapmer generator with one wing-gap-wing layout."""
         super().__init__(mechanism=mechanism)
         self.left_wing_length = left_wing_length
         self.gap_length = gap_length
         self.right_wing_length = right_wing_length
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
+        """Return one reverse-complement gapmer for ``site``."""
         return [
             Gapmer(
                 id=f"{site.id}-Gapmer",
@@ -90,9 +95,11 @@ class SiRNACandidateGenerator(AntisenseCandidateGenerator):
     """Generate one siRNA duplex for each target site."""
 
     def __init__(self, mechanism: MechanismOfAction):
+        """Initialize an siRNA generator for one mechanism."""
         self.mechanism = mechanism
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
+        """Return one complementary guide/passenger duplex for ``site``."""
         return [
             siRNA(
                 id=f"{site.id}-siRNA",

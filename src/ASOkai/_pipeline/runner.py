@@ -217,7 +217,7 @@ def run_plan(
             len(plan.runs_to_execute),
         )
     datadir = Path(config["datadir"])
-    executor.run(str(job_dir / "run.cwl"), inputs, datadir)
+    executor.run(job_dir / "run.cwl", job_dir / "job.yml", datadir)
     _validate_published_outputs(plan.runs_to_execute)
     return _requested_outputs(plan)
 

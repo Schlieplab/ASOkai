@@ -9,10 +9,10 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-import json
+from collections.abc import Sequence
 import logging
+import shlex
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Protocol
@@ -25,38 +25,57 @@ class Executor(Protocol):
 
     runner_name: ClassVar[str]
 
-    def run(self, cwl_path: str, inputs: dict, outdir: Path) -> None:
-        """Run a CWL document with the provided inputs."""
+    def run(self, cwl_path: Path, job_path: Path, outdir: Path) -> None:
+        """Run a CWL document with the provided job document."""
         ...
+
+
+def _run_cwl_runner(
+    executable: str,
+    cwl_path: Path,
+    job_path: Path,
+    outdir: Path,
+    extra_args: Sequence[str],
+) -> None:
+    """Invoke one CWL runner and translate a failed exit into a runtime error."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    command = [
+        executable,
+        "--outdir",
+        str(outdir),
+        *extra_args,
+        str(cwl_path),
+        str(job_path),
+    ]
+    logger.debug("Running: %s", shlex.join(command))
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{executable} failed for {cwl_path} (exit {result.returncode})"
+        )
 
 
 @dataclass
 class ToilExecutor:
-    """Default CWL execution backend using toil-cwl-runner."""
+    """CWL execution backend using toil-cwl-runner."""
 
     runner_name: ClassVar[str] = "toil-cwl-runner"
     extra_args: list[str] = field(default_factory=list)
-    realtime_output: bool = True
+    capture_worker_output: bool = False
 
-    def run(self, cwl_path: str, inputs: dict, outdir: Path) -> None:
+    def run(self, cwl_path: Path, job_path: Path, outdir: Path) -> None:
         """Invoke toil-cwl-runner as a subprocess."""
-        outdir.mkdir(parents=True, exist_ok=True)
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(inputs, f)
-            inputs_file = f.name
-
-        cmd = ["toil-cwl-runner", "--outdir", str(outdir)]
-        if self.realtime_output:
-            cmd.append("--disableWorkerOutputCapture")
-        cmd.extend(self.extra_args)
-        cmd.extend([cwl_path, inputs_file])
-        logger.debug("Running: %s", " ".join(cmd))
-        result = subprocess.run(cmd)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"toil-cwl-runner failed for {cwl_path} (exit {result.returncode})"
-            )
+        runner_args = []
+        if not self.capture_worker_output:
+            runner_args.append("--disableWorkerOutputCapture")
+        runner_args.extend(self.extra_args)
+        _run_cwl_runner(
+            self.runner_name,
+            cwl_path,
+            job_path,
+            outdir,
+            runner_args,
+        )
 
 
 @dataclass
@@ -66,20 +85,12 @@ class CwlToolExecutor:
     runner_name: ClassVar[str] = "cwltool"
     extra_args: list[str] = field(default_factory=list)
 
-    def run(self, cwl_path: str, inputs: dict, outdir: Path) -> None:
+    def run(self, cwl_path: Path, job_path: Path, outdir: Path) -> None:
         """Invoke cwltool as a subprocess."""
-        outdir.mkdir(parents=True, exist_ok=True)
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(inputs, f)
-            inputs_file = f.name
-
-        cmd = ["cwltool", "--outdir", str(outdir)]
-        cmd.extend(self.extra_args)
-        cmd.extend([cwl_path, inputs_file])
-        logger.debug("Running: %s", " ".join(cmd))
-        result = subprocess.run(cmd)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"cwltool failed for {cwl_path} (exit {result.returncode})"
-            )
+        _run_cwl_runner(
+            self.runner_name,
+            cwl_path,
+            job_path,
+            outdir,
+            self.extra_args,
+        )

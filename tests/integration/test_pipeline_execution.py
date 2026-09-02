@@ -7,7 +7,7 @@ import shutil
 import pytest
 
 from ASOkai.Plugins import FileInput, FileOutput, Step, StepSpec
-from ASOkai._cwl.executors import CwlToolExecutor
+from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.runner import run_all
 
 
@@ -60,10 +60,37 @@ def _consumer_step(name: str) -> Step:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    shutil.which("cwltool") is None or shutil.which("ASOkai") is None,
-    reason="cwltool and the ASOkai executable are required",
+    shutil.which("ASOkai") is None,
+    reason="the ASOkai executable is required",
 )
-def test_shared_producer_executes_once_and_outputs_are_published(tmp_path):
+@pytest.mark.parametrize(
+    "executor",
+    [
+        pytest.param(
+            CwlToolExecutor(extra_args=["--no-container"]),
+            marks=pytest.mark.skipif(
+                shutil.which("cwltool") is None,
+                reason="cwltool is required",
+            ),
+            id="cwltool",
+        ),
+        pytest.param(
+            ToilExecutor(
+                extra_args=["--no-container", "--clean", "always"],
+                capture_worker_output=True,
+            ),
+            marks=pytest.mark.skipif(
+                shutil.which("toil-cwl-runner") is None,
+                reason="toil-cwl-runner is required",
+            ),
+            id="toil",
+        ),
+    ],
+)
+def test_shared_producer_executes_once_and_outputs_are_published(
+    tmp_path,
+    executor,
+):
     producer = ProducerStep()
     first = _consumer_step("first-consumer")
     second = _consumer_step("second-consumer")
@@ -76,7 +103,7 @@ def test_shared_producer_executes_once_and_outputs_are_published(tmp_path):
         [first, second],
         {"datadir": str(tmp_path)},
         force=True,
-        executor=CwlToolExecutor(extra_args=["--no-container"]),
+        executor=executor,
         registered_steps=registry,
     )
 

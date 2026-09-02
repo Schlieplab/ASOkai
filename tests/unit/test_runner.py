@@ -62,7 +62,7 @@ def _step_run(step, config):
 def _materializing_executor(*filenames, before_run=None):
     executor = MagicMock()
 
-    def run(cwl_path, _inputs, outdir):
+    def run(cwl_path, _job_path, outdir):
         if before_run is not None:
             before_run()
         outdir.mkdir(parents=True, exist_ok=True)
@@ -129,13 +129,15 @@ def test_runner_writes_job_bundle_before_execution(config, tmp_path):
 
     export_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(export_dirs) == 1
-    job_path, inputs, output_dir = executor.run.call_args.args
-    assert job_path == str(export_dirs[0] / "run.cwl")
+    cwl_path, job_path, output_dir = executor.run.call_args.args
+    assert cwl_path == export_dirs[0] / "run.cwl"
+    assert job_path == export_dirs[0] / "job.yml"
     assert output_dir == tmp_path
     assert (export_dirs[0] / "job.yml").exists()
     assert (export_dirs[0] / "publish.cwl").exists()
     assert (export_dirs[0] / "output-layout.yml").exists()
     assert (export_dirs[0] / "steps" / "download-genome.cwl").exists()
+    inputs = yaml.safe_load(job_path.read_text())
     assert inputs["download-genome.assembly"] == "GRCh38"
     paths = _step_run(DownloadGenomeStep(), config).output_paths()
     assert all(paths[name].exists() for name in (

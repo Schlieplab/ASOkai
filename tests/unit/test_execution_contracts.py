@@ -78,6 +78,14 @@ def test_step_run_rejects_malformed_context_names(run_id):
         StepRun(run_id, ProducerStep(), {})
 
 
+def test_step_runs_with_the_same_id_remain_distinct_objects():
+    first = StepRun("producer", ProducerStep(), {})
+    second = StepRun("producer", ProducerStep(), {})
+
+    assert first != second
+    assert len({first, second}) == 2
+
+
 def test_step_run_requires_each_declared_input_binding():
     with pytest.raises(ValueError, match=r"missing: result; unexpected: none"):
         StepRun("consumer", ConsumerStep(), {})

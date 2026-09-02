@@ -29,7 +29,7 @@ from ASOkai._pipeline.contracts.execution import (
     StepRunOutput,
 )
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
-from ASOkai._pipeline.plan import build_plan
+from ASOkai._pipeline.plan import _flatten_goals, build_export_plan, build_plan
 
 
 def _make_step(
@@ -394,6 +394,20 @@ def test_reused_goal_does_not_require_its_missing_dependencies(config):
     assert {output.run.run_id for output in plan.resolved_outputs} == {"goal"}
 
 
+def test_reused_goal_does_not_validate_unneeded_dependency_config(config):
+    dependency, goal = _make_configurable_producer_and_consumer()
+    _materialize_outputs(goal, config)
+
+    plan = build_plan(
+        [goal],
+        config,
+        _registry={dependency.name: dependency, goal.name: goal},
+    )
+
+    assert plan.runs_to_execute == ()
+    assert {output.run.run_id for output in plan.resolved_outputs} == {"consumer"}
+
+
 def test_dependency_chain_is_scheduled_in_topological_order(config):
     first = _make_step("first")
     second = _make_step("second", [first])
@@ -539,14 +553,16 @@ def test_explicit_goal_may_run_in_non_recursive_mode(config):
 def test_force_does_not_force_valid_dependency(config):
     dependency = _make_step("dependency")
     _materialize_outputs(dependency, config)
-    goal = _make_step("goal")
     goal_with_dependency = _make_step("goal", [dependency])
 
     plan = build_plan(
         [goal_with_dependency],
         config,
         force=True,
-        _registry={dependency.name: dependency, goal.name: goal_with_dependency},
+        _registry={
+            dependency.name: dependency,
+            goal_with_dependency.name: goal_with_dependency,
+        },
     )
 
     assert _scheduled_run_ids(plan) == ["goal"]
@@ -912,3 +928,84 @@ def test_workflow_members_are_terminal_goals(config):
 
     assert [run.run_id for run in plan.goals] == ["first", "second"]
     assert _scheduled_run_ids(plan) == ["shared", "first", "second"]
+
+
+def test_workflow_flattens_tasks_and_nested_workflows_in_order():
+    first = _make_step("first")
+    second = _make_step("second")
+
+    class FakeTask:
+        name = "task"
+        description = ""
+        steps = [first]
+
+    class InnerWorkflow:
+        name = "inner"
+        description = ""
+        members = [FakeTask()]
+
+    class OuterWorkflow:
+        name = "outer"
+        description = ""
+        members = [InnerWorkflow(), second]
+
+    goals = _flatten_goals(cast(Runnable, OuterWorkflow()))
+
+    assert [step.name for step in goals] == ["first", "second"]
+
+
+def test_workflow_cycle_is_rejected():
+    class SelfReferencingWorkflow:
+        name = "loop"
+        description = ""
+        members: list[Runnable] = []
+
+    workflow = SelfReferencingWorkflow()
+    workflow.members = [cast(Runnable, workflow)]
+
+    with pytest.raises(ValueError, match="cycle"):
+        _flatten_goals(cast(Runnable, workflow))
+
+
+def test_non_recursive_export_exposes_only_direct_dependency_boundary(config):
+    source = _make_step("source")
+    intermediate = _make_step("intermediate", [source])
+    goal = _make_step("goal", [intermediate])
+
+    plan = build_export_plan(
+        [goal],
+        config,
+        _registry={
+            step.name: step
+            for step in (source, intermediate, goal)
+        },
+    )
+
+    assert _scheduled_run_ids(plan) == ["goal"]
+    goal_source = plan.goals[0].inputs[0].source
+    assert isinstance(goal_source, StepRunOutput)
+    transitive_source = goal_source.run.inputs[0].source
+    assert isinstance(transitive_source, StepRunOutput)
+    assert plan.resolved_outputs == {
+        goal_source: goal_source.run.output_path(goal_source.output),
+    }
+    assert transitive_source not in plan.resolved_outputs
+
+
+def test_recursive_export_includes_complete_producer_closure(config):
+    source = _make_step("source")
+    intermediate = _make_step("intermediate", [source])
+    goal = _make_step("goal", [intermediate])
+
+    plan = build_export_plan(
+        [goal],
+        config,
+        recursive=True,
+        _registry={
+            step.name: step
+            for step in (source, intermediate, goal)
+        },
+    )
+
+    assert _scheduled_run_ids(plan) == ["source", "intermediate", "goal"]
+    assert plan.resolved_outputs == {}

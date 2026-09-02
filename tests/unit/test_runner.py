@@ -11,7 +11,6 @@ License: LGPL-3.0-or-later
 import logging
 from dataclasses import replace
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -19,7 +18,6 @@ import yaml
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
-    Runnable,
     Step,
     StepSpec,
 )
@@ -546,60 +544,3 @@ def test_dry_run_reports_qualified_producer_outputs(workflow_config, caplog):
     )
 
     assert "wired from 'download-genome.dna'" in caplog.text
-
-
-def test_flatten_workflow_expands_task_then_step():
-    """A workflow with a Task followed by a Step flattens to their Steps in order."""
-    download = DownloadGenomeStep()
-    create = CreateTargetGeneStep()
-
-    class MiniTask:
-        name: ClassVar[str] = "mini"
-        description: ClassVar[str] = ""
-        steps: list[Step] = [download]
-
-    class MiniWorkflow:
-        name: ClassVar[str] = "mw"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [MiniTask(), create]
-
-    from ASOkai._pipeline.plan import _flatten_goals
-
-    objs = _flatten_goals(MiniWorkflow())
-    assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
-
-
-def test_flatten_workflow_expands_nested_workflow():
-    """A workflow containing a nested workflow flattens all steps recursively."""
-    download = DownloadGenomeStep()
-    create = CreateTargetGeneStep()
-
-    class Inner:
-        name: ClassVar[str] = "inner"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [download]
-
-    class Outer:
-        name: ClassVar[str] = "outer"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [Inner(), create]
-
-    from ASOkai._pipeline.plan import _flatten_goals
-
-    objs = _flatten_goals(Outer())
-    assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
-
-
-def test_flatten_workflow_cycle_raises():
-    """A workflow that references itself raises a ValueError."""
-    class SelfRef:
-        name: ClassVar[str] = "loop"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = []
-
-    w = SelfRef()
-    w.members = [w]
-    from ASOkai._pipeline.plan import _flatten_goals
-
-    with pytest.raises(ValueError, match="cycle"):
-        _flatten_goals(w)

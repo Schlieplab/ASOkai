@@ -297,15 +297,18 @@ class _PlanBuilder:
         """Resolve queued requests and add their producers breadth-first."""
         while self.pending_request_ids:
             request = self.requests[self.pending_request_ids.popleft()]
-            cfg.validate_step_config(
-                request.config,
-                [request.step],
-                validate_input_files=self.validate_input_files,
-            )
             request.input_sources.extend(
                 self._discover_input_source(request, file_input)
                 for file_input in request.step.spec.inputs
             )
+
+    def _validate_run(self, run: StepRun) -> None:
+        """Validate one concrete run when its configuration is required."""
+        cfg.validate_step_config(
+            run.config,
+            [run.step],
+            validate_input_files=self.validate_input_files,
+        )
 
     def _producer_first_requests(self) -> list[_RunRequest]:
         """Return discovered requests with producers before consumers."""
@@ -400,6 +403,7 @@ class _PlanBuilder:
             if run in checked_runs:
                 continue
             checked_runs.add(run)
+            self._validate_run(run)
 
             existing_outputs = None
             if not (self.force_goal_runs and run in goal_runs):
@@ -467,6 +471,9 @@ class _PlanBuilder:
     ) -> ExecutionPlan:
         """Resolve runs for export without consulting existing output files."""
         goals, producer_first_runs = self._resolve_goals(goal_steps)
+        for run in producer_first_runs:
+            self._validate_run(run)
+
         goal_runs = set(goals)
         included_runs = (
             producer_first_runs
@@ -475,12 +482,16 @@ class _PlanBuilder:
         )
         included_run_set = set(included_runs)
         external_outputs: dict[StepRunOutput, Path] = {}
-        for run in producer_first_runs:
-            if run in included_run_set:
-                continue
-            paths = run.output_paths()
-            for output in run.step.spec.outputs:
-                external_outputs[run.output(output)] = paths[output.name]
+        for run in included_runs:
+            for binding in run.inputs:
+                source = binding.source
+                if (
+                    isinstance(source, StepRunOutput)
+                    and source.run not in included_run_set
+                ):
+                    external_outputs[source] = source.run.output_path(
+                        source.output
+                    )
 
         return ExecutionPlan(
             goals=goals,

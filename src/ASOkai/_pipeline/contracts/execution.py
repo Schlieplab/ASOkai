@@ -23,7 +23,7 @@ from ASOkai._pipeline.steps.base import Step
 
 @dataclass(frozen=True, eq=False)
 class StepRun:
-    """One concrete execution of a step under resolved configuration."""
+    """One plan-local concrete execution of a configured step."""
 
     run_id: str
     step: Step
@@ -93,13 +93,6 @@ class StepRun:
             ),
         )
         object.__setattr__(self, "inputs", inputs)
-
-    def __eq__(self, other: object) -> bool:
-        """Concrete runs compare by their stable resolved identity."""
-        return isinstance(other, StepRun) and self.run_id == other.run_id
-
-    def __hash__(self) -> int:
-        return hash(self.run_id)
 
     def output(self, output: FileOutput) -> StepRunOutput:
         """Return one output port qualified by this concrete run."""

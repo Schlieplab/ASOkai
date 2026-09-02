@@ -167,6 +167,24 @@ def test_path_override_uses_main_config_not_the_filename(tmp_path):
     }
 
 
+def test_step_run_validates_and_cleans_its_declared_outputs(tmp_path):
+    run = StepRun(
+        "producer",
+        ProducerStep(),
+        {"datadir": str(tmp_path)},
+    )
+    output_path = run.output_paths()["result"]
+
+    with pytest.raises(FileNotFoundError, match="producer/result"):
+        run.validate_output_files()
+
+    output_path.write_text("result")
+    assert run.validate_output_files() == {"result": output_path}
+
+    run.cleanup_output_files()
+    assert not output_path.exists()
+
+
 def test_execution_plan_normalizes_collections_and_reused_output_paths(tmp_path):
     run = StepRun("producer", ProducerStep(), {})
     output = run.output(ProducerStep.result_output)

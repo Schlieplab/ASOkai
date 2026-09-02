@@ -148,7 +148,12 @@ def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
 def test_selected_step_rejects_an_unsupported_design(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
+        "genome": {
+            "assembly_id": "GRCh38",
+            "ensembl_release": 114,
+            "source": "ensembl",
+            "species": "Homo_sapiens",
+        },
         "target": {
             "target_id": "ENSG1",
             "k": 16,
@@ -174,7 +179,12 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
 def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
+        "genome": {
+            "assembly_id": "GRCh38",
+            "ensembl_release": 114,
+            "source": "ensembl",
+            "species": "Homo_sapiens",
+        },
         "target": {
             "target_id": "ENSG1",
             "k": 16,

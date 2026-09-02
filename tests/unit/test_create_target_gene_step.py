@@ -24,7 +24,6 @@ def config(tmp_path):
         },
         "target": {
             "target_id":   "ENSG00000133703",
-            "target_name": "KRAS",
             "k":           16,
             "region":      "pre-mrna",
         },
@@ -48,30 +47,29 @@ def _run(step, config, tmp_path):
     )
 
 
-def test_implements_protocol(step):
+def test_step_contract(step):
     assert isinstance(step, Step)
     assert isinstance(step, CoreStep)
-
-
-def test_name(step):
     assert step.name == "create-target-gene"
-
-
-def test_dependencies(step):
     assert step.dependencies == ["download-genome"]
     assert step.spec.input("dna").source is DownloadGenomeStep.dna_output
-
-
-def test_config_map_keys(step):
-    assert "target_id"   in step.config_map
-    assert "target_name" in step.config_map
-    assert "k"           in step.config_map
-    assert "region"      in step.config_map
+    assert set(step.config_map) >= {"target_id", "target_name", "k", "region"}
+    assert "release" not in step.config_map
 
 
 def test_output_paths_structure(step, config, tmp_path):
     paths = _run(step, config, tmp_path).output_paths()
-    expected = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "ENSG00000133703_k16_pre-mrna.json"
+    expected = (
+        tmp_path
+        / "GRCh38"
+        / "genomes"
+        / "ensembl"
+        / "114"
+        / "Homo_sapiens"
+        / "targets"
+        / "ENSG00000133703"
+        / "ENSG00000133703_k16_pre-mrna.json"
+    )
     assert paths["target_gene"] == expected
 
 
@@ -82,18 +80,28 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
     }
     paths = _run(step, config, tmp_path).output_paths()
-    expected = tmp_path / "GRCh38" / "targets" / "KRAS" / "KRAS_k16_pre-mrna.json"
+    expected = (
+        tmp_path
+        / "GRCh38"
+        / "genomes"
+        / "ensembl"
+        / "114"
+        / "Homo_sapiens"
+        / "targets"
+        / "KRAS"
+        / "KRAS_k16_pre-mrna.json"
+    )
     assert paths["target_gene"] == expected
 
 
-def test_cleanup(step, config, tmp_path):
-    out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
-    out.mkdir(parents=True)
-    run = _run(step, config, tmp_path)
-    for p in run.output_paths().values():
-        p.touch()
-    run.cleanup_output_files()
-    assert all(not path.exists() for path in run.output_paths().values())
+def test_output_path_identifies_the_genome_release(step, config, tmp_path):
+    first = _run(step, config, tmp_path).output_paths()["target_gene"]
+    config["genome"]["ensembl_release"] = 115
+    second = _run(step, config, tmp_path).output_paths()["target_gene"]
+
+    assert first != second
+    assert first.parts[-6:-3] == ("ensembl", "114", "Homo_sapiens")
+    assert second.parts[-6:-3] == ("ensembl", "115", "Homo_sapiens")
 
 
 def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
@@ -178,7 +186,6 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
             "--annotation", str(tmp_path / "annotation.gtf.gz"),
             "--db", str(tmp_path / "annotation.gtf.db"),
             "--assembly", "GRCh38",
-            "--release", "114",
             "--species", "Homo_sapiens",
             "--target-gene-output", str(output),
         ]
@@ -202,3 +209,51 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
     assert captured["creator_kwargs"]["target_id"] is None
     assert captured["creator_kwargs"]["target_name"] == "KRAS"
     assert captured["creator_kwargs"]["site_length"] == 16
+
+
+@pytest.mark.parametrize(
+    "target_arguments",
+    [
+        [],
+        [
+            "--target-id",
+            "ENSG00000133703",
+            "--target-name",
+            "KRAS",
+        ],
+    ],
+)
+def test_run_cli_rejects_invalid_target_selection_before_loading_genome(
+    target_arguments,
+    tmp_path,
+    capsys,
+):
+    output = tmp_path / "out" / "target.json"
+    arguments = [
+        *target_arguments,
+        "--k",
+        "16",
+        "--region",
+        "pre-mrna",
+        "--dna",
+        str(tmp_path / "dna.fa.gz"),
+        "--cdna",
+        str(tmp_path / "cdna.fa.gz"),
+        "--annotation",
+        str(tmp_path / "annotation.gtf.gz"),
+        "--db",
+        str(tmp_path / "annotation.gtf.db"),
+        "--assembly",
+        "GRCh38",
+        "--species",
+        "Homo_sapiens",
+        "--target-gene-output",
+        str(output),
+    ]
+
+    with pytest.raises(SystemExit) as error:
+        CreateTargetGeneStep().run_cli(arguments)
+
+    assert error.value.code == 2
+    assert "exactly one of --target-id or --target-name" in capsys.readouterr().err
+    assert not output.parent.exists()

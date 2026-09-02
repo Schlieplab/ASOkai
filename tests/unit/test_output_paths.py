@@ -40,6 +40,29 @@ def test_output_path_renders_fallbacks():
     }
 
 
+def test_template_field_uses_a_literal_default_for_a_missing_optional_value():
+    destination = OutputPathTemplate(
+        "layout-{left}.json",
+        fields={
+            "left": TemplateField(
+                "antisense.design.left_wing_length",
+                default="na",
+            ),
+        },
+    )
+
+    assert destination.render({}).as_posix() == "layout-na.json"
+    assert destination.render(
+        {"antisense": {"design": {"left_wing_length": 3}}}
+    ).as_posix() == "layout-3.json"
+
+
+@pytest.mark.parametrize("default", ["", [3]])
+def test_template_field_rejects_an_invalid_literal_default(default):
+    with pytest.raises(TypeError, match="default must be a non-empty scalar"):
+        TemplateField("layout.left", default=default)
+
+
 def test_output_path_rejects_unused_field_rules():
     with pytest.raises(ValueError, match="not used by the template"):
         OutputPathTemplate(

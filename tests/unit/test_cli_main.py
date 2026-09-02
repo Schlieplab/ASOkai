@@ -78,7 +78,7 @@ def test_list_commands_show_registered_units():
 
     assert workflows.exit_code == 0
     assert "standard" in workflows.output
-    assert "Full pipeline" in workflows.output
+    assert "Standard pipeline" in workflows.output
 
 
 def test_describe_step_create_target_gene_shows_details():

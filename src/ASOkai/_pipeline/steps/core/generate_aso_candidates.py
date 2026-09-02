@@ -10,10 +10,9 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Literal, Mapping
+from typing import Literal, Mapping, cast
 
 from ASOkai.Antisense import AntisenseTherapeutic, Binding
-from ASOkai.Types import TargetRegion
 from ASOkai._pipeline.contracts.file_types import JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -28,6 +27,9 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 _ASO_PATH_FIELDS = {
     "assembly": TemplateField("genome.assembly_id"),
+    "source": TemplateField("genome.source", default="ensembl"),
+    "release": TemplateField("genome.ensembl_release"),
+    "species": TemplateField("genome.species"),
     "target": TemplateField.first_of(
         "target.target_id",
         "target.target_name",
@@ -35,6 +37,18 @@ _ASO_PATH_FIELDS = {
     "k": TemplateField("target.k"),
     "region": TemplateField("target.region"),
     "design": TemplateField("antisense.design.type"),
+    "left": TemplateField(
+        "antisense.design.left_wing_length",
+        default="na",
+    ),
+    "gap": TemplateField(
+        "antisense.design.gap_length",
+        default="na",
+    ),
+    "right": TemplateField(
+        "antisense.design.right_wing_length",
+        default="na",
+    ),
     "mechanism": TemplateField("antisense.mechanism"),
 }
 
@@ -51,8 +65,10 @@ class GenerateASOCandidatesStep(CoreStep):
         "therapeutics",
         file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
+            "{assembly}/genomes/{source}/{release}/{species}/"
+            "targets/{target}/antisense/"
+            "{target}_k{k}_{region}_aso_{design}_"
+            "l{left}_g{gap}_r{right}_{mechanism}_"
             "therapeutics.json",
             fields=_ASO_PATH_FIELDS,
         ),
@@ -62,8 +78,10 @@ class GenerateASOCandidatesStep(CoreStep):
         "bindings",
         file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_aso_{design}_{mechanism}_"
+            "{assembly}/genomes/{source}/{release}/{species}/"
+            "targets/{target}/antisense/"
+            "{target}_k{k}_{region}_aso_{design}_"
+            "l{left}_g{gap}_r{right}_{mechanism}_"
             "bindings.json",
             fields=_ASO_PATH_FIELDS,
         ),
@@ -75,11 +93,7 @@ class GenerateASOCandidatesStep(CoreStep):
     spec = StepSpec(
         requirements={"WorkReuse": {"enableReuse": True}},
         params=[
-            ScalarParam("assembly", str, config="genome.assembly_id"),
-            ScalarParam("target_id", str | None, config="target.target_id"),
-            ScalarParam("target_name", str | None, config="target.target_name"),
             ScalarParam("k", int, config="target.k"),
-            ScalarParam("region", TargetRegion, config="target.region"),
             ScalarParam(
                 "design",
                 Literal["unmodified", "gapmer"],
@@ -115,23 +129,40 @@ class GenerateASOCandidatesStep(CoreStep):
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
-        """Require gapmer segment lengths to match the target-site length."""
-        if values.get("design") != "gapmer":
+        """Require segment lengths appropriate for the selected ASO design."""
+        design = values.get("design")
+        length_names = (
+            "left_wing_length",
+            "gap_length",
+            "right_wing_length",
+        )
+        lengths = tuple(values.get(name) for name in length_names)
+
+        if design == "unmodified":
+            if any(length is not None for length in lengths):
+                raise ValueError(
+                    "an unmodified design must not define gapmer segment "
+                    "lengths"
+                )
             return
 
-        left_wing_length = values.get("left_wing_length")
-        gap_length = values.get("gap_length")
-        right_wing_length = values.get("right_wing_length")
+        if design != "gapmer":
+            return
+        if any(length is None for length in lengths):
+            raise ValueError(
+                "a gapmer design requires --left-wing-length, --gap-length, "
+                "and --right-wing-length"
+            )
+        if any(type(length) is not int or length < 1 for length in lengths):
+            raise ValueError(
+                "gapmer segment lengths must be positive integers"
+            )
+
         target_site_length = values.get("k")
-        if (
-            type(left_wing_length) is not int
-            or type(gap_length) is not int
-            or type(right_wing_length) is not int
-            or type(target_site_length) is not int
-        ):
+        if type(target_site_length) is not int:
             return
 
-        design_length = left_wing_length + gap_length + right_wing_length
+        design_length = sum(cast(tuple[int, int, int], lengths))
         if design_length != target_site_length:
             raise ValueError(
                 "gapmer segment lengths must equal the target-site length "

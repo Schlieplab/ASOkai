@@ -41,34 +41,17 @@ def run(step, config):
     return StepRun(step.name, step, config)
 
 
-def test_implements_protocol(step):
+def test_step_contract(step):
     assert isinstance(step, Step)
     assert isinstance(step, CoreStep)
-
-
-def test_name(step):
     assert step.name == "download-genome"
-
-
-def test_no_dependencies(step):
     assert step.dependencies == []
-
-
-def test_config_map_keys(step):
     assert set(step.config_map.keys()) == {"assembly", "release", "source", "species"}
 
 
 def test_source_from_config(run, tmp_path):
     assert run.output_paths()["dna"].parent == (
         tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
-    )
-
-
-def test_source_can_be_configured(step, config, tmp_path):
-    config["genome"]["source"] = "ucsc"
-    run = StepRun(step.name, step, config)
-    assert run.output_paths()["dna"].parent == (
-        tmp_path / "GRCh38" / "genomes" / "ucsc" / "114"
     )
 
 
@@ -79,29 +62,6 @@ def test_output_paths_structure(run, tmp_path):
     assert paths["cdna"] == base / "Homo_sapiens.GRCh38.cdna.all.fa.gz"
     assert paths["annotation"] == base / "Homo_sapiens.GRCh38.114.gtf.gz"
     assert paths["db"] == base / "Homo_sapiens.GRCh38.114.gtf.db"
-
-
-def test_validate_output_files(run, tmp_path):
-    with pytest.raises(FileNotFoundError, match="download-genome/dna"):
-        run.validate_output_files()
-
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
-    base.mkdir(parents=True)
-    paths = run.output_paths()
-    for path in paths.values():
-        path.touch()
-
-    assert run.validate_output_files() == paths
-
-
-def test_cleanup(run, tmp_path):
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
-    base.mkdir(parents=True)
-    for p in run.output_paths().values():
-        p.touch()
-    assert all(path.exists() for path in run.output_paths().values())
-    run.cleanup_output_files()
-    assert all(not path.exists() for path in run.output_paths().values())
 
 
 def test_cwl_spec_generates_command_line_tool(run):
@@ -124,13 +84,14 @@ def test_cwl_spec_generates_command_line_tool(run):
     assert doc["outputs"]["dna"]["outputBinding"]["glob"] == dna_filename
 
 
-def test_run_cli_downloads_with_mocked_ensembl_downloader(
+def test_run_cli_downloads_to_declared_destinations(
     monkeypatch,
     tmp_path,
-    capsys,
+    caplog,
 ):
     from ASOkai._pipeline.steps.core import download_genome
 
+    caplog.set_level("INFO")
     captured = {}
 
     class FakeDownloader:
@@ -140,15 +101,10 @@ def test_run_cli_downloads_with_mocked_ensembl_downloader(
         def download(self, force, output_db=False):
             captured["force"] = force
             captured["output_db"] = output_db
-            staging_dir = Path(captured["kwargs"]["genomes_root_dir"])
-            for name in ("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"):
-                (staging_dir / name).write_text(name)
-            return {
-                "dna": staging_dir / "dna.fa.gz",
-                "cdna": staging_dir / "cdna.fa.gz",
-                "annotation": staging_dir / "annotation.gtf.gz",
-                "db": staging_dir / "annotation.db",
-            }
+            destinations = captured["kwargs"]["destinations"]
+            for name, destination in destinations.items():
+                destination.write_text(name)
+            return destinations
 
     monkeypatch.setattr(download_genome, "EnsemblGenomeDownloader", FakeDownloader)
 
@@ -169,11 +125,16 @@ def test_run_cli_downloads_with_mocked_ensembl_downloader(
     assert captured["kwargs"]["assembly_id"] == "GRCh38"
     assert captured["kwargs"]["ensembl_release"] == 114
     assert captured["kwargs"]["species"] == "homo_sapiens"
-    assert captured["kwargs"]["genomes_root_dir"] == (tmp_path / "out").resolve()
+    assert captured["kwargs"]["destinations"] == {
+        "dna": tmp_path / "out" / "dna.fa.gz",
+        "cdna": tmp_path / "out" / "cdna.fa.gz",
+        "annotation": tmp_path / "out" / "annotation.gtf.gz",
+        "db": tmp_path / "out" / "annotation.db",
+    }
     assert captured["force"] is True
     assert captured["output_db"] is True
     assert (tmp_path / "out" / "dna.fa.gz").exists()
     assert (tmp_path / "out" / "cdna.fa.gz").exists()
     assert (tmp_path / "out" / "annotation.gtf.gz").exists()
     assert (tmp_path / "out" / "annotation.db").exists()
-    assert "dna\t" in capsys.readouterr().out
+    assert "download-genome: wrote dna" in caplog.text

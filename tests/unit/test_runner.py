@@ -485,6 +485,10 @@ def test_task_dry_run_returns_requested_outputs(workflow_config):
     assert result["create-target-gene.target_gene"] == (
         Path(workflow_config["datadir"])
         / "GRCh38"
+        / "genomes"
+        / "ensembl"
+        / "114"
+        / "Homo_sapiens"
         / "targets"
         / "ENSG00000133703"
         / "ENSG00000133703_k16_pre-mrna.json"

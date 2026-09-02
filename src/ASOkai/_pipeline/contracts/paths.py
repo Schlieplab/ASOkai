@@ -22,6 +22,7 @@ class TemplateField:
 
     config_path: str
     fallbacks: tuple[str, ...] = ()
+    default: str | int | float | bool | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fallbacks", tuple(self.fallbacks))
@@ -35,6 +36,13 @@ class TemplateField:
                     "TemplateField configuration paths must be non-blank "
                     "dotted paths."
                 )
+        if self.default is not None and (
+            type(self.default) not in (str, int, float, bool)
+            or self.default == ""
+        ):
+            raise TypeError(
+                "TemplateField.default must be a non-empty scalar value."
+            )
 
     @classmethod
     def first_of(
@@ -65,6 +73,8 @@ class TemplateField:
             if candidate is not None and candidate != "":
                 value = candidate
                 break
+        if value is None:
+            value = self.default
         if value is None:
             names = ", ".join(self.config_paths())
             raise ValueError(

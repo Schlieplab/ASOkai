@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-import shutil
+import logging
 from pathlib import Path
 from typing import Literal
 
@@ -24,6 +24,9 @@ from ASOkai._pipeline.contracts.paths import (
 )
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
+
+
+logger = logging.getLogger(__name__)
 
 
 _GENOME_PATH_FIELDS = {
@@ -135,20 +138,32 @@ class DownloadGenomeStep(CoreStep):
             output.name: getattr(args, output.argument_name)
             for output in self.spec.outputs
         }
-        output_dir = next(iter(outputs.values())).parent.resolve()
-
         downloader = EnsemblGenomeDownloader(
             assembly_id=args.assembly,
             ensembl_release=args.release,
             species=args.species.lower().replace(" ", "_"),
-            genomes_root_dir=output_dir,
+            destinations=outputs,
         )
         paths = downloader.download(force=True, output_db=True)
 
-        for key, output in outputs.items():
-            downloaded = Path(paths[key])
+        for name, output in outputs.items():
+            try:
+                downloaded = Path(paths[name])
+            except KeyError as error:
+                raise RuntimeError(
+                    f"Genome downloader did not return required output "
+                    f"{name!r}."
+                ) from error
             if downloaded.resolve() != output.resolve():
-                shutil.move(str(downloaded), str(output))
-            print(f"{key}\t{output}")
+                raise RuntimeError(
+                    f"Genome downloader returned {downloaded} for output "
+                    f"{name!r}; expected {output}."
+                )
+            if not output.is_file():
+                raise FileNotFoundError(
+                    f"Genome downloader output {name!r} does not exist: "
+                    f"{output}."
+                )
+            logger.info("download-genome: wrote %s to %s", name, output)
 
         return 0

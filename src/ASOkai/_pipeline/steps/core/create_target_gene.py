@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import logging
+from typing import Mapping
 
 from ASOkai.Targets import TargetGene
 from ASOkai.Types import TargetRegion
@@ -35,9 +36,16 @@ class CreateTargetGeneStep(CoreStep):
         "target_gene",
         file_type=JsonFile(TargetGene),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/{target}_k{k}_{region}.json",
+            "{assembly}/genomes/{source}/{release}/{species}/"
+            "targets/{target}/{target}_k{k}_{region}.json",
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
+                "source": TemplateField(
+                    "genome.source",
+                    default="ensembl",
+                ),
+                "release": TemplateField("genome.ensembl_release"),
+                "species": TemplateField("genome.species"),
                 "target": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",
@@ -73,7 +81,6 @@ class CreateTargetGeneStep(CoreStep):
                 doc="Target region type.",
             ),
             ScalarParam("assembly", str, config="genome.assembly_id", doc="Assembly ID (e.g. GRCh38)."),
-            ScalarParam("release", int, config="genome.ensembl_release", doc="Ensembl release number (e.g. 114)."),
             ScalarParam("species", str, config="genome.species", doc="Species name (e.g. Homo_sapiens)."),
         ],
         inputs=[
@@ -100,6 +107,15 @@ class CreateTargetGeneStep(CoreStep):
         ],
         outputs=[target_gene_output],
     )
+
+    def validate_parameters(self, values: Mapping[str, object]) -> None:
+        """Require exactly one target identifier before loading the genome."""
+        has_target_id = values.get("target_id") is not None
+        has_target_name = values.get("target_name") is not None
+        if has_target_id == has_target_name:
+            raise ValueError(
+                "exactly one of --target-id or --target-name is required"
+            )
 
     def run_from_args(self, args) -> int:
         """Create and serialize the configured target gene."""

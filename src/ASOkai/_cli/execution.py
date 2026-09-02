@@ -281,7 +281,7 @@ def export_command(
             config,
             recursive=recursive,
             outdir=outdir,
-            runner_name=runner.runner_name_from_name(executor_name),
+            runner_name=runner.runner_executable_from_name(executor_name),
             registered_steps=catalog.steps,
             config_schema_paths=catalog.config_schema_paths,
         )

@@ -734,7 +734,7 @@ def test_generate_cwl_rejects_duplicate_planned_run_ids(tmp_path):
         _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
 
 
-def test_generate_cwl_rejects_conflicting_referenced_run_definition(
+def test_generate_cwl_rejects_distinct_source_run_with_planned_id(
     tmp_path,
 ):
     producer = _spec_step(
@@ -768,12 +768,8 @@ def test_generate_cwl_rejects_conflicting_referenced_run_definition(
         "datadir": str(tmp_path),
         "producer": {"mode": "main"},
     }
-    alternate_config = {
-        "datadir": str(tmp_path),
-        "producer": {"mode": "alternate"},
-    }
     planned_producer = StepRun("producer", producer, main_config)
-    referenced_producer = StepRun("producer", producer, alternate_config)
+    referenced_producer = StepRun("producer", producer, main_config)
     consumer_run = StepRun(
         "consumer",
         consumer,
@@ -788,7 +784,7 @@ def test_generate_cwl_rejects_conflicting_referenced_run_definition(
 
     with pytest.raises(
         ValueError,
-        match="conflicting definition.*producer",
+        match="different StepRun object.*producer",
     ):
         generate_cwl_bundle([planned_producer, consumer_run])
 

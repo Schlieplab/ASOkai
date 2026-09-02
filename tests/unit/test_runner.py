@@ -100,7 +100,12 @@ def test_runner_skips_execution_when_outputs_exist(config, tmp_path):
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         result = _run_download(config)
         mock_run.assert_not_called()
-    assert result is not None
+    assert set(result) == {
+        "download-genome.dna",
+        "download-genome.cdna",
+        "download-genome.annotation",
+        "download-genome.db",
+    }
 
 
 def test_dry_run_returns_outputs_without_executing(config):
@@ -112,7 +117,6 @@ def test_dry_run_returns_outputs_without_executing(config):
         )
 
     execute.assert_not_called()
-    assert result is not None
     assert "download-genome.dna" in result
     assert "download-genome.cdna" in result
     assert "download-genome.annotation" in result
@@ -150,6 +154,18 @@ def test_runner_rejects_missing_published_outputs(config):
     assert not paths["cdna"].exists()
 
 
+def test_runner_rejects_invalid_published_outputs(config):
+    run = _step_run(DownloadGenomeStep(), config)
+
+    with patch.object(
+        StepRun,
+        "validate_output_files",
+        side_effect=ValueError("invalid contents"),
+    ):
+        with pytest.raises(RuntimeError, match="published invalid output"):
+            runner._validate_published_outputs((run,))
+
+
 def test_runner_rejects_unsupported_download_source(config):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
     config["genome"]["source"] = "ucsc"
@@ -178,28 +194,24 @@ def test_forced_dry_run_does_not_cleanup_outputs(config, tmp_path):
     assert all(path.exists() for path in run.output_paths().values())
 
 
-def test_runner_removes_partial_outputs_before_execution(config):
+def test_forced_runner_preserves_existing_output_when_execution_fails(config):
     step = DownloadGenomeStep()
     existing_output = _step_run(step, config).output_paths()["dna"]
     existing_output.parent.mkdir(parents=True)
     existing_output.write_text("stale")
 
-    def assert_stale_output_removed():
-        assert not existing_output.exists()
+    executor = MagicMock()
+    executor.runner_name = "test-runner"
+    executor.run.side_effect = RuntimeError("execution failed")
 
-    executor = _materializing_executor(
-        "dna.fa.gz",
-        "cdna.fa.gz",
-        "annotation.gtf.gz",
-        "annotation.db",
-        before_run=assert_stale_output_removed,
-    )
+    with pytest.raises(RuntimeError, match="execution failed"):
+        _run_download(
+            config,
+            force=True,
+            executor=executor,
+        )
 
-    _run_download(
-        config,
-        force=True,
-        executor=executor,
-    )
+    assert existing_output.read_text() == "stale"
 
 
 def test_non_recursive_run_rejects_missing_dependency(config, monkeypatch):
@@ -301,8 +313,6 @@ def test_export_all_single_step_writes_job_bundle(config, tmp_path):
 
 
 def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
-    from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
-
     export_dir = runner.export_all(
         [InstantiateTargetGeneTask()],
         workflow_config,
@@ -333,8 +343,6 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
 
 
 def test_export_all_readme_uses_toil_runner(workflow_config, tmp_path):
-    from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
-
     export_dir = runner.export_all(
         [InstantiateTargetGeneTask()],
         workflow_config,
@@ -356,9 +364,9 @@ def test_executor_from_name_uses_central_runner_configuration():
         runner.executor_from_name("unknown")
 
 
-def test_runner_name_from_name_uses_central_runner_configuration():
-    assert runner.runner_name_from_name("cwltool") == "cwltool"
-    assert runner.runner_name_from_name("toil") == "toil-cwl-runner"
+def test_runner_executable_from_name_uses_central_runner_configuration():
+    assert runner.runner_executable_from_name("cwltool") == "cwltool"
+    assert runner.runner_executable_from_name("toil") == "toil-cwl-runner"
 
 
 def test_export_all_empty_runnables_raises(workflow_config):
@@ -472,7 +480,6 @@ def test_task_dry_run_returns_requested_outputs(workflow_config):
         executor=executor,
     )
 
-    assert result is not None
     assert set(result) == {
         "download-genome.dna",
         "download-genome.cdna",

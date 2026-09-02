@@ -10,9 +10,10 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import AbstractSet, Any, Literal
 
 from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
 
@@ -39,14 +40,14 @@ class ResolvedInput:
 def resolve_run_inputs(
     run: StepRun,
     *,
-    resolved_outputs: dict[StepRunOutput, Path] | None = None,
-    run_ids_to_execute: set[str] | None = None,
+    resolved_outputs: Mapping[StepRunOutput, Path] | None = None,
+    runs_to_execute: AbstractSet[StepRun] | None = None,
 ) -> dict[str, ResolvedInput]:
     """Resolve every scalar and file input for one concrete step run."""
     if resolved_outputs is None:
         resolved_outputs = {}
-    if run_ids_to_execute is None:
-        run_ids_to_execute = set()
+    if runs_to_execute is None:
+        runs_to_execute = set()
 
     resolved: dict[str, ResolvedInput] = {}
     parameter_values = run.step.resolved_parameter_values(run.config)
@@ -78,7 +79,7 @@ def resolve_run_inputs(
             continue
 
         producer_run = source.run
-        if producer_run.run_id in run_ids_to_execute:
+        if producer_run in runs_to_execute:
             resolved[file_input.name] = ResolvedInput(
                 cwl_value=None,
                 source="dep_wired",
@@ -128,17 +129,17 @@ def workflow_file_input_id(
 
 
 def resolve_run_sequence_inputs(
-    runs: list[StepRun] | tuple[StepRun, ...],
-    resolved_outputs: dict[StepRunOutput, Path],
+    runs: Sequence[StepRun],
+    resolved_outputs: Mapping[StepRunOutput, Path],
 ) -> dict[str, Any]:
     """Collect top-level inputs for a generated multi-run CWL workflow."""
-    run_ids_to_execute = {run.run_id for run in runs}
+    runs_to_execute = set(runs)
     workflow_inputs: dict[str, Any] = {}
     for run in runs:
         resolved = resolve_run_inputs(
             run,
             resolved_outputs=resolved_outputs,
-            run_ids_to_execute=run_ids_to_execute,
+            runs_to_execute=runs_to_execute,
         )
         for input_name, item in resolved.items():
             if item.cwl_value is None:

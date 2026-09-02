@@ -119,14 +119,10 @@ def _validate_planned_runs(runs: list[StepRun]) -> None:
                 continue
             producer = source.run
             planned_producer = by_id.get(producer.run_id)
-            if planned_producer is not None and (
-                type(planned_producer.step) is not type(producer.step)
-                or planned_producer.config != producer.config
-                or planned_producer.inputs != producer.inputs
-            ):
+            if planned_producer is not None and planned_producer is not producer:
                 raise ValueError(
                     f"Run '{run.run_id}' input '{binding.file_input.name}' "
-                    "references a conflicting definition for planned run "
+                    "references a different StepRun object for planned run "
                     f"'{producer.run_id}'."
                 )
 
@@ -215,7 +211,7 @@ class JobCwlGenerator(BaseCwlGenerator):
         - the publisher's top-level data roots become workflow outputs.
         """
         _validate_planned_runs(runs)
-        run_ids_to_execute = {run.run_id for run in runs}
+        runs_to_execute = set(runs)
         all_inputs: dict[str, Any] = {}
         for run in runs:
             input_types = run.cwl_spec().input_types()
@@ -224,7 +220,7 @@ class JobCwlGenerator(BaseCwlGenerator):
                 source = binding.source
                 if (
                     not isinstance(source, StepRunOutput)
-                    or source.run.run_id not in run_ids_to_execute
+                    or source.run not in runs_to_execute
                 ):
                     _declare_workflow_input(
                         all_inputs,
@@ -267,7 +263,7 @@ class JobCwlGenerator(BaseCwlGenerator):
                 source = binding.source
                 if (
                     not isinstance(source, StepRunOutput)
-                    or source.run.run_id not in run_ids_to_execute
+                    or source.run not in runs_to_execute
                 ):
                     in_map[file_input.name] = workflow_file_input_id(
                         run,

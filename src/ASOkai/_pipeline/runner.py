@@ -61,7 +61,7 @@ def executor_from_name(name: str) -> Executor:
     return runner_config_from_name(name).create_executor()
 
 
-def runner_name_from_name(name: str) -> str:
+def runner_executable_from_name(name: str) -> str:
     """Return the executable name configured for a public CLI runner name."""
     return runner_config_from_name(name).executable
 
@@ -103,7 +103,7 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
     Per-step dry-run breakdown. Uses run input resolution with plan context
     so the display reflects exactly the same priority logic as execution.
     """
-    run_ids_to_execute = {run.run_id for run in plan.runs_to_execute}
+    runs_to_execute = set(plan.runs_to_execute)
     logger.info(
         "[%s] dry-run — would run %d step(s):",
         label,
@@ -114,8 +114,8 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
         logger.info("  ── %s", run.run_id)
         resolved = resolve_run_inputs(
             run,
-            resolved_outputs=dict(plan.resolved_outputs),
-            run_ids_to_execute=run_ids_to_execute,
+            resolved_outputs=plan.resolved_outputs,
+            runs_to_execute=runs_to_execute,
         )
         for cwl_key, ri in resolved.items():
             if ri.source == "dep_wired":
@@ -163,7 +163,7 @@ def run_plan(
     *,
     dry_run: bool = False,
     executor: Executor | None = None,
-) -> dict[str, Path] | None:
+) -> dict[str, Path]:
     """
     Execute an ExecutionPlan.
 
@@ -189,7 +189,7 @@ def run_plan(
     )
     inputs = resolve_run_sequence_inputs(
         plan.runs_to_execute,
-        dict(plan.resolved_outputs),
+        plan.resolved_outputs,
     )
     last_run = plan.runs_to_execute[-1]
 
@@ -207,11 +207,6 @@ def run_plan(
         name_prefix="asokai-job",
     )
     logger.info("[%s] CWL job bundle written to %s", label, job_dir)
-
-    for run in plan.runs_to_execute:
-        if any(path.exists() for path in run.output_paths().values()):
-            logger.info("[%s] replacing outputs for '%s'.", label, run.run_id)
-            run.cleanup_output_files()
 
     if len(plan.runs_to_execute) == 1:
         logger.info("[%s] running '%s'.", label, last_run.run_id)
@@ -241,7 +236,7 @@ def run_all(
     executor: Executor | None = None,
     registered_steps: dict[str, Step] | None = None,
     config_schema_paths: dict[str, Path] | None = None,
-) -> dict[str, Path] | None:
+) -> dict[str, Path]:
     """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
     if not runnables:
         raise ValueError("run_all called with an empty runnables list.")

@@ -156,7 +156,7 @@ def test_scheduled_producer_output_is_wired(tmp_path):
 
     resolved = resolve_run_inputs(
         consumer_run,
-        run_ids_to_execute={producer_run.run_id, consumer_run.run_id},
+        runs_to_execute={producer_run, consumer_run},
     )
 
     assert resolved["result"].source == "dep_wired"
@@ -165,6 +165,30 @@ def test_scheduled_producer_output_is_wired(tmp_path):
         producer.spec.output("result")
     )
     assert "result" not in to_cwl_inputs(resolved)
+
+
+def test_distinct_run_with_same_id_does_not_wire_producer_output(tmp_path):
+    config = {"datadir": str(tmp_path)}
+    producer = _fake_step("producer", output_names=["result"])
+    consumer = _fake_step(
+        "consumer",
+        producer=producer,
+        input_name="result",
+    )
+    producer_run = _run(producer, config)
+    different_producer_run = _run(producer, config)
+    consumer_run = _run(consumer, config, producer_run=producer_run)
+    producer_output = producer_run.output(producer.spec.output("result"))
+    path = tmp_path / "producer-result.txt"
+
+    resolved = resolve_run_inputs(
+        consumer_run,
+        resolved_outputs={producer_output: path},
+        runs_to_execute={different_producer_run, consumer_run},
+    )
+
+    assert resolved["result"].source == "dep_disk"
+    assert resolved["result"].path == path
 
 
 def test_reused_producer_output_is_read_from_disk(tmp_path):

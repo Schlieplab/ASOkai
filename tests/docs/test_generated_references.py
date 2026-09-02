@@ -198,7 +198,9 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     }
 
     assert fields["datadir"].requirement == "Required"
-    assert fields["target.k"].requirement == "Required"
+    assert fields["target.k"].requirement == (
+        "Required to determine the output path"
+    )
     assert fields[
         "steps.intrinsic-features.inputs.target_gene.path_override"
     ].requirement == "Optional path override"
@@ -313,11 +315,15 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
             }
         }
     }
-    assert "{target}_k{k}_{region}_intrinsic.csv" in reference
+    assert (
+        "{assembly}/genomes/{source}/{release}/{species}/targets/{target}/"
+        "analysis/intrinsic/{target}_k{k}_{region}_intrinsic.csv"
+    ) in reference
     assert "Producer output: create-target-gene.target_gene" in reference
     assert "Path override: " + input_path in reference
     assert (
-        "GRCh38/targets/ENSG00000133703/analysis/intrinsic/"
+        "GRCh38/genomes/ensembl/114/Homo_sapiens/targets/"
+        "ENSG00000133703/analysis/intrinsic/"
         "ENSG00000133703_k16_pre-mrna_intrinsic.csv" in reference
     )
 

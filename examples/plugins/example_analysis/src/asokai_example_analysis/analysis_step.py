@@ -76,10 +76,17 @@ class ExampleAnalysisStep(AnalysisStep):
             },
         ),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/analysis/example/"
+            "{assembly}/genomes/{source}/{release}/{species}/"
+            "targets/{target}/analysis/example/"
             "{target}_k{k}_{region}_min{minimum_length}_sequence_lengths.csv",
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
+                "source": TemplateField(
+                    "genome.source",
+                    default="ensembl",
+                ),
+                "release": TemplateField("genome.ensembl_release"),
+                "species": TemplateField("genome.species"),
                 "target": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",
@@ -94,27 +101,6 @@ class ExampleAnalysisStep(AnalysisStep):
     )
     spec = StepSpec(
         params=[
-            ScalarParam(
-                "assembly",
-                str,
-                config="genome.assembly_id",
-            ),
-            ScalarParam(
-                "target_id",
-                str | None,
-                config="target.target_id",
-            ),
-            ScalarParam(
-                "target_name",
-                str | None,
-                config="target.target_name",
-            ),
-            ScalarParam("k", int, config="target.k"),
-            ScalarParam(
-                "region",
-                Types.TargetRegion,
-                config="target.region",
-            ),
             ScalarParam(
                 "minimum_length",
                 int,

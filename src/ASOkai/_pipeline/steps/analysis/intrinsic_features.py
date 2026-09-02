@@ -9,11 +9,9 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from ASOkai.Types import TargetRegion
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
-from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
     OutputPathTemplate,
     TemplateField,
@@ -51,10 +49,17 @@ class IntrinsicFeaturesStep(AnalysisStep):
             },
         ),
         destination=OutputPathTemplate(
-            "{assembly}/targets/{target}/analysis/intrinsic/"
+            "{assembly}/genomes/{source}/{release}/{species}/"
+            "targets/{target}/analysis/intrinsic/"
             "{target}_k{k}_{region}_intrinsic.csv",
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
+                "source": TemplateField(
+                    "genome.source",
+                    default="ensembl",
+                ),
+                "release": TemplateField("genome.ensembl_release"),
+                "species": TemplateField("genome.species"),
                 "target": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",
@@ -69,28 +74,6 @@ class IntrinsicFeaturesStep(AnalysisStep):
         requirements={
             "WorkReuse": {"enableReuse": True},
         },
-        params=[
-            ScalarParam("assembly", str, config="genome.assembly_id", doc="Assembly ID (e.g. GRCh38)."),
-            ScalarParam(
-                "target_id",
-                str | None,
-                config="target.target_id",
-                doc="Ensembl gene ID. Use this or target_name.",
-            ),
-            ScalarParam(
-                "target_name",
-                str | None,
-                config="target.target_name",
-                doc="Gene name. Use this or target_id.",
-            ),
-            ScalarParam("k", int, config="target.k", doc="Target-site length."),
-            ScalarParam(
-                "region",
-                TargetRegion,
-                config="target.region",
-                doc="Target region type.",
-            ),
-        ],
         inputs=[target_gene_input],
         outputs=[intrinsic_features_output],
     )

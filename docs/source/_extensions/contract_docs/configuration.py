@@ -343,6 +343,18 @@ def get_built_in_step(step_name: str) -> Any:
     )
 
 
+def _output_template_fields(step: Any) -> list[Any]:
+    """Return main-configuration fields used by declared output paths."""
+    from ASOkai._pipeline.contracts.paths import TemplateField
+
+    return [
+        template_field
+        for output in step.spec.outputs
+        for template_field in output.destination.fields.values()
+        if isinstance(template_field, TemplateField)
+    ]
+
+
 def collect_step_config_fields(
     step: Any,
     schema: Mapping[str, Any],
@@ -366,6 +378,19 @@ def collect_step_config_fields(
         if requirement == "Optional" and parameter.parser_required():
             requirement = "Required"
         add(replace(field, requirement=requirement))
+
+    for template_field in _output_template_fields(step):
+        config_paths = template_field.config_paths()
+        for path in config_paths:
+            field = all_fields[path]
+            requirement = field.requirement
+            if (
+                requirement == "Optional"
+                and len(config_paths) == 1
+                and template_field.default is None
+            ):
+                requirement = "Required to determine the output path"
+            add(replace(field, requirement=requirement))
 
     for path in step.spec.compatible_with:
         if path in added_paths:
@@ -433,6 +458,11 @@ def collect_step_schema_rules(
         for parameter in step.spec.params
         if parameter.config is not None
     }
+    paths.update(
+        path
+        for template_field in _output_template_fields(step)
+        for path in template_field.config_paths()
+    )
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
         paths.add(f"{configuration_path}.path_override")

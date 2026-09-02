@@ -45,7 +45,7 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
 class ExampleAnalysis(TargetSpecificAnalysis):
-    """Replace this calculation with the new target-wide analysis.
+    """Replace this calculation with the new target-context analysis.
 
     - **target_matches**: Number of equal sequences in the selected target.
     """
@@ -57,7 +57,7 @@ class ExampleAnalysis(TargetSpecificAnalysis):
         **kwargs,
     ) -> None:
         super().__init__(target=target, sites=sites, **kwargs)
-        # Add target-wide initialization here.
+        # Add target-context initialization here.
 
     def analyze(self, site: Site) -> dict[str, Scalar]:
         # Add per-site analysis code here.
@@ -98,12 +98,19 @@ class ExampleAnalysisStep(AnalysisStep):
         ),
         destination=OutputPathTemplate(
             template=(
-                "{assembly}/targets/{target_name}/analysis/example/"
+                "{assembly}/genomes/{source}/{release}/{species}/"
+                "targets/{target_name}/analysis/example/"
                 "{target_name}_k{k}_{sites_region}_against_"
                 "{target_region}_example.csv"
             ),
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
+                "source": TemplateField(
+                    "genome.source",
+                    default="ensembl",
+                ),
+                "release": TemplateField("genome.ensembl_release"),
+                "species": TemplateField("genome.species"),
                 "target_name": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",

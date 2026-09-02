@@ -131,7 +131,7 @@ def test_step_contract_builds_from_example_config(step: Step) -> None:
             build_json_schema(output.file_type.value_type)
 
 
-def test_target_wide_example_can_select_an_alternate_target_region() -> None:
+def test_target_context_example_can_select_an_alternate_target_region() -> None:
     config = deepcopy(EXAMPLE_CONFIG)
     config.setdefault("steps", {})[TEMPLATE_STEP.name] = {
         "inputs": {

@@ -36,6 +36,11 @@ required context:
   target; or
 - :class:`~ASOkai.Analysis.GenomeWideAnalysis` when it also needs the genome.
 
+All three scopes still call ``analyze(site)`` and produce one result mapping
+per site. The target-specific and genome-wide bases add shared, read-only
+context; they do not change the output into one aggregate result for the
+whole target or genome.
+
 Implement :meth:`~ASOkai.Analysis.Analysis.analyze`. It returns a mapping from
 column names to scalar values for one site. The inherited
 :meth:`~ASOkai.Analysis.Analysis.run` method applies that calculation to all

@@ -83,7 +83,7 @@ class SiteSpecificAnalysis(Analysis):
 
 
 class TargetSpecificAnalysis(Analysis):
-    """Base class for analyses that produce results for an entire target."""
+    """Base class for per-site analyses that also need target context."""
 
     scope_label: ClassVar[str | None] = "Target-specific"
 
@@ -97,8 +97,8 @@ class TargetSpecificAnalysis(Analysis):
         self.target = target
 
 
-class GenomeWideAnalysis(Analysis):
-    """Base class for analyses that produce results for an entire genome."""
+class GenomeWideAnalysis(TargetSpecificAnalysis):
+    """Base class for per-site analyses that also need genome context."""
 
     scope_label: ClassVar[str | None] = "Genome-wide"
 
@@ -109,6 +109,9 @@ class GenomeWideAnalysis(Analysis):
         sites: Iterable[Site],
         n_processes: int = 1,
     ) -> None:
-        super().__init__(sites, n_processes=n_processes)
+        super().__init__(
+            target=target,
+            sites=sites,
+            n_processes=n_processes,
+        )
         self.genome = genome
-        self.target = target

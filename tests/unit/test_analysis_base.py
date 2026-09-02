@@ -131,6 +131,7 @@ def test_genome_wide_threads_share_unpicklable_genome_and_target_context():
         n_processes=2,
     )
 
+    assert isinstance(analysis, TargetSpecificAnalysis)
     assert analysis.run() == {
         "site-1": {
             "genome_id": "genome-1",

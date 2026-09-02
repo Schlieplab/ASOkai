@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
+from ASOkai.Analysis import Analysis
 from ASOkai.Types import Scalar
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileOutput
@@ -26,12 +27,14 @@ class AnalysisStep(Step):
     outputs are written from values returned by ``additional_output_values``.
     """
 
-    analysis_cls: ClassVar[type | None] = None
+    analysis_cls: ClassVar[type[Analysis] | None] = None
     supports_multiple_processes = True
 
     def analysis_kwargs(self, args) -> dict[str, Any]:
         """Build analysis arguments from the inputs already parsed by the step."""
-        return {}
+        raise NotImplementedError(
+            f"Analysis step '{self.name}' must implement analysis_kwargs()."
+        )
 
     @property
     def _primary_output(self) -> FileOutput:

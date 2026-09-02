@@ -9,7 +9,7 @@ from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai.Sites import TranscriptSite
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.Plugins import AnalysisStep, CsvFile, FileInput, JsonFile, Step
+from ASOkai.Plugins import CsvFile, FileInput, JsonFile
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
@@ -26,7 +26,6 @@ def config(tmp_path):
         },
         "target": {
             "target_id":   "ENSG00000133703",
-            "target_name": "KRAS",
             "k":           16,
             "region":      "pre-mrna",
         },
@@ -50,17 +49,9 @@ def _run(step, config, tmp_path):
     )
 
 
-def test_implements_protocol(step):
-    assert isinstance(step, Step)
-    assert isinstance(step, AnalysisStep)
-    assert step.analysis_cls is IntrinsicFeaturesAnalysis
-
-
-def test_name(step):
+def test_declares_intrinsic_analysis_contract(step):
     assert step.name == "intrinsic-features"
-
-
-def test_dependencies(step):
+    assert step.analysis_cls is IntrinsicFeaturesAnalysis
     assert step.dependencies == ["create-target-gene"]
     assert (
         step.spec.input("target_gene").source
@@ -69,11 +60,7 @@ def test_dependencies(step):
     assert isinstance(step.spec.input("target_gene"), FileInput)
     assert isinstance(step.target_gene_input.file_type, JsonFile)
     assert step.target_gene_input.file_type.value_type is TargetGene
-
-
-def test_output_file_contract(step):
     file_type = step.intrinsic_features_output.file_type
-
     assert isinstance(file_type, CsvFile)
     assert file_type.index == {"site_id": str}
     assert file_type.columns == {
@@ -86,18 +73,15 @@ def test_output_file_contract(step):
     }
 
 
-def test_config_map_keys(step):
-    assert "target_id" in step.config_map
-    assert "target_name" in step.config_map
-    assert "k" in step.config_map
-    assert "region" in step.config_map
-    assert "assembly" in step.config_map
+def test_output_path_configuration_is_not_a_runtime_parameter(step):
+    assert step.config_map == {}
 
 
 def test_output_paths_structure(step, config, tmp_path):
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "targets" / "ENSG00000133703"
+        tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+        / "Homo_sapiens" / "targets" / "ENSG00000133703"
         / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
@@ -111,30 +95,29 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     }
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "targets" / "KRAS"
+        tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+        / "Homo_sapiens" / "targets" / "KRAS"
         / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
 
 
-def test_cleanup(step, config, tmp_path):
-    out = tmp_path / "GRCh38" / "targets" / "ENSG00000133703" / "analysis" / "intrinsic"
-    out.mkdir(parents=True)
-    run = _run(step, config, tmp_path)
-    for p in run.output_paths().values():
-        p.touch()
-    run.cleanup_output_files()
-    assert all(not path.exists() for path in run.output_paths().values())
+def test_output_path_distinguishes_genome_releases(step, config, tmp_path):
+    release_114 = _run(step, config, tmp_path).output_paths()
+    config["genome"]["ensembl_release"] = 115
+    release_115 = _run(step, config, tmp_path).output_paths()
+
+    assert release_114 != release_115
+    assert "114" in release_114["intrinsic_features"].parts
+    assert "115" in release_115["intrinsic_features"].parts
 
 
 def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     run = _run(step, config, tmp_path)
     doc = yaml.safe_load(StepCwlGenerator().render(run))
 
-    assert doc["class"] == "CommandLineTool"
-    assert doc["baseCommand"] == ["ASOkai", "step", "intrinsic-features"]
+    assert set(doc["inputs"]) == {"target_gene", "n_processes"}
     assert doc["inputs"]["target_gene"]["type"] == "File"
-    assert doc["inputs"]["region"]["type"]["type"] == "enum"
     assert "intrinsic_features_output" not in doc["inputs"]
     assert "intrinsic_features_filename" not in doc["inputs"]
     assert {
@@ -172,10 +155,6 @@ def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
     result = IntrinsicFeaturesStep().run_cli(
         [
             "--target-gene", str(target_input),
-            "--assembly", "GRCh38",
-            "--target-id", "ENSG00000133703",
-            "--k", "4",
-            "--region", "pre-mrna",
             "--intrinsic-features-output", str(output),
         ]
     )

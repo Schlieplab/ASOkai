@@ -54,6 +54,10 @@ class MissingAnalysisClassStep(FakeAnalysisStep):
     analysis_cls = None
 
 
+class MissingAnalysisKwargsStep(FakeAnalysisStep):
+    analysis_kwargs = AnalysisStep.analysis_kwargs
+
+
 class ConflictingProcessCountStep(FakeAnalysisStep):
     def analysis_kwargs(self, args):
         return {
@@ -65,6 +69,20 @@ class ConflictingProcessCountStep(FakeAnalysisStep):
 class InvalidAnalysisKwargsStep(FakeAnalysisStep):
     def analysis_kwargs(self, args):
         return cast(Any, None)
+
+
+class IndexColumnAnalysis(FakeAnalysis):
+    def run(self):
+        return {
+            "site-1": {
+                "site_id": "duplicate-index",
+                "value": self.value,
+            },
+        }
+
+
+class IndexColumnAnalysisStep(FakeAnalysisStep):
+    analysis_cls = IndexColumnAnalysis
 
 
 class MultiOutputAnalysisStep(AnalysisStep):
@@ -128,6 +146,19 @@ class InvalidAdditionalOutputValuesStep(MultiOutputAnalysisStep):
         return cast(Any, None)
 
 
+class UnexpectedAdditionalOutputValueStep(MultiOutputAnalysisStep):
+    def additional_output_values(self, analysis, results):
+        values = dict(super().additional_output_values(analysis, results))
+        values[
+            FileOutput(
+                "unexpected",
+                destination="unexpected.json",
+                file_type=JsonFile(),
+            )
+        ] = {"unexpected": True}
+        return values
+
+
 def test_analysis_step_writes_site_keyed_results_as_csv_rows(tmp_path):
     output = tmp_path / "analysis.csv"
     args = Namespace(analysis_output=output, value=7, n_processes=3)
@@ -155,6 +186,17 @@ def test_analysis_step_requires_analysis_class(tmp_path):
         MissingAnalysisClassStep().run_from_args(args)
 
 
+def test_analysis_step_requires_analysis_kwargs_implementation(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        value=7,
+        n_processes=1,
+    )
+
+    with pytest.raises(NotImplementedError, match=r"analysis_kwargs\(\)"):
+        MissingAnalysisKwargsStep().run_from_args(args)
+
+
 def test_analysis_step_uses_the_framework_allocated_process_count(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
@@ -176,6 +218,19 @@ def test_analysis_step_requires_analysis_kwargs_to_be_a_mapping(tmp_path):
 
     with pytest.raises(TypeError, match=r"analysis_kwargs\(\).*mapping"):
         InvalidAnalysisKwargsStep().run_from_args(args)
+
+
+def test_analysis_step_rejects_result_containing_index_column(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        value=7,
+        n_processes=1,
+    )
+
+    with pytest.raises(ValueError, match="contains the index column 'site_id'"):
+        IndexColumnAnalysisStep().run_from_args(args)
+
+    assert not args.analysis_output.exists()
 
 
 def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
@@ -232,5 +287,20 @@ def test_analysis_step_requires_additional_values_to_be_a_mapping(tmp_path):
 
     with pytest.raises(TypeError, match=r"additional_output_values\(\).*mapping"):
         InvalidAdditionalOutputValuesStep().run_from_args(args)
+
+    assert not args.analysis_output.exists()
+
+
+def test_analysis_step_rejects_unexpected_additional_output_value(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        doubled_output=tmp_path / "doubled.csv",
+        summary_output=tmp_path / "summary.json",
+        value=7,
+        n_processes=1,
+    )
+
+    with pytest.raises(ValueError, match=r"unexpected: unexpected"):
+        UnexpectedAdditionalOutputValueStep().run_from_args(args)
 
     assert not args.analysis_output.exists()

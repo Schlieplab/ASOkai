@@ -107,9 +107,9 @@ class AnalysisStep(Step):
 
     def _validate_additional_output_values(
         self,
-        values: Mapping[FileOutput, Any],
-    ) -> None:
-        """Require one value for every additional declared output."""
+        values: object,
+    ) -> Mapping[FileOutput, Any]:
+        """Return values after validating every additional declared output."""
         if not isinstance(values, Mapping):
             raise TypeError(
                 f"Analysis step '{self.name}' additional_output_values() "
@@ -119,7 +119,7 @@ class AnalysisStep(Step):
         expected = set(self._additional_outputs)
         actual = set(values)
         if actual == expected:
-            return
+            return values
 
         missing = (
             ", ".join(
@@ -161,7 +161,7 @@ class AnalysisStep(Step):
                 f"Analysis step '{self.name}' does not define analysis_cls."
             )
 
-        provided_analysis_kwargs = self.analysis_kwargs(args)
+        provided_analysis_kwargs: object = self.analysis_kwargs(args)
         if not isinstance(provided_analysis_kwargs, Mapping):
             raise TypeError(
                 f"Analysis step '{self.name}' analysis_kwargs() must return "
@@ -171,11 +171,13 @@ class AnalysisStep(Step):
         analysis_kwargs["n_processes"] = args.n_processes
         analysis = self.analysis_cls(**analysis_kwargs)
         results = analysis.run()
-        additional_values = self.additional_output_values(
+        provided_additional_values: object = self.additional_output_values(
             analysis,
             results,
         )
-        self._validate_additional_output_values(additional_values)
+        additional_values = self._validate_additional_output_values(
+            provided_additional_values,
+        )
         self._write_primary_output(args, results)
         self._write_additional_outputs(args, additional_values)
         return 0

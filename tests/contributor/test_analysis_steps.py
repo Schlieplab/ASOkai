@@ -15,8 +15,8 @@ import pytest
 import yaml
 
 from ASOkai.Plugins import AnalysisStep, JsonFile, Step
-from ASOkai.Plugins._validation import (
-    validate_plugin_instance,
+from ASOkai._pipeline.validation import (
+    validate_component,
     validate_step_dependencies,
 )
 from ASOkai._pipeline import catalog as pipeline_catalog
@@ -116,7 +116,7 @@ def test_step_dependencies_use_registered_outputs(step: Step) -> None:
 
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_contract_builds_from_example_config(step: Step) -> None:
-    validate_plugin_instance("step", step)
+    validate_component("step", step)
     plan = build_export_plan(
         [step],
         EXAMPLE_CONFIG,

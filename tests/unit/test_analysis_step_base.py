@@ -123,6 +123,11 @@ class MissingAdditionalOutputValueStep(MultiOutputAnalysisStep):
         }
 
 
+class InvalidAdditionalOutputValuesStep(MultiOutputAnalysisStep):
+    def additional_output_values(self, analysis, results):
+        return cast(Any, None)
+
+
 def test_analysis_step_writes_site_keyed_results_as_csv_rows(tmp_path):
     output = tmp_path / "analysis.csv"
     args = Namespace(analysis_output=output, value=7, n_processes=3)
@@ -212,5 +217,20 @@ def test_analysis_step_requires_every_additional_output_value(tmp_path):
 
     with pytest.raises(ValueError, match=r"missing: doubled"):
         MissingAdditionalOutputValueStep().run_from_args(args)
+
+    assert not args.analysis_output.exists()
+
+
+def test_analysis_step_requires_additional_values_to_be_a_mapping(tmp_path):
+    args = Namespace(
+        analysis_output=tmp_path / "analysis.csv",
+        doubled_output=tmp_path / "doubled.csv",
+        summary_output=tmp_path / "summary.json",
+        value=7,
+        n_processes=1,
+    )
+
+    with pytest.raises(TypeError, match=r"additional_output_values\(\).*mapping"):
+        InvalidAdditionalOutputValuesStep().run_from_args(args)
 
     assert not args.analysis_output.exists()

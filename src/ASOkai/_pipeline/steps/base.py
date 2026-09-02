@@ -189,6 +189,16 @@ class Step(Runnable):
         """Run the shared command-line lifecycle for one step."""
         parser = self.build_parser()
         args = parser.parse_args(argv)
+        if self.supports_multiple_processes and args.n_processes < 1:
+            parser.error("--n-processes must be a positive integer")
+        parameter_values = {
+            parameter.name: getattr(args, parameter.name)
+            for parameter in self.spec.params
+        }
+        try:
+            self.validate_parameters(parameter_values)
+        except ValueError as error:
+            parser.error(str(error))
         self.prepare_output_directories(args)
         return self.run_from_args(args)
 

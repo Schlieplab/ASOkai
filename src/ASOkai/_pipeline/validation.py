@@ -1,8 +1,9 @@
-"""Runtime contract checks for externally installed ASOkai plugins."""
+"""Runtime validation for built-in and externally provided pipeline units."""
 
 from __future__ import annotations
 
 import inspect
+from collections.abc import Sequence
 
 from ASOkai.Analysis import Analysis
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
@@ -13,8 +14,8 @@ from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
 
 
-def validate_plugin_instance(kind: str, instance: object) -> None:
-    """Validate the declarations shared by one loaded plugin instance."""
+def validate_component(kind: str, instance: object) -> None:
+    """Validate the declaration shared by one pipeline component."""
     name = getattr(instance, "name", None)
     description = getattr(instance, "description", None)
     if type(name) is not str or not name.strip():
@@ -37,19 +38,30 @@ def validate_plugin_instance(kind: str, instance: object) -> None:
         return
 
     if isinstance(instance, Task):
-        if type(instance.steps) is not list or not instance.steps:
-            raise TypeError("task steps must be a non-empty list.")
+        if (
+            isinstance(instance.steps, (str, bytes))
+            or not isinstance(instance.steps, Sequence)
+            or not instance.steps
+        ):
+            raise TypeError("task steps must be a non-empty sequence.")
         if any(not isinstance(step, Step) for step in instance.steps):
             raise TypeError("task steps must contain only Step instances.")
         return
 
     if isinstance(instance, Workflow):
-        if type(instance.members) is not list or not instance.members:
-            raise TypeError("workflow members must be a non-empty list.")
+        if (
+            isinstance(instance.members, (str, bytes))
+            or not isinstance(instance.members, Sequence)
+            or not instance.members
+        ):
+            raise TypeError("workflow members must be a non-empty sequence.")
         if any(not isinstance(member, Runnable) for member in instance.members):
             raise TypeError(
                 "workflow members must contain only runnable instances."
             )
+        return
+
+    raise TypeError(f"{kind} must be a Step, Task, or Workflow.")
 
 
 def _validate_analysis_step(step: AnalysisStep) -> None:
@@ -128,7 +140,7 @@ def validate_task_members(
     for step in task.steps:
         if not _is_registered_step(step, registered_steps):
             raise ValueError(
-                f"step {step.name!r} is not registered through asokai.steps."
+                f"step {step.name!r} is not registered in the step catalog."
             )
 
 
@@ -149,15 +161,17 @@ def validate_workflow_members(
     for member in workflow.members:
         if isinstance(member, Step):
             valid = _is_registered_step(member, registered_steps)
-            group = "asokai.steps"
+            catalog = "step catalog"
         elif isinstance(member, Task):
             registered = registered_tasks.get(member.name)
             valid = registered is not None and type(registered) is type(member)
-            group = "asokai.tasks"
+            catalog = "task catalog"
+            if valid:
+                validate_task_members(member, registered_steps)
         elif isinstance(member, Workflow):
             registered = registered_workflows.get(member.name)
             valid = registered is not None and type(registered) is type(member)
-            group = "asokai.workflows"
+            catalog = "workflow catalog"
             if valid:
                 validate_workflow_members(
                     member,
@@ -167,9 +181,10 @@ def validate_workflow_members(
                     ancestors,
                 )
         else:
-            valid = False
-            group = "an ASOkai plugin entry point"
+            raise ValueError(
+                f"member {member.name!r} is not a Step, Task, or Workflow."
+            )
         if not valid:
             raise ValueError(
-                f"member {member.name!r} is not registered through {group}."
+                f"member {member.name!r} is not registered in the {catalog}."
             )

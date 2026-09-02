@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from itertools import groupby
 from typing import Any
 
@@ -119,7 +120,7 @@ def list_command(unit: str) -> None:
         )
 
 
-def _expanded_step_names(members: list) -> list[str]:
+def _expanded_step_names(members: Sequence) -> list[str]:
     """Recursively expand workflow members into ordered explicit steps."""
     from ASOkai._pipeline.steps.base import Step
     from ASOkai._pipeline.tasks.base import Task

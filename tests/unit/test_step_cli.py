@@ -24,6 +24,34 @@ class CliLifecycleStep(Step):
         return args.count
 
 
+class RelationshipValidatedStep(Step):
+    name = "relationship-validated"
+    description = "Exercise relationship validation before execution."
+    result_output = FileOutput("result", destination="result.txt")
+    spec = StepSpec(
+        params=[ScalarParam("minimum", int), ScalarParam("maximum", int)],
+        outputs=[result_output],
+    )
+
+    def validate_parameters(self, values):
+        if values["minimum"] > values["maximum"]:
+            raise ValueError("minimum must not exceed maximum")
+
+    def run_from_args(self, args) -> int:
+        raise AssertionError("invalid parameters must prevent execution")
+
+
+class ParallelCliStep(Step):
+    name = "parallel-cli"
+    description = "Exercise the standard parallel-worker argument."
+    supports_multiple_processes = True
+    result_output = FileOutput("result", destination="result.txt")
+    spec = StepSpec(outputs=[result_output])
+
+    def run_from_args(self, args) -> int:
+        raise AssertionError("an invalid worker count must prevent execution")
+
+
 def test_run_cli_parses_and_prepares_every_output(tmp_path):
     first = tmp_path / "first" / "result.txt"
     second = tmp_path / "second" / "result.txt"
@@ -43,6 +71,42 @@ def test_run_cli_parses_and_prepares_every_output(tmp_path):
 
 def test_single_process_step_has_no_process_argument():
     assert "--n-processes" not in CliLifecycleStep().build_parser().format_help()
+
+
+def test_run_cli_validates_parameter_relationships_before_creating_outputs(
+    tmp_path,
+    capsys,
+):
+    output = tmp_path / "nested" / "result.txt"
+
+    with pytest.raises(SystemExit) as raised:
+        RelationshipValidatedStep().run_cli(
+            [
+                "--minimum", "5",
+                "--maximum", "3",
+                "--result-output", str(output),
+            ]
+        )
+
+    assert raised.value.code == 2
+    assert "minimum must not exceed maximum" in capsys.readouterr().err
+    assert not output.parent.exists()
+
+
+def test_run_cli_rejects_non_positive_parallel_worker_count(tmp_path, capsys):
+    output = tmp_path / "nested" / "result.txt"
+
+    with pytest.raises(SystemExit) as raised:
+        ParallelCliStep().run_cli(
+            [
+                "--n-processes", "0",
+                "--result-output", str(output),
+            ]
+        )
+
+    assert raised.value.code == 2
+    assert "positive integer" in capsys.readouterr().err
+    assert not output.parent.exists()
 
 
 def test_step_output_must_be_declared_as_a_class_attribute():

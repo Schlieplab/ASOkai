@@ -17,11 +17,13 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
 class InstantiateTargetGeneTask:
+    __slots__ = ()
+
     name: ClassVar[str] = "instantiate-target-gene"
     description: ClassVar[str] = (
         "Downloads genome data and creates the configured target gene."
     )
-    steps: list[Step] = [
+    steps: tuple[Step, ...] = (
         DownloadGenomeStep(),
         CreateTargetGeneStep(),
-    ]
+    )

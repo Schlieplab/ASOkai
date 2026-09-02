@@ -22,13 +22,14 @@ from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGene
 
 
 class StandardWorkflow:
+    __slots__ = ()
+
     name: ClassVar[str] = "standard"
     description: ClassVar[str] = (
-        "Full pipeline: genome download → target gene creation → ASO "
-        "candidate generation → intrinsic features."
+        "Standard pipeline for Antisense therapeutics Design."
     )
-    members: list[Runnable] = [
+    members: tuple[Runnable, ...] = (
         InstantiateTargetGeneTask(),
         GenerateASOCandidatesStep(),
         IntrinsicFeaturesStep(),
-    ]
+    )

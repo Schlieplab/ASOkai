@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from importlib.metadata import entry_points
 from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
@@ -29,28 +29,31 @@ from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGene
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
-from ASOkai.Plugins._validation import (
-    validate_plugin_instance,
+from ASOkai._pipeline.validation import (
+    validate_component,
     validate_step_dependencies,
     validate_task_members,
     validate_workflow_members,
 )
 
 
-_BUILTIN_STEPS: list[Step] = [
+# Built-in step registry
+_BUILTIN_STEPS: tuple[Step, ...] = (
     DownloadGenomeStep(),
     CreateTargetGeneStep(),
     GenerateASOCandidatesStep(),
     IntrinsicFeaturesStep(),
-]
+)
 
-_BUILTIN_TASKS: list[Task] = [
+# Built-in task registry
+_BUILTIN_TASKS: tuple[Task, ...] = (
     InstantiateTargetGeneTask(),
-]
+)
 
-_BUILTIN_WORKFLOWS: list[Workflow] = [
+# Built-in workflow registry
+_BUILTIN_WORKFLOWS: tuple[Workflow, ...] = (
     StandardWorkflow(),
-]
+)
 
 
 @dataclass(frozen=True)
@@ -133,7 +136,7 @@ def _discover_plugins(
                 f"{type(instance).__name__}."
             )
         try:
-            validate_plugin_instance(kind, instance)
+            validate_component(kind, instance)
         except (TypeError, ValueError) as error:
             raise ValueError(
                 f"Invalid ASOkai {kind} plugin {source}: {error}"
@@ -193,26 +196,65 @@ def _index_unique(kind: str, instances: list) -> dict:
     return result
 
 
+def _validate_builtin_declarations(
+    kind: str,
+    instances: Sequence[object],
+) -> None:
+    """Validate declarations for components provided by ASOkai."""
+    for instance in instances:
+        try:
+            validate_component(kind, instance)
+        except (TypeError, ValueError) as error:
+            name = getattr(instance, "name", type(instance).__name__)
+            raise ValueError(
+                f"Invalid built-in ASOkai {kind} {name!r}: {error}"
+            ) from error
+
+
+def _validation_context(
+    kind: str,
+    instance: Any,
+    plugins: list[_DiscoveredPlugin],
+) -> str:
+    """Describe a registered declaration without losing plugin provenance."""
+    for plugin in plugins:
+        if plugin.instance is instance:
+            return f"Invalid ASOkai {kind} plugin {plugin.source}"
+    return f"Invalid built-in ASOkai {kind} {instance.name!r}"
+
+
+_validate_builtin_declarations("step", _BUILTIN_STEPS)
+_validate_builtin_declarations("task", _BUILTIN_TASKS)
+_validate_builtin_declarations("workflow", _BUILTIN_WORKFLOWS)
+
+
 def _build_step_registry(
     plugins: list[_DiscoveredPlugin],
     config_schemas: list[_DiscoveredConfigSchema],
 ) -> dict[str, Step]:
-    """Validate and index already-discovered step plugins."""
+    """Validate and index built-in and already-discovered steps."""
     registered = _index_unique(
         "step",
         [*_BUILTIN_STEPS, *(plugin.instance for plugin in plugins)],
     )
-    for plugin in plugins:
+    for step in registered.values():
         try:
-            validate_step_dependencies(plugin.instance, registered)
+            validate_step_dependencies(step, registered)
         except (TypeError, ValueError) as error:
             raise ValueError(
-                f"Invalid ASOkai step plugin {plugin.source}: {error}"
+                f"{_validation_context('step', step, plugins)}: {error}"
             ) from error
 
-    if plugins:
-        from ASOkai._pipeline import config
+    from ASOkai._pipeline import config
 
+    try:
+        config.validate_step_config_paths(_BUILTIN_STEPS)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid built-in ASOkai step configuration: {error}"
+        ) from error
+
+    if plugins:
         for plugin in plugins:
             schema_paths = {
                 schema.name: schema.path
@@ -247,16 +289,15 @@ def get_tasks(
         "task",
         [*_BUILTIN_TASKS, *(plugin.instance for plugin in plugins)],
     )
-    if plugins:
-        if registered_steps is None:
-            registered_steps = get_steps()
-        for plugin in plugins:
-            try:
-                validate_task_members(plugin.instance, registered_steps)
-            except (TypeError, ValueError) as error:
-                raise ValueError(
-                    f"Invalid ASOkai task plugin {plugin.source}: {error}"
-                ) from error
+    if registered_steps is None:
+        registered_steps = get_steps()
+    for task in registered.values():
+        try:
+            validate_task_members(task, registered_steps)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"{_validation_context('task', task, plugins)}: {error}"
+            ) from error
     return registered
 
 
@@ -270,23 +311,23 @@ def get_workflows(
         "workflow",
         [*_BUILTIN_WORKFLOWS, *(plugin.instance for plugin in plugins)],
     )
-    if plugins:
-        if registered_steps is None:
-            registered_steps = get_steps()
-        if registered_tasks is None:
-            registered_tasks = get_tasks(registered_steps)
-        for plugin in plugins:
-            try:
-                validate_workflow_members(
-                    plugin.instance,
-                    registered_steps,
-                    registered_tasks,
-                    registered,
-                )
-            except (TypeError, ValueError) as error:
-                raise ValueError(
-                    f"Invalid ASOkai workflow plugin {plugin.source}: {error}"
-                ) from error
+    if registered_steps is None:
+        registered_steps = get_steps()
+    if registered_tasks is None:
+        registered_tasks = get_tasks(registered_steps)
+    for workflow in registered.values():
+        try:
+            validate_workflow_members(
+                workflow,
+                registered_steps,
+                registered_tasks,
+                registered,
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"{_validation_context('workflow', workflow, plugins)}: "
+                f"{error}"
+            ) from error
     return registered
 
 

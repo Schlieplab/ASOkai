@@ -460,7 +460,7 @@ def test_plugin_task_steps_must_be_registered(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="asokai.steps"):
+    with pytest.raises(ValueError, match="step catalog"):
         pipeline_catalog.get_tasks()
 
 
@@ -474,7 +474,7 @@ def test_plugin_workflow_members_must_be_registered(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="asokai.tasks"):
+    with pytest.raises(ValueError, match="task catalog"):
         pipeline_catalog.get_workflows()
 
 

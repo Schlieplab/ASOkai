@@ -1,24 +1,20 @@
 #!/usr/bin/env python
-"""Tests for contracts enforced on loaded plugin objects."""
+"""Tests for shared pipeline-component validation contracts."""
 
 from typing import ClassVar
 
 import pytest
 
 from ASOkai.Analysis import SiteSpecificAnalysis
-from ASOkai.Plugins import (
-    AnalysisStep,
-    CsvFile,
-    FileInput,
-    FileOutput,
-    FileType,
-    JsonFile,
-    Runnable,
-    Step,
-    StepSpec,
-)
-from ASOkai.Plugins._validation import (
-    validate_plugin_instance,
+from ASOkai._pipeline import catalog as pipeline_catalog
+from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.step_spec import StepSpec
+from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.validation import (
+    validate_component,
     validate_step_dependencies,
     validate_workflow_members,
 )
@@ -129,17 +125,42 @@ class ShadowConsumerStep(Step):
         return 0
 
 
-def test_plugin_name_must_be_usable_as_a_run_identifier():
+def test_component_name_must_be_usable_as_a_run_identifier():
     with pytest.raises(ValueError, match="letters, numbers, hyphens"):
-        validate_plugin_instance("task", InvalidNameTask())
+        validate_component("task", InvalidNameTask())
 
 
-def test_step_plugin_must_implement_its_execution_method():
+def test_component_must_implement_a_pipeline_component_contract():
+    class NamedObject:
+        name = "named-object"
+        description = "Has identity but no pipeline behavior."
+
+    with pytest.raises(TypeError, match="Step, Task, or Workflow"):
+        validate_component("component", NamedObject())
+
+
+def test_builtin_declaration_errors_identify_the_component_as_builtin():
+    class InvalidBuiltinTask:
+        name = "invalid-builtin-task"
+        description = "Contains a value that is not a step."
+        steps = (object(),)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid built-in ASOkai task.*only Step instances",
+    ):
+        pipeline_catalog._validate_builtin_declarations(
+            "task",
+            (InvalidBuiltinTask(),),
+        )
+
+
+def test_step_component_must_implement_its_execution_method():
     with pytest.raises(TypeError, match="run_from_args"):
-        validate_plugin_instance("step", MissingRunMethodStep())
+        validate_component("step", MissingRunMethodStep())
 
 
-def test_step_plugin_must_declare_an_output():
+def test_step_component_must_declare_an_output():
     class OutputlessStep(Step):
         name = "outputless"
         description = "Does not declare an output."
@@ -149,7 +170,7 @@ def test_step_plugin_must_declare_an_output():
             return 0
 
     with pytest.raises(ValueError, match="at least one file output"):
-        validate_plugin_instance("step", OutputlessStep())
+        validate_component("step", OutputlessStep())
 
 
 @pytest.mark.parametrize(
@@ -163,9 +184,9 @@ def test_step_plugin_must_declare_an_output():
         (OpaqueAdditionalOutputStep(), "must use a writable file contract"),
     ],
 )
-def test_analysis_plugin_must_support_the_shared_execution_flow(step, message):
+def test_analysis_component_must_support_the_shared_execution_flow(step, message):
     with pytest.raises((TypeError, ValueError), match=message):
-        validate_plugin_instance("analysis step", step)
+        validate_component("analysis step", step)
 
 
 def test_step_dependency_must_use_the_registered_output_declaration():
@@ -176,7 +197,7 @@ def test_step_dependency_must_use_the_registered_output_declaration():
         )
 
 
-def test_plugin_workflow_cannot_contain_itself():
+def test_workflow_component_cannot_contain_itself():
     class CyclicWorkflow:
         name: ClassVar[str] = "cyclic"
         description: ClassVar[str] = "Contains itself."
@@ -190,5 +211,32 @@ def test_plugin_workflow_cannot_contain_itself():
             workflow,
             registered_steps={},
             registered_tasks={},
+            registered_workflows={workflow.name: workflow},
+        )
+
+
+def test_workflow_validates_the_actual_steps_of_a_registered_task():
+    registered_step = RegisteredProducerStep()
+
+    class RegisteredTask:
+        name = "registered-task"
+        description = "A registered task."
+        steps = (registered_step,)
+
+    task_member = RegisteredTask()
+    task_member.steps = (ShadowProducerStep(),)
+
+    class TaskWorkflow:
+        name = "task-workflow"
+        description = "Contains a separately instantiated registered task."
+        members = (task_member,)
+
+    workflow = TaskWorkflow()
+
+    with pytest.raises(ValueError, match="not registered in the step catalog"):
+        validate_workflow_members(
+            workflow,
+            registered_steps={registered_step.name: registered_step},
+            registered_tasks={RegisteredTask.name: RegisteredTask()},
             registered_workflows={workflow.name: workflow},
         )

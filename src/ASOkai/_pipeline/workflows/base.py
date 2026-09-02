@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, Sequence, runtime_checkable
 
 from ASOkai._pipeline.base import Runnable
 
@@ -19,4 +19,7 @@ from ASOkai._pipeline.base import Runnable
 class Workflow(Runnable, Protocol):
     """CLI-level named collection of pipeline units."""
 
-    members: list[Runnable]
+    @property
+    def members(self) -> Sequence[Runnable]:
+        """Return the runnable components selected by this workflow."""
+        ...

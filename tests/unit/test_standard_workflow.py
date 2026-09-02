@@ -19,30 +19,27 @@ def workflow():
     return StandardWorkflow()
 
 
-def test_name(workflow):
+def test_standard_workflow_declaration(workflow):
     assert workflow.name == "standard"
-
-
-def test_implements_runnable(workflow):
     assert isinstance(workflow, Runnable)
-
-
-def test_implements_workflow_protocol(workflow):
     assert isinstance(workflow, Workflow)
-
-
-def test_members_are_runnables(workflow):
+    assert isinstance(workflow.members, tuple)
     assert all(isinstance(m, Runnable) for m in workflow.members)
     assert isinstance(workflow.members[0], Task)
+    assert isinstance(workflow.members[0].steps, tuple)
     assert all(isinstance(member, Step) for member in workflow.members[1:])
-
-
-def test_member_names(workflow):
     assert [m.name for m in workflow.members] == [
         "instantiate-target-gene",
         "generate-aso-candidates",
         "intrinsic-features",
     ]
+
+
+def test_builtin_compositions_cannot_be_replaced(workflow):
+    with pytest.raises(AttributeError):
+        workflow.members = ()
+    with pytest.raises(AttributeError):
+        workflow.members[0].steps = ()
 
 
 def test_flattens_to_explicit_step_names(workflow):

@@ -26,12 +26,17 @@ Component hierarchy
    implementation owns analysis construction and result serialization.
 
 ``Task``
-   A named CLI-level collection of steps.
+   A named CLI-level collection exposing a non-empty sequence of steps.
 
 ``Workflow``
-   A named collection of runnable components. Its members may be steps,
-   tasks, or other workflows; job planning resolves them to the required
-   steps.
+   A named collection exposing a non-empty sequence of runnable components.
+   Its members may be steps, tasks, or other workflows; job planning resolves
+   them to the required steps.
+
+Task and workflow compositions are declarations: ASOkai reads their order but
+does not modify them. Built-ins therefore use tuples. Plugin components may
+use another sequence type, including a list, but should not mutate it after
+discovery.
 
 The step specification
 ----------------------
@@ -165,10 +170,12 @@ configuration-driven; ASOkai does not infer it from filenames.
 Shared step lifecycle
 ---------------------
 
-When a step command runs, the base class builds its parser from ``StepSpec``,
-parses scalar and file arguments, creates output directories, and calls
-``run_from_args``. Typed file inputs have already been deserialized and
-validated by that point.
+When a step command runs, the base class builds its parser from ``StepSpec``
+and parses scalar and file arguments. It then validates the standard parallel
+worker count and calls ``validate_parameters`` for relationships between
+parsed scalar values. Only after validation succeeds does it create output
+directories and call ``run_from_args``. Typed file inputs have already been
+deserialized and validated by that point.
 
 The pipeline planner uses the same declaration to resolve configuration,
 connect producer outputs to consumer inputs, generate CWL, determine final
@@ -202,8 +209,10 @@ Different declarations validate different boundaries:
 - file types validate serialized inputs and outputs;
 - ``compatible_with`` validates biological applicability when a step is
   selected; and
-- plugin discovery validates entry points, component types, dependencies,
-  configuration-schema ownership, and composition.
+- pipeline-component validation checks declarations, dependencies, and
+  composition for both built-ins and plugins; and
+- plugin discovery additionally validates entry points, component types, and
+  configuration-schema ownership.
 
 ``Step.validate_parameters`` is reserved for relationships between resolved
 scalar parameters that cannot be expressed clearly in YAML Schema. It should

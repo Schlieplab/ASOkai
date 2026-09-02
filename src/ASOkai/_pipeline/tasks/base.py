@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, Sequence, runtime_checkable
 
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.base import Step
@@ -20,4 +20,7 @@ from ASOkai._pipeline.steps.base import Step
 class Task(Runnable, Protocol):
     """CLI-level named collection of Steps."""
 
-    steps: list[Step]
+    @property
+    def steps(self) -> Sequence[Step]:
+        """Return the steps selected by this task."""
+        ...

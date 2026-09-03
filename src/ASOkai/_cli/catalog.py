@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: Commands for listing and describing ASOkai pipeline units.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from itertools import groupby
@@ -34,10 +35,7 @@ def _step_category_path(step: object) -> tuple[str, ...]:
 
 def _step_type_label(step: object) -> str:
     """Return the CLI display label for a step type."""
-    return " / ".join(
-        part.capitalize()
-        for part in _step_category_path(step)
-    )
+    return " / ".join(part.capitalize() for part in _step_category_path(step))
 
 
 def _analysis_scope_label(
@@ -53,9 +51,7 @@ def _display_description(pipeline_unit: object) -> str:
     """Return the description displayed for a pipeline unit."""
     description = getattr(pipeline_unit, "description", "")
     if isinstance(pipeline_unit, AnalysisStep):
-        scope = _analysis_scope_label(
-            getattr(pipeline_unit, "analysis_cls", None)
-        )
+        scope = _analysis_scope_label(getattr(pipeline_unit, "analysis_cls", None))
         if scope:
             return f"[{scope}] {description}"
     return description
@@ -68,7 +64,10 @@ def _display_description(pipeline_unit: object) -> str:
 )
 def list_command(unit: str) -> None:
     """List available steps, tasks, or workflows."""
-    catalog = get_pipeline_catalog()
+    try:
+        catalog = get_pipeline_catalog()
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
     registry = {
         "steps": catalog.steps,
         "tasks": catalog.tasks,
@@ -101,24 +100,15 @@ def list_command(unit: str) -> None:
         ):
             if index:
                 click.echo()
-            click.echo(
-                " / ".join(
-                    part.capitalize()
-                    for part in category
-                )
-            )
+            click.echo(" / ".join(part.capitalize() for part in category))
             for name, pipeline_unit in items:
                 click.echo(
-                    f"  {name:<{name_width}} "
-                    f"{_display_description(pipeline_unit)}"
+                    f"  {name:<{name_width}} " f"{_display_description(pipeline_unit)}"
                 )
         return
 
     for name, pipeline_unit in sorted(registry.items()):
-        click.echo(
-            f"  {name:<{name_width}} "
-            f"{_display_description(pipeline_unit)}"
-        )
+        click.echo(f"  {name:<{name_width}} " f"{_display_description(pipeline_unit)}")
 
 
 def _dependency_tree_lines(
@@ -135,9 +125,7 @@ def _dependency_tree_lines(
         connector = "`-- " if is_last else "|-- "
 
         if dependency_name in seen:
-            lines.append(
-                f"{prefix}{connector}{dependency_name} (cycle)"
-            )
+            lines.append(f"{prefix}{connector}{dependency_name} (cycle)")
             continue
 
         lines.append(f"{prefix}{connector}{dependency_name}")
@@ -172,20 +160,13 @@ def _config_hint_for_param(param: Any) -> str:
 
 def _describe_step_config_keys(step) -> None:
     """Print the configurable keys of a step."""
-    config_params = [
-        param
-        for param in step.spec.params
-        if param.config
-    ]
+    config_params = [param for param in step.spec.params if param.config]
     if not config_params:
         return
 
     click.echo("Config keys :")
     for param in config_params:
-        click.echo(
-            f"  --config {param.config:<32}"
-            f"{_config_hint_for_param(param)}"
-        )
+        click.echo(f"  --config {param.config:<32}" f"{_config_hint_for_param(param)}")
 
 
 def _describe_step_input_configuration(step) -> None:
@@ -196,9 +177,7 @@ def _describe_step_input_configuration(step) -> None:
     click.echo("Input configuration (optional):")
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
-        click.echo(
-            f"  --config {configuration_path}.path_override  existing file"
-        )
+        click.echo(f"  --config {configuration_path}.path_override  existing file")
         for name in file_input.configurable_parameters:
             click.echo(
                 f"  --config {configuration_path}.parameters.{name}  "
@@ -227,10 +206,7 @@ def _describe_workflow(workflow) -> tuple[list[str], str]:
     member_names = [member.name for member in workflow.members]
     click.echo(f"Members     : {', '.join(member_names)}")
     click.echo("CWL         : (CLI collection; export creates run.cwl)")
-    return [
-        step.name
-        for step in expand_runnable_steps(workflow)
-    ], "Steps (expanded)"
+    return [step.name for step in expand_runnable_steps(workflow)], "Steps (expanded)"
 
 
 def _describe_dependencies(
@@ -248,10 +224,7 @@ def _describe_dependencies(
         for line in _dependency_tree_lines(catalog.steps, dependencies):
             click.echo(f"  {line}")
     else:
-        click.echo(
-            f"{label}: "
-            f"{', '.join(str(value) for value in dependencies)}"
-        )
+        click.echo(f"{label}: " f"{', '.join(str(value) for value in dependencies)}")
 
 
 @click.command("describe", context_settings=CONTEXT_SETTINGS)
@@ -268,7 +241,10 @@ def describe_command(
     name: str,
 ) -> None:
     """Describe a step, task, or workflow."""
-    catalog = get_pipeline_catalog()
+    try:
+        catalog = get_pipeline_catalog()
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
     registry = {
         "step": catalog.steps,
         "task": catalog.tasks,
@@ -279,9 +255,7 @@ def describe_command(
         raise click.ClickException(f"Unknown {unit} '{name}'.")
 
     click.echo(f"Name        : {pipeline_unit.name}")
-    click.echo(
-        f"Description : {_display_description(pipeline_unit)}"
-    )
+    click.echo(f"Description : {_display_description(pipeline_unit)}")
 
     if unit == "step":
         dependencies, label = _describe_step(pipeline_unit)

@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: Catalog of built-in and installed pipeline components.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,12 +31,12 @@ from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 from ASOkai._pipeline.validation import (
+    ComponentKind,
     validate_component,
     validate_step_dependencies,
     validate_task_members,
     validate_workflow_members,
 )
-
 
 # Built-in step registry
 _BUILTIN_STEPS: tuple[Step, ...] = (
@@ -46,14 +47,10 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
 )
 
 # Built-in task registry
-_BUILTIN_TASKS: tuple[Task, ...] = (
-    InstantiateTargetGeneTask(),
-)
+_BUILTIN_TASKS: tuple[Task, ...] = (InstantiateTargetGeneTask(),)
 
 # Built-in workflow registry
-_BUILTIN_WORKFLOWS: tuple[Workflow, ...] = (
-    StandardWorkflow(),
-)
+_BUILTIN_WORKFLOWS: tuple[Workflow, ...] = (StandardWorkflow(),)
 
 
 @dataclass(frozen=True)
@@ -109,8 +106,7 @@ def _load_entry_point(entry_point: Any, kind: str) -> Any:
 
 def _discover_plugins(
     group: str,
-    kind: str,
-    expected_type: type,
+    kind: ComponentKind,
 ) -> list[_DiscoveredPlugin]:
     """Load, instantiate, and validate plugins from one entry-point group."""
     discovered: list[_DiscoveredPlugin] = []
@@ -129,12 +125,6 @@ def _discover_plugins(
                 f"Could not instantiate ASOkai {kind} plugin {source} "
                 f"without arguments: {error}"
             ) from error
-        if not isinstance(instance, expected_type):
-            raise ValueError(
-                f"Invalid ASOkai {kind} plugin {source}: expected "
-                f"{expected_type.__name__}, received "
-                f"{type(instance).__name__}."
-            )
         try:
             validate_component(kind, instance)
         except (TypeError, ValueError) as error:
@@ -158,13 +148,14 @@ def _discover_plugins(
 
 def _discover_config_schemas() -> list[_DiscoveredConfigSchema]:
     """Load configuration schema paths with their package ownership."""
+    from ASOkai._pipeline import config
+
     discovered: list[_DiscoveredConfigSchema] = []
     names: set[str] = set()
     for entry_point in entry_points(group="asokai.config_schemas"):
         if entry_point.name in names:
             raise ValueError(
-                "Duplicate registered config schema name: "
-                f"{entry_point.name!r}."
+                "Duplicate registered config schema name: " f"{entry_point.name!r}."
             )
         names.add(entry_point.name)
         value = _load_entry_point(entry_point, "config schema")
@@ -174,30 +165,60 @@ def _discover_config_schemas() -> list[_DiscoveredConfigSchema]:
                 f"{_entry_point_source(entry_point)}: the entry point must "
                 "expose a file path."
             )
+        path = Path(value)
+        try:
+            config.load_config_schema(
+                path,
+                f"Plugin {entry_point.name!r}",
+            )
+        except ValueError as error:
+            raise ValueError(
+                "Invalid ASOkai config schema plugin "
+                f"{_entry_point_source(entry_point)}: {error}"
+            ) from error
         discovered.append(
             _DiscoveredConfigSchema(
                 entry_point.name,
-                Path(value),
+                path,
                 _entry_point_package_name(entry_point),
             )
         )
     return discovered
 
 
-def _index_unique(kind: str, instances: list) -> dict:
-    """Index registered objects by name without allowing silent replacement."""
-    result = {}
-    for instance in instances:
-        if instance.name in result:
+def _index_components(
+    kind: ComponentKind,
+    builtins: Sequence[Any],
+    plugins: Sequence[_DiscoveredPlugin],
+) -> dict[str, Any]:
+    """Index components and identify both sources of duplicate names."""
+    result: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+
+    entries = [
+        *(
+            (instance, f"built-in ASOkai {kind} {instance.name!r}")
+            for instance in builtins
+        ),
+        *(
+            (plugin.instance, f"ASOkai {kind} plugin {plugin.source}")
+            for plugin in plugins
+        ),
+    ]
+    for instance, source in entries:
+        previous_source = sources.get(instance.name)
+        if previous_source is not None:
             raise ValueError(
-                f"Duplicate registered {kind} name: {instance.name!r}."
+                f"Duplicate registered {kind} name {instance.name!r}: "
+                f"{source} conflicts with {previous_source}."
             )
         result[instance.name] = instance
+        sources[instance.name] = source
     return result
 
 
 def _validate_builtin_declarations(
-    kind: str,
+    kind: ComponentKind,
     instances: Sequence[object],
 ) -> None:
     """Validate declarations for components provided by ASOkai."""
@@ -212,7 +233,7 @@ def _validate_builtin_declarations(
 
 
 def _validation_context(
-    kind: str,
+    kind: ComponentKind,
     instance: Any,
     plugins: list[_DiscoveredPlugin],
 ) -> str:
@@ -233,9 +254,10 @@ def _build_step_registry(
     config_schemas: list[_DiscoveredConfigSchema],
 ) -> dict[str, Step]:
     """Validate and index built-in and already-discovered steps."""
-    registered = _index_unique(
+    registered = _index_components(
         "step",
-        [*_BUILTIN_STEPS, *(plugin.instance for plugin in plugins)],
+        _BUILTIN_STEPS,
+        plugins,
     )
     for step in registered.values():
         try:
@@ -259,8 +281,8 @@ def _build_step_registry(
             schema_paths = {
                 schema.name: schema.path
                 for schema in config_schemas
-                if plugin.package_name is None
-                or schema.package_name == plugin.package_name
+                if plugin.package_name is not None
+                and schema.package_name == plugin.package_name
             }
             try:
                 config.validate_step_config_paths(
@@ -276,7 +298,7 @@ def _build_step_registry(
 
 def get_steps() -> dict[str, Step]:
     """Discover and return built-in and installed steps."""
-    plugins = _discover_plugins("asokai.steps", "step", Step)
+    plugins = _discover_plugins("asokai.steps", "step")
     return _build_step_registry(plugins, _discover_config_schemas())
 
 
@@ -284,10 +306,11 @@ def get_tasks(
     registered_steps: dict[str, Step] | None = None,
 ) -> dict[str, Task]:
     """Return tasks, reusing an existing step registry when provided."""
-    plugins = _discover_plugins("asokai.tasks", "task", Task)
-    registered = _index_unique(
+    plugins = _discover_plugins("asokai.tasks", "task")
+    registered = _index_components(
         "task",
-        [*_BUILTIN_TASKS, *(plugin.instance for plugin in plugins)],
+        _BUILTIN_TASKS,
+        plugins,
     )
     if registered_steps is None:
         registered_steps = get_steps()
@@ -306,10 +329,11 @@ def get_workflows(
     registered_tasks: dict[str, Task] | None = None,
 ) -> dict[str, Workflow]:
     """Return workflows, reusing dependency registries when provided."""
-    plugins = _discover_plugins("asokai.workflows", "workflow", Workflow)
-    registered = _index_unique(
+    plugins = _discover_plugins("asokai.workflows", "workflow")
+    registered = _index_components(
         "workflow",
-        [*_BUILTIN_WORKFLOWS, *(plugin.instance for plugin in plugins)],
+        _BUILTIN_WORKFLOWS,
+        plugins,
     )
     if registered_steps is None:
         registered_steps = get_steps()
@@ -325,8 +349,7 @@ def get_workflows(
             )
         except (TypeError, ValueError) as error:
             raise ValueError(
-                f"{_validation_context('workflow', workflow, plugins)}: "
-                f"{error}"
+                f"{_validation_context('workflow', workflow, plugins)}: " f"{error}"
             ) from error
     return registered
 
@@ -335,7 +358,7 @@ def get_pipeline_catalog() -> PipelineCatalog:
     """Discover every component once and return one validated snapshot."""
     config_schemas = _discover_config_schemas()
     steps = _build_step_registry(
-        _discover_plugins("asokai.steps", "step", Step),
+        _discover_plugins("asokai.steps", "step"),
         config_schemas,
     )
     tasks = get_tasks(steps)
@@ -344,16 +367,10 @@ def get_pipeline_catalog() -> PipelineCatalog:
         steps=steps,
         tasks=tasks,
         workflows=workflows,
-        config_schema_paths={
-            schema.name: schema.path
-            for schema in config_schemas
-        },
+        config_schema_paths={schema.name: schema.path for schema in config_schemas},
     )
 
 
 def get_config_schema_paths() -> dict[str, Path]:
     """Return config schema files registered by installed plugins."""
-    return {
-        schema.name: schema.path
-        for schema in _discover_config_schemas()
-    }
+    return {schema.name: schema.path for schema in _discover_config_schemas()}

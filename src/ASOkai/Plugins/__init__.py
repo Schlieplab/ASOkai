@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: Public contracts for ASOkai extension packages.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from ASOkai._cwl.model import CwlToolArgument
@@ -32,7 +33,9 @@ from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
+from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 __all__ = [
     "AnalysisStep",
@@ -47,12 +50,14 @@ __all__ = [
     "GenerateASOCandidatesStep",
     "IntrinsicFeaturesStep",
     "InputConfigField",
+    "InstantiateTargetGeneTask",
     "JsonFile",
     "OutputPathTemplate",
     "Runnable",
     "ScalarParam",
     "Step",
     "StepSpec",
+    "StandardWorkflow",
     "Task",
     "TemplateField",
     "Workflow",

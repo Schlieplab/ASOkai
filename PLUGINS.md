@@ -148,7 +148,7 @@ ASOkai then discovers it automatically:
 ```bash
 ASOkai list steps
 ASOkai describe step my-analysis
-ASOkai run --steps my-analysis --config-file config.yaml
+ASOkai run --step my-analysis --config-file config.yaml
 ```
 
 Before publishing, check that:

@@ -130,13 +130,21 @@ def test_component_name_must_be_usable_as_a_run_identifier():
         validate_component("task", InvalidNameTask())
 
 
-def test_component_must_implement_a_pipeline_component_contract():
+def test_component_must_implement_the_requested_contract():
     class NamedObject:
         name = "named-object"
         description = "Has identity but no pipeline behavior."
 
-    with pytest.raises(TypeError, match="Step, Task, or Workflow"):
-        validate_component("component", NamedObject())
+    with pytest.raises(TypeError, match="Step contract.*NamedObject"):
+        validate_component("step", NamedObject())
+
+
+def test_step_cannot_be_validated_as_a_task_through_structural_overlap():
+    class StepThatLooksLikeTask(RegisteredProducerStep):
+        steps: tuple[Step, ...] = ()
+
+    with pytest.raises(TypeError, match="only the Task contract"):
+        validate_component("task", StepThatLooksLikeTask())
 
 
 def test_builtin_declaration_errors_identify_the_component_as_builtin():
@@ -186,7 +194,7 @@ def test_step_component_must_declare_an_output():
 )
 def test_analysis_component_must_support_the_shared_execution_flow(step, message):
     with pytest.raises((TypeError, ValueError), match=message):
-        validate_component("analysis step", step)
+        validate_component("step", step)
 
 
 def test_step_dependency_must_use_the_registered_output_declaration():

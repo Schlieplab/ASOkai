@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Sequence
+from typing import Literal
 
 from ASOkai.Analysis import Analysis
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
@@ -13,9 +14,36 @@ from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
 
+ComponentKind = Literal["step", "task", "workflow"]
 
-def validate_component(kind: str, instance: object) -> None:
+
+def validate_component(kind: ComponentKind, instance: object) -> None:
     """Validate the declaration shared by one pipeline component."""
+    if kind == "step":
+        if not isinstance(instance, Step):
+            raise TypeError(
+                "step must implement the Step contract; received "
+                f"{type(instance).__name__}."
+            )
+    elif kind == "task":
+        if not isinstance(instance, Task) or isinstance(instance, Step):
+            raise TypeError(
+                "task must implement only the Task contract; received "
+                f"{type(instance).__name__}."
+            )
+    elif kind == "workflow":
+        if (
+            not isinstance(instance, Workflow)
+            or isinstance(instance, Step)
+            or isinstance(instance, Task)
+        ):
+            raise TypeError(
+                "workflow must implement only the Workflow contract; received "
+                f"{type(instance).__name__}."
+            )
+    else:
+        raise ValueError(f"Unknown pipeline component kind: {kind!r}.")
+
     name = getattr(instance, "name", None)
     description = getattr(instance, "description", None)
     if type(name) is not str or not name.strip():
@@ -28,7 +56,8 @@ def validate_component(kind: str, instance: object) -> None:
     if type(description) is not str or not description.strip():
         raise TypeError(f"{kind} description must be a non-blank string.")
 
-    if isinstance(instance, Step):
+    if kind == "step":
+        assert isinstance(instance, Step)
         if type(instance).run_from_args is Step.run_from_args:
             raise TypeError("step must implement run_from_args().")
         instance.validate_output_declaration()
@@ -37,7 +66,8 @@ def validate_component(kind: str, instance: object) -> None:
             _validate_analysis_step(instance)
         return
 
-    if isinstance(instance, Task):
+    if kind == "task":
+        assert isinstance(instance, Task)
         if (
             isinstance(instance.steps, (str, bytes))
             or not isinstance(instance.steps, Sequence)
@@ -48,7 +78,8 @@ def validate_component(kind: str, instance: object) -> None:
             raise TypeError("task steps must contain only Step instances.")
         return
 
-    if isinstance(instance, Workflow):
+    if kind == "workflow":
+        assert isinstance(instance, Workflow)
         if (
             isinstance(instance.members, (str, bytes))
             or not isinstance(instance.members, Sequence)
@@ -56,12 +87,8 @@ def validate_component(kind: str, instance: object) -> None:
         ):
             raise TypeError("workflow members must be a non-empty sequence.")
         if any(not isinstance(member, Runnable) for member in instance.members):
-            raise TypeError(
-                "workflow members must contain only runnable instances."
-            )
+            raise TypeError("workflow members must contain only runnable instances.")
         return
-
-    raise TypeError(f"{kind} must be a Step, Task, or Workflow.")
 
 
 def _validate_analysis_step(step: AnalysisStep) -> None:
@@ -153,9 +180,7 @@ def validate_workflow_members(
 ) -> None:
     """Require workflow members to match registered implementations."""
     if workflow.name in ancestors:
-        raise ValueError(
-            f"workflow {workflow.name!r} participates in a cycle."
-        )
+        raise ValueError(f"workflow {workflow.name!r} participates in a cycle.")
     ancestors = ancestors | {workflow.name}
 
     for member in workflow.members:

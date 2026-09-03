@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: Commands for running and exporting ASOkai pipeline units.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -60,8 +61,7 @@ def _collect_runnables(
 
     if not runnables:
         raise click.UsageError(
-            "Select at least one runnable with "
-            "--step, --task, or --workflow."
+            "Select at least one runnable with " "--step, --task, or --workflow."
         )
     return runnables
 
@@ -141,14 +141,14 @@ def run_command(
     config_overrides: tuple[str, ...],
 ) -> None:
     """Run selected steps, tasks, or a workflow."""
-    catalog = get_pipeline_catalog()
-    runnables = _collect_runnables(
-        step_names,
-        task_names,
-        workflow_name,
-        catalog,
-    )
     try:
+        catalog = get_pipeline_catalog()
+        runnables = _collect_runnables(
+            step_names,
+            task_names,
+            workflow_name,
+            catalog,
+        )
         config = cfg.load(config_path)
         overrides = parse_config_overrides(config_overrides)
         cfg.apply_overrides(config, overrides)
@@ -211,8 +211,7 @@ def run_command(
     default=None,
     metavar="DIR",
     help=(
-        "Directory under which to write the export bundle. "
-        "Defaults to datadir/jobs."
+        "Directory under which to write the export bundle. " "Defaults to datadir/jobs."
     ),
 )
 @click.option(
@@ -241,14 +240,14 @@ def export_command(
     config_overrides: tuple[str, ...],
 ) -> None:
     """Export selected pipeline units as a runnable CWL bundle."""
-    catalog = get_pipeline_catalog()
-    runnables = _collect_runnables(
-        step_names,
-        task_names,
-        workflow_name,
-        catalog,
-    )
     try:
+        catalog = get_pipeline_catalog()
+        runnables = _collect_runnables(
+            step_names,
+            task_names,
+            workflow_name,
+            catalog,
+        )
         config = cfg.load(config_path)
         overrides = parse_config_overrides(config_overrides)
         cfg.apply_overrides(config, overrides)
@@ -265,6 +264,4 @@ def export_command(
     except (OSError, RuntimeError, ValueError) as error:
         raise click.ClickException(str(error)) from error
 
-    click.echo(
-        f"CWL export bundle written to {export_directory}"
-    )
+    click.echo(f"CWL export bundle written to {export_directory}")

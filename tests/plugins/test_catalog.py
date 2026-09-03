@@ -40,13 +40,14 @@ class FakeEntryPoint:
         name: str,
         value,
         *,
-        package: str = "asokai-test-plugin",
+        package: str | None = "asokai-test-plugin",
         load_error: Exception | None = None,
     ) -> None:
         self.group = group
         self.name = name
         self.value = value
-        self.dist = FakeDistribution(package)
+        if package is not None:
+            self.dist = FakeDistribution(package)
         self.load_error = load_error
         self.load_count = 0
 
@@ -188,12 +189,14 @@ def test_step_authoring_contracts_are_public() -> None:
         "GenerateASOCandidatesStep",
         "IntrinsicFeaturesStep",
         "InputConfigField",
+        "InstantiateTargetGeneTask",
         "JsonFile",
         "OutputPathTemplate",
         "Runnable",
         "ScalarParam",
         "Step",
         "StepSpec",
+        "StandardWorkflow",
         "Task",
         "TemplateField",
         "Workflow",
@@ -293,8 +296,13 @@ def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="Duplicate registered step name"):
+    with pytest.raises(ValueError) as raised:
         pipeline_catalog.get_steps()
+
+    message = str(raised.value)
+    assert "Duplicate registered step name" in message
+    assert "asokai-test-plugin" in message
+    assert "built-in ASOkai step" in message
 
 
 def test_plugin_load_errors_include_package_context(monkeypatch) -> None:
@@ -332,8 +340,24 @@ def test_plugin_class_must_implement_the_entry_point_kind(monkeypatch) -> None:
         FakeEntryPoint("asokai.steps", "wrong-kind", object),
     )
 
-    with pytest.raises(ValueError, match="expected Step, received object"):
+    with pytest.raises(ValueError, match="Step contract.*object"):
         pipeline_catalog.get_steps()
+
+
+def test_step_cannot_be_registered_through_the_task_entry_point(monkeypatch) -> None:
+    monkeypatch.setattr(RegisteredPluginStep, "steps", (), raising=False)
+
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.tasks",
+            RegisteredPluginStep.name,
+            RegisteredPluginStep,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="only the Task contract"):
+        pipeline_catalog.get_tasks()
 
 
 def test_plugin_instantiation_errors_include_entry_point_context(monkeypatch) -> None:
@@ -450,6 +474,41 @@ def test_plugin_config_schema_must_come_from_the_same_package(
         pipeline_catalog.get_steps()
 
 
+def test_plugin_without_package_provenance_cannot_borrow_a_schema(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    schema_path = tmp_path / "config.schema.yaml"
+    schema_path.write_text(
+        "type: object\n"
+        "properties:\n"
+        "  undeclared:\n"
+        "    type: object\n"
+        "    properties:\n"
+        "      threshold:\n"
+        "        type: integer\n",
+        encoding="utf-8",
+    )
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.steps",
+            "undeclared-config",
+            UndeclaredConfigStep,
+            package=None,
+        ),
+        FakeEntryPoint(
+            "asokai.config_schemas",
+            "unowned-schema",
+            schema_path,
+            package="schema-package",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="undeclared\\.threshold"):
+        pipeline_catalog.get_steps()
+
+
 def test_plugin_task_steps_must_be_registered(monkeypatch) -> None:
     _provide_entry_points(
         monkeypatch,
@@ -480,35 +539,64 @@ def test_plugin_workflow_members_must_be_registered(monkeypatch) -> None:
 
 def test_plugin_config_schema_entry_points_expose_paths(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    schema_path = tmp_path / "config.schema.yaml"
     _provide_entry_points(
         monkeypatch,
         FakeEntryPoint(
             "asokai.config_schemas",
             "example",
-            schema_path,
+            EXAMPLE_SCHEMA,
         ),
     )
 
     assert pipeline_catalog.get_config_schema_paths() == {
-        "example": schema_path,
+        "example": EXAMPLE_SCHEMA,
     }
 
 
-def test_plugin_config_schema_names_must_be_unique(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        (None, "Could not load"),
+        ("- not-a-mapping\n", "mapping at its root"),
+        ("type: [\n", "Could not load"),
+        ("type: not-a-json-schema-type\n", "schema is invalid"),
+    ],
+)
+def test_plugin_config_schema_must_be_valid(
+    monkeypatch,
+    tmp_path,
+    contents,
+    message,
+) -> None:
+    schema_path = tmp_path / "config.schema.yaml"
+    if contents is not None:
+        schema_path.write_text(contents, encoding="utf-8")
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.config_schemas",
+            "invalid-schema",
+            schema_path,
+        ),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        pipeline_catalog.get_config_schema_paths()
+
+
+def test_plugin_config_schema_names_must_be_unique(monkeypatch) -> None:
     _provide_entry_points(
         monkeypatch,
         FakeEntryPoint(
             "asokai.config_schemas",
             "duplicate",
-            tmp_path / "first.yaml",
+            EXAMPLE_SCHEMA,
         ),
         FakeEntryPoint(
             "asokai.config_schemas",
             "duplicate",
-            tmp_path / "second.yaml",
+            EXAMPLE_SCHEMA,
         ),
     )
 

@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: ASOkai CLI entry point.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,6 +63,7 @@ main.add_command(export_command)
 # Internal CWL commands
 # ---------------------------------------------------------------------------
 
+
 @main.command("publish-outputs", hidden=True)
 @click.argument(
     "manifest",
@@ -108,7 +110,10 @@ def step_command(
     step_name: str,
 ) -> None:
     """Dispatch an internal step CLI for CWL and debugging."""
-    step = get_steps().get(step_name)
+    try:
+        step = get_steps().get(step_name)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
     if step is None:
         raise click.ClickException(f"Unknown step '{step_name}'.")
 

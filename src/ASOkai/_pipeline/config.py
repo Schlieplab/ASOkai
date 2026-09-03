@@ -7,6 +7,7 @@ Version: 0.1.1
 Description: Config loading and resolution utilities.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import yaml
 from jsonschema.exceptions import SchemaError
+from jsonschema.validators import validator_for
 
 from ASOkai._cwl.model import _UNSET
 from ASOkai._pipeline.contracts.json_schema import (
@@ -46,9 +48,7 @@ def load(
     try:
         data = yaml.safe_load(source.read_text(encoding="utf-8"))
     except yaml.YAMLError as error:
-        raise ValueError(
-            f"Invalid YAML configuration in {source}: {error}"
-        ) from error
+        raise ValueError(f"Invalid YAML configuration in {source}: {error}") from error
     if not isinstance(data, Mapping):
         raise ValueError(
             f"Configuration in {source} must contain a mapping at its root."
@@ -74,9 +74,7 @@ def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:
                 f"'{parent}' is not a mapping."
             )
         if key not in value:
-            raise KeyError(
-                f"Config key '{dotted_key}' not found (missing '{key}')."
-            )
+            raise KeyError(f"Config key '{dotted_key}' not found (missing '{key}').")
         value = value[key]
         traversed.append(key)
     return value
@@ -168,8 +166,7 @@ def validate_step_config(
                 configured_value = resolve_parameter_value(config, parameter)
             except KeyError:
                 errors.append(
-                    f"$.{parameter.config}: required by step "
-                    f"'{step.name}'"
+                    f"$.{parameter.config}: required by step " f"'{step.name}'"
                 )
                 missing_parameter = True
                 parameters_are_valid = False
@@ -210,9 +207,7 @@ def validate_step_config(
                 for supported_value in supported_values
             )
             if not is_supported:
-                supported = ", ".join(
-                    repr(value) for value in supported_values
-                )
+                supported = ", ".join(repr(value) for value in supported_values)
                 errors.append(
                     f"$.{path}: configured value {configured_value!r} is "
                     f"incompatible with step '{step.name}'; supported "
@@ -239,14 +234,12 @@ def validate_step_config(
                 path_config = f"{configuration_path}.path_override"
                 if not path_override.exists():
                     errors.append(
-                        f"$.{path_config}: file does not exist: "
-                        f"{path_override}"
+                        f"$.{path_config}: file does not exist: " f"{path_override}"
                     )
                     continue
                 if not path_override.is_file():
                     errors.append(
-                        f"$.{path_config}: path is not a file: "
-                        f"{path_override}"
+                        f"$.{path_config}: path is not a file: " f"{path_override}"
                     )
                     continue
                 try:
@@ -273,9 +266,7 @@ def validate_step_config(
                 try:
                     output.destination.validate_configuration(output_config)
                 except (KeyError, TypeError, ValueError) as error:
-                    errors.append(
-                        f"Step '{step.name}' output '{output.name}': {error}"
-                    )
+                    errors.append(f"Step '{step.name}' output '{output.name}': {error}")
 
     if errors:
         _raise_config_errors(errors)
@@ -305,10 +296,7 @@ def validate_configured_step_names(
                 )
 
     for step_name in configured_resources:
-        if (
-            step_name != RESOURCE_DEFAULT_KEY
-            and step_name not in registered_steps
-        ):
+        if step_name != RESOURCE_DEFAULT_KEY and step_name not in registered_steps:
             errors.append(f"$.resources.{step_name}: unknown step")
 
     if errors:
@@ -323,7 +311,7 @@ def validate_step_config_paths(
     schemas = {"ASOkai": _load_config_schema()}
     for plugin_name, schema_path in (plugin_schema_paths or {}).items():
         owner = f"Plugin '{plugin_name}'"
-        schema = _read_config_schema(schema_path, owner)
+        schema = load_config_schema(schema_path, owner)
         schemas[owner] = schema
 
     errors: list[str] = []
@@ -342,10 +330,7 @@ def validate_step_config_paths(
                     paths.append(parameter_path)
         paths.extend(step.spec.compatible_with)
         for path in dict.fromkeys(paths):
-            if any(
-                _schema_declares_path(schema, path)
-                for schema in schemas.values()
-            ):
+            if any(_schema_declares_path(schema, path) for schema in schemas.values()):
                 continue
             errors.append(
                 f"Step '{step.name}' uses '{path}', but no registered "
@@ -371,7 +356,7 @@ def validate_config_schema(
         plugin_schema_paths = get_config_schema_paths()
 
     for plugin_name, schema_path in plugin_schema_paths.items():
-        schema = _read_config_schema(
+        schema = load_config_schema(
             schema_path,
             f"plugin '{plugin_name}'",
         )
@@ -386,32 +371,37 @@ def validate_config_schema(
     if errors:
         _raise_config_errors(errors)
 
+
 @cache
 def _load_config_schema() -> JsonSchema:
     """Load ASOkai's checked-in configuration schema once."""
-    return _read_config_schema(_CONFIG_SCHEMA_PATH, "ASOkai")
+    return load_config_schema(_CONFIG_SCHEMA_PATH, "ASOkai")
 
 
-def _read_config_schema(
+def load_config_schema(
     path: Path,
     owner: str,
 ) -> JsonSchema:
-    """Read one YAML configuration schema."""
+    """Read and validate one YAML configuration schema."""
     try:
-        schema = yaml.safe_load(
-            path.read_text(encoding="utf-8")
-        )
+        schema = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
         raise ValueError(
-            f"Could not load {owner} configuration schema at "
-            f"{path}: {error}"
+            f"Could not load {owner} configuration schema at " f"{path}: {error}"
         ) from error
     if not isinstance(schema, Mapping):
         raise ValueError(
             f"{owner} configuration schema at {path} "
             "must contain a mapping at its root."
         )
-    return dict(schema)
+    loaded = dict(schema)
+    try:
+        validator_for(loaded).check_schema(loaded)
+    except SchemaError as error:
+        raise ValueError(
+            f"{owner} configuration schema is invalid: {error.message}"
+        ) from error
+    return loaded
 
 
 def _schema_errors(
@@ -438,11 +428,7 @@ def _schema_declares_path(
     """Return whether nested schema properties declare a dotted path."""
     current: Any = schema
     for name in _dotted_key_parts(dotted_path):
-        properties = (
-            current.get("properties")
-            if isinstance(current, Mapping)
-            else None
-        )
+        properties = current.get("properties") if isinstance(current, Mapping) else None
         if not isinstance(properties, Mapping) or name not in properties:
             return False
         current = properties[name]
@@ -455,9 +441,7 @@ def _dotted_key_parts(dotted_key: str) -> tuple[str, ...]:
         raise TypeError("Config keys must be strings.")
     parts = tuple(dotted_key.split("."))
     if not parts or any(not part.strip() for part in parts):
-        raise ValueError(
-            f"Invalid dotted config key: {dotted_key!r}."
-        )
+        raise ValueError(f"Invalid dotted config key: {dotted_key!r}.")
     return parts
 
 

@@ -38,6 +38,8 @@ does not modify them. Built-ins therefore use tuples. Plugin components may
 use another sequence type, including a list, but should not mutate it after
 discovery.
 
+.. _pipeline-step-specification:
+
 The step specification
 ----------------------
 
@@ -182,6 +184,8 @@ connect producer outputs to consumer inputs, generate CWL, determine final
 output paths, and publish results. A step should not reproduce any of this
 logic.
 
+.. _analysis-step-lifecycle:
+
 Analysis-step lifecycle
 -----------------------
 
@@ -198,6 +202,8 @@ An ``AnalysisStep`` adds a stricter convention for tabular site results:
 This keeps ordinary analysis contributions declarative. Custom execution is
 appropriate for a ``CoreStep``; it should not be introduced into an analysis
 step merely to parse inputs or write results.
+
+.. _pipeline-validation-boundaries:
 
 Validation boundaries
 ---------------------

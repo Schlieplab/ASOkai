@@ -71,7 +71,7 @@ antisense:
 
 ### Configuration
 
-The CLI reads `./config.yaml` by default. Use `--configfile` to select another
+The CLI reads `./config.yaml` by default. Use `--config-file` to select another
 file and `--config KEY=VALUE` to override individual values for one command:
 
 ```bash
@@ -93,9 +93,9 @@ resources:
 ```
 
 Missing per-step settings inherit from `resources.default`. If the section is
-omitted, ASOkai uses 4096 MiB and one process where multiprocessing is
-supported. A single-process step always requests one core and does not accept
-a step-level `n_processes` setting.
+omitted, ASOkai uses 4096 MiB and one worker where parallel execution is
+supported. Analysis workers use threads. A single-worker step always requests
+one core and does not accept a step-level `n_processes` setting.
 
 ### Commands
 

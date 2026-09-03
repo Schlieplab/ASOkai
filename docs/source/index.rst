@@ -31,6 +31,7 @@ interface.
    api/modules/Biochemistry
    api/modules/Sites
    api/modules/Targets
+   api/modules/Types
    api/modules/Utils
 
 .. toctree::

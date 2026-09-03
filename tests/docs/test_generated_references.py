@@ -175,7 +175,10 @@ def test_task_reference_links_to_its_steps() -> None:
         for link in node.findall(addnodes.pending_xref)
     }
 
-    assert "ASOkai run --task instantiate-target-gene" in reference
+    assert (
+        "ASOkai run --task instantiate-target-gene "
+        "--config-file ./config.yaml" in reference
+    )
     assert "Expanded steps" not in reference
     assert "Contracts" not in reference
     assert link_targets == {
@@ -301,6 +304,10 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     )
     reference = "\n".join(node.astext() for node in generated_nodes)
 
+    assert (
+        "ASOkai run --step intrinsic-features "
+        "--config-file ./config.yaml" in reference
+    )
     assert "create-target-gene.target_gene" in reference
     input_path = "steps.intrinsic-features.inputs.target_gene.path_override"
     assert input_path in reference

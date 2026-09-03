@@ -119,7 +119,7 @@ def _run_section(runnable: Any, kind: str) -> nodes.section:
     option = "--workflow" if kind == "workflow" else "--task"
     command = (
         f"ASOkai run {option} {runnable.name} "
-        "--configfile ./config.yaml"
+        "--config-file ./config.yaml"
     )
     return section(
         f"Run this {kind}",

@@ -57,22 +57,10 @@ contract from its owning ``ASOkai._pipeline`` module, as shown in the template.
 An independently installed plugin imports the public equivalents from
 :mod:`ASOkai.Plugins`.
 
-``StepSpec`` contains three kinds of declarations:
-
-``ScalarParam``
-   A scalar command-line argument, optionally populated from a dotted
-   configuration path.
-
-``FileInput``
-   A file produced by another step. Its ``source`` is that step's
-   ``FileOutput`` declaration. This connection supplies the dependency and
-   file type automatically. A user may provide a pre-existing file through
-   ``path_override``.
-
-``FileOutput``
-   A produced file, its type, and its destination below the configured data
-   directory. ``JsonFile`` validates serializable object structures;
-   ``CsvFile`` declares ordered index and data columns with scalar types.
+Use ``StepSpec`` to collect the analysis's ``ScalarParam``, ``FileInput``, and
+``FileOutput`` declarations. Their complete ownership and validation rules are
+documented in :ref:`pipeline-step-specification`; the analysis guide only adds
+the conventions specific to analysis outputs below.
 
 Declare every ``FileOutput`` once as a class attribute and reuse that object
 in ``StepSpec.outputs``. Referencing that class attribute from a later
@@ -111,13 +99,9 @@ their inherited file contracts. For example, a target-gene JSON input is
 available as ``args.target_gene`` containing a ``TargetGene`` object; the
 contributor should not open or deserialize it again.
 
-The ``AnalysisStep`` base class then:
-
-1. constructs the analysis;
-2. supplies the configured analysis-worker count through ``n_processes``;
-3. calls ``run``;
-4. converts the site-keyed results to primary CSV rows; and
-5. validates and writes every declared output.
+The shared :ref:`analysis-step-lifecycle` constructs the analysis, supplies the
+configured worker count, runs it, converts its site-keyed results to CSV rows,
+and writes every declared output.
 
 There is no contributor-defined ``main`` function, input-loading hook,
 metadata payload, or output-writing hook in the standard analysis-step flow.
@@ -136,10 +120,10 @@ structure. Adding a configurable input does not require another schema entry;
 its allowed parameter names and value types come from the ``FileInput`` and
 the producer's ``ScalarParam`` declarations.
 
-The YAML schema should express types, required fields, enumerated values,
-ranges, and other structural constraints. Override
-``validate_parameters(values)`` only for relationships between resolved
-scalar parameters that the YAML schema cannot express clearly.
+Follow the :ref:`pipeline-validation-boundaries`: express structural and scalar
+constraints in YAML Schema, and override ``validate_parameters(values)`` only
+for relationships between resolved scalar parameters that the schema cannot
+express clearly.
 
 Use ``StepSpec.compatible_with`` only for real biological applicability
 restrictions, such as a mechanism or modality required by the analysis. Omit

@@ -289,7 +289,7 @@ def export_all(
     )
     inputs = resolve_run_sequence_inputs(
         plan.runs_to_execute,
-        dict(plan.resolved_outputs),
+        plan.resolved_outputs,
     )
     parent_dir = outdir or Path(config["datadir"]) / "jobs"
     job_dir = write_cwl_job_bundle(

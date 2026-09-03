@@ -344,20 +344,6 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert "create-target-gene.target_gene_output" not in job
 
 
-def test_export_all_readme_uses_toil_runner(workflow_config, tmp_path):
-    export_dir = runner.export_all(
-        [InstantiateTargetGeneTask()],
-        workflow_config,
-        outdir=tmp_path,
-        runner_name="toil-cwl-runner",
-    )
-
-    readme = (export_dir / "README.md").read_text()
-    assert "prepared for `toil-cwl-runner`" in readme
-    assert str(export_dir.resolve()) not in readme
-    assert "toil-cwl-runner --outdir /path/to/data run.cwl job.yml" in readme
-
-
 def test_executor_from_name_uses_central_runner_configuration():
     assert isinstance(runner.executor_from_name("cwltool"), CwlToolExecutor)
     assert isinstance(runner.executor_from_name("toil"), ToilExecutor)

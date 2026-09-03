@@ -9,9 +9,13 @@ License: LGPL-3.0-or-later
 """
 
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
-from ASOkai._cwl.job_bundle import _run_commands, write_cwl_job_bundle
+import pytest
+import yaml
+
+from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.generation import GeneratedCwlBundle
 
 
@@ -24,10 +28,40 @@ def _bundle() -> GeneratedCwlBundle:
     )
 
 
-def test_run_commands_accepts_an_arbitrary_runner_executable():
-    assert "custom-cwl-runner --outdir /path/to/data run.cwl job.yml" in _run_commands(
-        "custom-cwl-runner"
+def test_write_cwl_job_bundle_writes_complete_standalone_bundle(tmp_path):
+    job_dir = write_cwl_job_bundle(
+        bundle=_bundle(),
+        inputs={
+            "enabled": True,
+            "input": {"class": "File", "path": "/machine/input.fa"},
+        },
+        parent_dir=tmp_path / "jobs",
+        label="example workflow",
+        runner_name="custom-cwl-runner",
+        name_prefix="asokai-job",
     )
+
+    assert job_dir.parent == tmp_path / "jobs"
+    assert job_dir.name.startswith("asokai-job-")
+    assert (job_dir / "run.cwl").read_text() == "class: Workflow\n"
+    assert (job_dir / "publish.cwl").read_text() == (
+        "class: CommandLineTool\n"
+    )
+    assert (job_dir / "output-layout.yml").read_text() == (
+        "version: 1\noutputs: []\n"
+    )
+    assert (job_dir / "steps" / "example.cwl").read_text() == (
+        "class: CommandLineTool\n"
+    )
+    assert yaml.safe_load((job_dir / "job.yml").read_text()) == {
+        "enabled": True,
+        "input": {"class": "File", "path": "/machine/input.fa"},
+    }
+    readme = (job_dir / "README.md").read_text()
+    assert "prepared ASOkai CWL job bundle for `example workflow`" in readme
+    assert "custom-cwl-runner --outdir /path/to/data run.cwl job.yml" in readme
+    assert "File inputs can contain absolute paths" in readme
+    assert "Files at declared output destinations may be replaced" in readme
 
 
 def test_write_cwl_job_bundle_avoids_timestamp_name_collisions(tmp_path):
@@ -54,8 +88,30 @@ def test_write_cwl_job_bundle_avoids_timestamp_name_collisions(tmp_path):
 
     assert first.name == "asokai-job-20260713-123456"
     assert second.name == "asokai-job-20260713-123456-2"
-    assert (first / "run.cwl").exists()
-    assert (first / "publish.cwl").exists()
-    assert (first / "output-layout.yml").exists()
-    assert (first / "steps" / "example.cwl").exists()
     assert (second / "run.cwl").exists()
+
+
+def test_write_cwl_job_bundle_removes_incomplete_directory(
+    tmp_path,
+    monkeypatch,
+):
+    original_write_text = Path.write_text
+
+    def fail_while_writing_publisher(path, text, **kwargs):
+        if path.name == "publish.cwl":
+            raise OSError("simulated write failure")
+        return original_write_text(path, text, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_while_writing_publisher)
+
+    with pytest.raises(OSError, match="simulated write failure"):
+        write_cwl_job_bundle(
+            bundle=_bundle(),
+            inputs={},
+            parent_dir=tmp_path,
+            label="example",
+            runner_name="cwltool",
+            name_prefix="asokai-job",
+        )
+
+    assert list(tmp_path.iterdir()) == []

@@ -29,7 +29,8 @@ from ASOkai._pipeline.contracts.execution import (
     StepRunOutput,
 )
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
-from ASOkai._pipeline.plan import _flatten_goals, build_export_plan, build_plan
+from ASOkai._pipeline.base import expand_runnable_steps
+from ASOkai._pipeline.plan import build_export_plan, build_plan
 
 
 def _make_step(
@@ -949,7 +950,7 @@ def test_workflow_flattens_tasks_and_nested_workflows_in_order():
         description = ""
         members = [InnerWorkflow(), second]
 
-    goals = _flatten_goals(cast(Runnable, OuterWorkflow()))
+    goals = expand_runnable_steps(cast(Runnable, OuterWorkflow()))
 
     assert [step.name for step in goals] == ["first", "second"]
 
@@ -964,7 +965,7 @@ def test_workflow_cycle_is_rejected():
     workflow.members = [cast(Runnable, workflow)]
 
     with pytest.raises(ValueError, match="cycle"):
-        _flatten_goals(cast(Runnable, workflow))
+        expand_runnable_steps(cast(Runnable, workflow))
 
 
 def test_non_recursive_export_exposes_only_direct_dependency_boundary(config):

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 
+from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
@@ -20,8 +21,6 @@ from ASOkai._pipeline import runner
 from .options import (
     CONTEXT_SETTINGS,
     DEFAULT_CONFIG,
-    VariadicOption,
-    flatten_option_values,
     parse_config_overrides,
     verbose_option,
 )
@@ -32,22 +31,22 @@ def _collect_runnables(
     task_names: tuple[str, ...],
     workflow_name: str | None,
     catalog: PipelineCatalog,
-) -> list:
+) -> list[Runnable]:
     """Resolve CLI selections to registered runnable objects."""
-    runnables = []
-    for name in flatten_option_values(step_names):
+    runnables: list[Runnable] = []
+    for name in step_names:
         if name not in catalog.steps:
             raise click.BadParameter(
                 f"Unknown step '{name}'.",
-                param_hint="--steps",
+                param_hint="--step",
             )
         runnables.append(catalog.steps[name])
 
-    for name in flatten_option_values(task_names):
+    for name in task_names:
         if name not in catalog.tasks:
             raise click.BadParameter(
                 f"Unknown task '{name}'.",
-                param_hint="--tasks",
+                param_hint="--task",
             )
         runnables.append(catalog.tasks[name])
 
@@ -62,7 +61,7 @@ def _collect_runnables(
     if not runnables:
         raise click.UsageError(
             "Select at least one runnable with "
-            "--steps, --tasks, or --workflow."
+            "--step, --task, or --workflow."
         )
     return runnables
 
@@ -74,28 +73,24 @@ def _collect_runnables(
     "--configfile",
     "--config-file",
     "config_path",
-    type=click.Path(exists=True, path_type=Path),
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=DEFAULT_CONFIG,
     show_default=True,
     help="Path to config.yaml.",
 )
 @click.option(
-    "--steps",
+    "--step",
     "step_names",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="NAME [NAME ...]",
-    help="Step(s) to run. Repeat the flag or pass multiple names.",
+    metavar="NAME",
+    help="Step to run. Repeat the option to select multiple steps.",
 )
 @click.option(
-    "--tasks",
+    "--task",
     "task_names",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="NAME [NAME ...]",
-    help="Task(s) to run. Repeat the flag or pass multiple names.",
+    metavar="NAME",
+    help="Task to run. Repeat the option to select multiple tasks.",
 )
 @click.option(
     "--workflow",
@@ -130,11 +125,9 @@ def _collect_runnables(
 @click.option(
     "--config",
     "config_overrides",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="KEY=VALUE [KEY=VALUE ...]",
-    help="Override config values.",
+    metavar="KEY=VALUE",
+    help="Override a config value. Repeat the option for multiple values.",
 )
 def run_command(
     config_path: Path,
@@ -145,7 +138,7 @@ def run_command(
     dry_run: bool,
     non_recursive: bool,
     executor_name: str,
-    config_overrides: tuple,
+    config_overrides: tuple[str, ...],
 ) -> None:
     """Run selected steps, tasks, or a workflow."""
     catalog = get_pipeline_catalog()
@@ -156,14 +149,9 @@ def run_command(
         catalog,
     )
     try:
-        config = cfg.load(
-            config_path,
-            plugin_schema_paths=catalog.config_schema_paths,
-            registered_steps=catalog.steps,
-        )
+        config = cfg.load(config_path)
         overrides = parse_config_overrides(config_overrides)
-        if overrides:
-            cfg.apply_overrides(config, overrides)
+        cfg.apply_overrides(config, overrides)
 
         runner.run_all(
             runnables,
@@ -186,28 +174,24 @@ def run_command(
     "--configfile",
     "--config-file",
     "config_path",
-    type=click.Path(exists=True, path_type=Path),
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=DEFAULT_CONFIG,
     show_default=True,
     help="Path to config.yaml.",
 )
 @click.option(
-    "--steps",
+    "--step",
     "step_names",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="NAME [NAME ...]",
-    help="Step(s) to export. Repeat the flag or pass multiple names.",
+    metavar="NAME",
+    help="Step to export. Repeat the option to select multiple steps.",
 )
 @click.option(
-    "--tasks",
+    "--task",
     "task_names",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="NAME [NAME ...]",
-    help="Task(s) to export. Repeat the flag or pass multiple names.",
+    metavar="NAME",
+    help="Task to export. Repeat the option to select multiple tasks.",
 )
 @click.option(
     "--workflow",
@@ -223,7 +207,7 @@ def run_command(
 )
 @click.option(
     "--outdir",
-    type=click.Path(path_type=Path),
+    type=click.Path(file_okay=False, path_type=Path),
     default=None,
     metavar="DIR",
     help=(
@@ -242,11 +226,9 @@ def run_command(
 @click.option(
     "--config",
     "config_overrides",
-    cls=VariadicOption,
     multiple=True,
-    type=click.UNPROCESSED,
-    metavar="KEY=VALUE [KEY=VALUE ...]",
-    help="Override config values.",
+    metavar="KEY=VALUE",
+    help="Override a config value. Repeat the option for multiple values.",
 )
 def export_command(
     config_path: Path,
@@ -256,7 +238,7 @@ def export_command(
     recursive: bool,
     outdir: Path | None,
     executor_name: str,
-    config_overrides: tuple,
+    config_overrides: tuple[str, ...],
 ) -> None:
     """Export selected pipeline units as a runnable CWL bundle."""
     catalog = get_pipeline_catalog()
@@ -267,14 +249,9 @@ def export_command(
         catalog,
     )
     try:
-        config = cfg.load(
-            config_path,
-            plugin_schema_paths=catalog.config_schema_paths,
-            registered_steps=catalog.steps,
-        )
+        config = cfg.load(config_path)
         overrides = parse_config_overrides(config_overrides)
-        if overrides:
-            cfg.apply_overrides(config, overrides)
+        cfg.apply_overrides(config, overrides)
 
         export_directory = runner.export_all(
             runnables,

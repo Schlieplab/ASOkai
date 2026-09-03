@@ -19,7 +19,7 @@ from typing import Any, Mapping, Sequence
 
 from ASOkai.Types import Scalar
 from ASOkai._pipeline import config as cfg
-from ASOkai._pipeline.base import Runnable
+from ASOkai._pipeline.base import Runnable, expand_runnable_steps
 from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
     StepInputBinding,
@@ -28,30 +28,8 @@ from ASOkai._pipeline.contracts.execution import (
 )
 from ASOkai._pipeline.contracts.files import FileInput
 from ASOkai._pipeline.steps.base import Step
-from ASOkai._pipeline.tasks.base import Task
-from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
-
-
-def _flatten_goals(
-    runnable: Runnable,
-    seen_workflows: frozenset[str] = frozenset(),
-) -> list[Step]:
-    """Expand one runnable into the endpoint steps it requests."""
-    if isinstance(runnable, Workflow):
-        if runnable.name in seen_workflows:
-            raise ValueError(f"Workflow '{runnable.name}' participates in a cycle.")
-        seen = seen_workflows | {runnable.name}
-        goals: list[Step] = []
-        for member in runnable.members:
-            goals.extend(_flatten_goals(member, seen))
-        return goals
-    if isinstance(runnable, Task):
-        return list(runnable.steps)
-    if isinstance(runnable, Step):
-        return [runnable]
-    raise TypeError(f"Unsupported runnable type: {type(runnable).__name__!r}.")
 
 
 @dataclass(frozen=True)
@@ -523,7 +501,7 @@ def _validated_goal_steps(
     goal_steps: list[Step] = []
     seen_goal_names: set[str] = set()
     for runnable in runnables:
-        for step in _flatten_goals(runnable):
+        for step in expand_runnable_steps(runnable):
             if step.name in seen_goal_names:
                 continue
             seen_goal_names.add(step.name)

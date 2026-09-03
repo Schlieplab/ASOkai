@@ -117,7 +117,7 @@ def _identity(kind: str) -> nodes.field_list:
 
 
 def _run_section(runnable: Any, kind: str) -> nodes.section:
-    option = "--workflow" if kind == "workflow" else "--tasks"
+    option = "--workflow" if kind == "workflow" else "--task"
     command = (
         f"ASOkai run {option} {runnable.name} "
         "--configfile ./config.yaml"
@@ -178,9 +178,11 @@ def _members_section(
 
 def _expanded_steps(runnable: Any) -> list[Any]:
     """Return the unique explicit steps produced by runnable expansion."""
-    from ASOkai._pipeline.plan import _flatten_goals
+    from ASOkai._pipeline.base import expand_runnable_steps
 
-    return list({step.name: step for step in _flatten_goals(runnable)}.values())
+    return list(
+        {step.name: step for step in expand_runnable_steps(runnable)}.values()
+    )
 
 
 def _expanded_steps_section(runnable: Any, *, refdoc: str) -> nodes.section:

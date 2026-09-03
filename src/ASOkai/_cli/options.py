@@ -20,38 +20,6 @@ DEFAULT_CONFIG = Path("config.yaml")
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 
-class VariadicOption(click.Option):
-    """A Click option that consumes values until the next option."""
-
-    def add_to_parser(self, parser, ctx):
-        retval = super().add_to_parser(parser, ctx)
-        for name in self.opts:
-            option_parser = (
-                parser._long_opt.get(name)
-                or parser._short_opt.get(name)
-            )
-            if option_parser is None:
-                continue
-
-            previous_process = option_parser.process
-
-            def parser_process(
-                value,
-                state,
-                previous_process=previous_process,
-            ):
-                values = [value]
-                while state.rargs:
-                    next_arg = state.rargs[0]
-                    if next_arg.startswith("-"):
-                        break
-                    values.append(state.rargs.pop(0))
-                previous_process(tuple(values), state)
-
-            option_parser.process = parser_process
-        return retval
-
-
 def _set_verbose(
     ctx: click.Context,
     param: click.Parameter,
@@ -75,26 +43,23 @@ verbose_option = click.option(
 )
 
 
-def flatten_option_values(values: tuple) -> list[str]:
-    """Flatten repeated options that may each contain multiple values."""
-    flattened_values = []
-    for value in values:
-        if isinstance(value, tuple):
-            flattened_values.extend(value)
-        else:
-            flattened_values.append(value)
-    return flattened_values
-
-
-def parse_config_overrides(config_overrides: tuple) -> dict:
+def parse_config_overrides(
+    config_overrides: tuple[str, ...],
+) -> dict[str, object]:
     """Parse repeated KEY=VALUE configuration overrides."""
-    parsed_overrides = {}
-    for override in flatten_option_values(config_overrides):
+    parsed_overrides: dict[str, object] = {}
+    for override in config_overrides:
         if "=" not in override:
             raise click.BadParameter(
                 f"'{override}' is not in KEY=VALUE format.",
                 param_hint="--config",
             )
         key, _, value = override.partition("=")
-        parsed_overrides[key] = yaml.safe_load(value)
+        try:
+            parsed_overrides[key] = yaml.safe_load(value)
+        except yaml.YAMLError as error:
+            raise click.BadParameter(
+                f"'{override}' contains an invalid YAML value: {error}",
+                param_hint="--config",
+            ) from error
     return parsed_overrides

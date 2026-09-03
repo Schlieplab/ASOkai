@@ -75,7 +75,7 @@ The CLI reads `./config.yaml` by default. Use `--configfile` to select another
 file and `--config KEY=VALUE` to override individual values for one command:
 
 ```bash
-ASOkai run --steps intrinsic-features --config target.region=transcriptomic
+ASOkai run --step intrinsic-features --config target.region=transcriptomic
 ```
 
 Run `ASOkai describe step NAME` to see the configuration keys and input
@@ -114,21 +114,21 @@ ASOkai describe task instantiate-target-gene
 ASOkai describe workflow standard
 
 # Run one step, task, or workflow
-ASOkai run --steps download-genome
-ASOkai run --tasks instantiate-target-gene
+ASOkai run --step download-genome
+ASOkai run --task instantiate-target-gene
 ASOkai run --workflow standard
 
 # Run multiple selected units
-ASOkai run --steps generate-aso-candidates intrinsic-features
+ASOkai run --step generate-aso-candidates --step intrinsic-features
 
 # Export the selected goals as a CWL job bundle without executing them
 ASOkai export --workflow standard
 
 # Include the complete producer closure in the exported bundle
-ASOkai export --steps intrinsic-features --recursive
+ASOkai export --step intrinsic-features --recursive
 
 # Require dependencies to exist instead of scheduling missing ones
-ASOkai run --steps intrinsic-features --non-recursive
+ASOkai run --step intrinsic-features --non-recursive
 ```
 
 ## Third-party software and licenses

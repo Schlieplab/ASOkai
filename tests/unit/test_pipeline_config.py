@@ -117,7 +117,7 @@ def test_apply_overrides_rejects_scalar_parent(sample_config):
         )
 
 
-def test_load_validates_against_checked_in_schema(tmp_path):
+def test_schema_validation_is_separate_from_loading(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "datadir: ./data\n"
@@ -125,11 +125,10 @@ def test_load_validates_against_checked_in_schema(tmp_path):
         "  source: ''\n"
     )
 
-    with pytest.raises(
-        ValueError,
-        match=r"genome.source",
-    ):
-        cfg.load(path)
+    config = cfg.load(path)
+
+    with pytest.raises(ValueError, match=r"genome.source"):
+        cfg.validate_config_schema(config)
 
 
 def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):

@@ -11,7 +11,7 @@ License: LGPL-3.0-or-later
 import pytest
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 from ASOkai.Plugins import Runnable, Step, Task, Workflow
-from ASOkai._pipeline.plan import _flatten_goals
+from ASOkai._pipeline.base import expand_runnable_steps
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def test_builtin_compositions_cannot_be_replaced(workflow):
 
 
 def test_flattens_to_explicit_step_names(workflow):
-    assert [s.name for s in _flatten_goals(workflow)] == [
+    assert [s.name for s in expand_runnable_steps(workflow)] == [
         "download-genome",
         "create-target-gene",
         "generate-aso-candidates",

@@ -40,11 +40,8 @@ _CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
 
 def load(
     path: Path | str,
-    *,
-    plugin_schema_paths: Mapping[str, Path] | None = None,
-    registered_steps: Mapping[str, Step] | None = None,
 ) -> dict:
-    """Load a YAML configuration whose root is a mapping."""
+    """Read a YAML configuration mapping without validating its values."""
     source = Path(path)
     try:
         data = yaml.safe_load(source.read_text(encoding="utf-8"))
@@ -56,11 +53,7 @@ def load(
         raise ValueError(
             f"Configuration in {source} must contain a mapping at its root."
         )
-    config = dict(data)
-    validate_config_schema(config, plugin_schema_paths=plugin_schema_paths)
-    if registered_steps is not None:
-        validate_configured_step_names(config, registered_steps)
-    return config
+    return dict(data)
 
 
 def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:

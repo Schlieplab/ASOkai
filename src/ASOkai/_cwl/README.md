@@ -113,8 +113,8 @@ or output files.
 Use `ASOkai export` to write a runnable CWL bundle:
 
 ```bash
-ASOkai export --steps download-genome create-target-gene --outdir data/jobs
-ASOkai export --tasks instantiate-target-gene --outdir data/jobs
+ASOkai export --step download-genome --step create-target-gene --outdir data/jobs
+ASOkai export --task instantiate-target-gene --outdir data/jobs
 ASOkai export --workflow standard --recursive --outdir data/jobs
 ```
 

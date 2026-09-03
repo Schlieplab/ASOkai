@@ -154,7 +154,7 @@ def test_task_reference_links_to_its_steps() -> None:
         for link in node.findall(addnodes.pending_xref)
     }
 
-    assert "ASOkai run --tasks instantiate-target-gene" in reference
+    assert "ASOkai run --task instantiate-target-gene" in reference
     assert "Expanded steps" not in reference
     assert "Contracts" not in reference
     assert link_targets == {

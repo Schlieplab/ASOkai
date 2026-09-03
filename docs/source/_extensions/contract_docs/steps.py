@@ -439,7 +439,7 @@ def _example_step_config(
 
 def _invocation_section(step: Any, complete_config: Mapping[str, Any]) -> nodes.section:
     has_dependencies = bool(step.spec.dependencies())
-    command = f"ASOkai run --steps {step.name} --configfile ./config.yaml"
+    command = f"ASOkai run --step {step.name} --configfile ./config.yaml"
     command_block = nodes.literal_block(command, command)
 
     example_config = cast(

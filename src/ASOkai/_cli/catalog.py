@@ -9,14 +9,15 @@ License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
 from itertools import groupby
 from typing import Any
 
 import click
 
+from ASOkai._pipeline.base import expand_runnable_steps
 from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.base import CoreStep
 
 from .options import CONTEXT_SETTINGS, verbose_option
@@ -120,30 +121,8 @@ def list_command(unit: str) -> None:
         )
 
 
-def _expanded_step_names(members: Sequence) -> list[str]:
-    """Recursively expand workflow members into ordered explicit steps."""
-    from ASOkai._pipeline.steps.base import Step
-    from ASOkai._pipeline.tasks.base import Task
-    from ASOkai._pipeline.workflows.base import Workflow
-
-    step_names: list[str] = []
-    for member in members:
-        if isinstance(member, Workflow):
-            step_names.extend(_expanded_step_names(member.members))
-        elif isinstance(member, Task):
-            step_names.extend(step.name for step in member.steps)
-        elif isinstance(member, Step):
-            step_names.append(member.name)
-    return step_names
-
-
-def _dependency_name(dependency) -> str:
-    """Return the registry name of a dependency."""
-    return getattr(dependency, "name", dependency)
-
-
 def _dependency_tree_lines(
-    registry: dict,
+    steps: dict[str, Step],
     dependencies: list[str],
     prefix: str = "",
     seen: set[str] | None = None,
@@ -151,8 +130,7 @@ def _dependency_tree_lines(
     """Build dependency-tree lines while avoiding cycles."""
     seen = seen or set()
     lines = []
-    for index, dependency in enumerate(dependencies):
-        dependency_name = _dependency_name(dependency)
+    for index, dependency_name in enumerate(dependencies):
         is_last = index == len(dependencies) - 1
         connector = "`-- " if is_last else "|-- "
 
@@ -163,20 +141,15 @@ def _dependency_tree_lines(
             continue
 
         lines.append(f"{prefix}{connector}{dependency_name}")
-        dependency_unit = registry.get(dependency_name)
-        if dependency_unit is None:
+        dependency_step = steps.get(dependency_name)
+        if dependency_step is None:
             continue
 
-        nested_dependencies = (
-            getattr(dependency_unit, "dependencies", None)
-            or getattr(dependency_unit, "steps", None)
-            or []
-        )
         child_prefix = f"{prefix}{'    ' if is_last else '|   '}"
         lines.extend(
             _dependency_tree_lines(
-                registry,
-                nested_dependencies,
+                steps,
+                dependency_step.dependencies,
                 child_prefix,
                 seen | {dependency_name},
             )
@@ -238,7 +211,7 @@ def _describe_step(step) -> tuple[list[str], str]:
     click.echo(f"Type        : {_step_type_label(step)}")
     _describe_step_config_keys(step)
     _describe_step_input_configuration(step)
-    return step.dependencies or [], "Dependencies"
+    return step.dependencies, "Dependencies"
 
 
 def _describe_task(task) -> tuple[list[str], str]:
@@ -254,7 +227,10 @@ def _describe_workflow(workflow) -> tuple[list[str], str]:
     member_names = [member.name for member in workflow.members]
     click.echo(f"Members     : {', '.join(member_names)}")
     click.echo("CWL         : (CLI collection; export creates run.cwl)")
-    return _expanded_step_names(workflow.members), "Steps (expanded)"
+    return [
+        step.name
+        for step in expand_runnable_steps(workflow)
+    ], "Steps (expanded)"
 
 
 def _describe_dependencies(
@@ -268,13 +244,8 @@ def _describe_dependencies(
     if not dependencies:
         click.echo(f"{label}: (none)")
     elif verbose and unit == "step":
-        registry = {
-            **catalog.steps,
-            **catalog.tasks,
-            **catalog.workflows,
-        }
         click.echo(f"{label}:")
-        for line in _dependency_tree_lines(registry, dependencies):
+        for line in _dependency_tree_lines(catalog.steps, dependencies):
             click.echo(f"  {line}")
     else:
         click.echo(

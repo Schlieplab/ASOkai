@@ -26,7 +26,7 @@ example_analysis:
 The step can then be selected like any built-in analysis:
 
 ```bash
-ASOkai run --steps example-sequence-length --config-file config.yaml
+ASOkai run --step example-sequence-length --config-file config.yaml
 ```
 
 The `StepSpec` in `analysis_step.py` is the step contract. The YAML schema only

@@ -14,7 +14,6 @@ from GenomeUtils.Genome import Locus
 from ASOkai.Sites import GenomicSite
 
 
-@pytest.mark.unit
 def test_genomic_site_builds_locus_and_derives_id(sample_sequence):
     site = GenomicSite(
         chr="12",
@@ -29,7 +28,6 @@ def test_genomic_site_builds_locus_and_derives_id(sample_sequence):
     assert site.sequence is sample_sequence
 
 
-@pytest.mark.unit
 def test_genomic_site_requires_locus_to_match_sequence_length():
     with pytest.raises(
         ValueError,
@@ -44,7 +42,6 @@ def test_genomic_site_requires_locus_to_match_sequence_length():
         )
 
 
-@pytest.mark.unit
 def test_genomic_site_repr_includes_all_defining_values(sample_sequence):
     site = GenomicSite(
         id="test_site",
@@ -61,7 +58,6 @@ def test_genomic_site_repr_includes_all_defining_values(sample_sequence):
     )
 
 
-@pytest.mark.unit
 def test_genomic_site_identity_uses_id_and_locus(sample_sequence):
     first = GenomicSite(
         id="site",

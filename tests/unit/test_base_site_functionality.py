@@ -9,8 +9,6 @@ License: LGPL-3.0-or-later
 
 import inspect
 
-import pytest
-
 from ASOkai.Sites import Site
 
 
@@ -21,7 +19,6 @@ class ConcreteSite(Site):
         return f"ConcreteSite(id={self.id!r})"
 
 
-@pytest.mark.unit
 class TestSiteBase:
     """Test Site base class functionality."""
 

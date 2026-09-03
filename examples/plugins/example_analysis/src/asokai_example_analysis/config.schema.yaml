@@ -1,10 +1,13 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Example analysis plugin configuration
 type: object
+# Each registered schema validates the complete ASOkai configuration, so it
+# must allow top-level namespaces owned by ASOkai and other plugins.
 additionalProperties: true
 properties:
   example_analysis:
     type: object
+    # This plugin owns this namespace and rejects misspelled settings in it.
     additionalProperties: false
     required:
       - minimum_length

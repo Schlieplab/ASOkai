@@ -26,8 +26,6 @@ def transcript_site() -> TranscriptSite:
     )
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_transcript_site_serializes_loci_as_plain_json(transcript_site):
     data = transcript_site.to_dict()
 
@@ -51,8 +49,6 @@ def test_transcript_site_serializes_loci_as_plain_json(transcript_site):
     }
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_transcript_site_reconstructs_transcript_loci():
     site = TranscriptSite.from_dict(
         {
@@ -74,8 +70,6 @@ def test_transcript_site_reconstructs_transcript_loci():
     assert isinstance(site.loci[0], TranscriptLocus)
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_transcript_site_roundtrip_preserves_shared_loci(transcript_site):
     reconstructed = TranscriptSite.from_dict(transcript_site.to_dict())
 

@@ -71,6 +71,7 @@ class ExampleAnalysisStep(AnalysisStep):
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
+        doc="Target gene containing the sites to analyze.",
     )
     sequence_lengths_output = FileOutput(
         "sequence_lengths",
@@ -104,6 +105,7 @@ class ExampleAnalysisStep(AnalysisStep):
                 ),
             },
         ),
+        doc="Sequence length and minimum-length result for each target site.",
     )
     spec = StepSpec(
         params=[

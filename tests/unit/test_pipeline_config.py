@@ -44,7 +44,7 @@ def sample_config(tmp_path):
     return config_file
 
 
-def test_load(sample_config):
+def test_load_reads_a_yaml_mapping(sample_config):
     config = cfg.load(sample_config)
     assert config["datadir"] == "./data"
     assert config["genome"]["assembly_id"] == "GRCh38"

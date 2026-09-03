@@ -181,8 +181,6 @@ class SerializableWithTuple(Serializable):
         super().__init__()
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableBasics:
     """Test basic serialization/deserialization."""
 
@@ -201,8 +199,6 @@ class TestSerializableBasics:
         assert reconstructed.value == original.value
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableExclusions:
     """Test _non_serializable_attrs functionality."""
     
@@ -232,8 +228,6 @@ class TestSerializableExclusions:
         assert obj.public == 'visible'
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableNameMapping:
     """Test attribute name mapping functionality."""
 
@@ -256,8 +250,6 @@ class TestSerializableNameMapping:
             SerializableWithMapping.from_dict(data)
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableComplexTypes:
     """Test serialization of complex nested types."""
 
@@ -372,8 +364,6 @@ class TestSerializableComplexTypes:
         }
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 class TestSerializableInputValidation:
     """Test strict handling of serialized input boundaries."""
 

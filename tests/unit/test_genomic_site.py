@@ -26,8 +26,6 @@ def sample_genomic_site(sample_sequence):
     )
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_genomic_site_serialized_shape(sample_genomic_site, sample_sequence):
     sample_genomic_site._genome = "excluded"
     sample_genomic_site._parent = "excluded"
@@ -45,8 +43,6 @@ def test_genomic_site_serialized_shape(sample_genomic_site, sample_sequence):
     }
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_genomic_site_reconstructs_flattened_fields(sample_sequence):
     site = GenomicSite.from_dict(
         {
@@ -74,8 +70,6 @@ def test_genomic_site_reconstructs_flattened_fields(sample_sequence):
     assert site.sequence == sample_sequence
 
 
-@pytest.mark.unit
-@pytest.mark.serialization
 def test_genomic_site_roundtrip_preserves_data(sample_genomic_site):
     reconstructed = GenomicSite.from_dict(sample_genomic_site.to_dict())
 

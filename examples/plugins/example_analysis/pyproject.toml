@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "asokai-example-analysis"
 version = "0.1.0"
 description = "Minimal external analysis plugin for ASOkai."
+readme = "README.md"
 requires-python = ">=3.10,<3.13"
+license = "LGPL-3.0-or-later"
 dependencies = ["ASOkai>=0.1.1,<0.2"]
 
 [project.entry-points."asokai.steps"]

@@ -35,7 +35,9 @@ step and schema discoverable after installation. A step may override
 `validate_parameters` when it needs a relationship between scalar parameters
 that the YAML schema cannot express.
 
-The same declarations can drive the plugin's own Sphinx reference. Reusing
-ASOkai's contract renderer is optional and does not add the plugin to ASOkai's
-static documentation; the plugin remains responsible for its documentation
-build and example configuration.
+The schema permits unrelated settings at its root because ASOkai passes the
+complete merged configuration to every registered schema. It rejects unknown
+settings inside `example_analysis`, the namespace owned by this plugin.
+
+Installed plugins are not added to ASOkai's static documentation. The plugin
+remains responsible for its own documentation build and example configuration.

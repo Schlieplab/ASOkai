@@ -212,11 +212,13 @@ def test_step_authoring_contracts_are_public() -> None:
     assert all(hasattr(Plugins, name) for name in expected)
 
 
-def test_example_plugin_declares_complete_package_metadata() -> None:
+def test_example_plugin_declares_distribution_and_discovery_metadata() -> None:
     metadata = tomllib.loads(
         (EXAMPLE_PLUGIN / "pyproject.toml").read_text(encoding="utf-8")
     )
 
+    assert metadata["project"]["readme"] == "README.md"
+    assert metadata["project"]["license"] == "LGPL-3.0-or-later"
     assert metadata["project"]["dependencies"] == ["ASOkai>=0.1.1,<0.2"]
     assert metadata["project"]["entry-points"]["asokai.steps"] == {
         "example-sequence-length": (
@@ -254,6 +256,9 @@ def test_example_plugin_is_discovered_and_validated(monkeypatch) -> None:
         registered["example-sequence-length"],
         EXAMPLE_STEP_CLASS,
     )
+    example_step = registered["example-sequence-length"]
+    assert all(file_input.doc for file_input in example_step.spec.inputs)
+    assert all(file_output.doc for file_output in example_step.spec.outputs)
 
 
 def test_pipeline_catalog_loads_each_plugin_once(monkeypatch) -> None:

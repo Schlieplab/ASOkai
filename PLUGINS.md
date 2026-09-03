@@ -8,7 +8,8 @@ source tree or maintain hand-written CWL files.
 The complete maintained starting point is
 [`examples/plugins/example_analysis`](examples/plugins/example_analysis).
 Copy that package when creating an analysis plugin, then change its package
-name, step declaration, analysis implementation, and configuration schema.
+name and metadata, step declaration, analysis implementation, and
+configuration schema.
 
 ## Package structure
 
@@ -108,7 +109,9 @@ my-workflow = "my_asokai_plugin.workflow:MyWorkflow"
 Only declare the groups the package actually contributes. A task contains
 registered step instances. A workflow contains registered steps, tasks, or
 other workflows. ASOkai validates these references when it builds the pipeline
-catalog.
+catalog. See the
+[pipeline-component guide](docs/source/contributor-guide/guides/Pipeline-components.rst)
+for their composition contracts.
 
 ## Adding configuration
 
@@ -132,6 +135,10 @@ my_asokai_plugin = ["config.schema.yaml"]
 
 The schema describes only configuration owned by the plugin. Inputs sourced
 from another step already inherit that producer's contract and configuration.
+ASOkai validates the complete merged configuration against every registered
+schema, so a plugin schema must permit top-level namespaces it does not own.
+It should reject unknown properties inside its own namespace so misspelled
+settings fail validation.
 Override `validate_parameters()` only for relationships between resolved
 parameter values that a YAML schema cannot express clearly.
 
@@ -163,6 +170,5 @@ Before publishing, check that:
 - installing the wheel includes `config.schema.yaml` and any other package
   data.
 
-ASOkai's Sphinx contract-rendering extension can also be reused by a plugin,
-but the plugin owns its documentation build and decides which declarations to
-publish.
+Installed plugins are not inserted into ASOkai's static documentation. Each
+plugin owns its documentation build and decides which declarations to publish.

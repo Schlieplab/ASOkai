@@ -232,11 +232,10 @@ Plugin documentation
 ~~~~~~~~~~~~~~~~~~~~
 
 Installed plugins are not inserted into ASOkai's static documentation build.
-A plugin may nevertheless reuse ASOkai's contract renderer in its own Sphinx
-documentation and supply its registered step, schema, and example
-configuration there. This is optional: the runtime plugin contract requires
-the ``asokai.steps`` entry point and, when the plugin owns configuration, the
-``asokai.config_schemas`` entry point; it does not require Sphinx documentation.
+A plugin owns its own documentation and decides which declarations to publish.
+The runtime plugin contract requires the ``asokai.steps`` entry point and, when
+the plugin owns configuration, the ``asokai.config_schemas`` entry point; it
+does not require Sphinx documentation.
 
 Registration
 ------------

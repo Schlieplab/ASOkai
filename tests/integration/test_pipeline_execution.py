@@ -98,6 +98,12 @@ def test_shared_producer_executes_once_and_outputs_are_published(
         step.name: step
         for step in (producer, first, second)
     }
+    stale_output = tmp_path / "consumers/first-consumer.txt"
+    stale_output.parent.mkdir(parents=True)
+    stale_output.write_text("stale", encoding="utf-8")
+    unrelated = tmp_path / "unrelated/keep.txt"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("keep", encoding="utf-8")
 
     outputs = run_all(
         [first, second],
@@ -114,6 +120,7 @@ def test_shared_producer_executes_once_and_outputs_are_published(
     assert (tmp_path / "producer/result.txt").read_text() == "producer"
     assert outputs["first-consumer.result"].read_text() == "first-consumer"
     assert outputs["second-consumer.result"].read_text() == "second-consumer"
+    assert unrelated.read_text(encoding="utf-8") == "keep"
 
     run_cwl = next((tmp_path / "jobs").glob("asokai-job-*/run.cwl"))
     assert run_cwl.read_text().count("step_integration_producer:") == 1

@@ -133,9 +133,12 @@ def _publisher_output_ids(plan: PublicationPlan) -> dict[str, str]:
     used: set[str] = set()
     for index, root in enumerate(plan.roots, start=1):
         normalized = re.sub(r"[^A-Za-z0-9_]", "_", root)
-        candidate = f"published_{normalized}" if normalized else f"published_{index}"
-        if candidate in used:
-            candidate = f"{candidate}_{index}"
+        base = f"published_{normalized}" if normalized else f"published_{index}"
+        candidate = base
+        suffix = 2
+        while candidate in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
         used.add(candidate)
         result[root] = candidate
     return result
@@ -155,8 +158,6 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
                     PurePosixPath(*relative.parts),
                 )
             )
-    if not entries:
-        raise ValueError("A generated CWL job must publish at least one output.")
     return PublicationPlan(tuple(entries))
 
 

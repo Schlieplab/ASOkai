@@ -417,6 +417,31 @@ def test_generate_cwl_publishes_a_root_file_as_a_file(tmp_path):
     }
 
 
+def test_generate_cwl_disambiguates_all_normalized_publication_root_ids(tmp_path):
+    step = _spec_step(
+        "colliding-roots",
+        StepSpec(
+            outputs=[
+                FileOutput("first", destination="a_b_3/first.txt"),
+                FileOutput("second", destination="a-b/second.txt"),
+                FileOutput("third", destination="a_b/third.txt"),
+            ]
+        ),
+    )
+
+    generated = _generate_bundle([step], {"datadir": str(tmp_path)})
+    workflow = yaml.safe_load(generated.run_cwl)
+    publisher = yaml.safe_load(generated.publish_cwl)
+
+    expected_ids = {
+        "published_a_b_3",
+        "published_a_b",
+        "published_a_b_2",
+    }
+    assert set(workflow["outputs"]) == expected_ids
+    assert set(publisher["outputs"]) == expected_ids
+
+
 def test_generate_cwl_keeps_single_process_steps_at_one_core(workflow_config):
     workflow_config["resources"] = {
         "download-genome": {"memory_mb": 8192},

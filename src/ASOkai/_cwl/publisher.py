@@ -16,7 +16,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Sequence
 
 import yaml
@@ -34,19 +34,25 @@ class PublicationEntry:
     destination: PurePosixPath
 
     def __post_init__(self) -> None:
+        if not isinstance(self.output_id, str) or not self.output_id.strip():
+            raise ValueError("Publication output id must be a nonblank string.")
+
         destination = PurePosixPath(self.destination)
         if (
             destination.is_absolute()
             or not destination.parts
             or ".." in destination.parts
+            or "\\" in destination.as_posix()
+            or any(PureWindowsPath(part).drive for part in destination.parts)
         ):
             raise ValueError(
                 f"Publication destination must stay below datadir: {destination!s}."
             )
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", destination.parts[0]):
             raise ValueError(
-                "Publication root must contain only letters, numbers, dots, "
-                f"underscores, and hyphens: {destination.parts[0]!r}."
+                "Publication root must begin with a letter or number and contain "
+                "only letters, numbers, dots, underscores, and hyphens: "
+                f"{destination.parts[0]!r}."
             )
         object.__setattr__(self, "destination", destination)
 
@@ -65,6 +71,8 @@ class PublicationPlan:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(self.entries))
+        if not self.entries:
+            raise ValueError("A publication plan must contain at least one output.")
         output_ids = [entry.output_id for entry in self.entries]
         destinations = [entry.destination for entry in self.entries]
         self._require_unique("output id", output_ids)
@@ -107,7 +115,11 @@ class PublicationPlan:
 
     @classmethod
     def from_dict(cls, data: Any) -> PublicationPlan:
-        if not isinstance(data, dict) or data.get("version") != 1:
+        if (
+            not isinstance(data, dict)
+            or type(data.get("version")) is not int
+            or data["version"] != 1
+        ):
             raise ValueError("Publication manifest must declare version: 1.")
         raw_outputs = data.get("outputs")
         if not isinstance(raw_outputs, list):
@@ -130,7 +142,11 @@ class PublicationPlan:
 
     @classmethod
     def read(cls, path: Path) -> PublicationPlan:
-        return cls.from_dict(yaml.safe_load(path.read_text(encoding="utf-8")))
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid publication manifest '{path}': {exc}") from exc
+        return cls.from_dict(data)
 
 
 _LINK_FALLBACK_ERRNOS = {
@@ -139,6 +155,7 @@ _LINK_FALLBACK_ERRNOS = {
     errno.EACCES,
     errno.EMLINK,
     errno.EINVAL,
+    errno.ENOSYS,
     getattr(errno, "ENOTSUP", errno.EINVAL),
     getattr(errno, "EOPNOTSUPP", errno.EINVAL),
 }
@@ -183,15 +200,20 @@ def publish_outputs(
         )
 
     publication_root = (workdir or Path.cwd()) / PUBLISHED_DIR
-    published: dict[str, Path] = {}
-    for source, entry in zip(sources, plan.entries, strict=True):
-        destination = publication_root.joinpath(*entry.destination.parts)
-        method = _publish_file(Path(source), destination)
-        logger.info(
-            "%s %s -> %s",
-            method,
-            entry.output_id,
-            entry.destination,
-        )
-        published[entry.output_id] = destination
-    return published
+    publication_root.mkdir(parents=True)
+    try:
+        published: dict[str, Path] = {}
+        for source, entry in zip(sources, plan.entries, strict=True):
+            destination = publication_root.joinpath(*entry.destination.parts)
+            method = _publish_file(Path(source), destination)
+            logger.info(
+                "%s %s -> %s",
+                method,
+                entry.output_id,
+                entry.destination,
+            )
+            published[entry.output_id] = destination
+        return published
+    except BaseException:
+        shutil.rmtree(publication_root, ignore_errors=True)
+        raise

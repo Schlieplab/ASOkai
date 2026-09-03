@@ -4,15 +4,13 @@ Filename: tests/unit/test_cwl_publisher.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Version: 0.1.1
-Description: Integration coverage for the CWL-only output publisher prototype.
+Description: Unit tests for CWL output publication contracts and file handling.
 License: LGPL-3.0-or-later
 """
 
 import errno
 import os
 from pathlib import Path, PurePosixPath
-import shutil
-import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -22,10 +20,6 @@ from ASOkai._cwl.publisher import (
     PublicationPlan,
     publish_outputs,
 )
-
-
-FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "cwl_publisher"
-
 
 def _write_manifest(path: Path, destination: str = "root/result.txt") -> None:
     path.write_text(
@@ -50,14 +44,18 @@ def test_publisher_uses_a_hard_link_when_supported(tmp_path):
     assert os.path.samefile(source, destination)
 
 
-def test_publisher_copies_when_hard_links_cross_filesystems(tmp_path):
+@pytest.mark.parametrize("link_errno", [errno.EXDEV, errno.ENOSYS])
+def test_publisher_copies_when_hard_links_are_unavailable(tmp_path, link_errno):
     source = tmp_path / "source.txt"
     source.write_text("result")
     manifest = tmp_path / "layout.yml"
     _write_manifest(manifest)
     workdir = tmp_path / "work"
 
-    with patch("ASOkai._cwl.publisher.os.link", side_effect=OSError(errno.EXDEV, "cross-device")):
+    with patch(
+        "ASOkai._cwl.publisher.os.link",
+        side_effect=OSError(link_errno, "hard link unavailable"),
+    ):
         publish_outputs(manifest, [source], workdir=workdir)
 
     destination = workdir / "published" / "root" / "result.txt"
@@ -65,72 +63,121 @@ def test_publisher_copies_when_hard_links_cross_filesystems(tmp_path):
     assert not os.path.samefile(source, destination)
 
 
-def test_publication_plan_rejects_duplicate_destinations():
-    with pytest.raises(ValueError, match="Duplicate publication destination"):
-        PublicationPlan(
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "/absolute/result.txt",
+        "../result.txt",
+        "root/../result.txt",
+        r"root\..\result.txt",
+        "root/C:/result.txt",
+    ],
+)
+def test_publication_entry_rejects_nonportable_or_escaping_paths(destination):
+    with pytest.raises(ValueError, match="stay below datadir"):
+        PublicationEntry("result", PurePosixPath(destination))
+
+
+@pytest.mark.parametrize("output_id", ["", " "])
+def test_publication_entry_rejects_blank_output_ids(output_id):
+    with pytest.raises(ValueError, match="nonblank string"):
+        PublicationEntry(output_id, PurePosixPath("root/result.txt"))
+
+
+@pytest.mark.parametrize(
+    ("entries", "message"),
+    [
+        ((), "at least one output"),
+        (
+            (
+                PublicationEntry("result", PurePosixPath("first.txt")),
+                PublicationEntry("result", PurePosixPath("second.txt")),
+            ),
+            "Duplicate publication output id",
+        ),
+        (
             (
                 PublicationEntry("first", PurePosixPath("root/result.txt")),
                 PublicationEntry("second", PurePosixPath("root/result.txt")),
-            )
-        )
-
-
-def test_publication_entry_rejects_parent_traversal():
-    with pytest.raises(ValueError, match="stay below datadir"):
-        PublicationEntry("result", PurePosixPath("../result.txt"))
-
-
-def test_publication_plan_rejects_file_directory_collisions():
-    with pytest.raises(ValueError, match="cannot contain one another"):
-        PublicationPlan(
+            ),
+            "Duplicate publication destination",
+        ),
+        (
             (
                 PublicationEntry("first", PurePosixPath("root/result")),
-                PublicationEntry("second", PurePosixPath("root/result/nested.txt")),
+                PublicationEntry(
+                    "second",
+                    PurePosixPath("root/result/nested.txt"),
+                ),
+            ),
+            "cannot contain one another",
+        ),
+    ],
+)
+def test_publication_plan_rejects_invalid_entry_sets(entries, message):
+    with pytest.raises(ValueError, match=message):
+        PublicationPlan(entries)
+
+
+def test_publication_manifest_rejects_boolean_version():
+    with pytest.raises(ValueError, match="version: 1"):
+        PublicationPlan.from_dict({"version": True, "outputs": []})
+
+
+def test_publication_manifest_reports_malformed_yaml(tmp_path):
+    manifest = tmp_path / "layout.yml"
+    manifest.write_text("version: 1\noutputs: [", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid publication manifest"):
+        PublicationPlan.read(manifest)
+
+
+def test_publisher_rejects_source_count_before_creating_workspace(tmp_path):
+    manifest = tmp_path / "layout.yml"
+    _write_manifest(manifest)
+    workdir = tmp_path / "work"
+
+    with pytest.raises(ValueError, match="source count"):
+        publish_outputs(manifest, [], workdir=workdir)
+
+    assert not (workdir / "published").exists()
+
+
+def test_publisher_removes_incomplete_workspace_after_failure(tmp_path):
+    manifest = tmp_path / "layout.yml"
+    manifest.write_text(
+        PublicationPlan(
+            (
+                PublicationEntry("first", PurePosixPath("root/first.txt")),
+                PublicationEntry("second", PurePosixPath("root/second.txt")),
             )
+        ).render(),
+        encoding="utf-8",
+    )
+    source = tmp_path / "first.txt"
+    source.write_text("first", encoding="utf-8")
+    workdir = tmp_path / "work"
+
+    with pytest.raises(FileNotFoundError):
+        publish_outputs(
+            manifest,
+            [source, tmp_path / "missing.txt"],
+            workdir=workdir,
         )
 
+    assert not (workdir / "published").exists()
 
-@pytest.mark.skipif(shutil.which("cwltool") is None, reason="cwltool is not installed")
-def test_cwl_publisher_merges_real_files_into_existing_tree(tmp_path):
-    outdir = tmp_path / "data"
-    existing = outdir / "GRCh38" / "existing" / "keep.txt"
-    replaced = (
-        outdir
-        / "GRCh38"
-        / "genomes"
-        / "ensembl"
-        / "114"
-        / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
-    )
+
+def test_publisher_refuses_an_existing_workspace(tmp_path):
+    manifest = tmp_path / "layout.yml"
+    _write_manifest(manifest)
+    source = tmp_path / "source.txt"
+    source.write_text("result", encoding="utf-8")
+    existing = tmp_path / "work/published/keep.txt"
     existing.parent.mkdir(parents=True)
-    replaced.parent.mkdir(parents=True)
-    existing.write_text("keep")
-    replaced.write_text("old")
+    existing.write_text("keep", encoding="utf-8")
 
-    result = subprocess.run(
-        [
-            "cwltool",
-            "--outdir",
-            str(outdir),
-            str(FIXTURE_DIR / "run.cwl"),
-            str(FIXTURE_DIR / "job.yml"),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    with pytest.raises(FileExistsError):
+        publish_outputs(manifest, [source], workdir=tmp_path / "work")
 
-    assert result.returncode == 0, result.stderr
-    assert existing.read_text() == "keep"
-    assert replaced.read_text() == "dna"
-    assert not replaced.is_symlink()
-
-    target = (
-        outdir
-        / "GRCh38"
-        / "targets"
-        / "ENSG00000133703"
-        / "ENSG00000133703_k16_pre-mrna.json"
-    )
-    assert target.read_text() == "target"
-    assert not target.is_symlink()
+    assert existing.read_text(encoding="utf-8") == "keep"

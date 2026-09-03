@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for structured pipeline output-path templates."""
+"""
+Filename: tests/unit/test_output_paths.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for structured pipeline output-path templates.
+License: LGPL-3.0-or-later
+"""
 
 from typing import Any, cast
 

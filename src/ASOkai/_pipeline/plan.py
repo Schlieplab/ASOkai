@@ -3,7 +3,6 @@
 Filename: src/ASOkai/_pipeline/plan.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Goal-driven resolution of concrete pipeline step runs.
 License: LGPL-3.0-or-later
 """

@@ -3,7 +3,6 @@
 Filename: src/ASOkai/Targets/_create_target_gene.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Target-gene construction and target-site extraction.
 License: LGPL-3.0-or-later
 """

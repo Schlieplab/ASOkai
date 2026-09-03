@@ -3,7 +3,6 @@
 Filename: src/ASOkai/Utils/KMCTools/_base.py
 Author: Kian Jalilian
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: This file defines ASOkai base functionality.
 License: LGPL-3.0-or-later
 """

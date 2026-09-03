@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for target-gene construction and site extraction."""
+"""
+Filename: tests/unit/test_create_target_gene.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for target-gene construction and site extraction.
+License: LGPL-3.0-or-later
+"""
 
 from typing import cast
 from unittest.mock import MagicMock

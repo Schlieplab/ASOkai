@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for the TargetGene aggregate."""
+"""
+Filename: tests/unit/test_target_gene.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for the TargetGene aggregate.
+License: LGPL-3.0-or-later
+"""
 
 from Bio.Seq import Seq
 import pytest

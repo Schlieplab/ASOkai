@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for shared pipeline-component validation contracts."""
+"""
+Filename: tests/unit/test_pipeline_components.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for shared pipeline-component validation contracts.
+License: LGPL-3.0-or-later
+"""
 
 from typing import ClassVar
 

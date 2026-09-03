@@ -3,7 +3,6 @@
 Filename: docs/source/_extensions/contract_docs/file_contracts.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Generated JSON contracts owned by serializable API classes.
 License: LGPL-3.0-or-later
 """

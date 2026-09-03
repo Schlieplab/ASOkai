@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for AnalysisStep template execution."""
+"""
+Filename: tests/unit/test_analysis_step_base.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for AnalysisStep template execution.
+License: LGPL-3.0-or-later
+"""
 
 from argparse import Namespace
 from typing import Any, cast

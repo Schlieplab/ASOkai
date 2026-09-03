@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for intrinsic target-site feature calculations."""
+"""
+Filename: tests/unit/test_intrinsic_features.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for intrinsic target-site feature calculations.
+License: LGPL-3.0-or-later
+"""
 
 from Bio.Seq import Seq
 import pytest

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for pipeline file input and output declarations."""
+"""
+Filename: tests/unit/test_file_contracts.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for pipeline file input and output declarations.
+License: LGPL-3.0-or-later
+"""
 
 from typing import Literal
 

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for the pipeline catalog and installed-plugin discovery."""
+"""
+Filename: tests/plugins/test_catalog.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for the pipeline catalog and installed-plugin discovery.
+License: LGPL-3.0-or-later
+"""
 
 from pathlib import Path
 import runpy

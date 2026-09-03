@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for pipeline config loading and resolution."""
+"""
+Filename: tests/unit/test_pipeline_config.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for pipeline config loading and resolution.
+License: LGPL-3.0-or-later
+"""
 
 from pathlib import Path
 

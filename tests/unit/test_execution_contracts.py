@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for concrete step-run and execution-plan contracts."""
+"""
+Filename: tests/unit/test_execution_contracts.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for concrete step-run and execution-plan contracts.
+License: LGPL-3.0-or-later
+"""
 
 from pathlib import Path
 

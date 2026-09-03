@@ -3,7 +3,6 @@
 Filename: src/ASOkai/_pipeline/steps/core/download_genome.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Definition of the download-genome pipeline step.
 License: LGPL-3.0-or-later
 """

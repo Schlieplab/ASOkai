@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for typed target-gene JSON inputs and outputs."""
+"""
+Filename: tests/unit/test_target_gene_output.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for typed target-gene JSON inputs and outputs.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

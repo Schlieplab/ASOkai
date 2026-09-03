@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for scalar step-parameter contracts."""
+"""
+Filename: tests/unit/test_parameters.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for scalar step-parameter contracts.
+License: LGPL-3.0-or-later
+"""
 
 import argparse
 from pathlib import Path

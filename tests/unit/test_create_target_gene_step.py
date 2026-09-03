@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for CreateTargetGeneStep."""
+"""
+Filename: tests/unit/test_create_target_gene_step.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for CreateTargetGeneStep.
+License: LGPL-3.0-or-later
+"""
 import json
 
 from Bio.Seq import Seq

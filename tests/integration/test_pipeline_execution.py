@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""End-to-end coverage for planning, CWL execution, and publication."""
+"""
+Filename: tests/integration/test_pipeline_execution.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: End-to-end coverage for planning, CWL execution, and publication.
+License: LGPL-3.0-or-later
+"""
 
 from pathlib import Path
 import shutil

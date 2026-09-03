@@ -3,7 +3,6 @@
 Filename: src/ASOkai/_pipeline/contracts/file_types/base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Contract for files whose contents ASOkai does not interpret.
 License: LGPL-3.0-or-later
 """

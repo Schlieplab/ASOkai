@@ -3,7 +3,6 @@
 Filename: tests/unit/test_step_spec.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Tests for the source-of-truth step specification.
 License: LGPL-3.0-or-later
 """

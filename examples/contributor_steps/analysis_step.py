@@ -1,4 +1,10 @@
-"""Copyable starting point for an ASOkai analysis and pipeline step.
+#!/usr/bin/env python
+"""
+Filename: examples/contributor_steps/analysis_step.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Copyable starting point for an ASOkai analysis and pipeline step.
+License: LGPL-3.0-or-later
 
 To add an analysis step:
 

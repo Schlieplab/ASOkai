@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for GenerateASOCandidatesStep."""
+"""
+Filename: tests/unit/test_generate_aso_candidates_step.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for GenerateASOCandidatesStep.
+License: LGPL-3.0-or-later
+"""
 
 import json
 

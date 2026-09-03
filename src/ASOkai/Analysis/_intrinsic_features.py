@@ -3,7 +3,6 @@
 Filename: src/ASOkai/Analysis/_intrinsic_features.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: This file defines the IntrinsicFeaturesAnalysis class for analyzing intrinsic features of target sites.
 License: LGPL-3.0-or-later
 """

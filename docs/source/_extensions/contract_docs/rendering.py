@@ -3,7 +3,6 @@
 Filename: docs/source/_extensions/contract_docs/rendering.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Docutils helpers shared by ASOkai's generated references.
 License: LGPL-3.0-or-later
 """

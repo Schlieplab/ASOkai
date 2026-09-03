@@ -1,4 +1,11 @@
-"""Runtime validation for built-in and externally provided pipeline units."""
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/validation.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Runtime validation for built-in and externally provided pipeline units.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

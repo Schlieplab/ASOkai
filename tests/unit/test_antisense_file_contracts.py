@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for typed antisense JSON file contracts."""
+"""
+Filename: tests/unit/test_antisense_file_contracts.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for typed antisense JSON file contracts.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

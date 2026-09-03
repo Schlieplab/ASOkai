@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for the public ASOkai CLI entrypoint."""
+"""
+Filename: tests/unit/test_cli_main.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for the public ASOkai CLI entrypoint.
+License: LGPL-3.0-or-later
+"""
 
 import pytest
 from click.testing import CliRunner

@@ -1,4 +1,10 @@
-"""Example external site-specific analysis and its pipeline declaration.
+#!/usr/bin/env python
+"""
+Filename: examples/plugins/example_analysis/src/asokai_example_analysis/analysis_step.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Example external site-specific analysis and its pipeline declaration.
+License: LGPL-3.0-or-later
 
 The first declared output is the primary analysis CSV. Additional CSV or JSON
 outputs can follow it and receive values from ``additional_output_values``.

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Repository checks for built-in analysis-step contributions."""
+"""
+Filename: tests/contributor/test_analysis_steps.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Repository checks for built-in analysis-step contributions.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

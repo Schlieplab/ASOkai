@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for pipeline file-format contracts."""
+"""
+Filename: tests/unit/test_file_types.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for pipeline file-format contracts.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

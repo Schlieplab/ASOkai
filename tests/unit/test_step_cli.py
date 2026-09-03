@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-"""Tests for the shared pipeline-step command-line lifecycle."""
+"""
+Filename: tests/unit/test_step_cli.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for the shared pipeline-step command-line lifecycle.
+License: LGPL-3.0-or-later
+"""
 
 from __future__ import annotations
 

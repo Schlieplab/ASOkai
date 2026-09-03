@@ -3,7 +3,6 @@
 Filename: src/ASOkai/_pipeline/contracts/file_types/json.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Contract for JSON files.
 License: LGPL-3.0-or-later
 """

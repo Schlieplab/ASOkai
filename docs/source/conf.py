@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+"""
+Filename: docs/source/conf.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Sphinx configuration for the ASOkai documentation.
+License: LGPL-3.0-or-later
+"""
+
 import sys
 from datetime import datetime
 from importlib.metadata import version as distribution_version

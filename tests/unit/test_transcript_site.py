@@ -3,7 +3,6 @@
 Filename: tests/unit/test_transcript_site.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Serialization tests for TranscriptSite.
 License: LGPL-3.0-or-later
 """

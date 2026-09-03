@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-import yaml
 from docutils import nodes
 
 from .rendering import details, section, table
@@ -646,7 +645,5 @@ def load_packaged_config_schema() -> tuple[Path, Mapping[str, Any]]:
     import ASOkai._pipeline.config as config_module
 
     schema_path = Path(config_module.__file__).with_name("config.schema.yaml")
-    schema = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
-    if not isinstance(schema, Mapping):
-        raise ValueError(f"Configuration schema {schema_path} must contain a mapping.")
+    schema = config_module.load_config_schema(schema_path, "ASOkai")
     return schema_path, schema

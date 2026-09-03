@@ -185,20 +185,6 @@ def _load_example_config() -> dict[str, Any]:
     return config
 
 
-def _scalar_outputs_table() -> nodes.table:
-    return table(
-        ("Scalar output", "Details"),
-        [
-            (
-                ("None", False),
-                ("This step does not produce scalar outputs.", False),
-            )
-        ],
-        (25, 75),
-        css_class="asokai-step-scalar-outputs",
-    )
-
-
 def _file_outputs_table(
     step: Any,
     example_config: Mapping[str, Any],
@@ -212,15 +198,12 @@ def _file_outputs_table(
         for file_input in step.spec.inputs
     }
     for output in step.spec.outputs:
-        try:
-            example_path = str(
-                output.destination.render(
-                    output_config,
-                    example_input_configurations,
-                )
+        example_path = str(
+            output.destination.render(
+                output_config,
+                example_input_configurations,
             )
-        except (KeyError, TypeError, ValueError):
-            example_path = "—"
+        )
         rows.append(
             (
                 (output.name, True),
@@ -821,7 +804,6 @@ def _outputs_section(
                 "are replaced with the corresponding parameter values."
             )
         ),
-        section("Scalar outputs", [_scalar_outputs_table()]),
         section(
             "File outputs",
             [_file_outputs_table(step, example_config, refdoc=refdoc)],
@@ -882,19 +864,26 @@ class ASOkaiStepReference(SphinxDirective):
         try:
             step = get_built_in_step(self.arguments[0])
             schema_path, schema = load_packaged_config_schema()
-        except (OSError, ValueError, yaml.YAMLError) as error:
+            included_steps = tuple(_transitive_steps(step))
+            result = build_step_reference(
+                step,
+                schema,
+                refdoc=self.env.docname,
+            )
+        except (
+            KeyError,
+            OSError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+        ) as error:
             raise self.error(str(error)) from error
-        included_steps = tuple(_transitive_steps(step))
         note_reference_dependencies(
             self.env,
             _step_documentation_sources(included_steps),
             paths=(schema_path, EXAMPLE_CONFIG_PATH),
         )
-        return build_step_reference(
-            step,
-            schema,
-            refdoc=self.env.docname,
-        )
+        return result
 
 
 class ASOkaiStepList(SphinxDirective):

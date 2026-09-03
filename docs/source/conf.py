@@ -1,15 +1,16 @@
-import os
 import sys
 from datetime import datetime
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath('../../src'))
-sys.path.insert(0, str(Path(__file__).parent / '_extensions'))
+PROJECT_ROOT = Path(__file__).parents[2]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).parent / "_extensions"))
 
 project = 'ASOkai'
 author = 'Schlieplab'
 copyright = f"{datetime.now().year}, Alexander Schliep"
-release = '0.1.0'
+release = distribution_version("ASOkai")
 version = release
 
 extensions = [
@@ -61,8 +62,6 @@ html_context = {
 def _strip_module_docstring(app, what, name, obj, options, lines):
     if what == "module":
         lines[:] = []
-        if hasattr(obj, "__doc__"):
-            obj.__doc__ = None
 
 
 def setup(app):

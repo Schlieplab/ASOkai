@@ -57,7 +57,12 @@ where = ["src"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
 extraPaths = ["src", "docs/source/_extensions"]
-include = ["src", "docs/source/_extensions", "examples/contributor_steps"]
+include = [
+    "src",
+    "docs/source/_extensions",
+    "examples/contributor_steps",
+    "examples/plugins",
+]
 exclude = [
     "build",
     "docs/build",

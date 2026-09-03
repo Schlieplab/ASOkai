@@ -206,11 +206,12 @@ def test_step_authoring_contracts_are_public() -> None:
     assert all(hasattr(Plugins, name) for name in expected)
 
 
-def test_example_plugin_declares_installable_entry_points() -> None:
+def test_example_plugin_declares_complete_package_metadata() -> None:
     metadata = tomllib.loads(
         (EXAMPLE_PLUGIN / "pyproject.toml").read_text(encoding="utf-8")
     )
 
+    assert metadata["project"]["dependencies"] == ["ASOkai>=0.1.1,<0.2"]
     assert metadata["project"]["entry-points"]["asokai.steps"] == {
         "example-sequence-length": (
             "asokai_example_analysis.analysis_step:ExampleAnalysisStep"
@@ -218,6 +219,9 @@ def test_example_plugin_declares_installable_entry_points() -> None:
     }
     assert metadata["project"]["entry-points"]["asokai.config_schemas"] == {
         "example-analysis": "asokai_example_analysis:CONFIG_SCHEMA_PATH",
+    }
+    assert metadata["tool"]["setuptools"]["package-data"] == {
+        "asokai_example_analysis": ["config.schema.yaml"],
     }
 
 

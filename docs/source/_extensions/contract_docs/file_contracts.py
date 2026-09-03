@@ -49,15 +49,23 @@ def _object_module_name(schema: Mapping[str, Any]) -> str | None:
     return module_name if isinstance(module_name, str) else None
 
 
-def _object_field_descriptions(schema: Mapping[str, Any]) -> dict[str, str]:
-    """Read field descriptions from the serialized class constructor docs."""
+def _serializable_type(schema: Mapping[str, Any]) -> type | None:
+    """Return the concrete class identified by an object schema."""
     class_name = _object_class_name(schema)
     module_name = _object_module_name(schema)
     if class_name is None or module_name is None:
-        return {}
+        return None
     try:
         serializable_type = getattr(importlib.import_module(module_name), class_name)
     except (AttributeError, ImportError):
+        return None
+    return serializable_type if isinstance(serializable_type, type) else None
+
+
+def _object_field_descriptions(schema: Mapping[str, Any]) -> dict[str, str]:
+    """Read field descriptions from the serialized class constructor docs."""
+    serializable_type = _serializable_type(schema)
+    if serializable_type is None:
         return {}
 
     descriptions: dict[str, str] = {}
@@ -110,19 +118,6 @@ def _format_example(schema: Mapping[str, Any]) -> str:
 
 def _format_json_value(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
-
-
-def _serializable_type(schema: Mapping[str, Any]) -> type | None:
-    """Return the concrete class identified by an object schema."""
-    class_name = _object_class_name(schema)
-    module_name = _object_module_name(schema)
-    if class_name is None or module_name is None:
-        return None
-    try:
-        serializable_type = getattr(importlib.import_module(module_name), class_name)
-    except (AttributeError, ImportError):
-        return None
-    return serializable_type if isinstance(serializable_type, type) else None
 
 
 def _public_class_path(serializable_type: type) -> str:

@@ -44,6 +44,7 @@ from contract_docs.file_contracts import (  # noqa: E402
     json_contract_types,
     json_example,
 )
+from contract_docs.rendering import note_reference_dependencies  # noqa: E402
 from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput  # noqa: E402
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
@@ -116,6 +117,27 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
             for link in generated_list.findall(addnodes.pending_xref)
         ]
         assert generated_targets == expected_targets
+
+
+def test_generated_references_track_their_content_sources(tmp_path) -> None:
+    explicit_source = tmp_path / "example.yaml"
+    dependencies: list[str] = []
+
+    note_reference_dependencies(
+        SimpleNamespace(note_dependency=dependencies.append),
+        (TargetGene,),
+        paths=(explicit_source,),
+    )
+
+    assert str(explicit_source) in dependencies
+    assert any(
+        path.endswith("contract_docs/rendering.py")
+        for path in dependencies
+    )
+    assert any(
+        path.endswith("Targets/_target_gene.py")
+        for path in dependencies
+    )
 
 
 @pytest.mark.parametrize("kind", ["task", "workflow"])
@@ -346,7 +368,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         for generated_table in node.findall(nodes.table)
         for css_class in generated_table["classes"]
     }
-    assert "asokai-step-scalar-outputs" in table_classes
+    assert "Scalar outputs" not in reference
     assert "asokai-step-file-outputs" in table_classes
     assert "asokai-step-resources" in table_classes
     assert "asokai-step-applicability" not in table_classes

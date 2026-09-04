@@ -68,10 +68,8 @@ def test_output_paths_structure(step, config, tmp_path):
     expected = (
         tmp_path
         / "GRCh38"
-        / "genomes"
         / "ensembl"
         / "114"
-        / "Homo_sapiens"
         / "targets"
         / "ENSG00000133703"
         / "ENSG00000133703_k16_pre-mrna.json"
@@ -89,10 +87,8 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     expected = (
         tmp_path
         / "GRCh38"
-        / "genomes"
         / "ensembl"
         / "114"
-        / "Homo_sapiens"
         / "targets"
         / "KRAS"
         / "KRAS_k16_pre-mrna.json"
@@ -106,8 +102,8 @@ def test_output_path_identifies_the_genome_release(step, config, tmp_path):
     second = _run(step, config, tmp_path).output_paths()["target_gene"]
 
     assert first != second
-    assert first.parts[-6:-3] == ("ensembl", "114", "Homo_sapiens")
-    assert second.parts[-6:-3] == ("ensembl", "115", "Homo_sapiens")
+    assert first.parts[-5:-3] == ("ensembl", "114")
+    assert second.parts[-5:-3] == ("ensembl", "115")
 
 
 def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):

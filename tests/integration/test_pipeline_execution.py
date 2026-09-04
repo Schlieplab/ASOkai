@@ -7,6 +7,7 @@ Description: End-to-end coverage for planning, CWL execution, and publication.
 License: LGPL-3.0-or-later
 """
 
+import json
 from pathlib import Path
 import shutil
 
@@ -127,6 +128,14 @@ def test_shared_producer_executes_once_and_outputs_are_published(
     assert outputs["first-consumer.result"].read_text() == "first-consumer"
     assert outputs["second-consumer.result"].read_text() == "second-consumer"
     assert unrelated.read_text(encoding="utf-8") == "keep"
+
+    job_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
+    assert len(job_dirs) == 1
+    cwl_output = json.loads(
+        (job_dirs[0] / "cwl-output.json").read_text(encoding="utf-8")
+    )
+    assert isinstance(cwl_output, dict)
+    assert cwl_output
 
     run_cwl = next((tmp_path / "jobs").glob("asokai-job-*/run.cwl"))
     assert run_cwl.read_text().count("step_integration_producer:") == 1

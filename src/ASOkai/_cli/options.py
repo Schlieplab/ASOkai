@@ -17,6 +17,32 @@ import yaml
 
 DEFAULT_CONFIG = Path("config.yaml")
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+_NORMAL_LOG_FORMATTER = logging.Formatter("%(message)s")
+_VERBOSE_LOG_FORMATTER = logging.Formatter(
+    "%(levelname)s %(name)s: %(message)s"
+)
+
+
+class _CliLogFormatter(logging.Formatter):
+    """Show logger details only when debug logging is enabled."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        formatter = (
+            _VERBOSE_LOG_FORMATTER
+            if logging.getLogger().isEnabledFor(logging.DEBUG)
+            else _NORMAL_LOG_FORMATTER
+        )
+        return formatter.format(record)
+
+
+def configure_logging(*, verbose: bool = False) -> None:
+    """Configure human-readable logging for one CLI process."""
+    handler = logging.StreamHandler()
+    handler.setFormatter(_CliLogFormatter())
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, handlers=[handler])
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
 
 
 def _set_verbose(
@@ -25,7 +51,7 @@ def _set_verbose(
     value: bool,
 ) -> bool:
     if value:
-        logging.getLogger().setLevel(logging.DEBUG)
+        configure_logging(verbose=True)
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = value
     return value

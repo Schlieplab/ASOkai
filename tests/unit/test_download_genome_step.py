@@ -50,13 +50,13 @@ def test_step_contract(step):
 
 def test_source_from_config(run, tmp_path):
     assert run.output_paths()["dna"].parent == (
-        tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+        tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     )
 
 
 def test_output_paths_structure(run, tmp_path):
     paths = run.output_paths()
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+    base = tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     assert paths["dna"] == base / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
     assert paths["cdna"] == base / "Homo_sapiens.GRCh38.cdna.all.fa.gz"
     assert paths["annotation"] == base / "Homo_sapiens.GRCh38.114.gtf.gz"
@@ -90,7 +90,7 @@ def test_run_cli_downloads_to_declared_destinations(
 ):
     from ASOkai._pipeline.steps.core import download_genome
 
-    caplog.set_level("INFO")
+    caplog.set_level("DEBUG")
     captured = {}
 
     class FakeDownloader:

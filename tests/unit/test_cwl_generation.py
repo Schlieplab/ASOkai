@@ -386,7 +386,7 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     assert layout["outputs"][0] == {
         "id": "download-genome.dna",
         "destination": (
-            "GRCh38/genomes/ensembl/114/"
+            "GRCh38/ensembl/114/genome/"
             "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         ),
     }

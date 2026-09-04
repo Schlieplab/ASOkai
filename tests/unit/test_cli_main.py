@@ -7,10 +7,34 @@ Description: Tests for the public ASOkai CLI entrypoint.
 License: LGPL-3.0-or-later
 """
 
+import logging
+
 import pytest
 from click.testing import CliRunner
 
 from ASOkai._cli.main import main
+from ASOkai._cli.options import _CliLogFormatter
+
+
+def test_cli_logging_shows_module_details_only_in_verbose_mode(caplog):
+    formatter = _CliLogFormatter()
+    record = logging.LogRecord(
+        "ASOkai._pipeline.runner",
+        logging.INFO,
+        __file__,
+        1,
+        "Planned execution",
+        (),
+        None,
+    )
+
+    caplog.set_level(logging.INFO)
+    assert formatter.format(record) == "Planned execution"
+
+    caplog.set_level(logging.DEBUG)
+    assert formatter.format(record) == (
+        "INFO ASOkai._pipeline.runner: Planned execution"
+    )
 
 
 @pytest.mark.parametrize(
@@ -326,6 +350,24 @@ def test_run_uses_toil_executor_when_requested(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["executor"].__class__.__name__ == "ToilExecutor"
+
+
+def test_run_passes_verbose_mode_to_the_executor(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(kwargs),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["run", "--verbose", "--step", "download-genome"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["executor"].verbose is True
 
 
 def test_export_steps_uses_outdir_and_runner_name(monkeypatch, tmp_path):

@@ -30,25 +30,29 @@ def test_toil_executor_invokes_toil_cwl_runner(tmp_path):
         "toil-cwl-runner",
         "--outdir",
         str(outdir),
-        "--disableWorkerOutputCapture",
+        "--quiet",
+        "--no-compute-checksum",
         str(cwl_path),
         str(job_path),
     ]
+    assert mock_run.call_args.kwargs["stdout"].name == str(
+        tmp_path / "cwl-output.json"
+    )
     assert outdir.is_dir()
 
 
-def test_toil_executor_can_capture_worker_output(tmp_path):
+def test_toil_executor_can_stream_worker_output(tmp_path):
     completed = subprocess.CompletedProcess(args=[], returncode=0)
 
     with patch("ASOkai._cwl.executors.subprocess.run", return_value=completed) as mock_run:
-        ToilExecutor(capture_worker_output=True).run(
+        ToilExecutor(capture_worker_output=False).run(
             tmp_path / "run.cwl",
             tmp_path / "job.yml",
             tmp_path / "out",
         )
 
     argv = mock_run.call_args.args[0]
-    assert "--disableWorkerOutputCapture" not in argv
+    assert "--disableWorkerOutputCapture" in argv
 
 
 def test_cwltool_executor_invokes_cwltool(tmp_path):
@@ -64,6 +68,10 @@ def test_cwltool_executor_invokes_cwltool(tmp_path):
         "cwltool",
         "--outdir",
         str(outdir),
+        "--quiet",
+        "--no-compute-checksum",
+        "--write-summary",
+        str(tmp_path / "cwl-output.json"),
         str(cwl_path),
         str(job_path),
     ]
@@ -90,11 +98,11 @@ def test_executor_raises_on_nonzero_exit(tmp_path, executor, executable):
 
 
 @pytest.mark.parametrize(
-    ("executor", "expected_args"),
+    ("executor", "extra_args"),
     [
         pytest.param(
             ToilExecutor(extra_args=["--clean", "always"]),
-            ["--disableWorkerOutputCapture", "--clean", "always"],
+            ["--clean", "always"],
             id="toil",
         ),
         pytest.param(
@@ -104,7 +112,7 @@ def test_executor_raises_on_nonzero_exit(tmp_path, executor, executable):
         ),
     ],
 )
-def test_executor_includes_extra_args(tmp_path, executor, expected_args):
+def test_executor_includes_extra_args(tmp_path, executor, extra_args):
     completed = subprocess.CompletedProcess(args=[], returncode=0)
     cwl_path = tmp_path / "run.cwl"
     job_path = tmp_path / "job.yml"
@@ -113,11 +121,25 @@ def test_executor_includes_extra_args(tmp_path, executor, expected_args):
     with patch("ASOkai._cwl.executors.subprocess.run", return_value=completed) as mock_run:
         executor.run(cwl_path, job_path, outdir)
 
-    assert mock_run.call_args.args[0] == [
-        executor.runner_name,
-        "--outdir",
-        str(outdir),
-        *expected_args,
-        str(cwl_path),
-        str(job_path),
-    ]
+    argv = mock_run.call_args.args[0]
+    start = argv.index(extra_args[0])
+    assert argv[start : start + len(extra_args)] == extra_args
+
+
+@pytest.mark.parametrize(
+    "executor",
+    [ToilExecutor(verbose=True), CwlToolExecutor(verbose=True)],
+)
+def test_verbose_executor_keeps_engine_logging_enabled(tmp_path, executor):
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+
+    with patch("ASOkai._cwl.executors.subprocess.run", return_value=completed) as mock_run:
+        executor.run(
+            tmp_path / "run.cwl",
+            tmp_path / "job.yml",
+            tmp_path / "out",
+        )
+
+    argv = mock_run.call_args.args[0]
+    assert "--quiet" not in argv
+    assert "--no-compute-checksum" in argv

@@ -128,7 +128,9 @@ def _collect_runnables(
     metavar="KEY=VALUE",
     help="Override a config value. Repeat the option for multiple values.",
 )
+@click.pass_context
 def run_command(
+    ctx: click.Context,
     config_path: Path,
     step_names: tuple[str, ...],
     task_names: tuple[str, ...],
@@ -152,13 +154,17 @@ def run_command(
         overrides = parse_config_overrides(config_overrides)
         cfg.apply_overrides(config, overrides)
 
+        verbose = bool(ctx.obj and ctx.obj.get("verbose", False))
         runner.run_all(
             runnables,
             config,
             force=force,
             dry_run=dry_run,
             non_recursive=non_recursive,
-            executor=runner.executor_from_name(executor_name),
+            executor=runner.executor_from_name(
+                executor_name,
+                verbose=verbose,
+            ),
             registered_steps=catalog.steps,
             config_schema_paths=catalog.config_schema_paths,
         )

@@ -35,6 +35,8 @@ def _run_cwl_runner(
     job_path: Path,
     outdir: Path,
     extra_args: Sequence[str],
+    *,
+    stdout_path: Path | None = None,
 ) -> None:
     """Invoke one CWL runner and translate a failed exit into a runtime error."""
     outdir.mkdir(parents=True, exist_ok=True)
@@ -47,7 +49,11 @@ def _run_cwl_runner(
         str(job_path),
     ]
     logger.debug("Running: %s", shlex.join(command))
-    result = subprocess.run(command)
+    if stdout_path is None:
+        result = subprocess.run(command)
+    else:
+        with stdout_path.open("w", encoding="utf-8") as stdout:
+            result = subprocess.run(command, stdout=stdout)
     if result.returncode != 0:
         raise RuntimeError(
             f"{executable} failed for {cwl_path} (exit {result.returncode})"
@@ -60,11 +66,13 @@ class ToilExecutor:
 
     runner_name: ClassVar[str] = "toil-cwl-runner"
     extra_args: list[str] = field(default_factory=list)
-    capture_worker_output: bool = False
+    capture_worker_output: bool = True
+    verbose: bool = False
 
     def run(self, cwl_path: Path, job_path: Path, outdir: Path) -> None:
         """Invoke toil-cwl-runner as a subprocess."""
-        runner_args = []
+        runner_args = [] if self.verbose else ["--quiet"]
+        runner_args.append("--no-compute-checksum")
         if not self.capture_worker_output:
             runner_args.append("--disableWorkerOutputCapture")
         runner_args.extend(self.extra_args)
@@ -74,6 +82,7 @@ class ToilExecutor:
             job_path,
             outdir,
             runner_args,
+            stdout_path=cwl_path.parent / "cwl-output.json",
         )
 
 
@@ -83,13 +92,24 @@ class CwlToolExecutor:
 
     runner_name: ClassVar[str] = "cwltool"
     extra_args: list[str] = field(default_factory=list)
+    verbose: bool = False
 
     def run(self, cwl_path: Path, job_path: Path, outdir: Path) -> None:
         """Invoke cwltool as a subprocess."""
+        summary_path = cwl_path.parent / "cwl-output.json"
+        runner_args = [] if self.verbose else ["--quiet"]
+        runner_args.extend(
+            [
+                "--no-compute-checksum",
+                "--write-summary",
+                str(summary_path),
+                *self.extra_args,
+            ]
+        )
         _run_cwl_runner(
             self.runner_name,
             cwl_path,
             job_path,
             outdir,
-            self.extra_args,
+            runner_args,
         )

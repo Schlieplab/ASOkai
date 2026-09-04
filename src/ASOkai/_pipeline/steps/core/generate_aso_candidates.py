@@ -28,7 +28,6 @@ _ASO_PATH_FIELDS = {
     "assembly": TemplateField("genome.assembly_id"),
     "source": TemplateField("genome.source", default="ensembl"),
     "release": TemplateField("genome.ensembl_release"),
-    "species": TemplateField("genome.species"),
     "target": TemplateField.first_of(
         "target.target_id",
         "target.target_name",
@@ -64,8 +63,7 @@ class GenerateASOCandidatesStep(CoreStep):
         "therapeutics",
         file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/{species}/"
-            "targets/{target}/antisense/"
+            "{assembly}/{source}/{release}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_aso_{design}_"
             "l{left}_g{gap}_r{right}_{mechanism}_"
             "therapeutics.json",
@@ -77,8 +75,7 @@ class GenerateASOCandidatesStep(CoreStep):
         "bindings",
         file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/{species}/"
-            "targets/{target}/antisense/"
+            "{assembly}/{source}/{release}/targets/{target}/antisense/"
             "{target}_k{k}_{region}_aso_{design}_"
             "l{left}_g{gap}_r{right}_{mechanism}_"
             "bindings.json",

@@ -351,7 +351,7 @@ def test_validate_step_config_uses_defaults_and_only_selected_steps(
     cfg.validate_step_config(config, [step])
 
     run = StepRun(step.name, step, config)
-    assert run.output_path(step.dna_output).parts[-3] == "ensembl"
+    assert run.output_path(step.dna_output).parts[-4] == "ensembl"
 
 
 def test_validate_step_config_requires_selected_step_parameters(tmp_path):

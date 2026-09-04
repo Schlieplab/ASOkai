@@ -48,8 +48,8 @@ class IntrinsicFeaturesStep(AnalysisStep):
             },
         ),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/{species}/"
-            "targets/{target}/analysis/intrinsic/"
+            "{assembly}/{source}/{release}/targets/{target}/"
+            "analysis/intrinsic/"
             "{target}_k{k}_{region}_intrinsic.csv",
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
@@ -58,7 +58,6 @@ class IntrinsicFeaturesStep(AnalysisStep):
                     default="ensembl",
                 ),
                 "release": TemplateField("genome.ensembl_release"),
-                "species": TemplateField("genome.species"),
                 "target": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",

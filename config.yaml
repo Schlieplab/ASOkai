@@ -27,15 +27,6 @@ resources:
   default:
     n_processes: 1
     memory_mb: 4096
-  download-genome:
-    n_processes: 1
-    memory_mb: 4096
-  create-target-gene:
-    n_processes: 1
-    memory_mb: 4096
-  generate-aso-candidates:
-    n_processes: 1
-    memory_mb: 4096
   intrinsic-features:
     n_processes: 4
     memory_mb: 4096

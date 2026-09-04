@@ -35,8 +35,8 @@ class CreateTargetGeneStep(CoreStep):
         "target_gene",
         file_type=JsonFile(TargetGene),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/{species}/"
-            "targets/{target}/{target}_k{k}_{region}.json",
+            "{assembly}/{source}/{release}/targets/{target}/"
+            "{target}_k{k}_{region}.json",
             fields={
                 "assembly": TemplateField("genome.assembly_id"),
                 "source": TemplateField(
@@ -44,7 +44,6 @@ class CreateTargetGeneStep(CoreStep):
                     default="ensembl",
                 ),
                 "release": TemplateField("genome.ensembl_release"),
-                "species": TemplateField("genome.species"),
                 "target": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",

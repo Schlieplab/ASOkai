@@ -46,7 +46,7 @@ class DownloadGenomeStep(CoreStep):
             format_name="gzip-compressed DNA FASTA",
         ),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/"
+            "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.dna.primary_assembly.fa.gz",
             fields=_GENOME_PATH_FIELDS,
         ),
@@ -59,7 +59,7 @@ class DownloadGenomeStep(CoreStep):
             format_name="gzip-compressed cDNA FASTA",
         ),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/"
+            "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.cdna.all.fa.gz",
             fields=_GENOME_PATH_FIELDS,
         ),
@@ -72,7 +72,7 @@ class DownloadGenomeStep(CoreStep):
             format_name="gzip-compressed GTF",
         ),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/"
+            "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.{release}.gtf.gz",
             fields=_GENOME_PATH_FIELDS,
         ),
@@ -85,7 +85,7 @@ class DownloadGenomeStep(CoreStep):
             format_name="SQLite gffutils database",
         ),
         destination=OutputPathTemplate(
-            "{assembly}/genomes/{source}/{release}/"
+            "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.{release}.gtf.db",
             fields=_GENOME_PATH_FIELDS,
         ),
@@ -163,6 +163,6 @@ class DownloadGenomeStep(CoreStep):
                     f"Genome downloader output {name!r} does not exist: "
                     f"{output}."
                 )
-            logger.info("download-genome: wrote %s to %s", name, output)
+            logger.debug("download-genome: wrote %s to %s", name, output)
 
         return 0

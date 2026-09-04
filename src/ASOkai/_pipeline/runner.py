@@ -20,6 +20,7 @@ from ASOkai._cwl.input_resolution import (
 )
 from ASOkai._cwl.job_bundle import write_cwl_job_bundle
 from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
+from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.execution import ExecutionPlan, StepRun
 from ASOkai._pipeline.plan import build_export_plan, build_plan
@@ -33,10 +34,10 @@ class RunnerConfig:
     """Configuration shared by the CLI, exporter, and execution path."""
 
     executable: str
-    executor_factory: Callable[[], Executor]
+    executor_factory: Callable[..., Executor]
 
-    def create_executor(self) -> Executor:
-        return self.executor_factory()
+    def create_executor(self, *, verbose: bool = False) -> Executor:
+        return self.executor_factory(verbose=verbose)
 
 
 RUNNERS = {
@@ -55,9 +56,9 @@ def runner_config_from_name(name: str) -> RunnerConfig:
         raise ValueError(f"Unknown runner '{name}'. Choose one of: {choices}.") from exc
 
 
-def executor_from_name(name: str) -> Executor:
+def executor_from_name(name: str, *, verbose: bool = False) -> Executor:
     """Create the execution backend configured for a CLI runner name."""
-    return runner_config_from_name(name).create_executor()
+    return runner_config_from_name(name).create_executor(verbose=verbose)
 
 
 def runner_executable_from_name(name: str) -> str:
@@ -93,67 +94,84 @@ def _requested_outputs(plan: ExecutionPlan) -> dict[str, Path]:
     return requested
 
 
-# ---------------------------------------------------------------------------
-# Dry-run reporting (same resolution logic, annotated display)
-# ---------------------------------------------------------------------------
+def _output_report_lines(plan: ExecutionPlan) -> list[str]:
+    """Format requested output paths for a user-facing runner report."""
+    requested = _requested_outputs(plan)
+    qualify_names = len(plan.goals) != 1
+    outputs = [
+        (
+            qualified_name
+            if qualify_names
+            else qualified_name.rsplit(".", maxsplit=1)[-1],
+            path,
+        )
+        for qualified_name, path in requested.items()
+    ]
+    width = max(len(name) for name, _ in outputs)
+    return [f"  {name:<{width}}: {path}" for name, path in outputs]
+
 
 def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
-    """
-    Per-step dry-run breakdown. Uses run input resolution with plan context
-    so the display reflects exactly the same priority logic as execution.
-    """
+    """Log a grouped view of the inputs and resources for scheduled runs."""
     runs_to_execute = set(plan.runs_to_execute)
-    logger.info(
-        "[%s] dry-run — would run %d step(s):",
-        label,
-        len(plan.runs_to_execute),
-    )
+    count = len(plan.runs_to_execute)
+    noun = "step" if count == 1 else "steps"
+    lines = [f"[{label}] Dry run: {count} {noun} would execute:"]
 
-    for run in plan.runs_to_execute:
-        logger.info("  ── %s", run.run_id)
+    for position, run in enumerate(plan.runs_to_execute, start=1):
+        lines.extend(("", f"  {position}. {run.run_id}"))
         resolved = resolve_run_inputs(
             run,
             resolved_outputs=plan.resolved_outputs,
             runs_to_execute=runs_to_execute,
         )
-        for cwl_key, ri in resolved.items():
-            if ri.source == "dep_wired":
-                assert ri.producer_output is not None
-                logger.info(
-                    "    %-22s wired from '%s'",
-                    cwl_key,
-                    ri.producer_output.qualified_name,
+        parameters: list[tuple[str, object]] = []
+        inputs: list[tuple[str, str]] = []
+        for input_name, resolved_input in resolved.items():
+            if resolved_input.source == "scalar":
+                if resolved_input.cwl_value is not None:
+                    parameters.append((input_name, resolved_input.cwl_value))
+                continue
+
+            if resolved_input.source == "dep_wired":
+                assert resolved_input.producer_output is not None
+                detail = f"<- {resolved_input.producer_output.qualified_name}"
+            elif resolved_input.source == "dep_disk":
+                assert resolved_input.producer_output is not None
+                path = resolved_input.path
+                status = "OK" if path is not None and path.exists() else "MISSING"
+                detail = (
+                    f"<- {resolved_input.producer_output.qualified_name} "
+                    f"({path}; {status})"
                 )
-            elif ri.source == "dep_disk":
-                assert ri.producer_output is not None
-                p = ri.path
-                if p is not None:
-                    status = "OK" if p.exists() else "MISSING"
-                    logger.info(
-                        "    %-22s %s  (%s)  [from '%s']",
-                        cwl_key,
-                        p,
-                        status,
-                        ri.producer_output.qualified_name,
-                    )
-                else:
-                    logger.info(
-                        "    %-22s MISSING — output '%s' unknown",
-                        cwl_key,
-                        ri.producer_output.qualified_name,
-                    )
-            elif ri.source == "input_override":
-                p = ri.path
-                status = "OK" if p is not None and p.exists() else "MISSING"
-                logger.info("    %-22s %s  (%s)  [override --config %s]",
-                            cwl_key, p, status, ri.config_path)
-            else:  # scalar
-                logger.info("    %-22s %s", cwl_key, ri.cwl_value)
+            else:
+                path = resolved_input.path
+                status = "OK" if path is not None and path.exists() else "MISSING"
+                detail = (
+                    f"<- {path} (override {resolved_input.config_path}; "
+                    f"{status})"
+                )
+            inputs.append((input_name, detail))
 
+        if parameters:
+            lines.append("     Parameters:")
+            lines.extend(
+                f"       {name}: {value}" for name, value in parameters
+            )
+        if inputs:
+            width = max(len(name) for name, _ in inputs)
+            lines.append("     Inputs:")
+            lines.extend(
+                f"       {name:<{width}} {detail}" for name, detail in inputs
+            )
+        if run.step.supports_multiple_processes:
+            workers = cfg.step_resources(run.config, run.step)[
+                cfg.RESOURCE_N_PROCESSES_KEY
+            ]
+            lines.extend(("     Resources:", f"       workers: {workers}"))
 
-# ---------------------------------------------------------------------------
-# Plan execution
-# ---------------------------------------------------------------------------
+    logger.info("%s", "\n".join(lines))
+
 
 def run_plan(
     plan: ExecutionPlan,
@@ -173,14 +191,13 @@ def run_plan(
     executor = executor or CwlToolExecutor()
 
     if not plan.runs_to_execute:
-        logger.info("[%s] all outputs already exist, nothing to run.", label)
-        for run_output, path in plan.resolved_outputs.items():
-            logger.info(
-                "  %s/%s: %s",
-                run_output.run.run_id,
-                run_output.output.name,
-                path,
-            )
+        lines = [
+            f"[{label}] Nothing to run; all outputs already exist",
+            "",
+            "Outputs:",
+            *_output_report_lines(plan),
+        ]
+        logger.info("%s", "\n".join(lines))
         return _requested_outputs(plan)
 
     cwl_bundle = generate_cwl_bundle(
@@ -205,19 +222,28 @@ def run_plan(
         runner_name=executor.runner_name,
         name_prefix="asokai-job",
     )
-    logger.info("[%s] CWL job bundle written to %s", label, job_dir)
+    logger.debug("[%s] CWL job bundle written to %s", label, job_dir)
 
     if len(plan.runs_to_execute) == 1:
-        logger.info("[%s] running '%s'.", label, last_run.run_id)
+        logger.info("[%s] Running 1 step", label)
     else:
         logger.info(
-            "[%s] running %d steps.",
+            "[%s] Running %d steps",
             label,
             len(plan.runs_to_execute),
         )
     datadir = Path(config["datadir"])
     executor.run(job_dir / "run.cwl", job_dir / "job.yml", datadir)
     _validate_published_outputs(plan.runs_to_execute)
+    lines = [
+        f"[{label}] Completed successfully",
+        "",
+        "Outputs:",
+        *_output_report_lines(plan),
+        "",
+        f"Job bundle: {job_dir}",
+    ]
+    logger.info("%s", "\n".join(lines))
     return _requested_outputs(plan)
 
 

@@ -110,10 +110,8 @@ def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
     assert paths["therapeutics"] == (
         tmp_path
         / "GRCh38"
-        / "genomes"
         / "ensembl"
         / "114"
-        / "Homo_sapiens"
         / "targets"
         / "ENSG00000133703"
         / "antisense"
@@ -123,10 +121,8 @@ def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
     assert paths["bindings"] == (
         tmp_path
         / "GRCh38"
-        / "genomes"
         / "ensembl"
         / "114"
-        / "Homo_sapiens"
         / "targets"
         / "ENSG00000133703"
         / "antisense"

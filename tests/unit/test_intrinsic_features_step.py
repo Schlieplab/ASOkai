@@ -86,8 +86,8 @@ def test_output_path_configuration_is_not_a_runtime_parameter(step):
 def test_output_paths_structure(step, config, tmp_path):
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
-        / "Homo_sapiens" / "targets" / "ENSG00000133703"
+        tmp_path / "GRCh38" / "ensembl" / "114"
+        / "targets" / "ENSG00000133703"
         / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
@@ -101,8 +101,8 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
     }
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
-        / "Homo_sapiens" / "targets" / "KRAS"
+        tmp_path / "GRCh38" / "ensembl" / "114"
+        / "targets" / "KRAS"
         / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected

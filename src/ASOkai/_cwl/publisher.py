@@ -205,7 +205,7 @@ def publish_outputs(
         for source, entry in zip(sources, plan.entries, strict=True):
             destination = publication_root.joinpath(*entry.destination.parts)
             method = _publish_file(Path(source), destination)
-            logger.info(
+            logger.debug(
                 "%s %s -> %s",
                 method,
                 entry.output_id,

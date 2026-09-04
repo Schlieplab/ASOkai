@@ -104,8 +104,8 @@ class ExampleAnalysisStep(AnalysisStep):
         ),
         destination=OutputPathTemplate(
             template=(
-                "{assembly}/genomes/{source}/{release}/{species}/"
-                "targets/{target_name}/analysis/example/"
+                "{assembly}/{source}/{release}/targets/{target_name}/"
+                "analysis/example/"
                 "{target_name}_k{k}_{sites_region}_against_"
                 "{target_region}_example.csv"
             ),
@@ -116,7 +116,6 @@ class ExampleAnalysisStep(AnalysisStep):
                     default="ensembl",
                 ),
                 "release": TemplateField("genome.ensembl_release"),
-                "species": TemplateField("genome.species"),
                 "target_name": TemplateField.first_of(
                     "target.target_id",
                     "target.target_name",

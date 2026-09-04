@@ -9,7 +9,6 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import click
@@ -18,7 +17,7 @@ from ASOkai._pipeline.catalog import get_steps
 
 from .catalog import describe_command, list_command
 from .execution import export_command, run_command
-from .options import CONTEXT_SETTINGS
+from .options import CONTEXT_SETTINGS, configure_logging
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -46,10 +45,7 @@ def main(ctx: click.Context) -> None:
 
     ASOkai — ASO design pipeline.
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging()
     ctx.ensure_object(dict)
 
 

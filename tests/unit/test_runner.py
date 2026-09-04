@@ -91,7 +91,7 @@ def _run_download(config, **kwargs):
 def test_runner_skips_execution_when_outputs_exist(config, tmp_path):
     step = DownloadGenomeStep()
     run = _step_run(step, config)
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+    base = tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     base.mkdir(parents=True)
     for p in run.output_paths().values():
         p.touch()
@@ -121,8 +121,9 @@ def test_dry_run_returns_outputs_without_executing(config):
     assert "download-genome.annotation" in result
 
 
-def test_runner_writes_job_bundle_before_execution(config, tmp_path):
+def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
     executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
+    caplog.set_level(logging.INFO)
 
     _run_download(config, force=True, executor=executor)
 
@@ -142,6 +143,11 @@ def test_runner_writes_job_bundle_before_execution(config, tmp_path):
     assert all(paths[name].exists() for name in (
         "dna", "cdna", "annotation", "db"
     ))
+    completion = caplog.records[-1].getMessage()
+    assert completion.startswith("[download-genome] Completed successfully")
+    assert "\nOutputs:\n  dna" in completion
+    assert str(paths["dna"]) in completion
+    assert f"\nJob bundle: {export_dirs[0]}" in completion
 
 
 def test_runner_rejects_missing_published_outputs(config):
@@ -184,7 +190,7 @@ def test_runner_rejects_unsupported_download_source(config):
 def test_forced_dry_run_does_not_cleanup_outputs(config, tmp_path):
     step = DownloadGenomeStep()
     run = _step_run(step, config)
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+    base = tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     base.mkdir(parents=True)
     for p in run.output_paths().values():
         p.touch()
@@ -287,14 +293,31 @@ def workflow_config(tmp_path):
     }
 
 
-def test_workflow_dry_run_does_not_call_default_executor(workflow_config):
+def test_workflow_dry_run_reports_resources_without_executing(
+    workflow_config,
+    caplog,
+):
+    workflow_config["resources"] = {
+        "intrinsic-features": {"n_processes": 4},
+    }
+    caplog.set_level(logging.INFO)
+
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         runner.run_all(
             [StandardWorkflow()],
             workflow_config,
             dry_run=True,
         )
+
     mock_run.assert_not_called()
+    report = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("[standard] Dry run:")
+    )
+    assert "[standard] Dry run: 4 steps would execute:" in report
+    assert "  4. intrinsic-features" in report
+    assert "     Resources:\n       workers: 4" in report
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):
@@ -346,6 +369,8 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
 def test_executor_from_name_uses_central_runner_configuration():
     assert isinstance(runner.executor_from_name("cwltool"), CwlToolExecutor)
     assert isinstance(runner.executor_from_name("toil"), ToilExecutor)
+    assert runner.executor_from_name("cwltool", verbose=True).verbose is True
+    assert runner.executor_from_name("toil", verbose=True).verbose is True
 
     with pytest.raises(ValueError, match="Unknown runner 'unknown'"):
         runner.executor_from_name("unknown")
@@ -477,10 +502,8 @@ def test_task_dry_run_returns_requested_outputs(workflow_config):
     assert result["create-target-gene.target_gene"] == (
         Path(workflow_config["datadir"])
         / "GRCh38"
-        / "genomes"
         / "ensembl"
         / "114"
-        / "Homo_sapiens"
         / "targets"
         / "ENSG00000133703"
         / "ENSG00000133703_k16_pre-mrna.json"
@@ -519,7 +542,7 @@ def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
     executor.run.assert_not_called()
 
 
-def test_dry_run_reports_qualified_producer_outputs(workflow_config, caplog):
+def test_dry_run_groups_parameters_and_qualified_inputs(workflow_config, caplog):
     download = DownloadGenomeStep()
     create = CreateTargetGeneStep()
     plan = build_plan(
@@ -537,4 +560,14 @@ def test_dry_run_reports_qualified_producer_outputs(workflow_config, caplog):
         executor=MagicMock(),
     )
 
-    assert "wired from 'download-genome.dna'" in caplog.text
+    report = caplog.records[-1].getMessage()
+    assert report.startswith(
+        "[instantiate-target-gene] Dry run: 2 steps would execute:"
+    )
+    assert "\n  1. download-genome\n     Parameters:" in report
+    assert "       assembly: GRCh38" in report
+    assert "target_name" not in report
+    assert "\n  2. create-target-gene\n     Parameters:" in report
+    assert "     Inputs:" in report
+    assert "       dna        <- download-genome.dna" in report
+    assert "       annotation <- download-genome.annotation" in report

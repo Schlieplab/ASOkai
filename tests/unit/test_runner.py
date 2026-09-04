@@ -151,10 +151,11 @@ def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
         "dna", "cdna", "annotation", "db"
     ))
     completion = caplog.records[-1].getMessage()
-    assert completion.startswith("[download-genome] Completed successfully")
-    assert "\nOutputs:\n  dna" in completion
+    assert completion.startswith("[step:download-genome] Completed successfully")
+    assert "\n\n[step:download-genome] Outputs:" in completion
+    assert "\n[step:download-genome]   dna" in completion
     assert str(paths["dna"]) in completion
-    assert f"\nJob bundle: {export_dirs[0]}" in completion
+    assert f"\n[step:download-genome] Job bundle: {export_dirs[0]}" in completion
     completed_run = _step_run(DownloadGenomeStep(), config)
     assert receipt_path(completed_run).is_file()
     assert reusable_output_paths(completed_run) == paths
@@ -325,11 +326,14 @@ def test_workflow_dry_run_reports_resources_without_executing(
     report = next(
         record.getMessage()
         for record in caplog.records
-        if record.getMessage().startswith("[standard] Dry run:")
+        if record.getMessage().startswith("[workflow:standard] Dry run:")
     )
-    assert "[standard] Dry run: 4 steps would execute:" in report
-    assert "  4. intrinsic-features" in report
-    assert "     Resources:\n       workers: 4" in report
+    assert "[workflow:standard] Dry run: 4 steps would execute:" in report
+    assert "[workflow:standard]   4. intrinsic-features" in report
+    assert (
+        "[workflow:standard]      Resources:\n"
+        "[workflow:standard]        workers: 4"
+    ) in report
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):
@@ -544,6 +548,7 @@ def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
         workflow_config,
         dry_run=True,
         executor=executor,
+        log_contexts=("task:instantiate-target-gene",),
     )
 
     assert result == {
@@ -555,18 +560,10 @@ def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
 
 
 def test_dry_run_groups_parameters_and_qualified_inputs(workflow_config, caplog):
-    download = DownloadGenomeStep()
-    create = CreateTargetGeneStep()
-    plan = build_plan(
-        [create],
-        workflow_config,
-        _registry={download.name: download, create.name: create},
-    )
     caplog.set_level(logging.INFO)
 
-    runner.run_plan(
-        plan,
-        "instantiate-target-gene",
+    runner.run_all(
+        [InstantiateTargetGeneTask()],
         workflow_config,
         dry_run=True,
         executor=MagicMock(),
@@ -574,12 +571,24 @@ def test_dry_run_groups_parameters_and_qualified_inputs(workflow_config, caplog)
 
     report = caplog.records[-1].getMessage()
     assert report.startswith(
-        "[instantiate-target-gene] Dry run: 2 steps would execute:"
+        "[task:instantiate-target-gene] Dry run: 2 steps would execute:"
     )
-    assert "\n  1. download-genome\n     Parameters:" in report
-    assert "       assembly: GRCh38" in report
+    assert (
+        "\n[task:instantiate-target-gene]   1. download-genome\n"
+        "[task:instantiate-target-gene]      Parameters:"
+    ) in report
+    assert "[task:instantiate-target-gene]        assembly: GRCh38" in report
     assert "target_name" not in report
-    assert "\n  2. create-target-gene\n     Parameters:" in report
-    assert "     Inputs:" in report
-    assert "       dna        <- download-genome.dna" in report
-    assert "       annotation <- download-genome.annotation" in report
+    assert (
+        "\n[task:instantiate-target-gene]   2. create-target-gene\n"
+        "[task:instantiate-target-gene]      Parameters:"
+    ) in report
+    assert "[task:instantiate-target-gene]      Inputs:" in report
+    assert (
+        "[task:instantiate-target-gene]        dna        "
+        "<- download-genome.dna"
+    ) in report
+    assert (
+        "[task:instantiate-target-gene]        annotation "
+        "<- download-genome.annotation"
+    ) in report

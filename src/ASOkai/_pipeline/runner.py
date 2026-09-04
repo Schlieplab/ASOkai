@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ASOkai._logging import prefix_log_lines
 from ASOkai._cwl.generation import generate_cwl_bundle
 from ASOkai._cwl.input_resolution import (
     resolve_run_inputs,
@@ -26,8 +27,28 @@ from ASOkai._pipeline.contracts.execution import ExecutionPlan, StepRun
 from ASOkai._pipeline.output_receipts import record_validated_outputs
 from ASOkai._pipeline.plan import build_export_plan, build_plan
 from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.workflows.base import Workflow
 
 logger = logging.getLogger(__name__)
+
+
+def _runnable_log_context(runnable: Runnable) -> str:
+    """Return the typed user-facing context for one selected runnable."""
+    if isinstance(runnable, Workflow):
+        kind = "workflow"
+    elif isinstance(runnable, Task):
+        kind = "task"
+    elif isinstance(runnable, Step):
+        kind = "step"
+    else:
+        raise TypeError(f"Unsupported runnable type: {type(runnable).__name__!r}.")
+    return f"{kind}:{runnable.name}"
+
+
+def _log_info(contexts: tuple[str, ...], message: str) -> None:
+    """Log a user-facing message with every non-empty line contextualized."""
+    logger.info("%s", prefix_log_lines(contexts, message))
 
 
 @dataclass(frozen=True)
@@ -87,10 +108,12 @@ def _validate_published_outputs(
             record_validated_outputs(run)
         except OSError as error:
             logger.warning(
-                "[%s] Outputs are valid, but their validation receipt could "
-                "not be written: %s",
-                run.run_id,
-                error,
+                "%s",
+                prefix_log_lines(
+                    (f"step:{run.run_id}",),
+                    "Outputs are valid, but their validation receipt could "
+                    f"not be written: {error}",
+                ),
             )
 
 
@@ -121,12 +144,15 @@ def _output_report_lines(plan: ExecutionPlan) -> list[str]:
     return [f"  {name:<{width}}: {path}" for name, path in outputs]
 
 
-def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
+def _log_dry_run_plan(
+    plan: ExecutionPlan,
+    log_contexts: tuple[str, ...],
+) -> None:
     """Log a grouped view of the inputs and resources for scheduled runs."""
     runs_to_execute = set(plan.runs_to_execute)
     count = len(plan.runs_to_execute)
     noun = "step" if count == 1 else "steps"
-    lines = [f"[{label}] Dry run: {count} {noun} would execute:"]
+    lines = [f"Dry run: {count} {noun} would execute:"]
 
     for position, run in enumerate(plan.runs_to_execute, start=1):
         lines.extend(("", f"  {position}. {run.run_id}"))
@@ -180,7 +206,7 @@ def _log_dry_run_plan(plan: ExecutionPlan, label: str) -> None:
             ]
             lines.extend(("     Resources:", f"       workers: {workers}"))
 
-    logger.info("%s", "\n".join(lines))
+    _log_info(log_contexts, "\n".join(lines))
 
 
 def run_plan(
@@ -190,6 +216,7 @@ def run_plan(
     *,
     dry_run: bool = False,
     executor: Executor | None = None,
+    log_contexts: tuple[str, ...] | None = None,
 ) -> dict[str, Path]:
     """
     Execute an ExecutionPlan.
@@ -199,15 +226,16 @@ def run_plan(
     """
 
     executor = executor or CwlToolExecutor()
+    log_contexts = log_contexts or (f"step:{label}",)
 
     if not plan.runs_to_execute:
         lines = [
-            f"[{label}] Nothing to run; all outputs already exist",
+            "Nothing to run; all outputs already exist",
             "",
             "Outputs:",
             *_output_report_lines(plan),
         ]
-        logger.info("%s", "\n".join(lines))
+        _log_info(log_contexts, "\n".join(lines))
         return _requested_outputs(plan)
 
     cwl_bundle = generate_cwl_bundle(
@@ -220,7 +248,7 @@ def run_plan(
     last_run = plan.runs_to_execute[-1]
 
     if dry_run:
-        _log_dry_run_plan(plan, label)
+        _log_dry_run_plan(plan, log_contexts)
         return _requested_outputs(plan)
 
     job_parent = Path(config["datadir"]) / "jobs"
@@ -232,28 +260,30 @@ def run_plan(
         runner_name=executor.runner_name,
         name_prefix="asokai-job",
     )
-    logger.debug("[%s] CWL job bundle written to %s", label, job_dir)
+    logger.debug(
+        "%s",
+        prefix_log_lines(log_contexts, f"CWL job bundle written to {job_dir}"),
+    )
 
     if len(plan.runs_to_execute) == 1:
-        logger.info("[%s] Running 1 step", label)
+        _log_info(log_contexts, "Running 1 step")
     else:
-        logger.info(
-            "[%s] Running %d steps",
-            label,
-            len(plan.runs_to_execute),
+        _log_info(
+            log_contexts,
+            f"Running {len(plan.runs_to_execute)} steps",
         )
     datadir = Path(config["datadir"])
     executor.run(job_dir / "run.cwl", job_dir / "job.yml", datadir)
     _validate_published_outputs(plan.runs_to_execute)
     lines = [
-        f"[{label}] Completed successfully",
+        "Completed successfully",
         "",
         "Outputs:",
         *_output_report_lines(plan),
         "",
         f"Job bundle: {job_dir}",
     ]
-    logger.info("%s", "\n".join(lines))
+    _log_info(log_contexts, "\n".join(lines))
     return _requested_outputs(plan)
 
 
@@ -277,6 +307,7 @@ def run_all(
         raise ValueError("run_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
+    log_contexts = tuple(_runnable_log_context(runnable) for runnable in runnables)
     plan = build_plan(
         runnables,
         config,
@@ -291,6 +322,7 @@ def run_all(
         config,
         dry_run=dry_run,
         executor=executor,
+        log_contexts=log_contexts,
     )
 
 
@@ -309,6 +341,7 @@ def export_all(
         raise ValueError("export_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
+    log_contexts = tuple(_runnable_log_context(runnable) for runnable in runnables)
     plan = build_export_plan(
         runnables,
         config,
@@ -335,5 +368,5 @@ def export_all(
         runner_name=runner_name,
         name_prefix="asokai-export",
     )
-    logger.info("[%s] CWL export bundle written to %s", label, job_dir)
+    _log_info(log_contexts, f"CWL export bundle written to {job_dir}")
     return job_dir

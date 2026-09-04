@@ -163,6 +163,6 @@ class DownloadGenomeStep(CoreStep):
                     f"Genome downloader output {name!r} does not exist: "
                     f"{output}."
                 )
-            logger.debug("download-genome: wrote %s to %s", name, output)
+            logger.debug("Wrote %s to %s", name, output)
 
         return 0

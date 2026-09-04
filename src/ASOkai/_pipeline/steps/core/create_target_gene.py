@@ -120,7 +120,7 @@ class CreateTargetGeneStep(CoreStep):
         from GenomeUtils.Genome import GenomeBuilder
         from ASOkai.Targets import create_target_gene
 
-        logger.info("create-target-gene: loading DNA FASTA from %s", args.dna)
+        logger.info("Loading DNA FASTA from %s", args.dna)
         builder = GenomeBuilder(
             id=args.assembly,
             species=args.species.replace("_", " "),
@@ -128,21 +128,21 @@ class CreateTargetGeneStep(CoreStep):
         )
         builder.with_dna_fasta(args.dna)
 
-        logger.info("create-target-gene: loading cDNA FASTA from %s", args.cdna)
+        logger.info("Loading cDNA FASTA from %s", args.cdna)
         builder.with_cdna_fasta(args.cdna)
 
         logger.info(
-            "create-target-gene: loading GTF annotations from %s using database %s",
+            "Loading GTF annotations from %s using database %s",
             args.annotation,
             args.db,
         )
         builder.with_gtf_file(args.annotation, db_path=args.db)
 
-        logger.info("create-target-gene: indexing genome")
+        logger.info("Indexing genome")
         genome, _ = builder.build()
 
         logger.info(
-            "create-target-gene: extracting %s sites for "
+            "Extracting %s sites for "
             "target_id=%s target_name=%s k=%s",
             args.region,
             args.target_id,
@@ -158,7 +158,7 @@ class CreateTargetGeneStep(CoreStep):
         )
 
         logger.info(
-            "create-target-gene: writing target gene to %s",
+            "Writing target gene to %s",
             args.target_gene_output,
         )
         self.target_gene_output.write(

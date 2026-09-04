@@ -184,6 +184,14 @@ connect producer outputs to consumer inputs, generate CWL, determine final
 output paths, and publish results. A step should not reproduce any of this
 logic.
 
+Step logging
+~~~~~~~~~~~~
+
+Step implementations should emit plain log messages without embedding their
+own name. The internal dispatcher prefixes every non-empty line with
+``[step:<name>]``. Runner messages instead identify the selected orchestration
+level with ``[step:<name>]``, ``[task:<name>]``, or ``[workflow:<name>]``.
+
 Generated-output validation receipts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

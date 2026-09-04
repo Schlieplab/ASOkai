@@ -14,6 +14,8 @@ from pathlib import Path
 import click
 import yaml
 
+from ASOkai._logging import active_log_contexts, prefix_log_lines
+
 
 DEFAULT_CONFIG = Path("config.yaml")
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
@@ -32,7 +34,10 @@ class _CliLogFormatter(logging.Formatter):
             if logging.getLogger().isEnabledFor(logging.DEBUG)
             else _NORMAL_LOG_FORMATTER
         )
-        return formatter.format(record)
+        return prefix_log_lines(
+            active_log_contexts(),
+            formatter.format(record),
+        )
 
 
 def configure_logging(*, verbose: bool = False) -> None:

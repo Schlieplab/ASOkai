@@ -12,6 +12,7 @@ import logging
 import pytest
 from click.testing import CliRunner
 
+from ASOkai._logging import active_log_contexts, log_context
 from ASOkai._cli.main import main
 from ASOkai._cli.options import _CliLogFormatter
 
@@ -34,6 +35,28 @@ def test_cli_logging_shows_module_details_only_in_verbose_mode(caplog):
     caplog.set_level(logging.DEBUG)
     assert formatter.format(record) == (
         "INFO ASOkai._pipeline.runner: Planned execution"
+    )
+
+
+def test_cli_logging_prefixes_every_non_empty_line_with_context(caplog):
+    formatter = _CliLogFormatter()
+    record = logging.LogRecord(
+        "ASOkai._pipeline.runner",
+        logging.INFO,
+        __file__,
+        1,
+        "First line\n\nSecond line",
+        (),
+        None,
+    )
+    caplog.set_level(logging.INFO)
+
+    with log_context("workflow:standard"):
+        rendered = formatter.format(record)
+
+    assert rendered == (
+        "[workflow:standard] First line\n\n"
+        "[workflow:standard] Second line"
     )
 
 
@@ -679,10 +702,11 @@ def test_run_config_preserves_yaml_scalar_types(monkeypatch):
 def test_step_command_dispatches_to_builtin_step(monkeypatch):
     from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
-    received: dict[str, list[str] | None] = {}
+    received: dict[str, object] = {}
 
     def fake_run_cli(self, argv: list[str] | None = None) -> int:
         received["argv"] = argv
+        received["log_contexts"] = active_log_contexts()
         return 0
 
     monkeypatch.setattr(DownloadGenomeStep, "run_cli", fake_run_cli)
@@ -695,6 +719,8 @@ def test_step_command_dispatches_to_builtin_step(monkeypatch):
 
     assert result.exit_code == 0
     assert received["argv"] == ["--assembly", "GRCh38", "--release", "114"]
+    assert received["log_contexts"] == ("step:download-genome",)
+    assert active_log_contexts() == ()
 
 
 def test_step_command_rejects_unknown_steps():

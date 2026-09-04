@@ -136,4 +136,4 @@ def test_run_cli_downloads_to_declared_destinations(
     assert (tmp_path / "out" / "cdna.fa.gz").exists()
     assert (tmp_path / "out" / "annotation.gtf.gz").exists()
     assert (tmp_path / "out" / "annotation.db").exists()
-    assert "download-genome: wrote dna" in caplog.text
+    assert "Wrote dna" in caplog.text

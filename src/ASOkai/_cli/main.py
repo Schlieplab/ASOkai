@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 
+from ASOkai._logging import log_context
 from ASOkai._pipeline.catalog import get_steps
 
 from .catalog import describe_command, list_command
@@ -112,11 +113,12 @@ def step_command(
     if step is None:
         raise click.ClickException(f"Unknown step '{step_name}'.")
 
-    try:
-        exit_code = step.run_cli(list(ctx.args))
-    except SystemExit as error:
-        code = error.code if isinstance(error.code, int) else 1
-        raise click.exceptions.Exit(code) from error
+    with log_context(f"step:{step.name}"):
+        try:
+            exit_code = step.run_cli(list(ctx.args))
+        except SystemExit as error:
+            code = error.code if isinstance(error.code, int) else 1
+            raise click.exceptions.Exit(code) from error
 
     if exit_code:
         raise click.exceptions.Exit(exit_code)

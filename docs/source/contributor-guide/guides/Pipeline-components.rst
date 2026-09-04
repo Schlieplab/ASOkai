@@ -184,6 +184,41 @@ connect producer outputs to consumer inputs, generate CWL, determine final
 output paths, and publish results. A step should not reproduce any of this
 logic.
 
+Generated-output validation receipts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After a managed run completes, ASOkai fully validates every declared output
+and records one validation receipt for the complete output set under
+``datadir/.asokai/validation``. A later plan reuses the run only when its
+configuration identity, output destinations, and every recorded file match
+that receipt. A missing or changed output invalidates the complete run rather
+than only one file.
+
+ASOkai does not adopt existing outputs that have no receipt. It reruns the
+step, validates the newly published outputs, and creates the receipt only
+after successful execution. User-supplied ``path_override`` files never
+receive receipts; they continue to receive their inherited file-contract
+validation directly.
+
+The ``validation.existing_outputs`` mode controls this reuse check:
+
+* ``signature`` (the default) requires a matching validation receipt and
+  recorded output metadata.
+* ``contract`` bypasses receipts during planning and fully validates every
+  existing generated output before deciding whether to reuse it.
+
+The selected mode does not change override handling. Successful runs write
+receipts in either mode, so changing back to ``signature`` does not require
+another run.
+
+Every step inherits ``cache_version = 1``. Increment this positive integer
+when an implementation change can alter output contents without changing the
+declared parameters, inputs, or destinations. This applies to built-in and
+plugin steps alike and avoids invalidating unrelated runs when the overall
+ASOkai package version changes. Receipts support work reuse and ordinary file
+change detection; they are not
+cryptographic proof against a user who can modify both data and receipt files.
+
 .. _analysis-step-lifecycle:
 
 Analysis-step lifecycle

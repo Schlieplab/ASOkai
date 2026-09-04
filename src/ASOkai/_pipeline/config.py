@@ -12,7 +12,7 @@ from __future__ import annotations
 from copy import deepcopy
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
 
 import yaml
 from jsonschema.exceptions import SchemaError
@@ -37,6 +37,15 @@ DEFAULT_STEP_RESOURCES = {
     RESOURCE_MEMORY_KEY: 4096,
 }
 _CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
+OutputValidationMode = Literal["signature", "contract"]
+
+
+def output_validation_mode(config: Mapping[str, Any]) -> OutputValidationMode:
+    """Return how existing generated outputs are checked for reuse."""
+    validation = config.get("validation")
+    if not isinstance(validation, Mapping):
+        return "signature"
+    return "contract" if validation.get("existing_outputs") == "contract" else "signature"
 
 
 def load(

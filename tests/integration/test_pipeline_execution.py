@@ -124,6 +124,7 @@ def test_shared_producer_executes_once_and_outputs_are_published(
         "first-consumer.result": tmp_path / "consumers/first-consumer.txt",
         "second-consumer.result": tmp_path / "consumers/second-consumer.txt",
     }
+    assert len(list((tmp_path / ".asokai" / "validation").glob("*.json"))) == 3
     assert (tmp_path / "producer/result.txt").read_text() == "producer"
     assert outputs["first-consumer.result"].read_text() == "first-consumer"
     assert outputs["second-consumer.result"].read_text() == "second-consumer"

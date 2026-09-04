@@ -76,6 +76,10 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     }
 
     assert fields["datadir"].requirement == "Required"
+    assert (
+        fields["validation.existing_outputs"].requirement
+        == "Default: signature"
+    )
     assert fields["target.region"].constraints == (
         "one of: exonic, pre-mrna, transcriptomic"
     )

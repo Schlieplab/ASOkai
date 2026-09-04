@@ -3,6 +3,11 @@
 
 datadir: ./data
 
+# Use "contract" to bypass output receipts and fully validate every existing
+# generated output before reusing it.
+validation:
+  existing_outputs: signature
+
 genome:
   assembly_id: GRCh38
   ensembl_release: 114

@@ -137,6 +137,28 @@ def test_schema_validation_is_separate_from_loading(tmp_path):
         cfg.validate_config_schema(config)
 
 
+def test_output_validation_policy_defaults_to_receipts(tmp_path):
+    config = {"datadir": str(tmp_path)}
+
+    cfg.validate_config_schema(config)
+
+    assert cfg.output_validation_mode(config) == "signature"
+
+
+def test_output_validation_policy_accepts_only_supported_modes(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "validation": {"existing_outputs": "contract"},
+    }
+
+    cfg.validate_config_schema(config)
+    assert cfg.output_validation_mode(config) == "contract"
+
+    config["validation"]["existing_outputs"] = "full"
+    with pytest.raises(ValueError, match="existing_outputs.*one of"):
+        cfg.validate_config_schema(config)
+
+
 def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
     cfg.validate_config_schema(
         {

@@ -26,6 +26,7 @@ from ASOkai._pipeline.contracts.execution import (
     StepRunOutput,
 )
 from ASOkai._pipeline.contracts.files import FileInput
+from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
 
 logger = logging.getLogger(__name__)
@@ -108,12 +109,14 @@ class _PlanBuilder:
         non_recursive: bool,
         force: bool,
         validate_input_files: bool = True,
+        output_validation_mode: cfg.OutputValidationMode = "signature",
     ) -> None:
         self.main_config = main_config
         self.registered_steps = registered_steps
         self.non_recursive = non_recursive
         self.force_goal_runs = force
         self.validate_input_files = validate_input_files
+        self.output_validation_mode = output_validation_mode
         self.requests: dict[str, _RunRequest] = {}
         self.pending_request_ids: deque[str] = deque()
 
@@ -148,13 +151,23 @@ class _PlanBuilder:
         return producer
 
     def _existing_output_paths(self, run: StepRun) -> dict[str, Path] | None:
-        """Return valid existing outputs, or ``None`` when the run is required."""
-        try:
-            paths = run.validate_output_files()
-        except (OSError, UnicodeError, TypeError, ValueError):
+        """Return reusable outputs, or ``None`` when the run is required."""
+        if self.output_validation_mode == "contract":
+            try:
+                paths = run.validate_output_files()
+            except (OSError, UnicodeError, TypeError, ValueError):
+                return None
+            logger.debug(
+                "[plan] '%s' outputs passed full file validation — reused.",
+                run.run_id,
+            )
+            return paths
+
+        paths = reusable_output_paths(run)
+        if paths is None:
             return None
         logger.debug(
-            "[plan] '%s' outputs are valid — reused.",
+            "[plan] '%s' outputs match their validation receipt — reused.",
             run.run_id,
         )
         return paths
@@ -530,6 +543,7 @@ def build_plan(
         _registry,
         non_recursive=non_recursive,
         force=force,
+        output_validation_mode=cfg.output_validation_mode(config),
     )
     return builder.build(goal_steps)
 

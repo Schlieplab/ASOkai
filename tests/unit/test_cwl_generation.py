@@ -33,6 +33,7 @@ from ASOkai._pipeline.contracts.paths import (
     TemplateField,
 )
 from ASOkai._pipeline.plan import build_plan
+from ASOkai._pipeline.output_receipts import record_validated_outputs
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
@@ -195,16 +196,22 @@ def _shared_producer_plan(
             for consumer in consumers
         },
     }
-    producer_path = tmp_path / "alternate" / "result.txt"
-    if producer_output_exists:
-        producer_path.parent.mkdir()
-        producer_path.touch()
-
-    return build_plan(
+    registry = {step.name: step for step in (producer, *consumers)}
+    plan = build_plan(
         consumers,
         config,
-        _registry={step.name: step for step in (producer, *consumers)},
+        _registry=registry,
     )
+    if not producer_output_exists:
+        return plan
+
+    producer_run = plan.runs_to_execute[0]
+    producer_path = producer_run.output_paths()["result"]
+    producer_path.parent.mkdir()
+    producer_path.touch()
+    producer_run.validate_output_files()
+    record_validated_outputs(producer_run)
+    return build_plan(consumers, config, _registry=registry)
 
 
 def _validate_bundle_with_cwltool(

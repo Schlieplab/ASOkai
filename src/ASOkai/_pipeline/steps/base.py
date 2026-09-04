@@ -35,13 +35,16 @@ class Step(Runnable):
 
     Core steps may set ``supports_multiple_processes`` only when their runtime
     consumes the automatically supplied ``args.n_processes`` value. Analysis
-    steps support it through their shared base class.
+    steps support it through their shared base class. Increment
+    ``cache_version`` when an implementation change alters generated outputs
+    without changing the step's declared parameters or destinations.
     """
 
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
     supports_multiple_processes: ClassVar[bool] = False
+    cache_version: ClassVar[int] = 1
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""
@@ -79,6 +82,10 @@ class Step(Runnable):
         if type(cls.supports_multiple_processes) is not bool:
             raise TypeError(
                 f"Step '{cls.name}' supports_multiple_processes must be a boolean."
+            )
+        if type(cls.cache_version) is not int or cls.cache_version < 1:
+            raise TypeError(
+                f"Step '{cls.name}' cache_version must be a positive integer."
             )
 
         output_attributes = {

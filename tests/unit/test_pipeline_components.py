@@ -187,6 +187,24 @@ def test_step_component_must_declare_an_output():
         validate_component("step", OutputlessStep())
 
 
+@pytest.mark.parametrize("cache_version", [0, -1, True, "1"])
+def test_step_cache_version_must_be_a_positive_integer(cache_version):
+    output = FileOutput("result", destination="result.txt")
+
+    with pytest.raises(TypeError, match="cache_version must be a positive integer"):
+        type(
+            "InvalidCacheVersionStep",
+            (Step,),
+            {
+                "name": "invalid-cache-version",
+                "description": "Declares an invalid cache version.",
+                "cache_version": cache_version,
+                "result_output": output,
+                "spec": StepSpec(outputs=[output]),
+            },
+        )
+
+
 @pytest.mark.parametrize(
     ("step", "message"),
     [

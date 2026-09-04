@@ -3,6 +3,9 @@
 
 datadir: ./data
 
+validation:
+  existing_outputs: signature
+
 genome:
   assembly_id: GRCh38
   ensembl_release: 114

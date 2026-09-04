@@ -10,6 +10,20 @@ properties:
     minLength: 1
     description: Directory that receives ASOkai data.
 
+  validation:
+    type: object
+    additionalProperties: false
+    properties:
+      existing_outputs:
+        type: string
+        enum:
+          - signature
+          - contract
+        default: signature
+        description: >-
+          How existing generated outputs are checked before reuse: match a
+          validation receipt signature or run full file-contract validation.
+
   genome:
     type: object
     additionalProperties: false

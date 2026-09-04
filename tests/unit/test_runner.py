@@ -23,6 +23,11 @@ from ASOkai.Plugins import (
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
+from ASOkai._pipeline.output_receipts import (
+    receipt_path,
+    record_validated_outputs,
+    reusable_output_paths,
+)
 from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
@@ -95,6 +100,8 @@ def test_runner_skips_execution_when_outputs_exist(config, tmp_path):
     base.mkdir(parents=True)
     for p in run.output_paths().values():
         p.touch()
+    run.validate_output_files()
+    record_validated_outputs(run)
 
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         result = _run_download(config)
@@ -148,6 +155,9 @@ def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
     assert "\nOutputs:\n  dna" in completion
     assert str(paths["dna"]) in completion
     assert f"\nJob bundle: {export_dirs[0]}" in completion
+    completed_run = _step_run(DownloadGenomeStep(), config)
+    assert receipt_path(completed_run).is_file()
+    assert reusable_output_paths(completed_run) == paths
 
 
 def test_runner_rejects_missing_published_outputs(config):
@@ -171,6 +181,8 @@ def test_runner_rejects_invalid_published_outputs(config):
     ):
         with pytest.raises(RuntimeError, match="published invalid output"):
             runner._validate_published_outputs((run,))
+
+    assert not receipt_path(run).exists()
 
 
 def test_runner_rejects_unsupported_download_source(config):

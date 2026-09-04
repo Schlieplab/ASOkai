@@ -23,6 +23,7 @@ from ASOkai._cwl.executors import CwlToolExecutor, Executor, ToilExecutor
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.execution import ExecutionPlan, StepRun
+from ASOkai._pipeline.output_receipts import record_validated_outputs
 from ASOkai._pipeline.plan import build_export_plan, build_plan
 from ASOkai._pipeline.steps.base import Step
 
@@ -82,6 +83,15 @@ def _validate_published_outputs(
             raise RuntimeError(
                 f"CWL published invalid output(s) for '{run.run_id}': {error}"
             ) from error
+        try:
+            record_validated_outputs(run)
+        except OSError as error:
+            logger.warning(
+                "[%s] Outputs are valid, but their validation receipt could "
+                "not be written: %s",
+                run.run_id,
+                error,
+            )
 
 
 def _requested_outputs(plan: ExecutionPlan) -> dict[str, Path]:

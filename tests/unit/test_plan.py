@@ -9,8 +9,10 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 
@@ -30,6 +32,7 @@ from ASOkai._pipeline.contracts.execution import (
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.base import expand_runnable_steps
 from ASOkai._pipeline.plan import build_export_plan, build_plan
+from ASOkai._pipeline.output_receipts import record_validated_outputs
 
 
 def _make_step(
@@ -72,22 +75,35 @@ def _make_step(
     return step_type()
 
 
-def _materialize_outputs(step: Step, config: dict) -> None:
-    run = StepRun(
-        step.name,
-        step,
-        config,
-        inputs=tuple(
-            StepInputBinding(
-                file_input,
-                Path(config["datadir"]) / "inputs" / file_input.name,
-            )
-            for file_input in step.spec.inputs
-        ),
-    )
+def _materialize_run(run: StepRun) -> StepRun:
+    """Materialize and receipt one already resolved concrete run."""
     for path in run.output_paths().values():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
+    run.validate_output_files()
+    record_validated_outputs(run)
+    return run
+
+
+def _materialize_outputs(step: Step, config: dict) -> StepRun:
+    """Materialize and receipt one inputless test step."""
+    return _materialize_run(StepRun(step.name, step, config))
+
+
+def _run_with_producer(step: Step, producer: Step, config: dict) -> StepRun:
+    """Return a concrete run bound to its declared producer output."""
+    producer_run = StepRun(producer.name, producer, config)
+    return StepRun(
+        step.name,
+        step,
+        config,
+        inputs=(
+            StepInputBinding(
+                step.spec.inputs[0],
+                producer_run.output(producer.spec.outputs[0]),
+            ),
+        ),
+    )
 
 
 def test_planner_rejects_an_outputless_step(config):
@@ -295,6 +311,61 @@ def test_missing_goal_is_scheduled(config):
     assert plan.resolved_outputs == {}
 
 
+def test_unreceipted_goal_output_is_scheduled(config):
+    step = _make_step("alpha")
+    output_path = StepRun(step.name, step, config).output_paths()["alpha_out"]
+    output_path.parent.mkdir(parents=True)
+    output_path.touch()
+
+    plan = build_plan([step], config, _registry={step.name: step})
+
+    assert _scheduled_run_ids(plan) == ["alpha"]
+    assert plan.resolved_outputs == {}
+
+
+def test_changed_receipted_goal_output_is_scheduled(config):
+    step = _make_step("alpha")
+    run = _materialize_outputs(step, config)
+    run.output_paths()["alpha_out"].write_text("changed", encoding="utf-8")
+
+    plan = build_plan([step], config, _registry={step.name: step})
+
+    assert _scheduled_run_ids(plan) == ["alpha"]
+    assert plan.resolved_outputs == {}
+
+
+def test_full_output_validation_reuses_valid_unreceipted_output(config):
+    step = _make_step("alpha")
+    output_path = StepRun(step.name, step, config).output_paths()["alpha_out"]
+    output_path.parent.mkdir(parents=True)
+    output_path.touch()
+    config["validation"] = {"existing_outputs": "contract"}
+
+    with patch.object(type(step.spec.outputs[0].file_type), "validate") as validate:
+        plan = build_plan([step], config, _registry={step.name: step})
+
+    assert plan.runs_to_execute == ()
+    validate.assert_called_once_with(output_path)
+
+
+def test_full_output_validation_schedules_invalid_output(config):
+    step = _make_step("alpha")
+    output_path = StepRun(step.name, step, config).output_paths()["alpha_out"]
+    output_path.parent.mkdir(parents=True)
+    output_path.touch()
+    config["validation"] = {"existing_outputs": "contract"}
+
+    with patch.object(
+        type(step.spec.outputs[0].file_type),
+        "validate",
+        side_effect=ValueError("invalid contents"),
+    ):
+        plan = build_plan([step], config, _registry={step.name: step})
+
+    assert _scheduled_run_ids(plan) == ["alpha"]
+    assert plan.resolved_outputs == {}
+
+
 def test_valid_goal_output_is_reused(config):
     step = _make_step(
         "alpha",
@@ -382,7 +453,7 @@ def test_valid_dependency_is_reused(config):
 def test_reused_goal_does_not_require_its_missing_dependencies(config):
     dependency = _make_step("dependency")
     goal = _make_step("goal", [dependency])
-    _materialize_outputs(goal, config)
+    _materialize_run(_run_with_producer(goal, dependency, config))
 
     plan = build_plan(
         [goal],
@@ -396,7 +467,7 @@ def test_reused_goal_does_not_require_its_missing_dependencies(config):
 
 def test_reused_goal_does_not_validate_unneeded_dependency_config(config):
     dependency, goal = _make_configurable_producer_and_consumer()
-    _materialize_outputs(goal, config)
+    _materialize_run(_run_with_producer(goal, dependency, config))
 
     plan = build_plan(
         [goal],
@@ -726,18 +797,19 @@ def test_main_request_names_an_equivalent_configured_producer_run(config):
     assert source.run is plan.goals[1]
 
 
-def test_matching_reusable_producer_requests_share_one_run(config, tmp_path):
+def test_matching_reusable_producer_requests_share_one_run(config):
     producer, consumers = _make_configurable_producer_and_consumers(
         "first",
         "second",
     )
-    output_path = tmp_path / "alternate" / "result.txt"
-    output_path.parent.mkdir()
-    output_path.touch()
     _configure_producer_modes(
         config,
         {consumer.name: "alternate" for consumer in consumers},
     )
+    producer_config = deepcopy(config)
+    producer_config["producer"]["mode"] = "alternate"
+    producer_run = _materialize_outputs(producer, producer_config)
+    output_path = producer_run.output_paths()["result"]
 
     plan = build_plan(
         consumers,
@@ -754,12 +826,10 @@ def test_matching_reusable_producer_requests_share_one_run(config, tmp_path):
     assert plan.resolved_outputs[first_source] == output_path
 
 
-def test_force_applies_to_a_shared_main_producer_run(config, tmp_path):
+def test_force_applies_to_a_shared_main_producer_run(config):
     producer, consumer = _make_configurable_producer_and_consumer()
-    output_path = tmp_path / "main" / "result.txt"
-    output_path.parent.mkdir()
-    output_path.touch()
     _configure_producer_modes(config, {"consumer": "main"})
+    _materialize_outputs(producer, config)
 
     plan = build_plan(
         [consumer, producer],
@@ -789,12 +859,13 @@ def test_non_recursive_recognizes_a_shared_main_producer_as_a_goal(config):
     assert _scheduled_run_ids(plan) == ["producer", "consumer"]
 
 
-def test_existing_configured_producer_output_is_reused(config, tmp_path):
+def test_existing_configured_producer_output_is_reused(config):
     producer, consumer = _make_configurable_producer_and_consumer()
-    configured_output = tmp_path / "alternate" / "result.txt"
-    configured_output.parent.mkdir()
-    configured_output.touch()
     _configure_producer_modes(config, {"consumer": "alternate"})
+    producer_config = deepcopy(config)
+    producer_config["producer"]["mode"] = "alternate"
+    producer_run = _materialize_outputs(producer, producer_config)
+    configured_output = producer_run.output_paths()["result"]
 
     plan = build_plan(
         [consumer],

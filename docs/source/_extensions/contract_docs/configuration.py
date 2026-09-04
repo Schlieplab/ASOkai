@@ -368,6 +368,7 @@ def collect_step_config_fields(
             added_paths.add(field.path)
 
     add(all_fields["datadir"])
+    add(all_fields["validation.existing_outputs"])
     for parameter in step.spec.params:
         if parameter.config is None or parameter.config in added_paths:
             continue

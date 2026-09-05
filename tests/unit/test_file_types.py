@@ -15,7 +15,12 @@ from typing import Any, cast
 import pytest
 
 from ASOkai.Utils import Serializable
-from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
+from ASOkai._pipeline.contracts.file_types import (
+    CsvFile,
+    FileType,
+    JsonFile,
+    KffFile,
+)
 
 
 def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
@@ -23,6 +28,29 @@ def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
 
     assert FileType().read(path) == path
     assert FileType().validate(path) is None
+
+
+def test_kff_file_validates_without_loading_the_index(tmp_path):
+    path = tmp_path / "index.kff"
+    path.write_bytes(b"KFF\x01index-dataKFF")
+
+    assert KffFile().read(path) == path
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"KF",
+        b"not-a-kff-file",
+        b"KFFmissing-footer",
+    ],
+)
+def test_kff_file_rejects_missing_framing_markers(tmp_path, content):
+    path = tmp_path / "index.kff"
+    path.write_bytes(content)
+
+    with pytest.raises(ValueError, match="Invalid KFF file"):
+        KffFile().validate(path)
 
 
 def test_json_file_reads_and_writes_generic_json(tmp_path):

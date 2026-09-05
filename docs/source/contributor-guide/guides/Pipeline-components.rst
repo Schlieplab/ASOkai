@@ -102,6 +102,10 @@ The file type owns serialization and validation:
    one scalar type. Reading and writing validate the header, scalar values,
    and index uniqueness.
 
+``KffFile``
+   A binary K-mer File Format contract. Validation checks the file's opening
+   and closing KFF markers without loading the index into memory.
+
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
 file type. Every input automatically has a ``path_override`` configuration
 option that lets a user substitute an existing file. The file is parsed and

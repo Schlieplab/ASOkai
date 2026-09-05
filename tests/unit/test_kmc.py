@@ -96,6 +96,20 @@ def test_kmc_run_canonical_off_and_flags(kmc: KMC, tmp_path: Path) -> None:
     assert any(a.startswith("-j") and "summary.json" in a for a in argv)
 
 
+def test_kmc_run_treats_kff_suffix_as_the_output_file(kmc: KMC, tmp_path: Path) -> None:
+    inp = tmp_path / "in.fa"
+    output = tmp_path / "index.kff"
+    work = tmp_path / "work"
+
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with patch("ASOkai.Utils._kmc.subprocess.run", return_value=completed) as mock_run:
+        kmc.run(inp, output, work, o="kff")
+
+    argv = mock_run.call_args.args[0]
+    assert str(output.with_suffix("").resolve()) in argv
+    assert str(output.resolve()) not in argv
+
+
 def test_kmc_run_signature_length_invalid(kmc: KMC, tmp_path: Path) -> None:
     inp = tmp_path / "in.fa"
     out = tmp_path / "out"
@@ -121,7 +135,7 @@ def test_run_rejects_memory_gb_out_of_range(kmc: KMC, tmp_path: Path) -> None:
     inp = tmp_path / "in.fa"
     out, work = tmp_path / "out", tmp_path / "work"
     with pytest.raises(ValueError, match="memory_gb"):
-        kmc.run(inp, out, work, m=0)
+        kmc.run(inp, out, work, m=1)
     with pytest.raises(ValueError, match="memory_gb"):
         kmc.run(inp, out, work, m=2000)
 

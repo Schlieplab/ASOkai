@@ -184,6 +184,7 @@ class RegisteredPluginWorkflow:
 def test_step_authoring_contracts_are_public() -> None:
     expected = {
         "AnalysisStep",
+        "BuildGenomeKmerIndexStep",
         "CreateTargetGeneStep",
         "CoreStep",
         "CwlToolArgument",
@@ -197,6 +198,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "InputConfigField",
         "InstantiateTargetGeneTask",
         "JsonFile",
+        "KffFile",
         "OutputPathTemplate",
         "Runnable",
         "ScalarParam",

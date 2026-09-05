@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later (this file only)
 KMC is GPLv3-only third-party software (https://github.com/refresh-bio/KMC). See README,
 "Third-party software and licenses". Invoke ``kmc`` on PATH or via an explicit path.
 """
+
 from __future__ import annotations
 
 import logging
@@ -63,7 +64,9 @@ class KMC:
         path = Path(name_or_path)
         if path.is_file() and os.access(path, os.X_OK):
             return str(path.resolve())
-        raise FileNotFoundError(f"Executable not found or not executable: {name_or_path!r}")
+        raise FileNotFoundError(
+            f"Executable not found or not executable: {name_or_path!r}"
+        )
 
     @staticmethod
     def _resolve_input(input_path: str | Path) -> str:
@@ -120,26 +123,35 @@ class KMC:
     ) -> subprocess.CompletedProcess[str]:
         """
         Execute ``kmc`` with the provided parameters.
+
+        ``output_db_prefix`` retains KMC's native prefix behavior, except that
+        a ``.kff`` suffix with ``o="kff"`` is treated as the final filename.
         """
 
         if not 1 <= k <= 256:
             raise ValueError(f"k must be between 1 and 256, got {k}")
-        if not 1 <= m <= 1024:
-            raise ValueError(f"memory_gb must be between 1 and 1024, got {m}")
+        if not 2 <= m <= 1024:
+            raise ValueError(f"memory_gb must be between 2 and 1024, got {m}")
         if p is not None:
             if not 5 <= p <= 11:
                 raise ValueError(f"signature_length must be between 5 and 11, got {p}")
             if p > k:
-                raise ValueError(f"signature_length ({p}) cannot be greater than k ({k})")
+                raise ValueError(
+                    f"signature_length ({p}) cannot be greater than k ({k})"
+                )
 
         work = Path(working_directory).resolve()
         work.mkdir(parents=True, exist_ok=True)
-        out_prefix = Path(output_db_prefix).resolve()
+        output = Path(output_db_prefix).resolve()
+        out_prefix = (
+            output.with_suffix("") if o == "kff" and output.suffix == ".kff" else output
+        )
+        reported_output = Path(f"{out_prefix}.kff") if o == "kff" else out_prefix
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
 
         # Build Arguments
         argv = [self._kmc, f"-k{k}", f"-m{m}", f"-{f}"]
-        
+
         param_map = {
             "-sm": sm,
             "-hc": hc,
@@ -176,7 +188,7 @@ class KMC:
             logger.debug("kmc cwd: %s", work)
             logger.debug("kmc cmd: %s", " ".join(shlex.quote(str(a)) for a in argv))
         else:
-            logger.info("kmc building k=%s → %s", k, out_prefix.name)
+            logger.info("kmc building k=%s → %s", k, reported_output.name)
 
         # Execute
         proc = subprocess.run(
@@ -188,7 +200,7 @@ class KMC:
         )
 
         if not debug and proc.returncode == 0:
-            logger.info("kmc done: %s", out_prefix)
+            logger.info("kmc done: %s", reported_output)
 
         if check and proc.returncode != 0:
             err_msg = proc.stderr or proc.stdout or ""
@@ -196,7 +208,7 @@ class KMC:
                 # In debug mode, stdout/stderr are streamed to console, so they are None in `proc`.
                 # We prompt the user to check the terminal output.
                 err_msg = "Output streamed to terminal (see above)."
-            
+
             raise KMCExecutionError(
                 f"kmc failed with exit code {proc.returncode}\n{err_msg}",
                 returncode=proc.returncode,

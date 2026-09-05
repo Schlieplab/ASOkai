@@ -19,6 +19,9 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
 from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
+    BuildGenomeKmerIndexStep,
+)
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
@@ -40,6 +43,7 @@ from ASOkai._pipeline.validation import (
 # Built-in step registry
 _BUILTIN_STEPS: tuple[Step, ...] = (
     DownloadGenomeStep(),
+    BuildGenomeKmerIndexStep(),
     CreateTargetGeneStep(),
     GenerateASOCandidatesStep(),
     IntrinsicFeaturesStep(),

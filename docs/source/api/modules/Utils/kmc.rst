@@ -37,7 +37,18 @@ subprocess result.
 
 Input paths are resolved to absolute paths. Prefix a list file with ``@`` as
 required by KMC. Set ``check=True`` to raise ``KMCExecutionError`` when the
-process exits unsuccessfully.
+process exits unsuccessfully. For KFF output, a path ending in ``.kff`` is
+treated as the final filename; KMC receives the corresponding suffix-free
+prefix so that it does not produce ``.kff.kff``.
+
+Pipeline integration
+--------------------
+
+The built-in ``build-genome-kmer-index`` step creates one durable KFF index
+from the downloaded primary-assembly FASTA. It is registered as an independent
+step rather than included in the standard workflow before an analysis needs
+it. Analyses should reuse that index and batch their query k-mers; short query
+passes do not need separate persistent pipeline steps.
 
 Running kmc_tools
 -----------------

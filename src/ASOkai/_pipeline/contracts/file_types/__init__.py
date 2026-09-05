@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 from .csv import CsvFile, CsvRow, CsvTable
 from .base import FileType
 from .json import JsonFile
+from .kff import KffFile
 
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "CsvTable",
     "FileType",
     "JsonFile",
+    "KffFile",
 ]

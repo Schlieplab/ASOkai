@@ -110,8 +110,10 @@ The file type owns serialization and validation:
    and index uniqueness.
 
 ``KffFile``
-   A binary K-mer File Format contract. Validation checks the file's opening
-   and closing KFF markers without loading the index into memory.
+   A binary K-mer File Format contract. Validation first checks the opening
+   and closing KFF markers, then makes ``kmc_tools`` read the complete index
+   by dumping it to the operating system's null device. The scan uses one
+   thread and does not load the index into Python memory or retain the dump.
 
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
 file type. Every input automatically has a ``path_override`` configuration

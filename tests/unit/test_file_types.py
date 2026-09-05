@@ -10,11 +10,13 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 
-from ASOkai.Utils import Serializable
+from ASOkai.Utils import KMCTools, Serializable
 from ASOkai._pipeline.contracts.file_types import (
     CsvFile,
     FileType,
@@ -44,6 +46,56 @@ def test_kff_file_read_does_not_repeat_contract_validation(tmp_path):
     assert KffFile().read(path) == path
 
 
+def test_kff_file_validates_complete_index_with_kmc_tools(
+    tmp_path,
+    monkeypatch,
+):
+    from ASOkai._pipeline.contracts.file_types import kff
+
+    path = tmp_path / "index.kff"
+    path.write_bytes(b"KFF\x01index-dataKFF")
+    transform = MagicMock()
+    transform.dump.return_value = transform
+    factory = MagicMock(return_value=transform)
+    monkeypatch.setattr(kff.KMCTools, "Transform", factory)
+
+    KffFile().validate(path)
+
+    factory.assert_called_once_with()
+    transform.dump.assert_called_once_with(os.devnull)
+    transform.run.assert_called_once_with(
+        path,
+        t=1,
+        hp=True,
+        debug=False,
+    )
+
+
+def test_kff_file_rejects_index_that_kmc_tools_cannot_read(
+    tmp_path,
+    monkeypatch,
+):
+    from ASOkai._pipeline.contracts.file_types import kff
+
+    path = tmp_path / "corrupt.kff"
+    path.write_bytes(b"KFF\x01corrupt-indexKFF")
+    transform = MagicMock()
+    transform.dump.return_value = transform
+    transform.run.side_effect = KMCTools.KMCToolsExecutionError(
+        "kmc_tools failed",
+        returncode=2,
+        cmd=["kmc_tools"],
+        stderr="invalid section",
+    )
+    monkeypatch.setattr(kff.KMCTools, "Transform", MagicMock(return_value=transform))
+
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid KFF file.*complete index.*invalid section",
+    ):
+        KffFile().validate(path)
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -52,12 +104,22 @@ def test_kff_file_read_does_not_repeat_contract_validation(tmp_path):
         b"KFFmissing-footer",
     ],
 )
-def test_kff_file_rejects_missing_framing_markers(tmp_path, content):
+def test_kff_file_rejects_missing_framing_markers(
+    tmp_path,
+    content,
+    monkeypatch,
+):
+    from ASOkai._pipeline.contracts.file_types import kff
+
     path = tmp_path / "index.kff"
     path.write_bytes(content)
+    factory = MagicMock()
+    monkeypatch.setattr(kff.KMCTools, "Transform", factory)
 
     with pytest.raises(ValueError, match="Invalid KFF file"):
         KffFile().validate(path)
+
+    factory.assert_not_called()
 
 
 def test_json_file_reads_and_writes_generic_json(tmp_path):

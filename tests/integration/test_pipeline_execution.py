@@ -20,21 +20,40 @@ from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
 )
 
 
-def _install_fake_kmc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put a deterministic KMC-compatible executable first on PATH."""
-    executable = tmp_path / "bin" / "kmc"
-    executable.parent.mkdir()
-    executable.write_text(
+def _install_fake_kmc_toolchain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Put deterministic KMC-compatible executables first on PATH."""
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    kmc = bin_directory / "kmc"
+    kmc.write_text(
         "#!/usr/bin/env python\n"
         "from pathlib import Path\n"
         "import sys\n"
         "Path(sys.argv[-2] + '.kff').write_bytes(b'KFF\\x01index-dataKFF')\n",
         encoding="utf-8",
     )
-    executable.chmod(0o755)
+    kmc.chmod(0o755)
+    kmc_tools = bin_directory / "kmc_tools"
+    kmc_tools.write_text(
+        "#!/usr/bin/env python\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "transform = sys.argv.index('transform')\n"
+        "source = Path(sys.argv[transform + 1])\n"
+        "content = source.read_bytes()\n"
+        "if not content.startswith(b'KFF') or not content.endswith(b'KFF'):\n"
+        "    raise SystemExit(2)\n"
+        "dump = sys.argv.index('dump')\n"
+        "Path(sys.argv[dump + 1]).write_text('ACGT\\t1\\n')\n",
+        encoding="utf-8",
+    )
+    kmc_tools.chmod(0o755)
     monkeypatch.setenv(
         "PATH",
-        f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}",
+        f"{bin_directory}{os.pathsep}{os.environ.get('PATH', '')}",
     )
 
 
@@ -72,7 +91,7 @@ def test_registered_step_executes_validates_and_publishes_output(
     monkeypatch,
     executor,
 ):
-    _install_fake_kmc(tmp_path, monkeypatch)
+    _install_fake_kmc_toolchain(tmp_path, monkeypatch)
     dna = tmp_path / "input.fa"
     dna.write_text(">chr1\nACGTACGT\n", encoding="utf-8")
     config = {

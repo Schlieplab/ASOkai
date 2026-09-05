@@ -10,10 +10,12 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
-from .base import FileType
+from ASOkai.Utils import KMCTools
 
+from .base import FileType
 
 _KFF_MAGIC = b"KFF"
 
@@ -31,7 +33,7 @@ class KffFile(FileType):
         return Path(path)
 
     def validate(self, path: str | Path) -> None:
-        """Require the framing markers of a complete KFF file."""
+        """Require a framed KFF file that ``kmc_tools`` can read completely."""
         super().validate(path)
         source = Path(path)
         if source.stat().st_size < 2 * len(_KFF_MAGIC):
@@ -44,3 +46,24 @@ class KffFile(FileType):
             raise ValueError(
                 f"Invalid KFF file {source}: missing KFF framing markers."
             )
+
+        try:
+            (
+                KMCTools.Transform()
+                .dump(os.devnull)
+                .run(
+                    source,
+                    t=1,
+                    hp=True,
+                    debug=False,
+                )
+            )
+        except KMCTools.KMCToolsExecutionError as error:
+            details = (error.stderr or error.stdout or "").strip()
+            message = (
+                f"Invalid KFF file {source}: kmc_tools could not read "
+                "the complete index."
+            )
+            if details:
+                message = f"{message} {details}"
+            raise ValueError(message) from error

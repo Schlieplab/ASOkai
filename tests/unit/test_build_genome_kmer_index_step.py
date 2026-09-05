@@ -134,6 +134,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    from ASOkai._pipeline.contracts.file_types import kff
     from ASOkai._pipeline.steps.core import build_genome_kmer_index
 
     captured: dict = {}
@@ -149,7 +150,15 @@ def test_run_cli_builds_one_kff_with_configured_resources(
             assert captured["working_directory"].is_dir()
             Path(output_path).write_bytes(b"KFF\x01index-dataKFF")
 
+    class FakeTransform:
+        def dump(self, output_path):
+            return self
+
+        def run(self, input_path, **kwargs):
+            return None
+
     monkeypatch.setattr(build_genome_kmer_index, "KMC", FakeKMC)
+    monkeypatch.setattr(kff.KMCTools, "Transform", FakeTransform)
     dna = tmp_path / "dna.fa.gz"
     dna.write_bytes(b"input")
     output = tmp_path / "output" / "genome.kff"

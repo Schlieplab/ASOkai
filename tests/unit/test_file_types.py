@@ -30,9 +30,16 @@ def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
     assert FileType().validate(path) is None
 
 
-def test_kff_file_validates_without_loading_the_index(tmp_path):
+def test_kff_file_keeps_inputs_as_paths_without_loading_the_index(tmp_path):
     path = tmp_path / "index.kff"
     path.write_bytes(b"KFF\x01index-dataKFF")
+
+    assert KffFile().read(path) == path
+
+
+def test_kff_file_read_does_not_repeat_contract_validation(tmp_path):
+    path = tmp_path / "external.kff"
+    path.write_bytes(b"not-a-kff-file")
 
     assert KffFile().read(path) == path
 

@@ -45,7 +45,9 @@ def output_validation_mode(config: Mapping[str, Any]) -> OutputValidationMode:
     validation = config.get("validation")
     if not isinstance(validation, Mapping):
         return "signature"
-    return "contract" if validation.get("existing_outputs") == "contract" else "signature"
+    return (
+        "contract" if validation.get("existing_outputs") == "contract" else "signature"
+    )
 
 
 def load(

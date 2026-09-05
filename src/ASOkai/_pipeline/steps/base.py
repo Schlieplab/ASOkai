@@ -12,14 +12,20 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import replace
+import logging
 from pathlib import Path
-from typing import Any, ClassVar, Mapping
+import shlex
+import subprocess
+from typing import Any, ClassVar, Mapping, Sequence
 
 from ASOkai._cwl.model import CwlCommandLineToolSpec
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.files import FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.step_spec import StepSpec
+
+
+logger = logging.getLogger(__name__)
 
 
 _N_PROCESSES_PARAM = ScalarParam(
@@ -49,6 +55,18 @@ class Step(Runnable):
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""
         super().__init_subclass__(**kwargs)
+        overridden_lifecycle_methods = [
+            method_name
+            for method_name in ("run_cli", "validate_outputs")
+            if method_name in cls.__dict__
+        ]
+        if overridden_lifecycle_methods:
+            names = ", ".join(overridden_lifecycle_methods)
+            raise TypeError(
+                f"Step class '{cls.__name__}' cannot override framework-owned "
+                f"lifecycle method(s): {names}. Implement run_from_args() or "
+                "build_command() instead."
+            )
         overridden_path_methods = [
             method_name
             for method_name in ("output_relative_path", "output_paths")
@@ -182,6 +200,23 @@ class Step(Runnable):
             path = getattr(args, output.argument_name)
             path.parent.mkdir(parents=True, exist_ok=True)
 
+    def validate_outputs(self, args: argparse.Namespace) -> None:
+        """Validate every declared output before reporting step success."""
+        for output in self.spec.outputs:
+            path = getattr(args, output.argument_name)
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Step '{self.name}' did not write output "
+                    f"'{output.name}' to {path}."
+                )
+            try:
+                output.validate(path)
+            except (OSError, UnicodeError, TypeError, ValueError) as error:
+                raise ValueError(
+                    f"Step '{self.name}' wrote invalid output "
+                    f"'{output.name}' to {path}: {error}"
+                ) from error
+
     def validate_parameters(self, values: Mapping[str, object]) -> None:
         """Validate relationships between resolved scalar parameters."""
 
@@ -206,7 +241,10 @@ class Step(Runnable):
         except ValueError as error:
             parser.error(str(error))
         self.prepare_output_directories(args)
-        return self.run_from_args(args)
+        exit_code = self.run_from_args(args)
+        if exit_code == 0:
+            self.validate_outputs(args)
+        return exit_code
 
     def resolved_parameter_values(
         self,
@@ -248,3 +286,37 @@ class Step(Runnable):
             except KeyError:
                 continue
         return cfg.apply_overrides(resolved, overrides)
+
+
+class ExternalCommandStep(Step):
+    """A step that runs an external command through the shared lifecycle."""
+
+    def build_command(self, args: argparse.Namespace) -> Sequence[str]:
+        """Return the external command for parsed step arguments."""
+        raise NotImplementedError(
+            f"External step '{self.name}' does not implement build_command()."
+        )
+
+    def run_from_args(self, args: argparse.Namespace) -> int:
+        """Run the external command and return its process exit code."""
+        command = self.build_command(args)
+        if isinstance(command, (str, bytes)) or not isinstance(command, Sequence):
+            raise TypeError(
+                f"External step '{self.name}' build_command() must return "
+                "a sequence of strings."
+            )
+        argv = list(command)
+        if not argv:
+            raise ValueError(
+                f"External step '{self.name}' command must not be empty."
+            )
+        if any(type(part) is not str or not part for part in argv):
+            raise TypeError(
+                f"External step '{self.name}' command must contain only "
+                "non-empty strings."
+            )
+        logger.debug(
+            "Running external command: %s",
+            " ".join(shlex.quote(part) for part in argv),
+        )
+        return subprocess.run(argv, check=False).returncode

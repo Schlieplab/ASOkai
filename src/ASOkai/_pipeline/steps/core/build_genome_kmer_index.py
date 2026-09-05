@@ -90,6 +90,4 @@ class BuildGenomeKmerIndexStep(CoreStep):
                 debug=False,
             )
 
-        if not output.is_file():
-            raise FileNotFoundError(f"KMC did not write the KFF output: {output}.")
         return 0

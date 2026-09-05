@@ -196,7 +196,7 @@ def reusable_output_paths(run: StepRun) -> dict[str, Path] | None:
 
 
 def record_validated_outputs(run: StepRun) -> Path:
-    """Atomically record outputs after their complete contracts were validated."""
+    """Atomically record outputs validated by their successful producer."""
     path = receipt_path(run)
     data = _receipt_data(run)
     path.parent.mkdir(parents=True, exist_ok=True)

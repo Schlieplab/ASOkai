@@ -172,18 +172,27 @@ def test_runner_rejects_missing_published_outputs(config):
     assert not paths["cdna"].exists()
 
 
-def test_runner_rejects_invalid_published_outputs(config):
+def test_runner_records_producer_validation_without_revalidating_publication(
+    config,
+):
     run = _step_run(DownloadGenomeStep(), config)
 
     with patch.object(
         StepRun,
+        "require_output_files",
+        return_value=run.output_paths(),
+    ) as require_outputs, patch.object(
+        StepRun,
         "validate_output_files",
-        side_effect=ValueError("invalid contents"),
-    ):
-        with pytest.raises(RuntimeError, match="published invalid output"):
-            runner._validate_published_outputs((run,))
+    ) as validate_outputs, patch.object(
+        runner,
+        "record_validated_outputs",
+    ) as record_outputs:
+        runner._record_published_outputs((run,))
 
-    assert not receipt_path(run).exists()
+    require_outputs.assert_called_once_with()
+    validate_outputs.assert_not_called()
+    record_outputs.assert_called_once_with(run)
 
 
 def test_runner_rejects_unsupported_download_source(config):

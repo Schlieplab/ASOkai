@@ -73,8 +73,9 @@ the producer outputs referenced by its inputs.
 Contributors implement `run_from_args(args)` for the step's work. The central
 `ASOkai step <name>` command invokes `run_cli` on the registered step; step
 modules do not declare a separate `main()` or module path. `run_cli` builds and
-parses the generated CLI and creates the parent directory for every declared
-output.
+parses the generated CLI, creates the parent directory for every declared
+output, runs the implementation, and validates each produced output before
+the command reports success.
 
 The structured `destination` template defines the complete path relative to
 `datadir`. The base `Step` derives output paths, existence checks, and cleanup

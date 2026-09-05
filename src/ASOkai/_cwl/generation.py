@@ -51,7 +51,7 @@ class StepCwlGenerator(BaseCwlGenerator):
         doc: dict[str, Any] = {
             "cwlVersion": self.cwl_version,
             "class": "CommandLineTool",
-            "baseCommand": spec.command_for_step(step.name),
+            "baseCommand": ["ASOkai", "step", step.name],
             "doc": step.description,
         }
         requirements = deepcopy(spec.requirements)

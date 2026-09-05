@@ -17,6 +17,11 @@ Component hierarchy
    One atomic command-line operation. A step owns a ``StepSpec`` and the
    common parsing, output-path, CWL-generation, and execution lifecycle.
 
+``ExternalCommandStep``
+   A step whose ``build_command(args)`` method returns an external executable
+   and its arguments. The subprocess remains inside the common step lifecycle,
+   including producer-side output validation.
+
 ``CoreStep``
    A step that downloads, prepares, constructs, or transforms core data.
    These steps usually implement ``run_from_args`` directly.
@@ -45,9 +50,11 @@ The step specification
 
 ``StepSpec`` is the source of truth for one step's interface. It contains
 scalar parameters, file inputs, file outputs, optional applicability rules,
-and the low-level CWL settings needed by exceptional steps. Every concrete
-step must declare at least one file output so the planner can track completion
-and publication.
+and low-level CWL requirements or hints needed by exceptional steps. Every
+concrete step must declare at least one file output so the planner can track
+completion and publication. Generated step tools always dispatch through
+``ASOkai step <name>``; external executables use ``ExternalCommandStep``
+rather than replacing that command.
 
 From this declaration ASOkai derives:
 
@@ -108,8 +115,8 @@ The file type owns serialization and validation:
 
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
 file type. Every input automatically has a ``path_override`` configuration
-option that lets a user substitute an existing file. The file is parsed and
-validated exactly like the producer's output.
+option that lets a user substitute an existing file. ASOkai validates that
+external override before admitting it to the execution plan.
 
 .. _configuring-an-input-producer:
 
@@ -199,18 +206,21 @@ level with ``[step:<name>]``, ``[task:<name>]``, or ``[workflow:<name>]``.
 Generated-output validation receipts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-After a managed run completes, ASOkai fully validates every declared output
-and records one validation receipt for the complete output set under
-``datadir/.asokai/validation``. A later plan reuses the run only when its
-configuration identity, output destinations, and every recorded file match
-that receipt. A missing or changed output invalidates the complete run rather
-than only one file.
+Each step fully validates every declared output immediately after producing
+it and before reporting success, so invalid files cannot be passed to a
+downstream step. After CWL publishes those validated outputs, ASOkai records
+one validation receipt for the complete output set under
+``datadir/.asokai/validation``. Publication verifies that every destination
+exists but does not repeat content validation. A later plan reuses the run
+only when its configuration identity, output destinations, and every recorded
+file match that receipt. A missing or changed output invalidates the complete
+run rather than only one file.
 
 ASOkai does not adopt existing outputs that have no receipt. It reruns the
-step, validates the newly published outputs, and creates the receipt only
-after successful execution. User-supplied ``path_override`` files never
-receive receipts; they continue to receive their inherited file-contract
-validation directly.
+step, validates its newly produced outputs, publishes them, and creates the
+receipt only after successful execution. User-supplied ``path_override`` files
+never receive receipts; they continue to receive their inherited
+file-contract validation directly.
 
 The ``validation.existing_outputs`` mode controls this reuse check:
 

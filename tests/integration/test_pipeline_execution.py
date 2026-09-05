@@ -7,62 +7,35 @@ Description: End-to-end coverage for planning, CWL execution, and publication.
 License: LGPL-3.0-or-later
 """
 
-import json
+import os
 from pathlib import Path
 import shutil
 
 import pytest
 
-from ASOkai.Plugins import FileInput, FileOutput, Step, StepSpec
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.runner import run_all
-
-
-producer_output = FileOutput(
-    "result",
-    destination="producer/result.txt",
+from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
+    BuildGenomeKmerIndexStep,
 )
 
 
-class ProducerStep(Step):
-    name = "integration-producer"
-    description = "Writes one synthetic producer result."
-    result_output = producer_output
-    spec = StepSpec(
-        base_command=["sh", "-c", "printf producer > result.txt"],
-        outputs=[result_output],
+def _install_fake_kmc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put a deterministic KMC-compatible executable first on PATH."""
+    executable = tmp_path / "bin" / "kmc"
+    executable.parent.mkdir()
+    executable.write_text(
+        "#!/usr/bin/env python\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "Path(sys.argv[-2] + '.kff').write_bytes(b'KFF\\x01index-dataKFF')\n",
+        encoding="utf-8",
     )
-
-
-def _consumer_step(name: str) -> Step:
-    producer_input = FileInput(
-        "producer_result",
-        source=producer_output,
+    executable.chmod(0o755)
+    monkeypatch.setenv(
+        "PATH",
+        f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}",
     )
-    result_output = FileOutput(
-        "result",
-        destination=f"consumers/{name}.txt",
-    )
-    step_type = type(
-        f"_{name.replace('-', '_').title()}Step",
-        (Step,),
-        {
-            "name": name,
-            "description": f"Writes the synthetic {name} result.",
-            "producer_input": producer_input,
-            "result_output": result_output,
-            "spec": StepSpec(
-                base_command=[
-                    "sh",
-                    "-c",
-                    f"printf {name} > {name}.txt",
-                ],
-                inputs=[producer_input],
-                outputs=[result_output],
-            ),
-        },
-    )
-    return step_type()
 
 
 @pytest.mark.integration
@@ -94,49 +67,66 @@ def _consumer_step(name: str) -> Step:
         ),
     ],
 )
-def test_shared_producer_executes_once_and_outputs_are_published(
+def test_registered_step_executes_validates_and_publishes_output(
     tmp_path,
+    monkeypatch,
     executor,
 ):
-    producer = ProducerStep()
-    first = _consumer_step("first-consumer")
-    second = _consumer_step("second-consumer")
-    registry = {
-        step.name: step
-        for step in (producer, first, second)
+    _install_fake_kmc(tmp_path, monkeypatch)
+    dna = tmp_path / "input.fa"
+    dna.write_text(">chr1\nACGTACGT\n", encoding="utf-8")
+    config = {
+        "datadir": str(tmp_path),
+        "genome": {
+            "assembly_id": "GRCh38",
+            "ensembl_release": 114,
+            "source": "ensembl",
+            "species": "Homo_sapiens",
+        },
+        "target": {
+            "target_id": "ENSG1",
+            "k": 16,
+            "region": "pre-mrna",
+        },
+        "steps": {
+            "build-genome-kmer-index": {
+                "inputs": {
+                    "dna": {"path_override": str(dna)},
+                },
+            },
+        },
+        "resources": {
+            "default": {
+                "n_processes": 1,
+                "memory_mb": 4096,
+            },
+        },
     }
-    stale_output = tmp_path / "consumers/first-consumer.txt"
-    stale_output.parent.mkdir(parents=True)
-    stale_output.write_text("stale", encoding="utf-8")
-    unrelated = tmp_path / "unrelated/keep.txt"
-    unrelated.parent.mkdir(parents=True)
-    unrelated.write_text("keep", encoding="utf-8")
 
     outputs = run_all(
-        [first, second],
-        {"datadir": str(tmp_path)},
+        [BuildGenomeKmerIndexStep()],
+        config,
         force=True,
         executor=executor,
-        registered_steps=registry,
     )
 
+    output = (
+        tmp_path
+        / "GRCh38"
+        / "ensembl"
+        / "114"
+        / "genome"
+        / "indexes"
+        / "kmc"
+        / "GRCh38.k16.kff"
+    )
     assert outputs == {
-        "first-consumer.result": tmp_path / "consumers/first-consumer.txt",
-        "second-consumer.result": tmp_path / "consumers/second-consumer.txt",
+        "build-genome-kmer-index.kmer_index": output,
     }
-    assert len(list((tmp_path / ".asokai" / "validation").glob("*.json"))) == 3
-    assert (tmp_path / "producer/result.txt").read_text() == "producer"
-    assert outputs["first-consumer.result"].read_text() == "first-consumer"
-    assert outputs["second-consumer.result"].read_text() == "second-consumer"
-    assert unrelated.read_text(encoding="utf-8") == "keep"
+    assert output.read_bytes() == b"KFF\x01index-dataKFF"
+    assert len(list((tmp_path / ".asokai" / "validation").glob("*.json"))) == 1
 
     job_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(job_dirs) == 1
-    cwl_output = json.loads(
-        (job_dirs[0] / "cwl-output.json").read_text(encoding="utf-8")
-    )
-    assert isinstance(cwl_output, dict)
-    assert cwl_output
-
-    run_cwl = next((tmp_path / "jobs").glob("asokai-job-*/run.cwl"))
-    assert run_cwl.read_text().count("step_integration_producer:") == 1
+    step_cwl = job_dirs[0] / "steps" / "build-genome-kmer-index.cwl"
+    assert "baseCommand:\n- ASOkai\n- step" in step_cwl.read_text(encoding="utf-8")

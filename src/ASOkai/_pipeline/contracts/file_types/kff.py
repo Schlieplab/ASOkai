@@ -27,8 +27,7 @@ class KffFile(FileType):
         object.__setattr__(self, "format_name", "KFF k-mer index")
 
     def read(self, path: str | Path) -> Path:
-        """Validate and return a KFF input path without loading the index."""
-        self.validate(path)
+        """Return a KFF input path without loading the index."""
         return Path(path)
 
     def validate(self, path: str | Path) -> None:

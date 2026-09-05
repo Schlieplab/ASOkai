@@ -17,7 +17,7 @@ from ASOkai.Analysis import Analysis
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
-from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.workflows.base import Workflow
 
@@ -67,6 +67,11 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
         assert isinstance(instance, Step)
         if type(instance).run_from_args is Step.run_from_args:
             raise TypeError("step must implement run_from_args().")
+        if (
+            isinstance(instance, ExternalCommandStep)
+            and type(instance).build_command is ExternalCommandStep.build_command
+        ):
+            raise TypeError("external command step must implement build_command().")
         instance.validate_output_declaration()
         instance.build_parser()
         if isinstance(instance, AnalysisStep):

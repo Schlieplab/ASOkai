@@ -155,6 +155,13 @@ class StepRun:
 
     def validate_output_files(self) -> dict[str, Path]:
         """Validate every concrete output file and return its path."""
+        paths = self.require_output_files()
+        for output in self.step.spec.outputs:
+            output.validate(paths[output.name])
+        return paths
+
+    def require_output_files(self) -> dict[str, Path]:
+        """Require every concrete output path to contain a regular file."""
         paths = self.output_paths()
         for output in self.step.spec.outputs:
             path = paths[output.name]
@@ -163,7 +170,6 @@ class StepRun:
                     f"Output '{self.run_id}/{output.name}' was not written "
                     f"to {path}."
                 )
-            output.validate(path)
         return paths
 
     def cleanup_output_files(self) -> None:

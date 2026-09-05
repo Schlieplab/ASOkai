@@ -18,7 +18,7 @@ from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
-from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.validation import (
     validate_component,
     validate_step_dependencies,
@@ -172,6 +172,17 @@ def test_builtin_declaration_errors_identify_the_component_as_builtin():
 def test_step_component_must_implement_its_execution_method():
     with pytest.raises(TypeError, match="run_from_args"):
         validate_component("step", MissingRunMethodStep())
+
+
+def test_external_step_component_must_build_its_command():
+    class MissingCommandStep(ExternalCommandStep):
+        name = "missing-command"
+        description = "Does not implement the external command hook."
+        result_output = FileOutput("result", destination="result.txt")
+        spec = StepSpec(outputs=[result_output])
+
+    with pytest.raises(TypeError, match="must implement build_command"):
+        validate_component("step", MissingCommandStep())
 
 
 def test_step_component_must_declare_an_output():

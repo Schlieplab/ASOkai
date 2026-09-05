@@ -158,11 +158,6 @@ class DownloadGenomeStep(CoreStep):
                     f"Genome downloader returned {downloaded} for output "
                     f"{name!r}; expected {output}."
                 )
-            if not output.is_file():
-                raise FileNotFoundError(
-                    f"Genome downloader output {name!r} does not exist: "
-                    f"{output}."
-                )
             logger.debug("Wrote %s to %s", name, output)
 
         return 0

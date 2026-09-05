@@ -69,25 +69,34 @@ maintain a second dependency list. It also generates the internal step CLI and
 CWL, creates output parent directories, loads typed inputs, validates written
 outputs, and publishes them to their declared destinations.
 
-### Fixed low-level arguments
+### External command steps
 
-`CwlToolArgument` represents one fixed entry in the generated CWL
-`CommandLineTool.arguments` list:
+External executables use the same lifecycle as Python implementations. Build
+their argument list in an `ExternalCommandStep` instead of replacing the
+generated CWL command:
 
 ```python
-from ASOkai.Plugins import CwlToolArgument, StepSpec
+from ASOkai.Plugins import ExternalCommandStep, FileOutput, StepSpec
 
-spec = StepSpec(
-    base_command=["external-tool"],
-    arguments=[
-        CwlToolArgument(prefix="--output-format", value_from="json"),
-    ],
-)
+
+class MyToolStep(ExternalCommandStep):
+    name = "my-tool"
+    description = "Runs an external tool through the shared step lifecycle."
+    result_output = FileOutput("result", destination="my-tool/result.json")
+    spec = StepSpec(outputs=[result_output])
+
+    def build_command(self, args):
+        return [
+            "external-tool",
+            "--output-format", "json",
+            "--output", str(args.result_output),
+        ]
 ```
 
-This is an advanced escape hatch for a custom `base_command`. Ordinary ASOkai
-steps should use `ScalarParam`, `FileInput`, and `FileOutput`, which keep the
-generated CLI, configuration, documentation, and CWL synchronized.
+The common `run_cli()` implementation parses the declared arguments, invokes
+the external command, and validates every declared output before reporting
+success. Generated CWL always dispatches registered steps through this
+lifecycle.
 
 ## Registering components
 

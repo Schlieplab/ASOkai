@@ -9,7 +9,6 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from ASOkai._cwl.model import CwlToolArgument
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile, KffFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -24,7 +23,7 @@ from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
-from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
     BuildGenomeKmerIndexStep,
 )
@@ -44,9 +43,9 @@ __all__ = [
     "BuildGenomeKmerIndexStep",
     "CoreStep",
     "CreateTargetGeneStep",
-    "CwlToolArgument",
     "CsvFile",
     "DownloadGenomeStep",
+    "ExternalCommandStep",
     "FileInput",
     "FileOutput",
     "FileType",

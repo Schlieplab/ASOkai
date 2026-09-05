@@ -17,7 +17,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from ASOkai.Types import Scalar
-from ASOkai._cwl.model import CwlCommandLineToolSpec, CwlToolArgument
+from ASOkai._cwl.model import CwlCommandLineToolSpec
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 
@@ -32,9 +32,7 @@ class StepSpec:
     inputs: Sequence[FileInput] = field(default_factory=tuple)
     outputs: Sequence[FileOutput] = field(default_factory=tuple)
     compatible_with: Mapping[str, Sequence[Scalar]] = field(default_factory=dict)
-    base_command: Sequence[str] | None = None
     requirements: Mapping[str, Any] = field(default_factory=dict)
-    arguments: Sequence[CwlToolArgument] = field(default_factory=tuple)
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -42,7 +40,6 @@ class StepSpec:
         object.__setattr__(self, "params", tuple(self.params))
         object.__setattr__(self, "inputs", tuple(self.inputs))
         object.__setattr__(self, "outputs", tuple(self.outputs))
-        object.__setattr__(self, "arguments", tuple(self.arguments))
         if any(not isinstance(param, ScalarParam) for param in self.params):
             raise TypeError(
                 "StepSpec.params must contain only ScalarParam values."
@@ -55,35 +52,6 @@ class StepSpec:
             raise TypeError(
                 "StepSpec.outputs must contain only FileOutput values."
             )
-        if any(
-            not isinstance(argument, CwlToolArgument)
-            for argument in self.arguments
-        ):
-            raise TypeError(
-                "StepSpec.arguments must contain only CwlToolArgument values."
-            )
-
-        if self.base_command is not None:
-            if isinstance(self.base_command, (str, bytes)) or not isinstance(
-                self.base_command,
-                Sequence,
-            ):
-                raise TypeError(
-                    "StepSpec.base_command must be a sequence of strings."
-                )
-            base_command = tuple(self.base_command)
-            if not base_command:
-                raise ValueError("StepSpec.base_command must not be empty.")
-            if any(type(part) is not str for part in base_command):
-                raise TypeError(
-                    "StepSpec.base_command must contain only strings."
-                )
-            if any(not part.strip() for part in base_command):
-                raise ValueError(
-                    "StepSpec.base_command must contain only non-blank strings."
-                )
-            object.__setattr__(self, "base_command", base_command)
-
         if not isinstance(self.requirements, Mapping):
             raise TypeError("StepSpec.requirements must be a mapping.")
         if not isinstance(self.extra, Mapping):
@@ -237,14 +205,8 @@ class StepSpec:
             for input_param in self.inputs
         )
         return CwlCommandLineToolSpec(
-            base_command=(
-                list(self.base_command)
-                if self.base_command is not None
-                else None
-            ),
             requirements=deepcopy(dict(self.requirements)),
             arguments=[
-                *self.arguments,
                 *(
                     output.to_cwl_argument(config, input_configurations)
                     for output in self.outputs

@@ -75,16 +75,11 @@ class CwlToolOutput:
 class CwlCommandLineToolSpec:
     """Low-level generated CommandLineTool metadata for a pipeline step."""
 
-    base_command: list[str] | None = None
     requirements: dict[str, Any] = field(default_factory=dict)
     arguments: list[CwlToolArgument] = field(default_factory=list)
     inputs: list[CwlToolInput] = field(default_factory=list)
     outputs: list[CwlToolOutput] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
-
-    def command_for_step(self, step_name: str) -> list[str]:
-        """Return the base command, filling the ASOkai step default."""
-        return self.base_command or ["ASOkai", "step", step_name]
 
     def input_names(self) -> set[str]:
         """Return declared input names."""

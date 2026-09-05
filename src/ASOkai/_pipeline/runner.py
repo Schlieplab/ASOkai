@@ -88,21 +88,17 @@ def runner_executable_from_name(name: str) -> str:
     return runner_config_from_name(name).executable
 
 
-def _validate_published_outputs(
+def _record_published_outputs(
     runs: tuple[StepRun, ...],
 ) -> None:
-    """Ensure the CWL publisher materialized valid planned outputs."""
+    """Require published files and record their producer validation."""
     for run in runs:
         try:
-            run.validate_output_files()
+            run.require_output_files()
         except FileNotFoundError as error:
             raise RuntimeError(
                 f"CWL did not publish expected output(s) for "
                 f"'{run.run_id}': {error}"
-            ) from error
-        except (OSError, UnicodeError, TypeError, ValueError) as error:
-            raise RuntimeError(
-                f"CWL published invalid output(s) for '{run.run_id}': {error}"
             ) from error
         try:
             record_validated_outputs(run)
@@ -274,7 +270,7 @@ def run_plan(
         )
     datadir = Path(config["datadir"])
     executor.run(job_dir / "run.cwl", job_dir / "job.yml", datadir)
-    _validate_published_outputs(plan.runs_to_execute)
+    _record_published_outputs(plan.runs_to_execute)
     lines = [
         "Completed successfully",
         "",

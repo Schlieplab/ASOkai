@@ -9,16 +9,43 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
 import pytest
 
-from ASOkai.Plugins import FileOutput, ScalarParam, Step, StepSpec
+from ASOkai.Plugins import (
+    ExternalCommandStep,
+    FileOutput,
+    FileType,
+    ScalarParam,
+    Step,
+    StepSpec,
+)
+
+
+class RequiredTextFile(FileType):
+    """Test contract requiring one exact text value."""
+
+    def validate(self, path) -> None:
+        super().validate(path)
+        if Path(path).read_text(encoding="utf-8") != "valid":
+            raise ValueError("expected valid text")
 
 
 class CliLifecycleStep(Step):
     name = "cli-lifecycle"
     description = "Exercise the shared CLI lifecycle."
-    first_output = FileOutput("first", destination="first.txt")
-    second_output = FileOutput("second", destination="second.txt")
+    first_output = FileOutput(
+        "first",
+        destination="first.txt",
+        file_type=RequiredTextFile(),
+    )
+    second_output = FileOutput(
+        "second",
+        destination="second.txt",
+        file_type=RequiredTextFile(),
+    )
     spec = StepSpec(
         params=[ScalarParam("count", int)],
         outputs=[first_output, second_output],
@@ -27,7 +54,56 @@ class CliLifecycleStep(Step):
     def run_from_args(self, args) -> int:
         assert args.first_output.parent.exists()
         assert args.second_output.parent.exists()
-        return args.count
+        args.first_output.write_text("valid", encoding="utf-8")
+        args.second_output.write_text("valid", encoding="utf-8")
+        return 0
+
+
+class InvalidOutputStep(Step):
+    name = "invalid-output"
+    description = "Write an output that violates its contract."
+    result_output = FileOutput(
+        "result",
+        destination="result.txt",
+        file_type=RequiredTextFile(),
+    )
+    spec = StepSpec(outputs=[result_output])
+
+    def run_from_args(self, args) -> int:
+        args.result_output.write_text("invalid", encoding="utf-8")
+        return 0
+
+
+class MissingOutputStep(Step):
+    name = "missing-output"
+    description = "Return success without producing the declared output."
+    result_output = FileOutput("result", destination="result.txt")
+    spec = StepSpec(outputs=[result_output])
+
+    def run_from_args(self, args) -> int:
+        return 0
+
+
+class ExternalWriterStep(ExternalCommandStep):
+    name = "external-writer"
+    description = "Write a validated output through an external command."
+    result_output = FileOutput(
+        "result",
+        destination="result.txt",
+        file_type=RequiredTextFile(),
+    )
+    spec = StepSpec(outputs=[result_output])
+
+    def build_command(self, args):
+        return [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; import sys; "
+                "Path(sys.argv[1]).write_text('valid', encoding='utf-8')"
+            ),
+            str(args.result_output),
+        ]
 
 
 class RelationshipValidatedStep(Step):
@@ -70,9 +146,34 @@ def test_run_cli_parses_and_prepares_every_output(tmp_path):
         ]
     )
 
-    assert result == 3
+    assert result == 0
     assert first.parent.is_dir()
     assert second.parent.is_dir()
+    assert first.read_text(encoding="utf-8") == "valid"
+    assert second.read_text(encoding="utf-8") == "valid"
+
+
+def test_run_cli_rejects_invalid_output_at_producer_completion(tmp_path):
+    output = tmp_path / "result.txt"
+
+    with pytest.raises(ValueError, match="wrote invalid output 'result'"):
+        InvalidOutputStep().run_cli(["--result-output", str(output)])
+
+
+def test_run_cli_rejects_missing_output_at_producer_completion(tmp_path):
+    output = tmp_path / "result.txt"
+
+    with pytest.raises(FileNotFoundError, match="did not write output 'result'"):
+        MissingOutputStep().run_cli(["--result-output", str(output)])
+
+
+def test_external_command_uses_the_same_output_validation_lifecycle(tmp_path):
+    output = tmp_path / "result.txt"
+
+    result = ExternalWriterStep().run_cli(["--result-output", str(output)])
+
+    assert result == 0
+    assert output.read_text(encoding="utf-8") == "valid"
 
 
 def test_single_process_step_has_no_process_argument():
@@ -153,6 +254,18 @@ def test_step_output_paths_are_owned_by_file_output_destinations():
 
             def output_paths(self, config):
                 return {}
+
+
+def test_step_cannot_override_output_validation_lifecycle():
+    with pytest.raises(TypeError, match="framework-owned lifecycle method"):
+
+        class CustomRunCliStep(Step):
+            name = "custom-run-cli"
+            description = "Invalid test step."
+            spec = StepSpec()
+
+            def run_cli(self, argv=None):
+                return 0
 
 
 def test_step_resolves_available_config_backed_parameters():

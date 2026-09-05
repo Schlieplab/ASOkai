@@ -72,9 +72,7 @@ class FileOutput:
     def _require_bound(self) -> None:
         """Raise if this output is not attached to a producer step."""
         if self._owner is None:
-            raise RuntimeError(
-                f"FileOutput '{self.name}' is not attached to a Step."
-            )
+            raise RuntimeError(f"FileOutput '{self.name}' is not attached to a Step.")
 
     @property
     def producer(self) -> str:
@@ -102,10 +100,13 @@ class FileOutput:
     def working_filename(
         self,
         config: Mapping[str, Any],
-        input_configurations: Mapping[
-            str,
-            Mapping[str, Any],
-        ] | None = None,
+        input_configurations: (
+            Mapping[
+                str,
+                Mapping[str, Any],
+            ]
+            | None
+        ) = None,
     ) -> str:
         """Derive the CWL work-directory filename from the final destination."""
         return self.destination.render(config, input_configurations).name
@@ -113,10 +114,13 @@ class FileOutput:
     def to_cwl_argument(
         self,
         config: Mapping[str, Any],
-        input_configurations: Mapping[
-            str,
-            Mapping[str, Any],
-        ] | None = None,
+        input_configurations: (
+            Mapping[
+                str,
+                Mapping[str, Any],
+            ]
+            | None
+        ) = None,
     ) -> CwlToolArgument:
         """Return the fixed command-line argument for this output path."""
         return CwlToolArgument(
@@ -127,10 +131,13 @@ class FileOutput:
     def to_cwl_output(
         self,
         config: Mapping[str, Any],
-        input_configurations: Mapping[
-            str,
-            Mapping[str, Any],
-        ] | None = None,
+        input_configurations: (
+            Mapping[
+                str,
+                Mapping[str, Any],
+            ]
+            | None
+        ) = None,
     ) -> CwlToolOutput:
         """Return the rendered tool output declaration."""
         return CwlToolOutput(
@@ -179,20 +186,13 @@ class FileInput:
             raise TypeError("FileInput.source must be a FileOutput.")
         self.source._require_bound()
         parameter_names = tuple(self.configurable_parameters)
-        if any(
-            type(name) is not str or not name.strip()
-            for name in parameter_names
-        ):
+        if any(type(name) is not str or not name.strip() for name in parameter_names):
             raise ValueError(
                 "FileInput.configurable_parameters must contain non-blank "
                 "parameter names."
             )
         duplicates = sorted(
-            {
-                name
-                for name in parameter_names
-                if parameter_names.count(name) > 1
-            }
+            {name for name in parameter_names if parameter_names.count(name) > 1}
         )
         if duplicates:
             raise ValueError(
@@ -233,9 +233,7 @@ class FileInput:
                 f"field(s): {names}."
             )
         configured_choices = [
-            choice
-            for choice in ("path_override", "parameters")
-            if choice in value
+            choice for choice in ("path_override", "parameters") if choice in value
         ]
         if len(configured_choices) != 1:
             raise ValueError(
@@ -303,9 +301,7 @@ class FileInput:
     def configurable_parameter(self, name: str) -> ScalarParam:
         """Return one producer parameter exposed by this input."""
         if name not in self.configurable_parameters:
-            raise KeyError(
-                f"Input '{self.name}' does not expose parameter {name!r}."
-            )
+            raise KeyError(f"Input '{self.name}' does not expose parameter {name!r}.")
         assert self.source._owner is not None
         try:
             parameter = self.source._owner.spec.parameter(name)

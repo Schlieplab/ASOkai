@@ -685,14 +685,14 @@ def test_step_resources_returns_supported_fields():
     config = {
         "resources": {
             step.name: {
-                "n_processes": 4,
+                "n_threads": 4,
                 "memory_mb": 8192,
             }
         }
     }
 
     assert cfg.step_resources(config, step) == {
-        "n_processes": 4,
+        "n_threads": 4,
         "memory_mb": 8192,
     }
 
@@ -702,7 +702,7 @@ def test_step_resources_uses_builtin_defaults_without_configuration():
     download = DownloadGenomeStep()
 
     assert cfg.step_resources({}, analysis) == {
-        "n_processes": 1,
+        "n_threads": 1,
         "memory_mb": 4096,
     }
     assert cfg.step_resources({"resources": {}}, download) == {
@@ -716,15 +716,15 @@ def test_step_resources_merges_configured_defaults_and_step_overrides():
     config = {
         "resources": {
             "default": {
-                "n_processes": 2,
+                "n_threads": 2,
                 "memory_mb": 2048,
             },
-            analysis.name: {"n_processes": 8},
+            analysis.name: {"n_threads": 8},
         }
     }
 
     assert cfg.step_resources(config, analysis) == {
-        "n_processes": 8,
+        "n_threads": 8,
         "memory_mb": 2048,
     }
     assert cfg.step_resources(config, download) == {
@@ -732,28 +732,28 @@ def test_step_resources_merges_configured_defaults_and_step_overrides():
     }
 
 
-def test_selected_step_rejects_unsupported_process_setting(
+def test_selected_step_rejects_unsupported_thread_setting(
     sample_config,
 ):
     config = cfg.load(sample_config)
     config["resources"] = {
-        "download-genome": {"n_processes": 2},
+        "download-genome": {"n_threads": 2},
     }
     cfg.validate_config_schema(config)
 
     with pytest.raises(
         ValueError,
-        match=r"resources.download-genome.n_processes.*does not support",
+        match=r"resources.download-genome.n_threads.*does not support",
     ):
         cfg.validate_step_config(config, [DownloadGenomeStep()])
 
 
-def test_default_process_setting_is_only_applied_to_supported_steps(
+def test_default_thread_setting_is_only_applied_to_supported_steps(
     sample_config,
 ):
     config = cfg.load(sample_config)
     config["resources"] = {
-        "default": {"n_processes": 4},
+        "default": {"n_threads": 4},
     }
 
     cfg.validate_config_schema(config)
@@ -774,7 +774,7 @@ def test_config_schema_rejects_unsupported_resource_fields(section):
         cfg.validate_config_schema(config)
 
 
-@pytest.mark.parametrize("key", ["n_processes", "memory_mb"])
+@pytest.mark.parametrize("key", ["n_threads", "memory_mb"])
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "4"])
 def test_config_schema_rejects_invalid_resource_values(key, value):
     config = {
@@ -783,6 +783,22 @@ def test_config_schema_rejects_invalid_resource_values(key, value):
     }
 
     with pytest.raises(ValueError, match=rf"resources.analysis.{key}"):
+        cfg.validate_config_schema(config)
+
+
+@pytest.mark.parametrize("section", ["default", "intrinsic-features"])
+@pytest.mark.parametrize("also_sets_threads", [False, True])
+def test_config_schema_explains_thread_setting_migration(section, also_sets_threads):
+    resource_values = {"n_processes": 4}
+    if also_sets_threads:
+        resource_values["n_threads"] = 2
+    config = {"datadir": ".", "resources": {section: resource_values}}
+
+    with pytest.raises(
+        ValueError,
+        match=rf"resources\.{section}\.n_processes: renamed to n_threads; "
+        rf"use resources\.{section}\.n_threads instead",
+    ):
         cfg.validate_config_schema(config)
 
 

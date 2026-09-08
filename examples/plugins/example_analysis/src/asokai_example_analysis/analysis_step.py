@@ -48,9 +48,9 @@ class ExampleAnalysis(SiteSpecificAnalysis):
         self,
         sites: Iterable[Site],
         minimum_length: int,
-        n_processes: int = 1,
+        n_threads: int = 1,
     ) -> None:
-        super().__init__(sites, n_processes=n_processes)
+        super().__init__(sites, n_threads=n_threads)
         self.minimum_length = minimum_length
 
     def analyze(self, site: Site) -> dict[str, Types.Scalar]:

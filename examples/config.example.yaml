@@ -53,7 +53,7 @@ antisense:
 
 resources:
   default:
-    n_processes: 1
+    n_threads: 1
     memory_mb: 4096
   intrinsic-features:
-    n_processes: 4
+    n_threads: 4

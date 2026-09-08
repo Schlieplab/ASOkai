@@ -320,7 +320,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     caplog,
 ):
     workflow_config["resources"] = {
-        "intrinsic-features": {"n_processes": 4},
+        "intrinsic-features": {"n_threads": 4},
     }
     caplog.set_level(logging.INFO)
 
@@ -341,7 +341,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     assert "[workflow:standard]   4. intrinsic-features" in report
     assert (
         "[workflow:standard]      Resources:\n"
-        "[workflow:standard]        workers: 4"
+        "[workflow:standard]        threads: 4"
     ) in report
 
 

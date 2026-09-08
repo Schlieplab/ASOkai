@@ -41,7 +41,7 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
         self,
         sites: Iterable[Site],
         features: Iterable[str] | None = None,
-        n_processes: int = 1,
+        n_threads: int = 1,
     ) -> None:
         """Initialize an intrinsic-feature analysis.
 
@@ -49,7 +49,7 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             sites: Sites to analyze.
             features: Features to calculate. Defaults to every supported
                 feature.
-            n_processes: Maximum number of worker threads used by ``run``.
+            n_threads: Maximum number of worker threads used by ``run``.
 
         Raises:
             ValueError: If an unknown feature is requested.
@@ -64,7 +64,7 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             formatted = ", ".join(repr(name) for name in unknown_features)
             raise ValueError(f"Unknown intrinsic features: {formatted}.")
         self.features = tuple(selected_features)
-        super().__init__(sites, n_processes=n_processes)
+        super().__init__(sites, n_threads=n_threads)
 
     def analyze(self, site: Site) -> dict[str, Scalar]:
         """Calculate the selected intrinsic features for one site.

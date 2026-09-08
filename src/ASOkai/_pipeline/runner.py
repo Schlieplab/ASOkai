@@ -196,11 +196,11 @@ def _log_dry_run_plan(
             lines.extend(
                 f"       {name:<{width}} {detail}" for name, detail in inputs
             )
-        if run.step.supports_multiple_processes:
-            workers = cfg.step_resources(run.config, run.step)[
-                cfg.RESOURCE_N_PROCESSES_KEY
+        if run.step.supports_multiple_threads:
+            threads = cfg.step_resources(run.config, run.step)[
+                cfg.RESOURCE_N_THREADS_KEY
             ]
-            lines.extend(("     Resources:", f"       workers: {workers}"))
+            lines.extend(("     Resources:", f"       threads: {threads}"))
 
     _log_info(log_contexts, "\n".join(lines))
 

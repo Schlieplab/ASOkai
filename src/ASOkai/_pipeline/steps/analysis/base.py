@@ -27,7 +27,7 @@ class AnalysisStep(Step):
     """
 
     analysis_cls: ClassVar[type[Analysis] | None] = None
-    supports_multiple_processes = True
+    supports_multiple_threads = True
 
     def analysis_kwargs(self, args) -> dict[str, Any]:
         """Build analysis arguments from the inputs already parsed by the step."""
@@ -170,7 +170,7 @@ class AnalysisStep(Step):
                 "a mapping."
             )
         analysis_kwargs = dict(provided_analysis_kwargs)
-        analysis_kwargs["n_processes"] = args.n_processes
+        analysis_kwargs["n_threads"] = args.n_threads
         analysis = self.analysis_cls(**analysis_kwargs)
         results = analysis.run()
         provided_additional_values: object = self.additional_output_values(

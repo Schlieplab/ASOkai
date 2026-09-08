@@ -248,10 +248,10 @@ class JobCwlGenerator(BaseCwlGenerator):
             config = dict(run.config)
             in_map: dict[str, str | dict] = {}
 
-            if step.supports_multiple_processes:
-                in_map[cfg.RESOURCE_N_PROCESSES_KEY] = {
+            if step.supports_multiple_threads:
+                in_map[cfg.RESOURCE_N_THREADS_KEY] = {
                     "default": cfg.step_resources(config, step)[
-                        cfg.RESOURCE_N_PROCESSES_KEY
+                        cfg.RESOURCE_N_THREADS_KEY
                     ]
                 }
 

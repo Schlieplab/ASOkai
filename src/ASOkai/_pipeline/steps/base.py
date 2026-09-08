@@ -28,19 +28,19 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec
 logger = logging.getLogger(__name__)
 
 
-_N_PROCESSES_PARAM = ScalarParam(
-    "n_processes",
+_N_THREADS_PARAM = ScalarParam(
+    "n_threads",
     int,
     default=1,
-    doc="Number of parallel workers allocated to this step.",
+    doc="Number of worker threads allocated to this step.",
 )
 
 
 class Step(Runnable):
     """Atomic pipeline unit backed by a generated CWL command-line tool.
 
-    Core steps may set ``supports_multiple_processes`` only when their runtime
-    consumes the automatically supplied ``args.n_processes`` value. Analysis
+    Core steps may set ``supports_multiple_threads`` only when their runtime
+    consumes the automatically supplied ``args.n_threads`` value. Analysis
     steps support it through their shared base class. Increment
     ``cache_version`` when an implementation change alters generated outputs
     without changing the step's declared parameters or destinations.
@@ -49,7 +49,7 @@ class Step(Runnable):
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
-    supports_multiple_processes: ClassVar[bool] = False
+    supports_multiple_threads: ClassVar[bool] = False
     cache_version: ClassVar[int] = 1
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -97,9 +97,9 @@ class Step(Runnable):
                 "with a letter or number and contains only letters, numbers, "
                 "hyphens, and underscores."
             )
-        if type(cls.supports_multiple_processes) is not bool:
+        if type(cls.supports_multiple_threads) is not bool:
             raise TypeError(
-                f"Step '{cls.name}' supports_multiple_processes must be a boolean."
+                f"Step '{cls.name}' supports_multiple_threads must be a boolean."
             )
         if type(cls.cache_version) is not int or cls.cache_version < 1:
             raise TypeError(
@@ -162,12 +162,12 @@ class Step(Runnable):
     def _validate_standard_parameters(self) -> None:
         for param in (*self.spec.params, *self.spec.inputs):
             if (
-                param.name == _N_PROCESSES_PARAM.name
-                or param.cli_prefix == _N_PROCESSES_PARAM.cli_prefix
+                param.name == _N_THREADS_PARAM.name
+                or param.cli_prefix == _N_THREADS_PARAM.cli_prefix
             ):
                 raise ValueError(
                     f"Step '{self.name}' declares reserved standard parameter "
-                    f"'{_N_PROCESSES_PARAM.name}'."
+                    f"'{_N_THREADS_PARAM.name}'."
                 )
 
     def _cwl_spec(
@@ -181,17 +181,17 @@ class Step(Runnable):
             config,
             input_configurations,
         )
-        if not self.supports_multiple_processes:
+        if not self.supports_multiple_threads:
             return spec
-        n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
-        return replace(spec, inputs=[*spec.inputs, n_processes_input])
+        n_threads_input = _N_THREADS_PARAM.to_cwl_input()
+        return replace(spec, inputs=[*spec.inputs, n_threads_input])
 
     def build_parser(self, *, description: str | None = None):
         """Build an argparse parser from this step's parameter spec."""
         self._validate_standard_parameters()
         parser = self.spec.build_parser(description=description or self.description)
-        if self.supports_multiple_processes:
-            _N_PROCESSES_PARAM.add_to_parser(parser)
+        if self.supports_multiple_threads:
+            _N_THREADS_PARAM.add_to_parser(parser)
         return parser
 
     def prepare_output_directories(self, args: argparse.Namespace) -> None:
@@ -230,8 +230,8 @@ class Step(Runnable):
         """Run the shared command-line lifecycle for one step."""
         parser = self.build_parser()
         args = parser.parse_args(argv)
-        if self.supports_multiple_processes and args.n_processes < 1:
-            parser.error("--n-processes must be a positive integer")
+        if self.supports_multiple_threads and args.n_threads < 1:
+            parser.error("--n-threads must be a positive integer")
         parameter_values = {
             parameter.name: getattr(args, parameter.name)
             for parameter in self.spec.params

@@ -448,7 +448,7 @@ def test_generate_cwl_disambiguates_all_normalized_publication_root_ids(tmp_path
     assert set(publisher["outputs"]) == expected_ids
 
 
-def test_generate_cwl_keeps_single_process_steps_at_one_core(workflow_config):
+def test_generate_cwl_keeps_single_thread_steps_at_one_core(workflow_config):
     workflow_config["resources"] = {
         "download-genome": {"memory_mb": 8192},
         "create-target-gene": {"memory_mb": 16384},
@@ -470,15 +470,15 @@ def test_generate_cwl_keeps_single_process_steps_at_one_core(workflow_config):
         "coresMin": 1,
         "ramMin": 16384,
     }
-    assert "n_processes" not in download["inputs"]
-    assert "n_processes" not in create["inputs"]
-    assert "n_processes" not in workflow["steps"]["step_download_genome"]["in"]
-    assert "n_processes" not in workflow["steps"]["step_create_target_gene"]["in"]
+    assert "n_threads" not in download["inputs"]
+    assert "n_threads" not in create["inputs"]
+    assert "n_threads" not in workflow["steps"]["step_download_genome"]["in"]
+    assert "n_threads" not in workflow["steps"]["step_create_target_gene"]["in"]
 
 
-def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
+def test_generate_cwl_configures_threads_for_analysis_steps(workflow_config):
     workflow_config["resources"] = {
-        "intrinsic-features": {"n_processes": 4, "memory_mb": 8192},
+        "intrinsic-features": {"n_threads": 4, "memory_mb": 8192},
     }
 
     generated = _generate_bundle(
@@ -494,16 +494,16 @@ def test_generate_cwl_configures_processes_for_analysis_steps(workflow_config):
         "coresMin": 4,
         "ramMin": 8192,
     }
-    assert intrinsic["inputs"]["n_processes"] == {
+    assert intrinsic["inputs"]["n_threads"] == {
         "type": "int",
-        "doc": "Number of parallel workers allocated to this step.",
+        "doc": "Number of worker threads allocated to this step.",
         "default": 1,
-        "inputBinding": {"prefix": "--n-processes"},
+        "inputBinding": {"prefix": "--n-threads"},
     }
-    assert workflow["steps"]["step_intrinsic_features"]["in"]["n_processes"] == {
+    assert workflow["steps"]["step_intrinsic_features"]["in"]["n_threads"] == {
         "default": 4,
     }
-    assert "n_processes" not in workflow["inputs"]
+    assert "n_threads" not in workflow["inputs"]
 
 
 def test_generate_cwl_uses_default_resource_requirement_when_not_configured(
@@ -552,19 +552,19 @@ def test_generate_cwl_resource_precedence(workflow_config):
 @pytest.mark.parametrize(
     "parameter",
     [
-        ScalarParam("n_processes", int),
-        ScalarParam("workers", int, prefix="--n-processes"),
+        ScalarParam("n_threads", int),
+        ScalarParam("workers", int, prefix="--n-threads"),
     ],
 )
-def test_step_rejects_reserved_n_processes_parameter(parameter):
+def test_step_rejects_reserved_n_threads_parameter(parameter):
     step = _spec_step(
-        "conflicting-processes",
+        "conflicting-threads",
         StepSpec(params=[parameter]),
     )
 
-    with pytest.raises(ValueError, match="reserved.*n_processes"):
+    with pytest.raises(ValueError, match="reserved.*n_threads"):
         StepRun(step.name, step, {}).cwl_spec()
-    with pytest.raises(ValueError, match="reserved.*n_processes"):
+    with pytest.raises(ValueError, match="reserved.*n_threads"):
         step.build_parser()
 
 

@@ -126,7 +126,7 @@ class RelationshipValidatedStep(Step):
 class ParallelCliStep(Step):
     name = "parallel-cli"
     description = "Exercise the standard parallel-worker argument."
-    supports_multiple_processes = True
+    supports_multiple_threads = True
     result_output = FileOutput("result", destination="result.txt")
     spec = StepSpec(outputs=[result_output])
 
@@ -176,8 +176,8 @@ def test_external_command_uses_the_same_output_validation_lifecycle(tmp_path):
     assert output.read_text(encoding="utf-8") == "valid"
 
 
-def test_single_process_step_has_no_process_argument():
-    assert "--n-processes" not in CliLifecycleStep().build_parser().format_help()
+def test_single_thread_step_has_no_thread_argument():
+    assert "--n-threads" not in CliLifecycleStep().build_parser().format_help()
 
 
 def test_run_cli_validates_parameter_relationships_before_creating_outputs(
@@ -206,7 +206,7 @@ def test_run_cli_rejects_non_positive_parallel_worker_count(tmp_path, capsys):
     with pytest.raises(SystemExit) as raised:
         ParallelCliStep().run_cli(
             [
-                "--n-processes", "0",
+                "--n-threads", "0",
                 "--result-output", str(output),
             ]
         )

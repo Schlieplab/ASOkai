@@ -83,7 +83,7 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     assert fields["target.region"].constraints == (
         "one of: exonic, pre-mrna, transcriptomic"
     )
-    assert fields["resources.intrinsic-features.n_processes"].value_type == "integer"
+    assert fields["resources.intrinsic-features.n_threads"].value_type == "integer"
     assert fields["target.target_id"].requirement == (
         "Exactly one of target_id, target_name is required when target is configured"
     )
@@ -232,10 +232,10 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     assert fields[
         "steps.intrinsic-features.inputs.target_gene.path_override"
     ].requirement == "Optional path override"
-    assert fields["resources.intrinsic-features.n_processes"].requirement == (
+    assert fields["resources.intrinsic-features.n_threads"].requirement == (
         "Overrides resources.default"
     )
-    assert fields["resources.default.n_processes"].requirement == (
+    assert fields["resources.default.n_threads"].requirement == (
         "Built-in fallback: 1"
     )
     assert "antisense.design.gap_length" not in fields
@@ -281,7 +281,7 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
     )
 
 
-def test_single_process_step_omits_process_count() -> None:
+def test_single_thread_step_omits_thread_count() -> None:
     step = get_built_in_step("download-genome")
     fields = {
         field.path
@@ -292,9 +292,9 @@ def test_single_process_step_omits_process_count() -> None:
         for node in build_step_reference(step, _config_schema())
     )
 
-    assert "resources.default.n_processes" not in fields
-    assert "resources.download-genome.n_processes" not in fields
-    assert "n_processes" not in reference
+    assert "resources.default.n_threads" not in fields
+    assert "resources.download-genome.n_threads" not in fields
+    assert "n_threads" not in reference
     assert "resources.default.memory_mb" in reference
     assert "resources.download-genome.memory_mb" in reference
 

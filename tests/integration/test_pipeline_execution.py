@@ -116,7 +116,7 @@ def test_registered_step_executes_validates_and_publishes_output(
         },
         "resources": {
             "default": {
-                "n_processes": 1,
+                "n_threads": 1,
                 "memory_mb": 4096,
             },
         },

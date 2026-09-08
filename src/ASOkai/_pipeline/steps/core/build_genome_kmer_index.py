@@ -28,7 +28,7 @@ class BuildGenomeKmerIndexStep(CoreStep):
 
     name = "build-genome-kmer-index"
     description = "Builds a reusable KFF k-mer index of the genome DNA."
-    supports_multiple_processes = True
+    supports_multiple_threads = True
     dna_input = FileInput(
         "dna",
         source=DownloadGenomeStep.dna_output,
@@ -83,7 +83,7 @@ class BuildGenomeKmerIndexStep(CoreStep):
                 k=args.k,
                 m=4,
                 f="fm",
-                t=args.n_processes,
+                t=args.n_threads,
                 ci=1,
                 o="kff",
                 hp=True,

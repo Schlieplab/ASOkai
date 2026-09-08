@@ -22,11 +22,11 @@ from ASOkai.Plugins import (
     StepSpec,
 )
 class FakeAnalysis(Analysis):
-    last_process_count = None
+    last_thread_count = None
 
-    def __init__(self, value, n_processes):
+    def __init__(self, value, n_threads):
         self.value = value
-        type(self).last_process_count = n_processes
+        type(self).last_thread_count = n_threads
 
     def run(self):
         return {"site-1": {"value": self.value}}
@@ -64,11 +64,11 @@ class MissingAnalysisKwargsStep(FakeAnalysisStep):
     analysis_kwargs = AnalysisStep.analysis_kwargs
 
 
-class ConflictingProcessCountStep(FakeAnalysisStep):
+class ConflictingThreadCountStep(FakeAnalysisStep):
     def analysis_kwargs(self, args):
         return {
             "value": args.value,
-            "n_processes": 99,
+            "n_threads": 99,
         }
 
 
@@ -135,7 +135,7 @@ class MultiOutputAnalysisStep(AnalysisStep):
             ],
             self.summary_output: {
                 "site_count": len(results),
-                "process_count": analysis.last_process_count,
+                "thread_count": analysis.last_thread_count,
             },
         }
 
@@ -167,7 +167,7 @@ class UnexpectedAdditionalOutputValueStep(MultiOutputAnalysisStep):
 
 def test_analysis_step_writes_site_keyed_results_as_csv_rows(tmp_path):
     output = tmp_path / "analysis.csv"
-    args = Namespace(analysis_output=output, value=7, n_processes=3)
+    args = Namespace(analysis_output=output, value=7, n_threads=3)
 
     result = FakeAnalysisStep().run_from_args(args)
 
@@ -178,14 +178,14 @@ def test_analysis_step_writes_site_keyed_results_as_csv_rows(tmp_path):
             "value": 7,
         }
     ]
-    assert FakeAnalysis.last_process_count == 3
+    assert FakeAnalysis.last_thread_count == 3
 
 
 def test_analysis_step_requires_analysis_class(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(RuntimeError, match="analysis_cls"):
@@ -196,30 +196,30 @@ def test_analysis_step_requires_analysis_kwargs_implementation(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(NotImplementedError, match=r"analysis_kwargs\(\)"):
         MissingAnalysisKwargsStep().run_from_args(args)
 
 
-def test_analysis_step_uses_the_framework_allocated_process_count(tmp_path):
+def test_analysis_step_uses_the_framework_allocated_thread_count(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
         value=7,
-        n_processes=2,
+        n_threads=2,
     )
 
-    ConflictingProcessCountStep().run_from_args(args)
+    ConflictingThreadCountStep().run_from_args(args)
 
-    assert FakeAnalysis.last_process_count == 2
+    assert FakeAnalysis.last_thread_count == 2
 
 
 def test_analysis_step_requires_analysis_kwargs_to_be_a_mapping(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(TypeError, match=r"analysis_kwargs\(\).*mapping"):
@@ -230,7 +230,7 @@ def test_analysis_step_rejects_result_containing_index_column(tmp_path):
     args = Namespace(
         analysis_output=tmp_path / "analysis.csv",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(ValueError, match="contains the index column 'site_id'"):
@@ -248,7 +248,7 @@ def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
         doubled_output=doubled_output,
         summary_output=summary_output,
         value=7,
-        n_processes=3,
+        n_threads=3,
     )
 
     step = MultiOutputAnalysisStep()
@@ -263,7 +263,7 @@ def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
     ]
     assert MultiOutputAnalysisStep.summary_output.file_type.read(summary_output) == {
         "site_count": 1,
-        "process_count": 3,
+        "thread_count": 3,
     }
 
 
@@ -273,7 +273,7 @@ def test_analysis_step_requires_every_additional_output_value(tmp_path):
         doubled_output=tmp_path / "doubled.csv",
         summary_output=tmp_path / "summary.json",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(ValueError, match=r"missing: doubled"):
@@ -288,7 +288,7 @@ def test_analysis_step_requires_additional_values_to_be_a_mapping(tmp_path):
         doubled_output=tmp_path / "doubled.csv",
         summary_output=tmp_path / "summary.json",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(TypeError, match=r"additional_output_values\(\).*mapping"):
@@ -303,7 +303,7 @@ def test_analysis_step_rejects_unexpected_additional_output_value(tmp_path):
         doubled_output=tmp_path / "doubled.csv",
         summary_output=tmp_path / "summary.json",
         value=7,
-        n_processes=1,
+        n_threads=1,
     )
 
     with pytest.raises(ValueError, match=r"unexpected: unexpected"):

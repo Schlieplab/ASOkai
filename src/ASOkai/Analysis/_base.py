@@ -31,32 +31,31 @@ class Analysis(ABC):
     def __init__(
         self,
         sites: Iterable[Site],
-        n_processes: int = 1,
+        n_threads: int = 1,
     ) -> None:
-        if type(n_processes) is not int or n_processes < 1:
-            raise ValueError("n_processes must be a positive integer.")
+        if type(n_threads) is not int or n_threads < 1:
+            raise ValueError("n_threads must be a positive integer.")
         self.sites = list(sites)
         seen_site_ids: set[str] = set()
         for site in self.sites:
             if site.id in seen_site_ids:
                 raise ValueError(f"Duplicate analysis site ID: {site.id!r}.")
             seen_site_ids.add(site.id)
-        self.n_processes = n_processes
+        self.n_threads = n_threads
 
     def run(self) -> dict[str, dict[str, Scalar]]:
         """Execute this analysis over all configured sites.
 
-        ``n_processes`` is retained as the public resource option, but values
-        greater than one select that many shared-memory worker threads. This
-        avoids copying or pickling analysis context such as an in-memory
-        genome.
+        ``n_threads`` controls the number of shared-memory worker threads.
+        A value of one executes serially. Threads avoid copying or pickling
+        analysis context such as an in-memory genome.
         """
         if not self.sites:
             return {}
-        if self.n_processes == 1:
+        if self.n_threads == 1:
             return dict(self._analyze_site(site) for site in self.sites)
 
-        with ThreadPoolExecutor(max_workers=self.n_processes) as executor:
+        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
             return dict(executor.map(self._analyze_site, self.sites))
 
     def _analyze_site(self, site: Site) -> tuple[str, dict[str, Scalar]]:
@@ -90,9 +89,9 @@ class TargetSpecificAnalysis(Analysis):
         self,
         target: TargetGene,
         sites: Iterable[Site],
-        n_processes: int = 1,
+        n_threads: int = 1,
     ) -> None:
-        super().__init__(sites, n_processes=n_processes)
+        super().__init__(sites, n_threads=n_threads)
         self.target = target
 
 
@@ -106,11 +105,11 @@ class GenomeWideAnalysis(TargetSpecificAnalysis):
         genome: Genome,
         target: TargetGene,
         sites: Iterable[Site],
-        n_processes: int = 1,
+        n_threads: int = 1,
     ) -> None:
         super().__init__(
             target=target,
             sites=sites,
-            n_processes=n_processes,
+            n_threads=n_threads,
         )
         self.genome = genome

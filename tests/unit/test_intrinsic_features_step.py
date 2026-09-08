@@ -122,7 +122,7 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     run = _run(step, config, tmp_path)
     doc = yaml.safe_load(StepCwlGenerator().render(run))
 
-    assert set(doc["inputs"]) == {"target_gene", "n_processes"}
+    assert set(doc["inputs"]) == {"target_gene", "n_threads"}
     assert doc["inputs"]["target_gene"]["type"] == "File"
     assert "intrinsic_features_output" not in doc["inputs"]
     assert "intrinsic_features_filename" not in doc["inputs"]

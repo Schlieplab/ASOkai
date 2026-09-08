@@ -82,16 +82,16 @@ def test_site_specific_run_copies_sites_and_analyzes_each_one():
 def test_site_specific_thread_pool_matches_serial():
     sites = [FakeSite("a", "AT"), FakeSite("b", "ATCG")]
 
-    assert CountingAnalysis(sites=sites, n_processes=2).run() == CountingAnalysis(
+    assert CountingAnalysis(sites=sites, n_threads=2).run() == CountingAnalysis(
         sites=sites,
-        n_processes=1,
+        n_threads=1,
     ).run()
 
 
-@pytest.mark.parametrize("n_processes", [True, False, 0, -1, 1.5, "2"])
-def test_analysis_rejects_invalid_process_count(n_processes):
-    with pytest.raises(ValueError, match="n_processes"):
-        CountingAnalysis(sites=[FakeSite("a")], n_processes=n_processes)
+@pytest.mark.parametrize("n_threads", [True, False, 0, -1, 1.5, "2"])
+def test_analysis_rejects_invalid_thread_count(n_threads):
+    with pytest.raises(ValueError, match="n_threads"):
+        CountingAnalysis(sites=[FakeSite("a")], n_threads=n_threads)
 
 
 def test_analysis_rejects_duplicate_site_ids():
@@ -108,7 +108,7 @@ def test_analysis_rejects_unknown_constructor_arguments():
 
 
 def test_empty_threaded_analysis_returns_no_results():
-    assert CountingAnalysis(sites=[], n_processes=2).run() == {}
+    assert CountingAnalysis(sites=[], n_threads=2).run() == {}
 
 
 def test_target_specific_run_exposes_target_context():
@@ -127,7 +127,7 @@ def test_genome_wide_threads_share_unpicklable_genome_and_target_context():
         genome=genome,
         target=target,
         sites=[FakeSite("site-1"), FakeSite("site-2")],
-        n_processes=2,
+        n_threads=2,
     )
 
     assert isinstance(analysis, TargetSpecificAnalysis)

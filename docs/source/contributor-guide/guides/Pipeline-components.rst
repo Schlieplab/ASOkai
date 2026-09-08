@@ -83,12 +83,11 @@ A ``bool`` parameter is a presence flag: it defaults to ``False``, and a true
 value emits its option, such as ``--enabled``, without a following value.
 Generated CWL represents it as a native Boolean input.
 
-Steps must not declare ``n_processes`` themselves. Analysis steps support
+Steps must not declare ``n_threads`` themselves. Analysis steps support
 parallel worker threads by default; a core step opts in with
-``supports_multiple_processes = True`` only when its runtime consumes
-``args.n_processes``. ASOkai then supplies the standard worker-count argument
-and resolves its value from the shared resource configuration. The
-``n_processes`` name is retained for configuration compatibility.
+``supports_multiple_threads = True`` only when its runtime consumes
+``args.n_threads``. ASOkai then supplies the standard ``--n-threads`` argument
+and resolves its value from the shared resource configuration.
 
 File contracts
 ~~~~~~~~~~~~~~
@@ -252,7 +251,7 @@ An ``AnalysisStep`` adds a stricter convention for tabular site results:
 
 1. its first output is the primary typed CSV with one index column;
 2. ``analysis_kwargs(args)`` returns arguments for ``analysis_cls``;
-3. the base class supplies ``n_processes`` and runs the analysis;
+3. the base class supplies ``n_threads`` and runs the analysis;
 4. site keys become CSV index values and analysis values become data columns;
 5. optional later outputs receive values from
    ``additional_output_values``; and

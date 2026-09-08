@@ -38,7 +38,7 @@ def config(tmp_path: Path) -> dict:
         "target": {"k": 16},
         "resources": {
             "build-genome-kmer-index": {
-                "n_processes": 6,
+                "n_threads": 6,
             }
         },
     }
@@ -66,7 +66,7 @@ def test_step_contract(step: BuildGenomeKmerIndexStep) -> None:
     assert step.dna_input.source is DownloadGenomeStep.dna_output
     assert isinstance(step.kmer_index_output.file_type, KffFile)
     assert step.config_map == {"k": "target.k"}
-    assert step.supports_multiple_processes is True
+    assert step.supports_multiple_threads is True
 
 
 def test_output_path_is_genome_scoped(
@@ -99,9 +99,9 @@ def test_cwl_spec_exposes_runtime_resources(
         StepCwlGenerator().render(_run(step, config, tmp_path / "dna.fa.gz"))
     )
 
-    assert set(doc["inputs"]) == {"k", "dna", "n_processes"}
-    assert doc["inputs"]["n_processes"]["inputBinding"] == {
-        "prefix": "--n-processes"
+    assert set(doc["inputs"]) == {"k", "dna", "n_threads"}
+    assert doc["inputs"]["n_threads"]["inputBinding"] == {
+        "prefix": "--n-threads"
     }
     assert {
         "prefix": "--kmer-index-output",
@@ -123,7 +123,7 @@ def test_generated_workflow_passes_configured_resources(
     )
 
     step_inputs = workflow["steps"]["step_build_genome_kmer_index"]["in"]
-    assert step_inputs["n_processes"] == {"default": 6}
+    assert step_inputs["n_threads"] == {"default": 6}
     assert tool["requirements"]["ResourceRequirement"] == {
         "coresMin": 6,
         "ramMin": 4096,
@@ -167,7 +167,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
         [
             "--k", "16",
             "--dna", str(dna),
-            "--n-processes", "6",
+            "--n-threads", "6",
             "--kmer-index-output", str(output),
         ]
     )

@@ -1,8 +1,10 @@
 Types
 =====
 
-Shared aliases define the scalar values, strand orientations, and target
-regions used by ASOkai's public interfaces.
+Shared aliases define analysis unit types, scalar values, strand orientations,
+and target regions.
+
+.. autodata:: ASOkai.Types.AnalysisUnitType
 
 .. autodata:: ASOkai.Types.Scalar
 

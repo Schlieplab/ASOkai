@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, get_args
 
-from ASOkai.Analysis import Analysis
+from ASOkai.Analysis import BatchAnalysis, PerUnitAnalysis
+from ASOkai.Types import AnalysisUnitType
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
@@ -105,20 +106,26 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
 
 def _validate_analysis_step(step: AnalysisStep) -> None:
     """Validate assumptions made by the shared analysis execution flow."""
+    if not step.supports_multiple_threads:
+        raise ValueError("analysis steps must support the n_threads resource.")
     analysis_class = step.analysis_cls
     if (
         not inspect.isclass(analysis_class)
-        or not issubclass(analysis_class, Analysis)
+        or not issubclass(analysis_class, (PerUnitAnalysis, BatchAnalysis))
         or inspect.isabstract(analysis_class)
     ):
-        raise TypeError("analysis_cls must be a concrete Analysis subclass.")
+        raise TypeError(
+            "analysis_cls must be a concrete PerUnitAnalysis or BatchAnalysis subclass."
+        )
+    allowed_unit_types = get_args(AnalysisUnitType)
+    if analysis_class.analysis_unit_type not in allowed_unit_types:
+        raise ValueError(
+            "analysis_cls must declare analysis_unit_type as one of "
+            f"{', '.join(repr(value) for value in allowed_unit_types)}."
+        )
     primary_output = step.spec.outputs[0]
     if not isinstance(primary_output.file_type, CsvFile):
         raise TypeError("an analysis step's first output must use CsvFile.")
-    if len(primary_output.file_type.index) != 1:
-        raise ValueError(
-            "an analysis step's primary CSV output must declare exactly one index."
-        )
 
     additional_outputs = step.spec.outputs[1:]
     if (

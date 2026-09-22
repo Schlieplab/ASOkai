@@ -14,6 +14,7 @@ from typing import Any
 
 import click
 
+from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai._pipeline.base import expand_runnable_steps
 from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
@@ -37,22 +38,27 @@ def _step_type_label(step: object) -> str:
     return " / ".join(part.capitalize() for part in _step_category_path(step))
 
 
-def _analysis_scope_label(
+def _analysis_unit_label(
     analysis_class: type | None,
 ) -> str | None:
-    """Return the analysis scope declared by an analysis class."""
+    """Return a label for the analysis unit type and execution model."""
     if analysis_class is None:
         return None
-    return getattr(analysis_class, "scope_label", None)
+    unit_type = getattr(analysis_class, "analysis_unit_type", None)
+    if not isinstance(unit_type, str):
+        return None
+    if issubclass(analysis_class, PerUnitAnalysis):
+        return f"Per {unit_type}"
+    return unit_type.capitalize()
 
 
 def _display_description(pipeline_unit: object) -> str:
     """Return the description displayed for a pipeline unit."""
     description = getattr(pipeline_unit, "description", "")
     if isinstance(pipeline_unit, AnalysisStep):
-        scope = _analysis_scope_label(getattr(pipeline_unit, "analysis_cls", None))
-        if scope:
-            return f"[{scope}] {description}"
+        label = _analysis_unit_label(getattr(pipeline_unit, "analysis_cls", None))
+        if label:
+            return f"[{label}] {description}"
     return description
 
 

@@ -1,10 +1,9 @@
 Base analysis
 =============
 
-``Analysis`` owns iteration and optional shared-memory thread-pool execution.
-Concrete analyses implement ``analyze`` through one of the context-specific
-subclasses. Parallel implementations treat their analysis context and sites
-as read-only.
+``Analysis`` defines a shared row-returning contract. Choose
+``PerUnitAnalysis`` for independent units or ``BatchAnalysis`` for a backend
+that receives the complete collection.
 
 .. autoclass:: ASOkai.Analysis.Analysis
    :members:

@@ -263,12 +263,12 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     assert binding["therapeutic_id"] == therapeutic["id"]
     assert binding["site_id"] == "ENSG00000133703-S00001"
     assert caplog.messages == [
-        "Starting",
+        "Starting Step",
         "Generating gapmer candidates for 1 target sites",
         "Generated 1 therapeutics and 1 bindings",
         f"Writing therapeutics to {therapeutics_output}",
         f"Writing bindings to {bindings_output}",
-        "Completed successfully",
+        "Step Completed successfully",
     ]
 
 

@@ -3,143 +3,95 @@
 Filename: tests/unit/test_analysis_base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Tests for generic analysis base-class execution.
+Description: Tests for per-unit and batch analysis execution.
 License: LGPL-3.0-or-later
 """
 
+from collections.abc import Iterable
 from threading import Lock
-from typing import Any, cast
+from time import sleep
+from typing import ClassVar
 
-from Bio.Seq import Seq
 import pytest
-from GenomeUtils.Genome import Genome
 
-from ASOkai.Analysis import (
-    Analysis,
-    GenomeWideAnalysis,
-    SiteSpecificAnalysis,
-    TargetSpecificAnalysis,
-)
-from ASOkai.Sites import Site
-from ASOkai.Targets import TargetGene
-from ASOkai.Types import Scalar
+from ASOkai.Analysis import Analysis, BatchAnalysis, PerUnitAnalysis
+from ASOkai.Types import AnalysisUnitType, Scalar
 
 
-class FakeSite(Site):
-    def __init__(self, id: str, sequence: str = "AT") -> None:
-        super().__init__(id=id, sequence=Seq(sequence))
+class CountingAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
 
-    def __repr__(self) -> str:
-        return f"FakeSite(id={self.id!r})"
-
-
-class CountingAnalysis(SiteSpecificAnalysis):
-    def analyze(self, site: Site) -> dict[str, Scalar]:
-        return {"length": len(site.sequence)}
+    def analyze_unit(self, unit: int) -> list[dict[str, Scalar]]:
+        sleep((3 - unit) * 0.001)
+        return [{"unit": unit, "hit": hit} for hit in range(unit)]
 
 
-class ContextTargetAnalysis(TargetSpecificAnalysis):
-    def analyze(self, site: Site) -> dict[str, Scalar]:
-        return {"target_id": self.target.id, "site_id": site.id}
+class ContextAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "therapeutic"
+
+    def __init__(self, context: object) -> None:
+        self.context = context
+
+    def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
+        return [{"unit": unit, "context_id": id(self.context)}]
 
 
-class ContextGenomeAnalysis(GenomeWideAnalysis):
-    def analyze(self, site: Site) -> dict[str, Scalar]:
-        return {
-            "genome_id": self.genome.id,
-            "target_id": self.target.id,
-            "site_id": site.id,
-        }
+class RecordingBatch(BatchAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "binding"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[int], int]] = []
+
+    def analyze_batch(
+        self,
+        units: list[int],
+        *,
+        n_threads: int,
+    ) -> Iterable[dict[str, Scalar]]:
+        self.calls.append((units, n_threads))
+        return [{"total": sum(units)}]
 
 
-class FakeTarget:
-    def __init__(self, id):
-        self.id = id
-
-
-class FakeGenome:
-    def __init__(self, id):
-        self.id = id
-        self.unpicklable_state = Lock()
-
-
-def test_site_specific_run_copies_sites_and_analyzes_each_one():
-    sites = [FakeSite("a", "AT"), FakeSite("b", "ATCG")]
-    analysis = CountingAnalysis(sites=sites)
-    sites.clear()
+def test_per_unit_analysis_returns_complete_zero_or_many_rows_in_input_order():
+    analysis = CountingAnalysis()
 
     assert isinstance(analysis, Analysis)
-    assert analysis.run() == {
-        "a": {"length": 2},
-        "b": {"length": 4},
-    }
-    assert analysis() == {
-        "a": {"length": 2},
-        "b": {"length": 4},
-    }
-
-
-def test_site_specific_thread_pool_matches_serial():
-    sites = [FakeSite("a", "AT"), FakeSite("b", "ATCG")]
-
-    assert CountingAnalysis(sites=sites, n_threads=2).run() == CountingAnalysis(
-        sites=sites,
-        n_threads=1,
-    ).run()
+    expected = [
+        {"unit": 1, "hit": 0},
+        {"unit": 2, "hit": 0},
+        {"unit": 2, "hit": 1},
+    ]
+    assert analysis.run(iter([0, 1, 2])) == expected
+    assert analysis.run(iter([0, 1, 2]), n_threads=3) == expected
+    assert analysis.run([], n_threads=2) == []
 
 
 @pytest.mark.parametrize("n_threads", [True, False, 0, -1, 1.5, "2"])
-def test_analysis_rejects_invalid_thread_count(n_threads):
+def test_per_unit_analysis_rejects_invalid_thread_count(n_threads):
     with pytest.raises(ValueError, match="n_threads"):
-        CountingAnalysis(sites=[FakeSite("a")], n_threads=n_threads)
+        CountingAnalysis().run([1], n_threads=n_threads)
 
 
-def test_analysis_rejects_duplicate_site_ids():
-    with pytest.raises(ValueError, match="Duplicate analysis site ID: 'a'"):
-        CountingAnalysis(sites=[FakeSite("a"), FakeSite("a")])
+def test_per_unit_threads_share_unpicklable_constructor_context():
+    context = Lock()
+    analysis = ContextAnalysis(context)
+
+    assert analysis.run(["a", "b"], n_threads=2) == [
+        {"unit": "a", "context_id": id(context)},
+        {"unit": "b", "context_id": id(context)},
+    ]
 
 
-def test_analysis_rejects_unknown_constructor_arguments():
-    with pytest.raises(TypeError, match="unexpected"):
-        cast(Any, CountingAnalysis)(
-            sites=[FakeSite("a")],
-            unexpected=True,
-        )
+def test_batch_receives_the_whole_collection_once_including_empty_input():
+    analysis = RecordingBatch()
+
+    assert analysis.run(iter([1, 2, 3]), n_threads=4) == [{"total": 6}]
+    assert analysis.calls == [([1, 2, 3], 4)]
+    assert analysis.run([]) == [{"total": 0}]
+    assert analysis.calls == [([1, 2, 3], 4), ([], 1)]
 
 
-def test_empty_threaded_analysis_returns_no_results():
-    assert CountingAnalysis(sites=[], n_threads=2).run() == {}
-
-
-def test_target_specific_run_exposes_target_context():
-    target = cast(TargetGene, FakeTarget("target-1"))
-    analysis = ContextTargetAnalysis(target=target, sites=[FakeSite("site-1")])
-
-    assert analysis.run() == {
-        "site-1": {"target_id": "target-1", "site_id": "site-1"},
-    }
-
-
-def test_genome_wide_threads_share_unpicklable_genome_and_target_context():
-    genome = cast(Genome, FakeGenome("genome-1"))
-    target = cast(TargetGene, FakeTarget("target-1"))
-    analysis = ContextGenomeAnalysis(
-        genome=genome,
-        target=target,
-        sites=[FakeSite("site-1"), FakeSite("site-2")],
-        n_threads=2,
-    )
-
-    assert isinstance(analysis, TargetSpecificAnalysis)
-    assert analysis.run() == {
-        "site-1": {
-            "genome_id": "genome-1",
-            "target_id": "target-1",
-            "site_id": "site-1",
-        },
-        "site-2": {
-            "genome_id": "genome-1",
-            "target_id": "target-1",
-            "site_id": "site-2",
-        },
-    }
+@pytest.mark.parametrize("n_threads", [True, False, 0, -1, 1.5, "2"])
+def test_batch_analysis_rejects_invalid_thread_count(n_threads):
+    with pytest.raises(ValueError, match="n_threads"):
+        RecordingBatch().run([1], n_threads=n_threads)

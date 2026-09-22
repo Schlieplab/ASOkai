@@ -11,7 +11,7 @@ from typing import ClassVar
 
 import pytest
 
-from ASOkai.Analysis import SiteSpecificAnalysis
+from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai._pipeline import catalog as pipeline_catalog
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
@@ -26,9 +26,11 @@ from ASOkai._pipeline.validation import (
 )
 
 
-class ExampleAnalysis(SiteSpecificAnalysis):
-    def analyze(self, site):
-        return {"value": 1}
+class ExampleAnalysis(PerUnitAnalysis):
+    analysis_unit_type = "site"
+
+    def analyze_unit(self, site):
+        return [{"site_id": site.id, "value": 1}]
 
 
 class InvalidNameTask:
@@ -211,6 +213,19 @@ def test_step_component_must_declare_an_output():
 )
 def test_analysis_component_must_support_the_shared_execution_flow(step, message):
     with pytest.raises((TypeError, ValueError), match=message):
+        validate_component("step", step)
+
+
+def test_analysis_component_requires_declared_unit_type(monkeypatch):
+    monkeypatch.setattr(ExampleAnalysis, "analysis_unit_type", "query")
+    with pytest.raises(ValueError, match="analysis_unit_type"):
+        validate_component("step", JsonPrimaryOutputStep())
+
+
+def test_analysis_component_always_exposes_thread_count(monkeypatch):
+    step = JsonPrimaryOutputStep()
+    monkeypatch.setattr(step, "supports_multiple_threads", False)
+    with pytest.raises(ValueError, match="n_threads resource"):
         validate_component("step", step)
 
 

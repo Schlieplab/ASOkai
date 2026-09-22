@@ -76,7 +76,5 @@ class IntrinsicFeaturesStep(AnalysisStep):
         outputs=[intrinsic_features_output],
     )
 
-    def analysis_kwargs(self, args) -> dict:
-        return {
-            "sites": args.target_gene.sites,
-        }
+    def analysis_units(self, args):
+        return args.target_gene.sites

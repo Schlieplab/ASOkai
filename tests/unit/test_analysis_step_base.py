@@ -3,16 +3,17 @@
 Filename: tests/unit/test_analysis_step_base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Tests for AnalysisStep template execution.
+Description: Tests for shared analysis-step execution and output contracts.
 License: LGPL-3.0-or-later
 """
 
 from argparse import Namespace
-from typing import Any, cast
+from collections.abc import Iterable
+from typing import Any, ClassVar, cast
 
 import pytest
 
-from ASOkai.Analysis import Analysis
+from ASOkai.Analysis import BatchAnalysis, PerUnitAnalysis
 from ASOkai.Plugins import (
     AnalysisStep,
     CsvFile,
@@ -21,18 +22,22 @@ from ASOkai.Plugins import (
     ScalarParam,
     StepSpec,
 )
-class FakeAnalysis(Analysis):
+from ASOkai.Types import AnalysisUnitType, Scalar
+
+
+class FakeAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
     last_thread_count = None
 
-    def __init__(self, value, n_threads):
+    def __init__(self, value: int) -> None:
         self.value = value
+
+    def run(self, units, *, n_threads=1):
         type(self).last_thread_count = n_threads
+        return super().run(units, n_threads=n_threads)
 
-    def run(self):
-        return {"site-1": {"value": self.value}}
-
-    def analyze(self, site):
-        return {"value": self.value}
+    def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
+        return [{"site_id": unit, "value": self.value}]
 
 
 class FakeAnalysisStep(AnalysisStep):
@@ -42,34 +47,28 @@ class FakeAnalysisStep(AnalysisStep):
     analysis_output = FileOutput(
         "analysis",
         destination="analysis.csv",
-        file_type=CsvFile(
-            index={"site_id": str},
-            columns={"value": int},
-        ),
+        file_type=CsvFile(index={"site_id": str}, columns={"value": int}),
     )
-    spec = StepSpec(
-        params=[ScalarParam("value", int)],
-        outputs=[analysis_output],
-    )
+    spec = StepSpec(params=[ScalarParam("value", int)], outputs=[analysis_output])
 
     def analysis_kwargs(self, args):
         return {"value": args.value}
+
+    def analysis_units(self, args):
+        return ["site-1"]
 
 
 class MissingAnalysisClassStep(FakeAnalysisStep):
     analysis_cls = None
 
 
-class MissingAnalysisKwargsStep(FakeAnalysisStep):
-    analysis_kwargs = AnalysisStep.analysis_kwargs
+class MissingAnalysisUnitsStep(FakeAnalysisStep):
+    analysis_units = AnalysisStep.analysis_units
 
 
-class ConflictingThreadCountStep(FakeAnalysisStep):
-    def analysis_kwargs(self, args):
-        return {
-            "value": args.value,
-            "n_threads": 99,
-        }
+class EmptyAnalysisStep(FakeAnalysisStep):
+    def analysis_units(self, args):
+        return []
 
 
 class InvalidAnalysisKwargsStep(FakeAnalysisStep):
@@ -77,61 +76,43 @@ class InvalidAnalysisKwargsStep(FakeAnalysisStep):
         return cast(Any, None)
 
 
-class IndexColumnAnalysis(FakeAnalysis):
-    def run(self):
-        return {
-            "site-1": {
-                "site_id": "duplicate-index",
-                "value": self.value,
-            },
-        }
+class MissingColumnAnalysis(FakeAnalysis):
+    def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
+        return [{"site_id": unit}]
 
 
-class IndexColumnAnalysisStep(FakeAnalysisStep):
-    analysis_cls = IndexColumnAnalysis
+class MissingColumnStep(FakeAnalysisStep):
+    analysis_cls = MissingColumnAnalysis
 
 
-class MultiOutputAnalysisStep(AnalysisStep):
+class MultiOutputAnalysisStep(FakeAnalysisStep):
     name = "multi-output-analysis"
-    description = "Analysis with CSV and JSON outputs."
-    analysis_cls = FakeAnalysis
     analysis_output = FileOutput(
         "analysis",
         destination="analysis.csv",
-        file_type=CsvFile(
-            index={"site_id": str},
-            columns={"value": int},
-        ),
+        file_type=CsvFile(index={"site_id": str}, columns={"value": int}),
     )
     doubled_output = FileOutput(
         "doubled",
         destination="doubled.csv",
-        file_type=CsvFile(
-            index={"site_id": str},
-            columns={"double_value": int},
-        ),
+        file_type=CsvFile(index={"site_id": str}, columns={"double_value": int}),
     )
     summary_output = FileOutput(
-        "summary",
-        destination="summary.json",
-        file_type=JsonFile(),
+        "summary", destination="summary.json", file_type=JsonFile()
     )
     spec = StepSpec(
         params=[ScalarParam("value", int)],
         outputs=[analysis_output, doubled_output, summary_output],
     )
 
-    def analysis_kwargs(self, args):
-        return {"value": args.value}
-
     def additional_output_values(self, analysis, results):
         return {
             self.doubled_output: [
                 {
-                    "site_id": site_id,
-                    "double_value": cast(int, values["value"]) * 2,
+                    "site_id": row["site_id"],
+                    "double_value": cast(int, row["value"]) * 2,
                 }
-                for site_id, values in results.items()
+                for row in results
             ],
             self.summary_output: {
                 "site_count": len(results),
@@ -142,9 +123,7 @@ class MultiOutputAnalysisStep(AnalysisStep):
 
 class MissingAdditionalOutputValueStep(MultiOutputAnalysisStep):
     def additional_output_values(self, analysis, results):
-        return {
-            self.summary_output: {"site_count": len(results)},
-        }
+        return {self.summary_output: {"site_count": len(results)}}
 
 
 class InvalidAdditionalOutputValuesStep(MultiOutputAnalysisStep):
@@ -157,156 +136,174 @@ class UnexpectedAdditionalOutputValueStep(MultiOutputAnalysisStep):
         values = dict(super().additional_output_values(analysis, results))
         values[
             FileOutput(
-                "unexpected",
-                destination="unexpected.json",
-                file_type=JsonFile(),
+                "unexpected", destination="unexpected.json", file_type=JsonFile()
             )
         ] = {"unexpected": True}
         return values
 
 
-def test_analysis_step_writes_site_keyed_results_as_csv_rows(tmp_path):
-    output = tmp_path / "analysis.csv"
-    args = Namespace(analysis_output=output, value=7, n_threads=3)
+class PairAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "binding"
 
-    result = FakeAnalysisStep().run_from_args(args)
-
-    assert result == 0
-    assert FakeAnalysisStep.analysis_output.file_type.read(output) == [
-        {
-            "site_id": "site-1",
-            "value": 7,
-        }
-    ]
-    assert FakeAnalysis.last_thread_count == 3
+    def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
+        return [
+            {"therapeutic_id": "t1", "site_id": unit, "value": 1},
+            {"therapeutic_id": "t2", "site_id": unit, "value": 2},
+        ]
 
 
-def test_analysis_step_requires_analysis_class(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        value=7,
-        n_threads=1,
+class PairAnalysisStep(AnalysisStep):
+    name = "pair-analysis"
+    description = "Two complete binding rows per site."
+    analysis_cls = PairAnalysis
+    analysis_output = FileOutput(
+        "analysis",
+        destination="pairs.csv",
+        file_type=CsvFile(
+            index={"therapeutic_id": str, "site_id": str},
+            columns={"value": int},
+        ),
     )
+    spec = StepSpec(outputs=[analysis_output])
 
-    with pytest.raises(RuntimeError, match="analysis_cls"):
-        MissingAnalysisClassStep().run_from_args(args)
-
-
-def test_analysis_step_requires_analysis_kwargs_implementation(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        value=7,
-        n_threads=1,
-    )
-
-    with pytest.raises(NotImplementedError, match=r"analysis_kwargs\(\)"):
-        MissingAnalysisKwargsStep().run_from_args(args)
+    def analysis_units(self, args):
+        return ["site-1"]
 
 
-def test_analysis_step_uses_the_framework_allocated_thread_count(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        value=7,
-        n_threads=2,
-    )
-
-    ConflictingThreadCountStep().run_from_args(args)
-
-    assert FakeAnalysis.last_thread_count == 2
+class DuplicatePairAnalysis(PairAnalysis):
+    def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
+        return [
+            {"therapeutic_id": "t1", "site_id": unit, "value": 1},
+            {"therapeutic_id": "t1", "site_id": unit, "value": 2},
+        ]
 
 
-def test_analysis_step_requires_analysis_kwargs_to_be_a_mapping(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        value=7,
-        n_threads=1,
-    )
-
-    with pytest.raises(TypeError, match=r"analysis_kwargs\(\).*mapping"):
-        InvalidAnalysisKwargsStep().run_from_args(args)
+class DuplicatePairStep(PairAnalysisStep):
+    analysis_cls = DuplicatePairAnalysis
 
 
-def test_analysis_step_rejects_result_containing_index_column(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        value=7,
-        n_threads=1,
-    )
+class RecordingBatch(BatchAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
+    calls = 0
+    last_thread_count = None
 
-    with pytest.raises(ValueError, match="contains the index column 'site_id'"):
-        IndexColumnAnalysisStep().run_from_args(args)
+    def analyze_batch(
+        self,
+        units: list[str],
+        *,
+        n_threads: int,
+    ) -> Iterable[dict[str, Scalar]]:
+        type(self).calls += 1
+        type(self).last_thread_count = n_threads
+        return [{"site_id": unit, "value": len(units)} for unit in units]
 
-    assert not args.analysis_output.exists()
+
+class BatchStep(FakeAnalysisStep):
+    analysis_cls = RecordingBatch
+
+    def analysis_kwargs(self, args):
+        return {}
 
 
-def test_analysis_step_writes_multiple_csv_and_json_outputs(tmp_path):
-    analysis_output = tmp_path / "analysis.csv"
-    doubled_output = tmp_path / "doubled.csv"
-    summary_output = tmp_path / "summary.json"
-    args = Namespace(
-        analysis_output=analysis_output,
-        doubled_output=doubled_output,
-        summary_output=summary_output,
+def _args(tmp_path, **outputs):
+    return Namespace(
+        analysis_output=outputs.get("analysis_output", tmp_path / "analysis.csv"),
+        doubled_output=tmp_path / "doubled.csv",
+        summary_output=tmp_path / "summary.json",
         value=7,
         n_threads=3,
     )
 
-    step = MultiOutputAnalysisStep()
-    result = step.run_from_args(args)
 
-    assert result == 0
-    assert MultiOutputAnalysisStep.analysis_output.file_type.read(analysis_output) == [
+def test_analysis_step_writes_complete_rows_and_passes_allocated_threads(tmp_path):
+    args = _args(tmp_path)
+
+    assert FakeAnalysisStep().run_from_args(args) == 0
+    assert FakeAnalysisStep.analysis_output.file_type.read(args.analysis_output) == [
         {"site_id": "site-1", "value": 7}
     ]
-    assert MultiOutputAnalysisStep.doubled_output.file_type.read(doubled_output) == [
-        {"site_id": "site-1", "double_value": 14}
+    assert FakeAnalysis.last_thread_count == 3
+
+
+def test_analysis_step_writes_header_for_empty_results(tmp_path):
+    args = _args(tmp_path)
+    assert EmptyAnalysisStep().run_from_args(args) == 0
+    assert FakeAnalysisStep.analysis_output.file_type.read(args.analysis_output) == []
+
+
+def test_analysis_step_requires_class_and_units(tmp_path):
+    args = _args(tmp_path)
+    with pytest.raises(RuntimeError, match="analysis_cls"):
+        MissingAnalysisClassStep().run_from_args(args)
+    with pytest.raises(NotImplementedError, match=r"analysis_units\(\)"):
+        MissingAnalysisUnitsStep().run_from_args(args)
+
+
+def test_analysis_step_rejects_invalid_context_kwargs(tmp_path):
+    with pytest.raises(TypeError, match=r"analysis_kwargs\(\).*mapping"):
+        InvalidAnalysisKwargsStep().run_from_args(_args(tmp_path))
+
+
+def test_csv_contract_rejects_incomplete_analysis_row(tmp_path):
+    args = _args(tmp_path)
+    with pytest.raises(ValueError, match="missing: value"):
+        MissingColumnStep().run_from_args(args)
+    assert not args.analysis_output.exists()
+
+
+def test_analysis_step_writes_multiple_outputs(tmp_path):
+    args = _args(tmp_path)
+    assert MultiOutputAnalysisStep().run_from_args(args) == 0
+    assert MultiOutputAnalysisStep.doubled_output.file_type.read(
+        args.doubled_output
+    ) == [{"site_id": "site-1", "double_value": 14}]
+    assert MultiOutputAnalysisStep.summary_output.file_type.read(
+        args.summary_output
+    ) == {"site_count": 1, "thread_count": 3}
+
+
+@pytest.mark.parametrize(
+    "step,match",
+    [
+        (MissingAdditionalOutputValueStep, "missing: doubled"),
+        (InvalidAdditionalOutputValuesStep, r"additional_output_values\(\).*mapping"),
+        (UnexpectedAdditionalOutputValueStep, "unexpected: unexpected"),
+    ],
+)
+def test_additional_output_contract_rejects_invalid_values(
+    tmp_path, step, match
+):
+    args = _args(tmp_path)
+    with pytest.raises((TypeError, ValueError), match=match):
+        step().run_from_args(args)
+    assert not args.analysis_output.exists()
+
+
+def test_analysis_step_accepts_composite_indexes_and_multiple_rows(tmp_path):
+    output = tmp_path / "pairs.csv"
+    args = _args(tmp_path, analysis_output=output)
+
+    assert PairAnalysisStep().run_from_args(args) == 0
+    assert PairAnalysisStep.analysis_output.file_type.read(output) == [
+        {"therapeutic_id": "t1", "site_id": "site-1", "value": 1},
+        {"therapeutic_id": "t2", "site_id": "site-1", "value": 2},
     ]
-    assert MultiOutputAnalysisStep.summary_output.file_type.read(summary_output) == {
-        "site_count": 1,
-        "thread_count": 3,
-    }
 
 
-def test_analysis_step_requires_every_additional_output_value(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        doubled_output=tmp_path / "doubled.csv",
-        summary_output=tmp_path / "summary.json",
-        value=7,
-        n_threads=1,
-    )
-
-    with pytest.raises(ValueError, match=r"missing: doubled"):
-        MissingAdditionalOutputValueStep().run_from_args(args)
-
+def test_csv_contract_rejects_duplicate_composite_index(tmp_path):
+    args = _args(tmp_path, analysis_output=tmp_path / "pairs.csv")
+    with pytest.raises(ValueError, match="duplicate index"):
+        DuplicatePairStep().run_from_args(args)
     assert not args.analysis_output.exists()
 
 
-def test_analysis_step_requires_additional_values_to_be_a_mapping(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        doubled_output=tmp_path / "doubled.csv",
-        summary_output=tmp_path / "summary.json",
-        value=7,
-        n_threads=1,
-    )
-
-    with pytest.raises(TypeError, match=r"additional_output_values\(\).*mapping"):
-        InvalidAdditionalOutputValuesStep().run_from_args(args)
-
-    assert not args.analysis_output.exists()
-
-
-def test_analysis_step_rejects_unexpected_additional_output_value(tmp_path):
-    args = Namespace(
-        analysis_output=tmp_path / "analysis.csv",
-        doubled_output=tmp_path / "doubled.csv",
-        summary_output=tmp_path / "summary.json",
-        value=7,
-        n_threads=1,
-    )
-
-    with pytest.raises(ValueError, match=r"unexpected: unexpected"):
-        UnexpectedAdditionalOutputValueStep().run_from_args(args)
-
-    assert not args.analysis_output.exists()
+def test_batch_step_passes_thread_count_to_backend_once(tmp_path):
+    args = _args(tmp_path)
+    RecordingBatch.calls = 0
+    assert BatchStep().run_from_args(args) == 0
+    assert RecordingBatch.calls == 1
+    assert BatchStep.analysis_output.file_type.read(args.analysis_output) == [
+        {"site_id": "site-1", "value": 1}
+    ]
+    assert RecordingBatch.last_thread_count == 3
+    assert "--n-threads" in BatchStep().build_parser().format_help()

@@ -11,11 +11,11 @@ from collections.abc import Iterable
 from typing import ClassVar
 
 from ..Sites import Site
-from ..Types import Scalar
-from ._base import SiteSpecificAnalysis
+from ..Types import AnalysisUnitType, Scalar
+from ._base import PerUnitAnalysis
 
 
-class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
+class IntrinsicFeaturesAnalysis(PerUnitAnalysis):
     """
     Analyzes intrinsic features for each target site.
 
@@ -28,6 +28,8 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
         - **CpG_content**: CpG count divided by sequence length (between 0 and 1).
     """
 
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
+
     supported_features: ClassVar[tuple[str, ...]] = (
         "GC_content",
         "AT_content",
@@ -39,17 +41,13 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
 
     def __init__(
         self,
-        sites: Iterable[Site],
         features: Iterable[str] | None = None,
-        n_threads: int = 1,
     ) -> None:
         """Initialize an intrinsic-feature analysis.
 
         Args:
-            sites: Sites to analyze.
             features: Features to calculate. Defaults to every supported
                 feature.
-            n_threads: Maximum number of worker threads used by ``run``.
 
         Raises:
             ValueError: If an unknown feature is requested.
@@ -64,13 +62,12 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             formatted = ", ".join(repr(name) for name in unknown_features)
             raise ValueError(f"Unknown intrinsic features: {formatted}.")
         self.features = tuple(selected_features)
-        super().__init__(sites, n_threads=n_threads)
 
-    def analyze(self, site: Site) -> dict[str, Scalar]:
+    def analyze_unit(self, site: Site) -> list[dict[str, Scalar]]:
         """Calculate the selected intrinsic features for one site.
 
         Returns:
-            A dictionary mapping feature names to values.
+            One complete row containing the site ID and selected features.
         """
         sequence = str(site.sequence).upper()
         sequence_length = len(sequence)
@@ -88,8 +85,9 @@ class IntrinsicFeaturesAnalysis(SiteSpecificAnalysis):
             "T_content": t_count / denominator,
             "CpG_content": cpg_count / denominator,
         }
-        return {
+        values: dict[str, Scalar] = {
             feature: all_results[feature]
             for feature in self.supported_features
             if feature in self.features
         }
+        return [{"site_id": site.id, **values}]

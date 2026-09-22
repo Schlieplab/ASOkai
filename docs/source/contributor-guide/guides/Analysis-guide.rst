@@ -27,26 +27,21 @@ Implement the calculation
 -------------------------
 
 Add the analysis class under ``src/ASOkai/Analysis`` and export it from
-``ASOkai.Analysis``. Choose the narrowest base class that provides the
-required context:
+``ASOkai.Analysis``. Choose :class:`~ASOkai.Analysis.PerUnitAnalysis` for
+independent analysis units or :class:`~ASOkai.Analysis.BatchAnalysis` when a backend
+needs the entire collection at once. Declare ``analysis_unit_type`` as ``site``,
+``therapeutic``, or ``binding``. A binding unit represents a
+therapeutic-site pair; search queries remain internal values.
 
-- :class:`~ASOkai.Analysis.SiteSpecificAnalysis` for a calculation that only
-  needs each site;
-- :class:`~ASOkai.Analysis.TargetSpecificAnalysis` when it also needs the
-  target; or
-- :class:`~ASOkai.Analysis.GenomeWideAnalysis` when it also needs the genome.
-
-All three scopes still call ``analyze(site)`` and produce one result mapping
-per site. The target-specific and genome-wide bases add shared, read-only
-context; they do not change the output into one aggregate result for the
-whole target or genome.
-
-Implement :meth:`~ASOkai.Analysis.Analysis.analyze`. It returns a mapping from
-column names to scalar values for one site. The inherited
-:meth:`~ASOkai.Analysis.Analysis.run` method applies that calculation to all
-sites and handles shared-memory worker threads, so contributors normally do
-not override it. When more than one worker is configured, ``analyze`` may run
-concurrently and must treat its analysis context and sites as read-only.
+Provide required scientific context, such as a target or genome, through the
+concrete analysis constructor. Units are passed to ``run(units)``.
+Implement ``analyze_unit(unit)`` for a per-unit analysis; it returns zero or
+more complete rows, each containing its index columns. The inherited
+``run(units, n_threads=...)`` uses shared-memory worker threads and preserves
+input order. Parallel implementations must treat shared context and units
+as read-only. A batch analysis implements
+``analyze_batch(units, *, n_threads)``; it receives the configured thread
+count and controls its own parallelism.
 
 Declare the pipeline contract
 -----------------------------
@@ -79,11 +74,10 @@ rule. These rules apply unchanged to analysis steps.
 Analysis outputs
 ~~~~~~~~~~~~~~~~
 
-The first output of an analysis step is its primary CSV table. It must have
-exactly one index column. The keys returned by ``Analysis.run`` become the
-index values, and the values returned by ``analyze`` fill the declared data
-columns. The CSV contract writes a header and validates column names, order,
-scalar types, and unique index values.
+The first output of an analysis step is its primary CSV table. Each row
+returned by ``Analysis.run`` supplies every declared index and data column.
+The CSV contract writes a header and validates column names, order, scalar
+types, and unique index values, including composite indexes.
 
 An analysis step may declare additional CSV or JSON outputs after its primary
 output. When it does, implement ``additional_output_values`` and return a
@@ -93,15 +87,16 @@ written. The base class validates and serializes those values.
 Connect parsed inputs to the analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Implement ``analysis_kwargs(args)`` to construct the keyword arguments for
-``analysis_cls``. File arguments are already parsed and validated through
+Implement ``analysis_units(args)`` to supply analysis units. Override
+``analysis_kwargs(args)`` when the concrete analysis needs constructor context.
+File arguments are already parsed and validated through
 their inherited file contracts. For example, a target-gene JSON input is
 available as ``args.target_gene`` containing a ``TargetGene`` object; the
 contributor should not open or deserialize it again.
 
-The shared :ref:`analysis-step-lifecycle` constructs the analysis, supplies the
-configured worker count, runs it, converts its site-keyed results to CSV rows,
-and writes every declared output.
+The shared :ref:`analysis-step-lifecycle` constructs the analysis, passes the
+configured thread count to its ``run`` method, and writes every declared
+output. All analysis steps expose the standard ``--n-threads`` option.
 
 There is no contributor-defined ``main`` function, input-loading hook,
 metadata payload, or output-writing hook in the standard analysis-step flow.
@@ -160,7 +155,7 @@ The generated page reads the following sources:
    Declare output columns and their types. Describe a column in the analysis
    class docstring with one named bullet::
 
-      class ExampleAnalysis(SiteSpecificAnalysis):
+      class ExampleAnalysis(PerUnitAnalysis):
           """Calculate one value for each target site.
 
           - **example_value**: Length of the target-site sequence.
@@ -244,9 +239,8 @@ Built-in analysis steps live in
 ``src/ASOkai/_pipeline/steps/analysis`` and are added to ``_BUILTIN_STEPS`` in
 ``src/ASOkai/_pipeline/catalog.py``.
 
-Add a built-in analysis class to the API page matching its scope:
-``docs/source/api/modules/Analysis/site-specific.rst``,
-``target-specific.rst``, or ``genome-wide.rst``. Add an ``autoclass`` entry
+Add a built-in analysis class to the API page matching its execution model:
+``docs/source/api/modules/Analysis/per-unit.rst`` or ``batch.rst``. Add an ``autoclass`` entry
 for the class exported from ``ASOkai.Analysis``. Add a minimal step page under
 ``docs/source/steps`` containing ``asokai-step-reference`` with the registered
 step name; the directive generates the page contents from the step contract.

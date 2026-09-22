@@ -3,7 +3,7 @@
 Filename: examples/plugins/example_analysis/src/asokai_example_analysis/analysis_step.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Example external site-specific analysis and its pipeline declaration.
+Description: Example external per-unit analysis and its pipeline declaration.
 License: LGPL-3.0-or-later
 
 The first declared output is the primary analysis CSV. Additional CSV or JSON
@@ -19,10 +19,10 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
-from collections.abc import Iterable
+from typing import ClassVar
 
 from ASOkai import Types
-from ASOkai.Analysis import SiteSpecificAnalysis
+from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai.Plugins import (
     AnalysisStep,
     CreateTargetGeneStep,
@@ -37,28 +37,25 @@ from ASOkai.Plugins import (
 from ASOkai.Sites import Site
 
 
-class ExampleAnalysis(SiteSpecificAnalysis):
+class ExampleAnalysis(PerUnitAnalysis):
     """Report sequence length and whether it reaches a configured minimum.
 
     - **sequence_length**: Number of nucleotides in the target-site sequence.
     - **passes_minimum**: Whether the sequence reaches the configured minimum.
     """
 
-    def __init__(
-        self,
-        sites: Iterable[Site],
-        minimum_length: int,
-        n_threads: int = 1,
-    ) -> None:
-        super().__init__(sites, n_threads=n_threads)
+    analysis_unit_type: ClassVar[Types.AnalysisUnitType] = "site"
+
+    def __init__(self, minimum_length: int) -> None:
         self.minimum_length = minimum_length
 
-    def analyze(self, site: Site) -> dict[str, Types.Scalar]:
+    def analyze_unit(self, site: Site) -> list[dict[str, Types.Scalar]]:
         sequence_length = len(site.sequence)
-        return {
+        return [{
+            "site_id": site.id,
             "sequence_length": sequence_length,
             "passes_minimum": sequence_length >= self.minimum_length,
-        }
+        }]
 
 
 class ExampleAnalysisStep(AnalysisStep):
@@ -119,7 +116,7 @@ class ExampleAnalysisStep(AnalysisStep):
     )
 
     def analysis_kwargs(self, args) -> dict:
-        return {
-            "sites": args.target_gene.sites,
-            "minimum_length": args.minimum_length,
-        }
+        return {"minimum_length": args.minimum_length}
+
+    def analysis_units(self, args):
+        return args.target_gene.sites

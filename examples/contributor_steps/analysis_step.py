@@ -32,10 +32,10 @@ for relationships between scalar parameters that the YAML schema cannot
 express; the method receives values keyed by their ``ScalarParam`` names.
 """
 
-from collections.abc import Iterable
+from typing import ClassVar
 
-from ASOkai.Types import Scalar
-from ASOkai.Analysis import TargetSpecificAnalysis
+from ASOkai.Types import AnalysisUnitType, Scalar
+from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai.Sites import Site
 from ASOkai.Targets import TargetGene
 from ASOkai._pipeline.contracts.file_types import CsvFile
@@ -50,29 +50,26 @@ from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
-class ExampleAnalysis(TargetSpecificAnalysis):
+class ExampleAnalysis(PerUnitAnalysis):
     """Replace this calculation with the new target-context analysis.
 
     - **target_matches**: Number of equal sequences in the selected target.
     """
 
-    def __init__(
-        self,
-        target: TargetGene,
-        sites: Iterable[Site],
-        **kwargs,
-    ) -> None:
-        super().__init__(target=target, sites=sites, **kwargs)
-        # Add target-context initialization here.
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
 
-    def analyze(self, site: Site) -> dict[str, Scalar]:
+    def __init__(self, target: TargetGene) -> None:
+        self.target = target
+
+    def analyze_unit(self, site: Site) -> list[dict[str, Scalar]]:
         # Add per-site analysis code here.
-        return {
+        return [{
+            "site_id": site.id,
             "target_matches": sum(
                 target_site.sequence == site.sequence
                 for target_site in self.target.sites
             ),
-        }
+        }]
 
 
 class ExampleAnalysisStep(AnalysisStep):
@@ -135,7 +132,7 @@ class ExampleAnalysisStep(AnalysisStep):
     )
 
     def analysis_kwargs(self, args) -> dict:
-        return {
-            "sites": args.sites.sites,
-            "target": args.target,
-        }
+        return {"target": args.target}
+
+    def analysis_units(self, args):
+        return args.sites.sites

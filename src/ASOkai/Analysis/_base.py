@@ -3,113 +3,85 @@
 Filename: src/ASOkai/Analysis/_base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: This file defines the base classes for different analysis types.
+Description: Execution models for analyses.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from GenomeUtils.Genome import Genome
-
-from ..Sites import Site
-from ..Targets import TargetGene
-from ..Types import Scalar
+from ..Types import AnalysisUnitType, Scalar
 
 
 class Analysis(ABC):
-    """Abstract base class for computational analysis logic.
+    """Base for analyses that return complete, CSV-compatible result rows."""
 
-    Parallel analyses share their analysis context and sites between worker
-    threads. Implementations must therefore treat that state as read-only
-    while :meth:`run` is executing.
-    """
-
-    scope_label: ClassVar[str | None] = None
-
-    def __init__(
-        self,
-        sites: Iterable[Site],
-        n_threads: int = 1,
-    ) -> None:
-        if type(n_threads) is not int or n_threads < 1:
-            raise ValueError("n_threads must be a positive integer.")
-        self.sites = list(sites)
-        seen_site_ids: set[str] = set()
-        for site in self.sites:
-            if site.id in seen_site_ids:
-                raise ValueError(f"Duplicate analysis site ID: {site.id!r}.")
-            seen_site_ids.add(site.id)
-        self.n_threads = n_threads
-
-    def run(self) -> dict[str, dict[str, Scalar]]:
-        """Execute this analysis over all configured sites.
-
-        ``n_threads`` controls the number of shared-memory worker threads.
-        A value of one executes serially. Threads avoid copying or pickling
-        analysis context such as an in-memory genome.
-        """
-        if not self.sites:
-            return {}
-        if self.n_threads == 1:
-            return dict(self._analyze_site(site) for site in self.sites)
-
-        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
-            return dict(executor.map(self._analyze_site, self.sites))
-
-    def _analyze_site(self, site: Site) -> tuple[str, dict[str, Scalar]]:
-        return site.id, self.analyze(site)
+    analysis_unit_type: ClassVar[AnalysisUnitType | None] = None
 
     @abstractmethod
-    def analyze(self, site: Site) -> dict[str, Scalar]:
-        """Analyze one site and return CSV-compatible scalar values.
-
-        Implementations must not mutate shared analysis context or sites.
-        """
+    def run(
+        self,
+        units: Iterable[Any],
+        *,
+        n_threads: int = 1,
+    ) -> list[dict[str, Scalar]]:
+        """Analyze the supplied analysis units."""
         ...
 
-    def __call__(self) -> dict[str, dict[str, Scalar]]:
-        """Execute this analysis over all configured sites."""
-        return self.run()
 
+class PerUnitAnalysis(Analysis):
+    """Analyze units independently, optionally using shared worker threads.
 
-class SiteSpecificAnalysis(Analysis):
-    """Base class for analyses that produce value dictionaries per site."""
+    Implementations must treat shared context and units as read-only while
+    :meth:`run` is executing with more than one thread.
+    """
 
-    scope_label: ClassVar[str | None] = "Site-specific"
-
-
-class TargetSpecificAnalysis(Analysis):
-    """Base class for per-site analyses that also need target context."""
-
-    scope_label: ClassVar[str | None] = "Target-specific"
-
-    def __init__(
+    def run(
         self,
-        target: TargetGene,
-        sites: Iterable[Site],
+        units: Iterable[Any],
+        *,
         n_threads: int = 1,
-    ) -> None:
-        super().__init__(sites, n_threads=n_threads)
-        self.target = target
+    ) -> list[dict[str, Scalar]]:
+        """Collect zero or more rows per unit in input order."""
+        if type(n_threads) is not int or n_threads < 1:
+            raise ValueError("n_threads must be a positive integer.")
+        analysis_units = list(units)
+        if not analysis_units:
+            return []
+        if n_threads == 1:
+            results = map(self.analyze_unit, analysis_units)
+            return [row for unit_rows in results for row in unit_rows]
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            results = executor.map(self.analyze_unit, analysis_units)
+            return [row for unit_rows in results for row in unit_rows]
+
+    @abstractmethod
+    def analyze_unit(self, unit: Any) -> Iterable[dict[str, Scalar]]:
+        """Return complete result rows for one analysis unit."""
+        ...
 
 
-class GenomeWideAnalysis(TargetSpecificAnalysis):
-    """Base class for per-site analyses that also need genome context."""
+class BatchAnalysis(Analysis):
+    """Pass the whole collection of units to one backend invocation."""
 
-    scope_label: ClassVar[str | None] = "Genome-wide"
-
-    def __init__(
+    def run(
         self,
-        genome: Genome,
-        target: TargetGene,
-        sites: Iterable[Site],
+        units: Iterable[Any],
+        *,
         n_threads: int = 1,
-    ) -> None:
-        super().__init__(
-            target=target,
-            sites=sites,
-            n_threads=n_threads,
-        )
-        self.genome = genome
+    ) -> list[dict[str, Scalar]]:
+        """Pass the collected units and thread count to the backend."""
+        if type(n_threads) is not int or n_threads < 1:
+            raise ValueError("n_threads must be a positive integer.")
+        return list(self.analyze_batch(list(units), n_threads=n_threads))
+
+    @abstractmethod
+    def analyze_batch(
+        self,
+        units: list[Any],
+        *,
+        n_threads: int,
+    ) -> Iterable[dict[str, Scalar]]:
+        """Return complete rows using the supplied thread budget as needed."""
+        ...

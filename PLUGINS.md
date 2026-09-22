@@ -56,12 +56,12 @@ An analysis step normally provides:
 - `FileInput` values sourced from exact producer outputs;
 - one primary CSV `FileOutput`, followed by any additional outputs;
 - a `StepSpec` containing those declarations; and
-- `analysis_kwargs()` to pass loaded inputs and scalar parameters to the
-  analysis class.
+- `analysis_units()` to supply the analysis units and, when needed,
+  `analysis_kwargs()` to pass context to the analysis constructor.
 
 See
 [`analysis_step.py`](examples/plugins/example_analysis/src/asokai_example_analysis/analysis_step.py)
-for a working site-specific example. It also demonstrates typed CSV columns,
+for a working per-unit example. It also demonstrates typed CSV columns,
 configuration-backed scalar parameters, and output path templates.
 
 ASOkai derives dependencies from each `FileInput.source`; contributors do not

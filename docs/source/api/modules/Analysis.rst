@@ -1,13 +1,12 @@
 Analysis
 ========
 
-Analysis interfaces and implementations are grouped by the context available
-to each calculation.
+Analyses are grouped by execution model. Concrete analyses declare their own
+scientific context and analysis unit type.
 
 .. toctree::
    :maxdepth: 2
 
    Analysis/base
-   Analysis/site-specific
-   Analysis/target-specific
-   Analysis/genome-wide
+   Analysis/per-unit
+   Analysis/batch

@@ -160,7 +160,7 @@ def test_list_commands_show_registered_units():
     assert "create-target-gene" in steps.output
     assert "generate-aso-candidates" in steps.output
     assert "intrinsic-features" in steps.output
-    assert "[Site-specific] Computes nucleotide composition" in steps.output
+    assert "[Per site] Computes nucleotide composition" in steps.output
 
     assert tasks.exit_code == 0
     assert "instantiate-target-gene" in tasks.output
@@ -245,7 +245,7 @@ def test_verbose_describe_step_shows_dependency_tree():
     assert result.exit_code == 0
     assert "Type        : Analysis" in result.output
     assert (
-        "Description : [Site-specific] Computes nucleotide composition" in result.output
+        "Description : [Per site] Computes nucleotide composition" in result.output
     )
     assert "Dependencies:" in result.output
     assert "`-- create-target-gene" in result.output

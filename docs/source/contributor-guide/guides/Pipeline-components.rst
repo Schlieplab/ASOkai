@@ -83,11 +83,12 @@ A ``bool`` parameter is a presence flag: it defaults to ``False``, and a true
 value emits its option, such as ``--enabled``, without a following value.
 Generated CWL represents it as a native Boolean input.
 
-Steps must not declare ``n_threads`` themselves. Analysis steps support
-parallel worker threads by default; a core step opts in with
-``supports_multiple_threads = True`` only when its runtime consumes
-``args.n_threads``. ASOkai then supplies the standard ``--n-threads`` argument
-and resolves its value from the shared resource configuration.
+Steps must not declare ``n_threads`` themselves. Every analysis step exposes
+the standard ``--n-threads`` argument, resolved from the shared resource
+configuration. Per-unit analyses use it for ASOkai's worker pool; batch
+analyses receive it in ``analyze_batch`` and manage their own parallelism.
+A core step opts in with ``supports_multiple_threads = True`` only when its
+runtime consumes ``args.n_threads``.
 
 File contracts
 ~~~~~~~~~~~~~~
@@ -243,12 +244,13 @@ both data and receipt files.
 Analysis-step lifecycle
 -----------------------
 
-An ``AnalysisStep`` adds a stricter convention for tabular site results:
+An ``AnalysisStep`` adds a convention for tabular analysis results:
 
-1. its first output is the primary typed CSV with one index column;
-2. ``analysis_kwargs(args)`` returns arguments for ``analysis_cls``;
-3. the base class supplies ``n_threads`` and runs the analysis;
-4. site keys become CSV index values and analysis values become data columns;
+1. its first output is the primary typed CSV;
+2. ``analysis_kwargs(args)`` returns constructor context and
+   ``analysis_units(args)`` supplies analysis units;
+3. the base class passes ``n_threads`` to the analysis and runs it;
+4. analyses return complete rows, including every index column;
 5. optional later outputs receive values from
    ``additional_output_values``; and
 6. every value is written through its declared file contract.

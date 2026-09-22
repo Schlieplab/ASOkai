@@ -419,7 +419,7 @@ def test_analysis_plugin_contract_is_validated(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="concrete Analysis subclass"):
+    with pytest.raises(ValueError, match="concrete PerUnitAnalysis or BatchAnalysis subclass"):
         pipeline_catalog.get_steps()
 
 

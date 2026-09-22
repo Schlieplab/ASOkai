@@ -9,10 +9,10 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar
 
-from ASOkai.Analysis import Analysis
+from ASOkai.Analysis import Analysis, BatchAnalysis, PerUnitAnalysis
 from ASOkai.Types import Scalar
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileOutput
@@ -22,7 +22,7 @@ from ASOkai._pipeline.steps.base import Step
 class AnalysisStep(Step):
     """Analysis step with one primary CSV and optional additional outputs.
 
-    The first ``StepSpec`` output is the primary site-keyed CSV. Additional
+    The first ``StepSpec`` output is the primary result CSV. Additional
     outputs are written from values returned by ``additional_output_values``.
     """
 
@@ -30,9 +30,13 @@ class AnalysisStep(Step):
     supports_multiple_threads = True
 
     def analysis_kwargs(self, args) -> dict[str, Any]:
-        """Build analysis arguments from the inputs already parsed by the step."""
+        """Build concrete-analysis constructor arguments from parsed inputs."""
+        return {}
+
+    def analysis_units(self, args) -> Iterable[Any]:
+        """Return analysis units from inputs already parsed by the step."""
         raise NotImplementedError(
-            f"Analysis step '{self.name}' must implement analysis_kwargs()."
+            f"Analysis step '{self.name}' must implement analysis_units()."
         )
 
     @property
@@ -49,55 +53,27 @@ class AnalysisStep(Step):
         """Return outputs declared after the primary analysis table."""
         return tuple(self.spec.outputs[1:])
 
-    def _output_rows(
+    def _write_primary_output(
         self,
-        results: Mapping[str, Mapping[str, Scalar]],
-    ) -> list[dict[str, Scalar]]:
-        """Combine site identifiers and analysis values into CSV rows."""
+        args,
+        results: list[dict[str, Scalar]],
+    ) -> None:
+        """Write complete rows through the primary CSV contract."""
         output = self._primary_output
         if not isinstance(output.file_type, CsvFile):
             raise TypeError(
                 f"Analysis step '{self.name}' output '{output.name}' "
                 "must use CsvFile."
             )
-
-        index_names = tuple(output.file_type.index)
-        if len(index_names) != 1:
-            raise ValueError(
-                f"Analysis step '{self.name}' output '{output.name}' "
-                "must declare exactly one index column."
-            )
-        index_name = index_names[0]
-
-        rows = []
-        for index_value, values in results.items():
-            if index_name in values:
-                raise ValueError(
-                    f"Analysis result '{index_value}' contains the index "
-                    f"column '{index_name}'."
-                )
-            rows.append({
-                index_name: index_value,
-                **values,
-            })
-        return rows
-
-    def _write_primary_output(
-        self,
-        args,
-        results: Mapping[str, Mapping[str, Scalar]],
-    ) -> None:
-        """Write site-keyed results through the primary CSV contract."""
-        output = self._primary_output
         output.write(
             getattr(args, output.argument_name),
-            self._output_rows(results),
+            results,
         )
 
     def additional_output_values(
         self,
         analysis: Any,
-        results: Mapping[str, Mapping[str, Scalar]],
+        results: list[dict[str, Scalar]],
     ) -> Mapping[FileOutput, Any]:
         """Return values for outputs declared after the primary CSV."""
         if self._additional_outputs:
@@ -169,10 +145,11 @@ class AnalysisStep(Step):
                 f"Analysis step '{self.name}' analysis_kwargs() must return "
                 "a mapping."
             )
-        analysis_kwargs = dict(provided_analysis_kwargs)
-        analysis_kwargs["n_threads"] = args.n_threads
-        analysis = self.analysis_cls(**analysis_kwargs)
-        results = analysis.run()
+        analysis = self.analysis_cls(**dict(provided_analysis_kwargs))
+        units = self.analysis_units(args)
+        if not isinstance(analysis, (PerUnitAnalysis, BatchAnalysis)):
+            raise TypeError("analysis_cls must use PerUnitAnalysis or BatchAnalysis.")
+        results = analysis.run(units, n_threads=args.n_threads)
         provided_additional_values: object = self.additional_output_values(
             analysis,
             results,

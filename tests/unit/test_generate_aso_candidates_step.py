@@ -8,6 +8,7 @@ License: LGPL-3.0-or-later
 """
 
 import json
+import logging
 
 from Bio.Seq import Seq
 from GenomeUtils.Genome import TranscriptLocus
@@ -203,7 +204,7 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
     )
 
 
-def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
+def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     from ASOkai.Targets import TargetGene
 
     site = TranscriptSite(
@@ -226,6 +227,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
     therapeutics_output = tmp_path / "nested" / "therapeutics.json"
     bindings_output = tmp_path / "nested" / "bindings.json"
 
+    caplog.set_level(logging.INFO)
     result = GenerateASOCandidatesStep().run_cli(
         [
             "--k",
@@ -251,13 +253,92 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path):
 
     therapeutics = json.loads(therapeutics_output.read_text())
     bindings = json.loads(bindings_output.read_text())
+    therapeutic = therapeutics["root"][0]
+    binding = bindings["root"][0]
     assert result == 0
-    assert therapeutics[0]["id"] == "ENSG00000133703-S00001-Gapmer"
-    assert therapeutics[0]["left_wing_length"] == 3
-    assert therapeutics[0]["gap_length"] == 10
-    assert therapeutics[0]["right_wing_length"] == 3
-    assert bindings[0]["therapeutic_id"] == therapeutics[0]["id"]
-    assert bindings[0]["site_id"] == "ENSG00000133703-S00001"
+    assert therapeutic["id"] == "ENSG00000133703-S00001-Gapmer"
+    assert therapeutic["left_wing_length"] == 3
+    assert therapeutic["gap_length"] == 10
+    assert therapeutic["right_wing_length"] == 3
+    assert binding["therapeutic_id"] == therapeutic["id"]
+    assert binding["site_id"] == "ENSG00000133703-S00001"
+    assert caplog.messages == [
+        "Starting",
+        "Generating gapmer candidates for 1 target sites",
+        "Generated 1 therapeutics and 1 bindings",
+        f"Writing therapeutics to {therapeutics_output}",
+        f"Writing bindings to {bindings_output}",
+        "Completed successfully",
+    ]
+
+
+def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
+    sites = [
+        TranscriptSite(
+            id=f"ENSG00000133703-S{number:05d}",
+            loci=[TranscriptLocus(f"transcript-{number}", 0, 16)],
+            sequence=Seq(sequence),
+        )
+        for number, sequence in enumerate(
+            ("AAA" + "C" * 10 + "TTT", "CCC" + "A" * 10 + "GGG"),
+            start=1,
+        )
+    ]
+    target = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=32,
+        strand="+",
+        sequence=sites[0].sequence + sites[1].sequence,
+        sites={site.id: site for site in sites},
+    )
+    target_input = tmp_path / "target.json"
+    _write_target_gene(target_input, target)
+    therapeutics_output = tmp_path / "therapeutics.json"
+    bindings_output = tmp_path / "bindings.json"
+
+    result = GenerateASOCandidatesStep().run_cli(
+        [
+            "--k", "16",
+            "--design", "gapmer",
+            "--left-wing-length", "3",
+            "--gap-length", "10",
+            "--right-wing-length", "3",
+            "--mechanism", "rnase-h1",
+            "--target-gene", str(target_input),
+            "--therapeutics-output", str(therapeutics_output),
+            "--bindings-output", str(bindings_output),
+        ]
+    )
+
+    therapeutic_document = json.loads(therapeutics_output.read_text())
+    expected_bindings = [
+        (f"{site.id}-Gapmer", site.id)
+        for site in sites
+    ]
+    assert result == 0
+    assert list(therapeutic_document["objects"]) == ["RNaseH1Mechanism"]
+    assert [
+        item["mechanism"] for item in therapeutic_document["root"]
+    ] == [{"$ref": "#/objects/RNaseH1Mechanism"}] * 2
+    assert [
+        item["id"] for item in therapeutic_document["root"]
+    ] == [therapeutic_id for therapeutic_id, _ in expected_bindings]
+
+    therapeutics = (
+        GenerateASOCandidatesStep.therapeutics_output.file_type.read(
+            therapeutics_output
+        )
+    )
+    bindings = GenerateASOCandidatesStep.bindings_output.file_type.read(
+        bindings_output
+    )
+    assert therapeutics[0].mechanism is therapeutics[1].mechanism
+    assert [
+        (binding.therapeutic_id, binding.site_id) for binding in bindings
+    ] == expected_bindings
 
 
 def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
@@ -298,7 +379,8 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
         ]
     )
 
-    therapeutic = json.loads(therapeutics_output.read_text())[0]
+    document = json.loads(therapeutics_output.read_text())
+    therapeutic = document["root"][0]
     assert result == 0
     assert therapeutic["__class__"] == "ASO"
     assert therapeutic["id"] == "ENSG00000133703-S00001-ASO"
@@ -343,8 +425,14 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
     )
 
     assert result == 0
-    assert json.loads(therapeutics_output.read_text()) == []
-    assert json.loads(bindings_output.read_text()) == []
+    assert json.loads(therapeutics_output.read_text()) == {
+        "root": [],
+        "objects": {},
+    }
+    assert json.loads(bindings_output.read_text()) == {
+        "root": [],
+        "objects": {},
+    }
 
 
 @pytest.mark.parametrize(

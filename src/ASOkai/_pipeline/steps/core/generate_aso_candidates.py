@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+import logging
 from typing import Literal, Mapping, cast
 
 from ASOkai.Antisense import AntisenseTherapeutic, Binding
@@ -22,6 +23,9 @@ from ASOkai._pipeline.contracts.paths import (
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+
+
+logger = logging.getLogger(__name__)
 
 
 _ASO_PATH_FIELDS = {
@@ -185,11 +189,30 @@ class GenerateASOCandidatesStep(CoreStep):
             )
         else:
             raise ValueError(f"Unsupported ASO design: {args.design!r}.")
-        therapeutics, bindings = generator.generate(args.target_gene.sites)
 
+        logger.info(
+            "Generating %s candidates for %d target sites",
+            args.design,
+            len(args.target_gene.sites),
+        )
+        therapeutics, bindings = generator.generate(args.target_gene.sites)
+        logger.info(
+            "Generated %d therapeutics and %d bindings",
+            len(therapeutics),
+            len(bindings),
+        )
+
+        logger.info(
+            "Writing therapeutics to %s",
+            args.therapeutics_output,
+        )
         self.therapeutics_output.write(
             args.therapeutics_output,
             therapeutics,
+        )
+        logger.info(
+            "Writing bindings to %s",
+            args.bindings_output,
         )
         self.bindings_output.write(
             args.bindings_output,

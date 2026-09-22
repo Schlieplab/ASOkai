@@ -143,11 +143,31 @@ def test_typed_json_file_uses_serializable_annotations():
 
     file_type = JsonFile(Data)
 
-    assert json.loads(file_type.dumps(Data(1)))["count"] == 1
-    with pytest.raises(ValueError, match=r"\$.count"):
+    assert json.loads(file_type.dumps(Data(1))) == {
+        "root": {
+            "__class__": "Data",
+            "__module__": "tests.unit.test_file_types",
+            "count": 1,
+        },
+        "objects": {},
+    }
+    with pytest.raises(ValueError, match=r"\$.root.count"):
         file_type.dumps(Data("not-an-integer"))
     with pytest.raises(TypeError, match="requires Data"):
         file_type.dumps(cast(Any, "not-a-Data"))
+
+
+def test_typed_json_file_reads_the_previous_inline_format():
+    class Data(Serializable):
+        count: int
+
+        def __init__(self, count):
+            self.count = count
+            super().__init__()
+
+    restored = JsonFile(Data).loads(json.dumps(Data(1).to_dict()))
+
+    assert restored.count == 1
 
 
 def test_json_file_validation_does_not_construct_domain_values(
@@ -165,10 +185,10 @@ def test_json_file_validation_does_not_construct_domain_values(
     file_type = JsonFile(Data)
     file_type.write(path, Data(1))
 
-    def unexpected_from_dict(cls, data):
+    def unexpected_constructor(self, value):
         raise AssertionError("validate() constructed a domain value")
 
-    monkeypatch.setattr(Data, "from_dict", classmethod(unexpected_from_dict))
+    monkeypatch.setattr(Data, "__init__", unexpected_constructor)
 
     file_type.validate(path)
 

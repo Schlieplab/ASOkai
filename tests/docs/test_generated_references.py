@@ -534,7 +534,7 @@ def test_class_json_contract_owns_only_its_direct_fields() -> None:
     contract_title = contract_section.next_node(nodes.title)
     assert contract_title is not None
     assert contract_title.astext() == "File contract"
-    assert "Example object" in reference
+    assert "Example file" in reference
     assert "__class__" in reference
     assert "ASOkai.Targets._target_gene" in reference
     assert "sites" in reference
@@ -653,7 +653,7 @@ def test_class_contract_omits_an_invalid_schema_derived_example() -> None:
 
     assert "File contract" in reference
     assert "Fields" in reference
-    assert "Example object" not in reference
+    assert "Example file" not in reference
 
 
 def test_opaque_outputs_use_human_readable_format_names() -> None:

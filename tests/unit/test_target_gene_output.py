@@ -76,7 +76,7 @@ def test_steps_declare_target_gene_as_the_json_value_type(
     assert output.file_type.media_type == "application/json"
 
 
-def test_target_gene_roundtrip_uses_the_existing_serializable_shape(
+def test_target_gene_roundtrip_uses_the_graph_serializable_shape(
     output,
     input_contract,
     target_gene,
@@ -84,10 +84,13 @@ def test_target_gene_roundtrip_uses_the_existing_serializable_shape(
     content = output.dumps(target_gene)
     payload = json.loads(content)
 
-    assert payload["__class__"] == "TargetGene"
-    assert payload["__module__"] == "ASOkai.Targets._target_gene"
-    assert payload["sites"]["genomic-site"]["__class__"] == "GenomicSite"
-    assert payload["sites"]["transcript-site"]["__class__"] == "TranscriptSite"
+    target_record = payload["root"]
+    assert payload["objects"] == {}
+    assert target_record["__class__"] == "TargetGene"
+    assert target_record["__module__"] == "ASOkai.Targets._target_gene"
+    assert set(target_record["sites"]) == {"genomic-site", "transcript-site"}
+    assert target_record["sites"]["genomic-site"]["__class__"] == "GenomicSite"
+    assert target_record["sites"]["transcript-site"]["__class__"] == "TranscriptSite"
     assert "schema" not in payload
     assert content.endswith("\n")
 
@@ -139,9 +142,9 @@ def test_target_gene_input_rejects_the_wrong_root_type(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["__class__"] = "Other"
+    payload["root"]["__class__"] = "Other"
 
-    with pytest.raises(ValueError, match=r"\$.__class__"):
+    with pytest.raises(ValueError, match=r"\$.root.__class__"):
         input_contract.loads(json.dumps(payload))
 
 
@@ -162,9 +165,9 @@ def test_target_gene_input_rejects_invalid_core_fields(
     value,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload[field] = value
+    payload["root"][field] = value
 
-    with pytest.raises(ValueError, match=rf"\$.{field}"):
+    with pytest.raises(ValueError, match=rf"\$.root.{field}"):
         input_contract.loads(json.dumps(payload))
 
 
@@ -174,7 +177,8 @@ def test_target_gene_input_rejects_site_key_mismatch(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["sites"]["wrong-key"] = payload["sites"].pop("genomic-site")
+    sites = payload["root"]["sites"]
+    sites["wrong-key"] = sites.pop("genomic-site")
 
     with pytest.raises(ValueError, match="must match site ID 'genomic-site'"):
         input_contract.loads(json.dumps(payload))
@@ -186,9 +190,12 @@ def test_target_gene_input_rejects_non_site_values(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["sites"]["not-a-site"] = 42
+    payload["root"]["sites"]["not-a-site"] = 42
 
-    with pytest.raises(ValueError, match=r"\$.sites.not-a-site"):
+    with pytest.raises(
+        ValueError,
+        match=r"\$.root.sites.not-a-site",
+    ):
         input_contract.loads(json.dumps(payload))
 
 
@@ -208,7 +215,11 @@ def test_target_gene_input_rejects_invalid_runtime_references(
     field,
 ):
     payload = json.loads(output.dumps(target_gene))
-    destination = payload if site_id is None else payload["sites"][site_id]
+    destination = (
+        payload["root"]
+        if site_id is None
+        else payload["root"]["sites"]["genomic-site"]
+    )
     destination[field] = "not-a-genome"
 
     with pytest.raises(ValueError) as raised:
@@ -223,14 +234,15 @@ def test_target_gene_schema_reports_all_structural_errors(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["name"] = []
-    payload["start"] = True
+    target_record = payload["root"]
+    target_record["name"] = []
+    target_record["start"] = True
 
     with pytest.raises(ValueError) as raised:
         input_contract.loads(json.dumps(payload))
 
-    assert "$.name" in str(raised.value)
-    assert "$.start" in str(raised.value)
+    assert "$.root.name" in str(raised.value)
+    assert "$.root.start" in str(raised.value)
 
 
 def test_target_gene_input_preserves_extra_metadata(
@@ -239,7 +251,7 @@ def test_target_gene_input_preserves_extra_metadata(
     target_gene,
 ):
     payload = json.loads(output.dumps(target_gene))
-    payload["source_details"] = {
+    payload["root"]["source_details"] = {
         "label": "external",
         "tags": ["reviewed", "imported"],
     }
@@ -272,5 +284,5 @@ def test_target_gene_output_schema_rejects_subclasses(output):
         sites={},
     )
 
-    with pytest.raises(ValueError, match="does not match the TargetGene schema"):
+    with pytest.raises(ValueError, match=r"\$.root.__class__"):
         output.dumps(cast(Any, target))

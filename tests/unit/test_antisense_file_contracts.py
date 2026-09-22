@@ -120,10 +120,37 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
     assert restored[0].site_id == binding.site_id
 
 
+def test_therapeutic_collection_preserves_one_shared_mechanism():
+    mechanism = RNaseH1Mechanism()
+    therapeutics = [
+        ASO(id="aso-1", sequence=Seq("ACGT"), mechanism=mechanism),
+        ASO(id="aso-2", sequence=Seq("CGTA"), mechanism=mechanism),
+    ]
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+
+    document = json.loads(file_type.dumps(therapeutics))
+
+    assert document["root"][0]["mechanism"] == {
+        "$ref": "#/objects/RNaseH1Mechanism"
+    }
+    assert document["root"][1]["mechanism"] == {
+        "$ref": "#/objects/RNaseH1Mechanism"
+    }
+    assert list(document["objects"]) == ["RNaseH1Mechanism"]
+    assert sum(
+        record.get("__class__") == "RNaseH1Mechanism"
+        for record in document["objects"].values()
+    ) == 1
+
+    restored = file_type.loads(json.dumps(document))
+
+    assert restored[0].mechanism is restored[1].mechanism
+
+
 def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
     file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([gapmer]))
-    document[0]["gap_length"] = 1
+    document["root"][0]["gap_length"] = 1
 
     with pytest.raises(ValueError, match="must equal the sequence length"):
         file_type.loads(json.dumps(document))
@@ -132,14 +159,14 @@ def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
 def test_binding_collection_rejects_invalid_ids():
     file_type = GenerateASOCandidatesStep.bindings_output.file_type
     document = json.loads(file_type.dumps([Binding("aso-1", "site-1")]))
-    document[0]["site_id"] = []
+    document["root"][0]["site_id"] = []
 
-    with pytest.raises(ValueError, match=r"\$\[0\]\.site_id"):
+    with pytest.raises(ValueError, match=r"\$.root\[0\].site_id"):
         file_type.loads(json.dumps(document))
 
 
 def test_typed_collection_schema_rejects_the_wrong_item_type():
     file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
-    with pytest.raises(ValueError, match=r"\$\[0\]"):
+    with pytest.raises(ValueError, match=r"\$.root\[0\]"):
         file_type.dumps(cast(Any, [Binding("aso-1", "site-1")]))

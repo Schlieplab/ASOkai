@@ -7,12 +7,20 @@ Description: Unit tests for the Serializable base class.
 License: LGPL-3.0-or-later
 """
 
+import json
+
 import pytest
 from dataclasses import dataclass
+from typing import Any
 
 from Bio.Seq import Seq
 
 from ASOkai.Utils import Serializable
+from ASOkai.Utils._serializer import (
+    _deserialize_graph,
+    _serialize_graph,
+    _validate_graph,
+)
 from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.contracts.json_schema import build_json_schema
 
@@ -137,6 +145,10 @@ class NestedItem(Serializable):
         super().__init__()
 
 
+class NestedItemSubtype(NestedItem):
+    """Concrete subtype used to verify graph polymorphism."""
+
+
 class SerializableWithNestedItems(Serializable):
     """Serializable containing nested mappings and lists."""
 
@@ -178,6 +190,28 @@ class SerializableWithTuple(Serializable):
 
     def __init__(self, values: tuple[int, ...]):
         self.values = values
+        super().__init__()
+
+
+class SerializablePair(Serializable):
+    """Two typed references used to verify graph identity."""
+
+    first: NestedItem
+    second: NestedItem
+
+    def __init__(self, first: NestedItem, second: NestedItem):
+        self.first = first
+        self.second = second
+        super().__init__()
+
+
+class CyclicSerializable(Serializable):
+    """Serializable used to reject object cycles explicitly."""
+
+    child: "CyclicSerializable | None"
+
+    def __init__(self, child=None):
+        self.child = child
         super().__init__()
 
 
@@ -400,6 +434,30 @@ class TestSerializableInputValidation:
             "details": {"priority": 1},
         }
 
+    @pytest.mark.parametrize(
+        ("nested_value", "type_name"),
+        [
+            (NestedItem(2), "NestedItem"),
+            (Seq("ACGT"), "Seq"),
+            (ExternalLocation("reference-1", 0, 4), "ExternalLocation"),
+        ],
+    )
+    def test_undeclared_metadata_rejects_values_that_lose_their_type(
+        self,
+        nested_value,
+        type_name,
+    ):
+        original = SimpleSerializable(
+            "test",
+            1,
+            metadata={"items": [{"value": nested_value}]},
+        )
+
+        with pytest.raises(TypeError, match=f"plain JSON data.*{type_name}"):
+            original.to_dict()
+        with pytest.raises(TypeError, match=f"plain JSON data.*{type_name}"):
+            JsonFile(SimpleSerializable).dumps(original)
+
     def test_unknown_implementation_is_rejected_without_importing_it(self):
         data = SimpleSerializable(name="test", value=42).to_dict()
         data["__module__"] = "package_that_is_not_installed"
@@ -422,3 +480,218 @@ class TestSerializableInputValidation:
 
         with pytest.raises(TypeError, match="Cannot serialize type tuple"):
             value.to_dict()
+
+
+class TestSerializableGraph:
+    """Test flat object-table serialization and reference reconstruction."""
+
+    def test_shared_object_is_stored_once_and_restored_once(self):
+        shared = NestedItem(1)
+        document = _serialize_graph(SerializablePair(shared, shared))
+
+        assert document == {
+            "root": {
+                "__class__": "SerializablePair",
+                "__module__": "tests.unit.test_serializer",
+                "first": {"$ref": "#/objects/NestedItem"},
+                "second": {"$ref": "#/objects/NestedItem"},
+            },
+            "objects": {
+                "NestedItem": {
+                    "__class__": "NestedItem",
+                    "__module__": "tests.unit.test_serializer",
+                    "value": 1,
+                },
+            },
+        }
+
+        restored = _deserialize_graph(document, SerializablePair)
+
+        assert restored.first is restored.second
+
+    def test_root_list_can_be_reordered_without_breaking_references(self):
+        shared = NestedItem(1)
+        document = _serialize_graph(
+            [
+                SerializablePair(shared, shared),
+                SerializablePair(shared, shared),
+            ]
+        )
+        document["root"].reverse()
+
+        restored = _deserialize_graph(document, list[SerializablePair])
+
+        assert restored[0] is not restored[1]
+        assert restored[0].first is restored[1].first
+
+    def test_repeated_root_object_is_hoisted_but_its_unique_child_is_inline(self):
+        pair = SerializablePair(NestedItem(1), NestedItem(2))
+        document = _serialize_graph([pair, pair])
+
+        assert document["root"] == [
+            {"$ref": "#/objects/SerializablePair"},
+            {"$ref": "#/objects/SerializablePair"},
+        ]
+        assert list(document["objects"]) == ["SerializablePair"]
+        assert document["objects"]["SerializablePair"]["first"]["value"] == 1
+
+        restored = JsonFile(list[SerializablePair]).loads(
+            JsonFile(list[SerializablePair]).dumps([pair, pair])
+        )
+
+        assert restored[0] is restored[1]
+
+    def test_multiple_shared_instances_of_one_class_get_local_suffixes(self):
+        first = NestedItem(1)
+        second = NestedItem(2)
+        document = _serialize_graph([first, first, second, second])
+
+        assert list(document["objects"]) == ["NestedItem-0", "NestedItem-1"]
+        assert document["root"] == [
+            {"$ref": "#/objects/NestedItem-0"},
+            {"$ref": "#/objects/NestedItem-0"},
+            {"$ref": "#/objects/NestedItem-1"},
+            {"$ref": "#/objects/NestedItem-1"},
+        ]
+
+        restored = JsonFile(list[NestedItem]).loads(
+            JsonFile(list[NestedItem]).dumps([first, first, second, second])
+        )
+
+        assert restored[0] is restored[1]
+        assert restored[2] is restored[3]
+        assert restored[0] is not restored[2]
+
+    def test_equal_but_distinct_objects_are_not_merged(self):
+        document = _serialize_graph(
+            SerializablePair(NestedItem(1), NestedItem(1))
+        )
+        restored = _deserialize_graph(document, SerializablePair)
+
+        assert document["objects"] == {}
+        assert restored.first is not restored.second
+
+    def test_declared_base_type_reconstructs_the_concrete_subtype(self):
+        subtype = NestedItemSubtype(1)
+
+        restored = _deserialize_graph(
+            _serialize_graph(SerializablePair(subtype, subtype)),
+            SerializablePair,
+        )
+
+        assert isinstance(restored.first, NestedItemSubtype)
+        assert restored.first is restored.second
+
+    def test_reference_and_class_shaped_metadata_remains_plain_data(self):
+        metadata: dict[str, Any] = {
+            "pointer": {"$ref": "#/objects/ordinary"},
+            "source": {
+                "__class__": "ordinary label",
+                "__module__": "ordinary source",
+            },
+        }
+        original = SimpleSerializable("test", 1, metadata=metadata)
+
+        record_restored = SimpleSerializable.from_dict(original.to_dict())
+        graph_restored = JsonFile(SimpleSerializable).loads(
+            JsonFile(SimpleSerializable).dumps(original)
+        )
+
+        assert record_restored.metadata == metadata
+        assert graph_restored.metadata == metadata
+
+    def test_unknown_reference_is_rejected_by_validation(self):
+        document = _serialize_graph(SerializablePair(NestedItem(1), NestedItem(2)))
+        document["root"]["first"] = {
+            "$ref": "#/objects/missing"
+        }
+
+        with pytest.raises(ValueError, match="Unknown Serializable graph reference"):
+            _validate_graph(document, SerializablePair)
+
+    def test_wrong_type_reference_is_rejected_by_validation(self):
+        document = _serialize_graph(SerializablePair(NestedItem(1), NestedItem(2)))
+        document["root"]["first"] = {"$ref": "#/objects/NestedItem"}
+        document["objects"]["NestedItem"] = SerializablePair(
+            NestedItem(1), NestedItem(2)
+        ).to_dict()
+
+        with pytest.raises(ValueError, match="Unknown NestedItem implementation"):
+            _validate_graph(document, SerializablePair)
+
+    def test_unreferenced_object_is_rejected_by_validation(self):
+        item = NestedItem(1)
+        document = _serialize_graph([item, item])
+        document["objects"]["NestedItem-1"] = NestedItem(2).to_dict()
+
+        with pytest.raises(ValueError, match="Unreferenced Serializable graph"):
+            _validate_graph(document, list[NestedItem])
+
+    def test_invalid_shared_record_is_rejected_by_file_contract(self):
+        item = NestedItem(1)
+        document = _serialize_graph([item, item])
+        document["objects"]["NestedItem"]["value"] = "not-an-integer"
+
+        with pytest.raises(ValueError, match=r"\$.objects.NestedItem.value"):
+            JsonFile(list[NestedItem]).loads(json.dumps(document))
+
+    def test_object_key_must_match_its_record_class(self):
+        item = NestedItem(1)
+        document = _serialize_graph([item, item])
+        document["objects"]["Other-0"] = document["objects"].pop("NestedItem")
+        document["root"] = {"$ref": "#/objects/Other-0"}
+
+        with pytest.raises(ValueError, match="does not identify its NestedItem"):
+            _validate_graph(document, NestedItem)
+
+    def test_cyclic_reference_is_rejected_during_serialization(self):
+        item = CyclicSerializable()
+        item.child = item
+
+        with pytest.raises(ValueError, match="Cyclic Serializable references"):
+            _serialize_graph(item)
+
+    def test_cyclic_reference_is_rejected_during_validation(self):
+        document = {
+            "root": {"$ref": "#/objects/CyclicSerializable"},
+            "objects": {
+                "CyclicSerializable": {
+                    "__class__": "CyclicSerializable",
+                    "__module__": "tests.unit.test_serializer",
+                    "child": {"$ref": "#/objects/CyclicSerializable"},
+                }
+            },
+        }
+
+        with pytest.raises(ValueError, match="Cyclic Serializable graph"):
+            JsonFile(CyclicSerializable).loads(json.dumps(document))
+
+    def test_earlier_all_table_graph_is_still_readable(self):
+        document = {
+            "root": {"$ref": "#/objects/SerializablePair-0"},
+            "objects": {
+                "SerializablePair-0": {
+                    "__class__": "SerializablePair",
+                    "__module__": "tests.unit.test_serializer",
+                    "first": {"$ref": "#/objects/NestedItem-0"},
+                    "second": {"$ref": "#/objects/NestedItem-0"},
+                },
+                "NestedItem-0": {
+                    "__class__": "NestedItem",
+                    "__module__": "tests.unit.test_serializer",
+                    "value": 1,
+                },
+            },
+        }
+
+        restored = JsonFile(SerializablePair).loads(json.dumps(document))
+
+        assert restored.first is restored.second
+
+    def test_existing_record_api_remains_unchanged(self):
+        original = SerializablePair(NestedItem(1), NestedItem(2))
+
+        restored = SerializablePair.from_dict(original.to_dict())
+
+        assert restored.first.value == 1
+        assert restored.second.value == 2

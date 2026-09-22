@@ -261,13 +261,9 @@ def run_plan(
         prefix_log_lines(log_contexts, f"CWL job bundle written to {job_dir}"),
     )
 
-    if len(plan.runs_to_execute) == 1:
-        _log_info(log_contexts, "Running 1 step")
-    else:
-        _log_info(
-            log_contexts,
-            f"Running {len(plan.runs_to_execute)} steps",
-        )
+    step_count = len(plan.runs_to_execute)
+    noun = "step" if step_count == 1 else "steps"
+    _log_info(("run",), f"Running {step_count} {noun}")
     datadir = Path(config["datadir"])
     executor.run(job_dir / "run.cwl", job_dir / "job.yml", datadir)
     _record_published_outputs(plan.runs_to_execute)

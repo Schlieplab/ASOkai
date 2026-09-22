@@ -101,7 +101,6 @@ def _run_identity(run: StepRun) -> dict[str, Any]:
     return {
         "step": run.step.name,
         "step_type": f"{step_type.__module__}.{step_type.__qualname__}",
-        "cache_version": run.step.cache_version,
         "parameters": list(
             run.step.resolved_parameter_values(run.config).items()
         ),

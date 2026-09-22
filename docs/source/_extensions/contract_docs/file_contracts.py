@@ -430,9 +430,12 @@ def json_example(file_type: Any) -> str:
 
     schema = build_json_schema(file_type.value_type)
     example_data = _example_from_schema(schema)
-    content = json.dumps(example_data, indent=4, ensure_ascii=False) + "\n"
-    file_type.loads(content, source="generated documentation example")
-    return content
+    inline_content = json.dumps(example_data, indent=4, ensure_ascii=False) + "\n"
+    value = file_type.loads(
+        inline_content,
+        source="generated documentation example",
+    )
+    return file_type.dumps(value)
 
 
 def _try_json_example(file_type: Any) -> str | None:
@@ -540,10 +543,11 @@ def serializable_contract_nodes(
     contract += nodes.title(text="File contract")
     contract += nodes.paragraph(
         text=(
-            f"This is how ASOkai stores {class_name} in JSON. If a file "
-            "contains a list, every list item follows this contract. "
-            "Fields containing another ASOkai class link to that class's "
-            "own contract."
+            f"This is the JSON record ASOkai stores for {class_name}. "
+            "A JSON file has a root value and an objects table. Objects used "
+            "once are inline; repeatedly used objects move to the table and "
+            "are linked by references. Nested records follow their own class "
+            "contracts."
         )
     )
     contract += nodes.paragraph(
@@ -555,7 +559,7 @@ def serializable_contract_nodes(
     )
     if example is not None:
         example_section = section(
-            "Example object",
+            "Example file",
             [code_block(example, "json")],
         )
         example_section["ids"] = [f"{contract_id}-example"]

@@ -45,18 +45,17 @@ class ParameterStep(Step):
     )
 
 
-class VersionOneStep(Step):
-    name = "versioned-step"
-    description = "Produce the first version of a result."
-    result_output = FileOutput("result", destination="versioned/result.txt")
+class FirstImplementationStep(Step):
+    name = "implementation-step"
+    description = "Produce a result with the first implementation."
+    result_output = FileOutput("result", destination="implementation/result.txt")
     spec = StepSpec(outputs=[result_output])
 
 
-class VersionTwoStep(Step):
-    name = "versioned-step"
-    description = "Produce the second version of a result."
-    cache_version = 2
-    result_output = FileOutput("result", destination="versioned/result.txt")
+class SecondImplementationStep(Step):
+    name = "implementation-step"
+    description = "Produce a result with a different step class."
+    result_output = FileOutput("result", destination="implementation/result.txt")
     spec = StepSpec(outputs=[result_output])
 
 
@@ -137,16 +136,16 @@ def test_parameter_change_invalidates_same_destination(tmp_path):
     assert reusable_output_paths(second) is None
 
 
-def test_cache_version_change_invalidates_same_destination(tmp_path):
+def test_step_type_change_invalidates_same_destination(tmp_path):
     first = StepRun(
-        "versioned-step",
-        VersionOneStep(),
+        "implementation-step",
+        FirstImplementationStep(),
         {"datadir": str(tmp_path)},
     )
     _materialize_and_record(first)
     second = StepRun(
-        "versioned-step",
-        VersionTwoStep(),
+        "implementation-step",
+        SecondImplementationStep(),
         {"datadir": str(tmp_path)},
     )
 

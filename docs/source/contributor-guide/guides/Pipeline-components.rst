@@ -234,13 +234,9 @@ The selected mode does not change override handling. Successful runs write
 receipts in either mode, so changing back to ``signature`` does not require
 another run.
 
-Every step inherits ``cache_version = 1``. Increment this positive integer
-when an implementation change can alter output contents without changing the
-declared parameters, inputs, or destinations. This applies to built-in and
-plugin steps alike and avoids invalidating unrelated runs when the overall
-ASOkai package version changes. Receipts support work reuse and ordinary file
-change detection; they are not
-cryptographic proof against a user who can modify both data and receipt files.
+Receipts support work reuse and ordinaryfile change detection; 
+they are not cryptographic proof against a user who can modify 
+both data and receipt files.
 
 .. _analysis-step-lifecycle:
 

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import inspect
 import sys
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import fields, is_dataclass
+from functools import cache
 from types import NoneType, SimpleNamespace, UnionType
 from typing import (
     Any,
@@ -30,6 +32,14 @@ from Bio.Seq import Seq
 from ..Types import Scalar
 
 
+_REFERENCE_KEY = "$ref"
+_OBJECT_POINTER_PREFIX = "#/objects/"
+
+
+class _GraphCycleError(ValueError):
+    """A Serializable graph contains a cycle the format cannot represent."""
+
+
 class Serializable:
     """
     Base class for objects that can be serialized to a dictionary.
@@ -40,6 +50,7 @@ class Serializable:
     _non_serializable_attrs: ClassVar[set[str]] = set()
 
     @classmethod
+    @cache
     def _inherited_serialized_names(cls) -> dict[str, str]:
         """Return attribute-to-document names declared across the hierarchy."""
         serialized_names: dict[str, str] = {}
@@ -50,6 +61,7 @@ class Serializable:
         return serialized_names
 
     @classmethod
+    @cache
     def _inherited_flattened_attributes(cls) -> frozenset[str]:
         """Return flattened attribute names declared across the hierarchy."""
         flattened_attributes: set[str] = set()
@@ -60,6 +72,7 @@ class Serializable:
         return frozenset(flattened_attributes)
 
     @classmethod
+    @cache
     def _serialized_field_types(cls) -> dict[str, Any]:
         """Return serialized field names and their declared Python types."""
         serialized_fields: dict[str, Any] = {}
@@ -100,6 +113,7 @@ class Serializable:
         return serialized_fields
 
     @classmethod
+    @cache
     def _constructor_parameters(
         cls,
     ) -> Mapping[str, inspect.Parameter]:
@@ -107,6 +121,7 @@ class Serializable:
         return inspect.signature(cls.__init__).parameters
 
     @classmethod
+    @cache
     def _accepts_extra_fields(cls) -> bool:
         """Return whether the constructor accepts keyword metadata."""
         return any(
@@ -141,21 +156,29 @@ class Serializable:
             setattr(self, key, value)
 
     def to_dict(self) -> dict[str, Any]:
-        """ 
-        Convert the object to a dictionary.
-        """
+        """Convert this object to its standalone record representation."""
+        return self._to_record()
+
+    def _to_record(
+        self,
+        *,
+        graph: _GraphEncoder | None = None,
+    ) -> dict[str, Any]:
+        """Serialize one object record, optionally hoisting nested objects."""
         data: dict[str, Any] = {
-            '__class__': self.__class__.__name__,
-            '__module__': self.__class__.__module__
+            "__class__": self.__class__.__name__,
+            "__module__": self.__class__.__module__,
         }
         for key, value in self.__dict__.items():
-            data.update(self._serialize_attribute(key, value))
+            data.update(self._serialize_attribute(key, value, graph=graph))
         return data
-    
+
     def _serialize_attribute(
         self,
         attribute_name: str,
         value: Any,
+        *,
+        graph: _GraphEncoder | None = None,
     ) -> dict[str, Any]:
         """
         Serialize an attribute to a dictionary.
@@ -163,7 +186,7 @@ class Serializable:
         if attribute_name in self._non_serializable_attrs:
             return {}
         if attribute_name in type(self)._inherited_flattened_attributes():
-            serialized_value = self._serialize_value(value)
+            serialized_value = self._serialize_value(value, graph=graph)
             if not isinstance(serialized_value, dict):
                 raise TypeError(
                     f"Flattened attribute {attribute_name!r} must serialize "
@@ -175,10 +198,16 @@ class Serializable:
             attribute_name,
             attribute_name,
         )
-        return {serialized_name: self._serialize_value(value)}
+        if serialized_name not in type(self)._serialized_field_types():
+            _require_plain_json_data(value)
+        return {serialized_name: self._serialize_value(value, graph=graph)}
 
-
-    def _serialize_value(self, value: Any) -> Any:
+    def _serialize_value(
+        self,
+        value: Any,
+        *,
+        graph: _GraphEncoder | None = None,
+    ) -> Any:
         """
         Default method to serialize a value to a dictionary.
         """
@@ -187,19 +216,27 @@ class Serializable:
         elif _is_scalar(value):
             return value
         elif isinstance(value, Serializable):
+            if graph is not None:
+                return graph.encode_object(value)
             return value.to_dict()
         elif is_dataclass(value) and not isinstance(value, type):
             return {
-                field.name: self._serialize_value(getattr(value, field.name))
+                field.name: self._serialize_value(
+                    getattr(value, field.name),
+                    graph=graph,
+                )
                 for field in fields(value)
                 if field.init
             }
         elif isinstance(value, dict):
             if any(type(key) is not str for key in value):
                 raise TypeError("Serialized mappings must have string keys.")
-            return {k: self._serialize_value(v) for k, v in value.items()}
+            return {
+                key: self._serialize_value(item, graph=graph)
+                for key, item in value.items()
+            }
         elif isinstance(value, list):
-            return [self._serialize_value(item) for item in value]
+            return [self._serialize_value(item, graph=graph) for item in value]
         else:
             raise TypeError(f"Cannot serialize type {type(value).__name__}")
 
@@ -208,23 +245,21 @@ class Serializable:
         cls,
         value_data: Any,
         expected_type: Any = Any,
+        *,
+        graph: _GraphDecoder | None = None,
     ) -> Any:
         """
         Default method to deserialize a value from a dictionary.
         """
         if expected_type is Any:
             if isinstance(value_data, list):
-                return [cls._deserialize_value(item) for item in value_data]
+                return [
+                    cls._deserialize_value(item, graph=graph)
+                    for item in value_data
+                ]
             if isinstance(value_data, dict):
-                if '__type__' in value_data:
-                    raise ValueError(
-                        "Legacy serialized payloads using '__type__' are not "
-                        "supported."
-                    )
-                if '__class__' in value_data and '__module__' in value_data:
-                    return Serializable.from_dict(value_data)
                 return {
-                    key: cls._deserialize_value(value)
+                    key: cls._deserialize_value(value, graph=graph)
                     for key, value in value_data.items()
                 }
             return value_data
@@ -236,7 +271,11 @@ class Serializable:
             errors: list[TypeError | ValueError] = []
             for alternative in type_arguments:
                 try:
-                    return cls._deserialize_value(value_data, alternative)
+                    return cls._deserialize_value(
+                        value_data,
+                        alternative,
+                        graph=graph,
+                    )
                 except (TypeError, ValueError) as error:
                     errors.append(error)
             raise TypeError(
@@ -284,7 +323,7 @@ class Serializable:
                 )
             item_type = type_arguments[0]
             return [
-                cls._deserialize_value(item, item_type)
+                cls._deserialize_value(item, item_type, graph=graph)
                 for item in value_data
             ]
 
@@ -295,9 +334,10 @@ class Serializable:
                 raise TypeError("Serialized mappings must have string keys.")
             value_type = type_arguments[1]
             return {
-                cls._deserialize_value(key, str): cls._deserialize_value(
+                cls._deserialize_value(key, str, graph=graph): cls._deserialize_value(
                     value,
                     value_type,
+                    graph=graph,
                 )
                 for key, value in value_data.items()
             }
@@ -306,9 +346,15 @@ class Serializable:
             isinstance(expected_type, type)
             and issubclass(expected_type, Serializable)
         ):
+            if graph is not None:
+                if _is_reference(value_data):
+                    return graph.resolve(value_data, expected_type)
+                if not isinstance(value_data, dict):
+                    raise TypeError("Expected an inline record or $ref.")
+                return expected_type._from_record(value_data, graph=graph)
             if not isinstance(value_data, dict):
                 raise TypeError("Expected a serialized object mapping.")
-            return expected_type.from_dict(value_data)
+            return expected_type._from_record(value_data)
 
         if isinstance(expected_type, type) and is_dataclass(expected_type):
             if not isinstance(value_data, dict):
@@ -329,6 +375,7 @@ class Serializable:
                 field.name: cls._deserialize_value(
                     value_data[field.name],
                     field_types.get(field.name, Any),
+                    graph=graph,
                 )
                 for field in fields(expected_type)
                 if field.init and field.name in value_data
@@ -347,12 +394,24 @@ class Serializable:
         """
         Create an object from a dictionary.
         """
-        if not (isinstance(data, dict) and '__class__' in data and '__module__' in data):
+        return cast(Self, cls._from_record(data))
+
+    @classmethod
+    def _from_record(
+        cls,
+        data: dict[str, Any],
+        *,
+        graph: _GraphDecoder | None = None,
+    ) -> Serializable:
+        """Construct one object from a standalone or graph record."""
+        if not (
+            isinstance(data, dict) and "__class__" in data and "__module__" in data
+        ):
             raise ValueError("Data is not a valid serialized object dictionary.")
 
         data = data.copy()
-        module_name = data.pop('__module__')
-        class_name = data.pop('__class__')
+        module_name = data.pop("__module__")
+        class_name = data.pop("__class__")
         cls_from_data = cls._resolve_serialized_class(
             module_name,
             class_name,
@@ -380,7 +439,8 @@ class Serializable:
                         f"{cls_from_data.__name__}."
                     )
                 init_args[serialized_name] = cls_from_data._deserialize_value(
-                    value
+                    value,
+                    graph=graph,
                 )
                 continue
 
@@ -401,9 +461,10 @@ class Serializable:
             init_args[serialized_name] = cls_from_data._deserialize_value(
                 value,
                 serialized_field_types[serialized_name],
+                graph=graph,
             )
 
-        return cast(Self, cls_from_data(**init_args))
+        return cls_from_data(**init_args)
 
     @classmethod
     def _resolve_serialized_class(
@@ -475,3 +536,417 @@ def _declared_field_types(
 def _is_scalar(value: Any) -> bool:
     """Return whether a value is a supported serialized scalar."""
     return value is None or type(value) in (str, int, float, bool)
+
+
+def _require_plain_json_data(value: Any) -> None:
+    """Reject object values in undeclared metadata that cannot round-trip."""
+    if _is_scalar(value):
+        return
+    if isinstance(value, list):
+        for item in value:
+            _require_plain_json_data(item)
+        return
+    if isinstance(value, dict):
+        if any(type(key) is not str for key in value):
+            raise TypeError("Serialized mappings must have string keys.")
+        for item in value.values():
+            _require_plain_json_data(item)
+        return
+    raise TypeError(
+        "Undeclared Serializable attributes must contain plain JSON data; "
+        f"received {type(value).__name__}."
+    )
+
+
+class _GraphEncoder:
+    """Keep unique objects inline and hoist repeatedly referenced instances."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, dict[str, Any]] = {}
+        self._instances: dict[int, Serializable] = {}
+        self._reference_counts: Counter[int] = Counter()
+        self._seen_objects: set[int] = set()
+        self._keys_by_identity: dict[int, str] = {}
+        self._active: set[int] = set()
+
+    def encode(self, value: Any) -> dict[str, Any]:
+        self._count_references(value)
+        shared = [
+            instance
+            for identity, instance in self._instances.items()
+            if self._reference_counts[identity] > 1
+        ]
+        class_counts = Counter(type(instance).__name__ for instance in shared)
+        next_index: Counter[str] = Counter()
+        for instance in shared:
+            class_name = type(instance).__name__
+            key = (
+                class_name
+                if class_counts[class_name] == 1
+                else f"{class_name}-{next_index[class_name]}"
+            )
+            next_index[class_name] += 1
+            self._keys_by_identity[id(instance)] = key
+        return {
+            "root": self._encode_value(value),
+            "objects": self.objects,
+        }
+
+    def _count_references(self, value: Any) -> None:
+        """Count incoming object edges while visiting each object's fields once."""
+        if isinstance(value, Serializable):
+            identity = id(value)
+            self._instances[identity] = value
+            self._reference_counts[identity] += 1
+            if identity in self._active:
+                raise _GraphCycleError(
+                    "Cyclic Serializable references are not supported."
+                )
+            if identity in self._seen_objects:
+                return
+            self._seen_objects.add(identity)
+            children = (
+                item
+                for name, item in value.__dict__.items()
+                if name not in value._non_serializable_attrs
+            )
+        elif is_dataclass(value) and not isinstance(value, type):
+            identity = id(value)
+            children = (
+                getattr(value, field.name)
+                for field in fields(value)
+                if field.init
+            )
+        elif isinstance(value, dict):
+            identity = id(value)
+            children = iter(value.values())
+        elif isinstance(value, list):
+            identity = id(value)
+            children = iter(value)
+        else:
+            return
+
+        if identity in self._active:
+            raise _GraphCycleError("Cyclic serialized values are not supported.")
+        self._active.add(identity)
+        try:
+            for child in children:
+                self._count_references(child)
+        finally:
+            self._active.remove(identity)
+
+    def encode_object(self, value: Serializable) -> dict[str, Any]:
+        identity = id(value)
+        key = self._keys_by_identity.get(identity)
+        if identity in self._active:
+            raise _GraphCycleError(
+                "Cyclic Serializable references are not supported."
+            )
+        if key is not None and key in self.objects:
+            return {_REFERENCE_KEY: _object_pointer(key)}
+        if key is not None:
+            self.objects[key] = {}
+        self._active.add(identity)
+        try:
+            record = value._to_record(graph=self)
+        finally:
+            self._active.remove(identity)
+        if key is None:
+            return record
+        self.objects[key] = record
+        return {_REFERENCE_KEY: _object_pointer(key)}
+
+    def _encode_value(self, value: Any) -> Any:
+        if isinstance(value, Serializable):
+            return self.encode_object(value)
+        if isinstance(value, Seq):
+            return str(value)
+        if _is_scalar(value):
+            return value
+        if is_dataclass(value) and not isinstance(value, type):
+            return {
+                field.name: self._encode_value(getattr(value, field.name))
+                for field in fields(value)
+                if field.init
+            }
+        if isinstance(value, dict):
+            if any(type(key) is not str for key in value):
+                raise TypeError("Serialized mappings must have string keys.")
+            return {
+                key: self._encode_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._encode_value(item) for item in value]
+        raise TypeError(f"Cannot serialize type {type(value).__name__}")
+
+
+class _GraphValidator:
+    """Validate typed references without constructing domain objects."""
+
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        _validate_graph_envelope(data)
+        objects = data["objects"]
+        assert isinstance(objects, dict)
+        self.root = data["root"]
+        self._records: dict[str, dict[str, Any]] = {}
+        for key, record in objects.items():
+            if type(key) is not str or not isinstance(record, dict):
+                raise TypeError(
+                    "Serializable graph objects must map string keys to records."
+                )
+            self._records[key] = record
+        self._visited: set[str] = set()
+        self._active: set[str] = set()
+
+    def validate(self, expected_type: Any) -> None:
+        self._validate_value(self.root, expected_type)
+        unused = set(self._records) - self._visited
+        if unused:
+            names = ", ".join(sorted(unused))
+            raise ValueError(f"Unreferenced Serializable graph objects: {names}.")
+
+    def _validate_value(self, value: Any, expected_type: Any) -> None:
+        if expected_type is Any:
+            return
+
+        origin = get_origin(expected_type)
+        type_arguments = get_args(expected_type)
+
+        if origin in (Union, UnionType):
+            errors: list[TypeError | ValueError] = []
+            visited_before = self._visited.copy()
+            for alternative in type_arguments:
+                try:
+                    self._validate_value(value, alternative)
+                    return
+                except (TypeError, ValueError) as error:
+                    if isinstance(error, _GraphCycleError):
+                        raise
+                    self._visited = visited_before.copy()
+                    errors.append(error)
+            raise TypeError(
+                f"Value {value!r} does not match {expected_type!r}."
+            ) from errors[-1]
+
+        if origin is Literal:
+            if not any(
+                type(value) is type(option) and value == option
+                for option in type_arguments
+            ):
+                raise ValueError(
+                    f"Value {value!r} is not one of {type_arguments!r}."
+                )
+            return
+
+        if expected_type is Seq:
+            if type(value) is not str:
+                raise TypeError("Seq values must be serialized as strings.")
+            return
+        if expected_type is NoneType:
+            if value is not None:
+                raise TypeError("Expected null.")
+            return
+        if expected_type in (str, int, float, bool):
+            accepted_types = (int, float) if expected_type is float else (expected_type,)
+            if type(value) not in accepted_types:
+                raise TypeError(f"Expected {expected_type.__name__}.")
+            return
+
+        if origin is list:
+            if not isinstance(value, list) or len(type_arguments) != 1:
+                raise TypeError("Expected a typed list.")
+            for item in value:
+                self._validate_value(item, type_arguments[0])
+            return
+
+        if origin in (dict, Mapping):
+            if (
+                not isinstance(value, dict)
+                or len(type_arguments) != 2
+                or type_arguments[0] is not str
+            ):
+                raise TypeError("Expected a string-keyed mapping.")
+            for item in value.values():
+                self._validate_value(item, type_arguments[1])
+            return
+
+        if (
+            isinstance(expected_type, type)
+            and issubclass(expected_type, Serializable)
+        ):
+            if _is_reference(value):
+                self._validate_reference(value, expected_type)
+            else:
+                if not isinstance(value, dict):
+                    raise TypeError("Expected an inline record or $ref.")
+                self._validate_record(value, expected_type)
+            return
+
+        if isinstance(expected_type, type) and is_dataclass(expected_type):
+            if not isinstance(value, dict):
+                raise TypeError("Expected a dataclass mapping.")
+            field_types = get_type_hints(expected_type)
+            for field in fields(expected_type):
+                if field.init and field.name in value:
+                    self._validate_value(
+                        value[field.name],
+                        field_types.get(field.name, Any),
+                    )
+            return
+
+        raise TypeError(
+            f"Cannot validate values annotated as {expected_type!r}."
+        )
+
+    def _validate_reference(
+        self,
+        reference: Any,
+        expected_type: type[Serializable],
+    ) -> None:
+        key = _reference_key(reference)
+        try:
+            record = self._records[key]
+        except KeyError as error:
+            raise ValueError(
+                f"Unknown Serializable graph reference {_object_pointer(key)!r}."
+            ) from error
+
+        actual_type = expected_type._resolve_serialized_class(
+            record.get("__module__"),
+            record.get("__class__"),
+        )
+        class_name = actual_type.__name__
+        index = key.removeprefix(f"{class_name}-")
+        if key != class_name and not (
+            key.startswith(f"{class_name}-") and index.isdigit()
+        ):
+            raise ValueError(
+                f"Object key {key!r} does not identify its "
+                f"{class_name} record."
+            )
+        if key in self._active:
+            raise _GraphCycleError(
+                "Cyclic Serializable graph references are not supported."
+            )
+        if key in self._visited:
+            return
+
+        self._active.add(key)
+        try:
+            self._validate_record(record, expected_type)
+        finally:
+            self._active.remove(key)
+        self._visited.add(key)
+
+    def _validate_record(
+        self,
+        record: dict[str, Any],
+        expected_type: type[Serializable],
+    ) -> None:
+        actual_type = expected_type._resolve_serialized_class(
+            record.get("__module__"),
+            record.get("__class__"),
+        )
+        for field_name, field_type in actual_type._serialized_field_types().items():
+            if field_name in record:
+                self._validate_value(record[field_name], field_type)
+
+
+class _GraphDecoder:
+    """Resolve typed references from a flat Serializable object table."""
+
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        _validate_graph_envelope(data)
+        objects = data["objects"]
+        assert isinstance(objects, dict)
+        self.root = data["root"]
+        self._records = cast(dict[str, dict[str, Any]], objects)
+        self._instances: dict[str, Serializable] = {}
+        self._active: set[str] = set()
+
+    def decode(self, expected_type: Any) -> Any:
+        return Serializable._deserialize_value(
+            self.root,
+            expected_type,
+            graph=self,
+        )
+
+    def resolve(
+        self,
+        reference: Any,
+        expected_type: type[Serializable],
+    ) -> Serializable:
+        key = _reference_key(reference)
+        existing = self._instances.get(key)
+        if existing is not None:
+            if not isinstance(existing, expected_type):
+                raise TypeError(
+                    f"Reference {_object_pointer(key)!r} resolves to "
+                    f"{type(existing).__name__}, expected {expected_type.__name__}."
+                )
+            return existing
+        if key in self._active:
+            raise _GraphCycleError(
+                "Cyclic Serializable graph references are not supported."
+            )
+
+        record = self._records[key]
+        self._active.add(key)
+        try:
+            instance = expected_type._from_record(record, graph=self)
+        finally:
+            self._active.remove(key)
+        if not isinstance(instance, expected_type):
+            raise TypeError(
+                f"Reference {_object_pointer(key)!r} resolves to "
+                f"{type(instance).__name__}, expected {expected_type.__name__}."
+            )
+        self._instances[key] = instance
+        return instance
+
+
+def _serialize_graph(value: Any) -> dict[str, Any]:
+    """Serialize a complete value using one flat Serializable object table."""
+    return _GraphEncoder().encode(value)
+
+
+def _validate_graph(data: Mapping[str, Any], expected_type: Any) -> None:
+    """Validate graph references and types without constructing objects."""
+    _GraphValidator(data).validate(expected_type)
+
+
+def _deserialize_graph(data: Mapping[str, Any], expected_type: Any) -> Any:
+    """Deserialize a validated graph and preserve shared object references."""
+    return _GraphDecoder(data).decode(expected_type)
+
+
+def _validate_graph_envelope(data: Mapping[str, Any]) -> None:
+    if not isinstance(data, Mapping):
+        raise TypeError("A Serializable graph document must be a mapping.")
+    if set(data) != {"root", "objects"}:
+        raise ValueError(
+            "A Serializable graph document requires exactly root and objects."
+        )
+    if not isinstance(data["objects"], dict):
+        raise TypeError("Serializable graph objects must be a mapping.")
+
+
+def _is_reference(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == {_REFERENCE_KEY}
+
+
+def _reference_key(reference: Any) -> str:
+    if not _is_reference(reference):
+        raise TypeError("A Serializable graph reference must contain only $ref.")
+    pointer = reference[_REFERENCE_KEY]
+    if type(pointer) is not str or not pointer.startswith(_OBJECT_POINTER_PREFIX):
+        raise ValueError(f"Invalid Serializable graph reference {pointer!r}.")
+    key = pointer.removeprefix(_OBJECT_POINTER_PREFIX)
+    if not key or "/" in key or "~" in key:
+        raise ValueError(f"Invalid Serializable graph reference {pointer!r}.")
+    return key
+
+
+def _object_pointer(key: str) -> str:
+    return f"{_OBJECT_POINTER_PREFIX}{key}"

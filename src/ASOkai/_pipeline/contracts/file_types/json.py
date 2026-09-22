@@ -14,22 +14,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, get_args, get_origin
 
-from ASOkai.Utils._serializer import Serializable
+from ASOkai.Utils._serializer import (
+    Serializable,
+    _deserialize_graph,
+    _serialize_graph,
+    _validate_graph,
+)
 from ASOkai._pipeline.contracts.json_schema import (
     json_file_type_name,
     validate_json_data,
+    validate_json_graph_data,
 )
 
 from .base import FileType
 
 
-def _to_json_data(
+def _validate_python_value(
     expected_type: Any,
     value: object,
     *,
     path: str = "$",
-) -> Any:
-    """Convert domain values into JSON data following a JsonFile declaration."""
+) -> None:
+    """Validate the Python shape declared by a typed JsonFile."""
     if get_origin(expected_type) is list:
         if type(value) is not list:
             raise TypeError(
@@ -37,14 +43,13 @@ def _to_json_data(
                 f"at {path}; received {type(value).__name__}."
             )
         expected_item_type = get_args(expected_type)[0]
-        return [
-            _to_json_data(
+        for index, item in enumerate(value):
+            _validate_python_value(
                 expected_item_type,
                 item,
                 path=f"{path}[{index}]",
             )
-            for index, item in enumerate(value)
-        ]
+        return
 
     expected_type_name = json_file_type_name(expected_type)
     if not isinstance(value, Serializable):
@@ -52,17 +57,13 @@ def _to_json_data(
             f"JsonFile requires {expected_type_name} at {path}; "
             f"received {type(value).__name__}."
         )
-    json_data = value.to_dict()
-    if not isinstance(json_data, dict):
-        raise TypeError("Serializable.to_dict() must return a dictionary.")
-    return json_data
 
 
 def _from_json_data(
     expected_type: Any,
     json_data: object,
 ) -> Any:
-    """Reconstruct domain values from validated JSON data."""
+    """Reconstruct domain values from the earlier inline representation."""
     if get_origin(expected_type) is list:
         expected_item_type = get_args(expected_type)[0]
         return [
@@ -72,6 +73,11 @@ def _from_json_data(
 
     serializable_type = cast(type[Serializable], expected_type)
     return serializable_type.from_dict(cast(dict[str, Any], json_data))
+
+
+def _is_graph_document(json_data: object) -> bool:
+    """Return whether parsed JSON uses the Serializable graph envelope."""
+    return isinstance(json_data, dict) and set(json_data) == {"root", "objects"}
 
 
 @dataclass(frozen=True, init=False)
@@ -121,6 +127,11 @@ class JsonFile(FileType):
         expected_type_name = json_file_type_name(expected_type)
 
         try:
+            if _is_graph_document(json_data):
+                return _deserialize_graph(
+                    cast(dict[str, Any], json_data),
+                    expected_type,
+                )
             return _from_json_data(expected_type, json_data)
         except (ImportError, AttributeError, TypeError, ValueError) as error:
             raise ValueError(
@@ -149,7 +160,11 @@ class JsonFile(FileType):
         expected_type_name = json_file_type_name(expected_type)
 
         try:
-            validate_json_data(expected_type, json_data)
+            if _is_graph_document(json_data):
+                validate_json_graph_data(expected_type, json_data)
+                _validate_graph(cast(dict[str, Any], json_data), expected_type)
+            else:
+                validate_json_data(expected_type, json_data)
         except (ImportError, AttributeError, TypeError, ValueError) as error:
             raise ValueError(
                 f"Invalid {expected_type_name} from {source}: {error}"
@@ -162,8 +177,10 @@ class JsonFile(FileType):
         if expected_type is not None:
             expected_type_name = json_file_type_name(expected_type)
             try:
-                json_data = _to_json_data(expected_type, value)
-                validate_json_data(expected_type, json_data)
+                _validate_python_value(expected_type, value)
+                json_data = _serialize_graph(value)
+                validate_json_graph_data(expected_type, json_data)
+                _validate_graph(json_data, expected_type)
             except ValueError as error:
                 raise ValueError(
                     f"Cannot serialize {expected_type_name}: {error}"

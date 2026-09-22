@@ -196,6 +196,8 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
     assert result == 0
     assert output.exists()
     payload = json.loads(output.read_text())
+    assert payload["objects"] == {}
+    payload = payload["root"]
     assert payload["__class__"] == "TargetGene"
     assert payload["__module__"] == "ASOkai.Targets._target_gene"
     assert payload["id"] == "ENSG00000133703"

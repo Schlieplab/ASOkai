@@ -150,6 +150,9 @@ def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
     assert all(paths[name].exists() for name in (
         "dna", "cdna", "annotation", "db"
     ))
+    assert "[run] Running 1 step" in [
+        record.getMessage() for record in caplog.records
+    ]
     completion = caplog.records[-1].getMessage()
     assert completion.startswith("[step:download-genome] Completed successfully")
     assert "\n\n[step:download-genome] Outputs:" in completion

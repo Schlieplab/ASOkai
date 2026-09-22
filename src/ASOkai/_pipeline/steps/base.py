@@ -41,16 +41,13 @@ class Step(Runnable):
 
     Core steps may set ``supports_multiple_threads`` only when their runtime
     consumes the automatically supplied ``args.n_threads`` value. Analysis
-    steps support it through their shared base class. Increment
-    ``cache_version`` when an implementation change alters generated outputs
-    without changing the step's declared parameters or destinations.
+    steps support it through their shared base class.
     """
 
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
     supports_multiple_threads: ClassVar[bool] = False
-    cache_version: ClassVar[int] = 1
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""
@@ -101,11 +98,6 @@ class Step(Runnable):
             raise TypeError(
                 f"Step '{cls.name}' supports_multiple_threads must be a boolean."
             )
-        if type(cls.cache_version) is not int or cls.cache_version < 1:
-            raise TypeError(
-                f"Step '{cls.name}' cache_version must be a positive integer."
-            )
-
         output_attributes = {
             attribute_name: value
             for attribute_name, value in cls.__dict__.items()
@@ -228,6 +220,7 @@ class Step(Runnable):
 
     def run_cli(self, argv: list[str] | None = None) -> int:
         """Run the shared command-line lifecycle for one step."""
+        logger.info("Starting Step")
         parser = self.build_parser()
         args = parser.parse_args(argv)
         if self.supports_multiple_threads and args.n_threads < 1:
@@ -244,6 +237,7 @@ class Step(Runnable):
         exit_code = self.run_from_args(args)
         if exit_code == 0:
             self.validate_outputs(args)
+            logger.info("Step Completed successfully")
         return exit_code
 
     def resolved_parameter_values(

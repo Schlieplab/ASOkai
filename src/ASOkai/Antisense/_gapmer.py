@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 
 from Bio.Seq import Seq
 
-from ..Biochemistry import MechanismOfAction
+from ..Biochemistry import Chemistry, MechanismOfAction
 from ._aso import ASO
 
 
@@ -22,23 +22,26 @@ class Gapmer(ASO):
 
     def __init__(
         self,
-        id: str,
         sequence: Seq,
         mechanism: MechanismOfAction,
         left_wing_length: int,
         gap_length: int,
         right_wing_length: int,
+        *,
+        chemistry: Chemistry | None = None,
+        id: str | None = None,
         **kwargs,
     ):
         """Initialize a gapmer.
 
         Args:
-            id: Unique therapeutic identifier.
+            id: Optional stored ID, checked against the design-derived ID.
             sequence: Antisense-strand sequence in the 5' to 3' direction.
             mechanism: Mechanism through which the gapmer acts.
             left_wing_length: Number of nucleotides in the left wing.
             gap_length: Number of nucleotides in the central gap.
             right_wing_length: Number of nucleotides in the right wing.
+            chemistry: Optional chemistry of this strand.
             kwargs: Additional serializable metadata attributes.
 
         Raises:
@@ -64,6 +67,7 @@ class Gapmer(ASO):
             id=id,
             sequence=sequence,
             mechanism=mechanism,
+            chemistry=chemistry,
             **kwargs,
         )
 
@@ -80,6 +84,18 @@ class Gapmer(ASO):
     def layout(self) -> str:
         """Return the compact wing-gap-wing representation."""
         return "-".join(str(length) for length in self.lengths)
+
+    def _design_id(self) -> str:
+        """Include the wing-gap-wing layout in the ASO design ID."""
+        chemistry = (
+            self._identity_suffix("c", self.chemistry.id)
+            if self.chemistry else ""
+        )
+        return (
+            f"gapmer:l{self.left_wing_length}g{self.gap_length}"
+            f"r{self.right_wing_length}-m{self.mechanism.id}-"
+            f"{self._sequence_token(self.sequence)}{chemistry}"
+        )
 
 
 def _positive_length(name: str, value: int) -> int:

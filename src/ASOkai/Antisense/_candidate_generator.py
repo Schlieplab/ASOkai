@@ -34,10 +34,18 @@ class AntisenseCandidateGenerator(ABC):
     ) -> tuple[list[AntisenseTherapeutic], list[Binding]]:
         """Generate candidates and their site bindings in input order."""
         therapeutics: list[AntisenseTherapeutic] = []
+        by_id: dict[str, AntisenseTherapeutic] = {}
         bindings: list[Binding] = []
         for site in sites:
             for candidate in self.candidates_for_site(site):
-                therapeutics.append(candidate)
+                existing = by_id.get(candidate.id)
+                if existing is None:
+                    by_id[candidate.id] = candidate
+                    therapeutics.append(candidate)
+                elif existing.to_dict() != candidate.to_dict():
+                    raise ValueError(
+                        f"Distinct therapeutic designs share ID {candidate.id!r}."
+                    )
                 bindings.append(Binding(candidate.id, site.id))
         return therapeutics, bindings
 
@@ -51,10 +59,10 @@ class ASOCandidateGenerator(AntisenseCandidateGenerator):
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
         """Return one reverse-complement ASO for ``site``."""
+        sequence = site.sequence.reverse_complement()
         return [
             ASO(
-                id=f"{site.id}-ASO",
-                sequence=site.sequence.reverse_complement(),
+                sequence=sequence,
                 mechanism=self.mechanism,
             )
         ]
@@ -78,10 +86,10 @@ class GapmerCandidateGenerator(ASOCandidateGenerator):
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
         """Return one reverse-complement gapmer for ``site``."""
+        sequence = site.sequence.reverse_complement()
         return [
             Gapmer(
-                id=f"{site.id}-Gapmer",
-                sequence=site.sequence.reverse_complement(),
+                sequence=sequence,
                 mechanism=self.mechanism,
                 left_wing_length=self.left_wing_length,
                 gap_length=self.gap_length,
@@ -99,13 +107,14 @@ class SiRNACandidateGenerator(AntisenseCandidateGenerator):
 
     def candidates_for_site(self, site: Site) -> list[AntisenseTherapeutic]:
         """Return one complementary guide/passenger duplex for ``site``."""
+        antisense = site.sequence.reverse_complement()
+        sense = site.sequence
         return [
             siRNA(
-                id=f"{site.id}-siRNA",
                 antisense_strand=Oligonucleotide(
-                    sequence=site.sequence.reverse_complement(),
+                    sequence=antisense,
                 ),
-                sense_strand=Oligonucleotide(sequence=site.sequence),
+                sense_strand=Oligonucleotide(sequence=sense),
                 mechanism=self.mechanism,
             )
         ]

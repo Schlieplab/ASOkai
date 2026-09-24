@@ -8,7 +8,7 @@ License: LGPL-3.0-or-later
 """
 from Bio.Seq import Seq
 
-from ..Biochemistry import MechanismOfAction
+from ..Biochemistry import Chemistry, MechanismOfAction
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._oligonucleotide import Oligonucleotide
 
@@ -18,23 +18,27 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
 
     def __init__(
         self,
-        id: str,
         sequence: Seq,
         mechanism: MechanismOfAction,
+        *,
+        chemistry: Chemistry | None = None,
+        id: str | None = None,
         **kwargs,
     ):
         """Initialize an ASO.
 
         Args:
-            id: Unique therapeutic identifier.
+            id: Optional stored ID, checked against the design-derived ID.
             sequence: Antisense-strand sequence in the 5' to 3' direction.
             mechanism: Mechanism through which the ASO acts.
+            chemistry: Optional chemistry of this strand.
             kwargs: Additional serializable metadata attributes.
         """
         super().__init__(
             id=id,
             sequence=sequence,
             mechanism=mechanism,
+            chemistry=chemistry,
             **kwargs,
         )
 
@@ -42,3 +46,14 @@ class ASO(Oligonucleotide, AntisenseTherapeutic):
     def antisense_strand(self) -> Oligonucleotide:
         """Return this ASO, which is itself the antisense strand."""
         return self
+
+    def _design_id(self) -> str:
+        """Identify the mechanism, strand sequence, and optional chemistry."""
+        chemistry = (
+            self._identity_suffix("c", self.chemistry.id)
+            if self.chemistry else ""
+        )
+        return (
+            f"aso:m{self.mechanism.id}-"
+            f"{self._sequence_token(self.sequence)}{chemistry}"
+        )

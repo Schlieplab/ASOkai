@@ -140,10 +140,7 @@ def _output_report_lines(plan: ExecutionPlan) -> list[str]:
     return [f"  {name:<{width}}: {path}" for name, path in outputs]
 
 
-def _log_dry_run_plan(
-    plan: ExecutionPlan,
-    log_contexts: tuple[str, ...],
-) -> None:
+def _log_dry_run_plan(plan: ExecutionPlan) -> None:
     """Log a grouped view of the inputs and resources for scheduled runs."""
     runs_to_execute = set(plan.runs_to_execute)
     count = len(plan.runs_to_execute)
@@ -202,7 +199,7 @@ def _log_dry_run_plan(
             ]
             lines.extend(("     Resources:", f"       threads: {threads}"))
 
-    _log_info(log_contexts, "\n".join(lines))
+    _log_info(("run",), "\n".join(lines))
 
 
 def run_plan(
@@ -212,7 +209,6 @@ def run_plan(
     *,
     dry_run: bool = False,
     executor: Executor | None = None,
-    log_contexts: tuple[str, ...] | None = None,
 ) -> dict[str, Path]:
     """
     Execute an ExecutionPlan.
@@ -222,8 +218,6 @@ def run_plan(
     """
 
     executor = executor or CwlToolExecutor()
-    log_contexts = log_contexts or (f"step:{label}",)
-
     if not plan.runs_to_execute:
         lines = [
             "Nothing to run; all outputs already exist",
@@ -231,7 +225,7 @@ def run_plan(
             "Outputs:",
             *_output_report_lines(plan),
         ]
-        _log_info(log_contexts, "\n".join(lines))
+        _log_info(("run",), "\n".join(lines))
         return _requested_outputs(plan)
 
     cwl_bundle = generate_cwl_bundle(
@@ -244,7 +238,7 @@ def run_plan(
     last_run = plan.runs_to_execute[-1]
 
     if dry_run:
-        _log_dry_run_plan(plan, log_contexts)
+        _log_dry_run_plan(plan)
         return _requested_outputs(plan)
 
     job_parent = Path(config["datadir"]) / "jobs"
@@ -258,7 +252,7 @@ def run_plan(
     )
     logger.debug(
         "%s",
-        prefix_log_lines(log_contexts, f"CWL job bundle written to {job_dir}"),
+        prefix_log_lines(("run",), f"CWL job bundle written to {job_dir}"),
     )
 
     step_count = len(plan.runs_to_execute)
@@ -275,7 +269,7 @@ def run_plan(
         "",
         f"Job bundle: {job_dir}",
     ]
-    _log_info(log_contexts, "\n".join(lines))
+    _log_info(("run",), "\n".join(lines))
     return _requested_outputs(plan)
 
 
@@ -299,7 +293,6 @@ def run_all(
         raise ValueError("run_all called with an empty runnables list.")
 
     label = ", ".join(r.name for r in runnables)
-    log_contexts = tuple(_runnable_log_context(runnable) for runnable in runnables)
     plan = build_plan(
         runnables,
         config,
@@ -314,7 +307,6 @@ def run_all(
         config,
         dry_run=dry_run,
         executor=executor,
-        log_contexts=log_contexts,
     )
 
 

@@ -57,7 +57,7 @@ class GenomicSite(Site, GenomeElement):
             )
 
         if id is None:
-            id = str(locus)
+            id = f"site:{locus}"
 
         Site.__init__(self, id=id, sequence=sequence, **kwargs)
         GenomeElement.__init__(self, id=id, locus=locus, genome=genome)

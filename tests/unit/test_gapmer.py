@@ -11,7 +11,7 @@ import pytest
 from Bio.Seq import Seq
 
 from ASOkai.Antisense import ASO, Gapmer
-from ASOkai.Biochemistry import RNaseH1Mechanism
+from ASOkai.Biochemistry import Chemistry, MechanismOfAction
 
 
 def make_gapmer(
@@ -20,9 +20,8 @@ def make_gapmer(
     right_wing_length: int = 3,
 ) -> Gapmer:
     return Gapmer(
-        id="gapmer-1",
         sequence=Seq("A" * 16),
-        mechanism=RNaseH1Mechanism(),
+        mechanism=MechanismOfAction("rnase-h1"),
         left_wing_length=left_wing_length,
         gap_length=gap_length,
         right_wing_length=right_wing_length,
@@ -34,6 +33,21 @@ def test_gapmer_stores_its_layout():
 
     assert isinstance(gapmer, ASO)
     assert gapmer.layout == "3-10-3"
+
+
+def test_gapmer_chemistry_changes_design_id():
+    bare = make_gapmer()
+    modified = Gapmer(
+        sequence=bare.sequence,
+        mechanism=bare.mechanism,
+        left_wing_length=3,
+        gap_length=10,
+        right_wing_length=3,
+        chemistry=Chemistry("example-chemistry"),
+    )
+
+    assert modified.id != bare.id
+    assert modified.id.endswith("-c17:example-chemistry")
 
 
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
@@ -77,4 +91,4 @@ def test_gapmer_serialization_roundtrip():
     assert reconstructed.layout == "3-8-5"
     assert reconstructed.lengths == (3, 8, 5)
     assert reconstructed.sequence == Seq("A" * 16)
-    assert isinstance(reconstructed.mechanism, RNaseH1Mechanism)
+    assert isinstance(reconstructed.mechanism, MechanismOfAction)

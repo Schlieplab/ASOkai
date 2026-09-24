@@ -119,7 +119,7 @@ class GenerateASOCandidatesStep(CoreStep):
             ),
             ScalarParam(
                 "mechanism",
-                Literal["rnase-h1"],
+                str,
                 config="antisense.mechanism",
             ),
         ],
@@ -130,6 +130,9 @@ class GenerateASOCandidatesStep(CoreStep):
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
         """Require segment lengths appropriate for the selected ASO design."""
+        mechanism_id = values.get("mechanism")
+        if not isinstance(mechanism_id, str) or not mechanism_id.strip():
+            raise ValueError("mechanism must be a non-empty string")
         design = values.get("design")
         length_names = (
             "left_wing_length",
@@ -175,9 +178,9 @@ class GenerateASOCandidatesStep(CoreStep):
             ASOCandidateGenerator,
             GapmerCandidateGenerator,
         )
-        from ASOkai.Biochemistry import RNaseH1Mechanism
+        from ASOkai.Biochemistry import MechanismOfAction
 
-        mechanism = RNaseH1Mechanism()
+        mechanism = MechanismOfAction(args.mechanism)
         if args.design == "unmodified":
             generator = ASOCandidateGenerator(mechanism=mechanism)
         elif args.design == "gapmer":

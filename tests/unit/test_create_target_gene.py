@@ -91,6 +91,7 @@ def genome_and_gene():
     gene.get_chromosome.return_value = None
 
     genome = MagicMock()
+    genome.id = "GRCh38"
     genome.gene_by_id.return_value = gene
     genome.gene_by_name.return_value = gene
     genome.get_sequence_by_locus.return_value = gene.sequence
@@ -162,7 +163,7 @@ def test_creates_gene_and_sites_by_gene_id(genome_and_gene):
     genome.gene_by_name.assert_not_called()
     assert result.id == gene.id
     assert result.name == gene.name
-    assert result.sites[0].id == "ASOkai-ENSG00000133703-Premrna-S00001"
+    assert result.sites[0].id == "site:GRCh38:12:100-500:+"
 
 
 def test_creates_gene_and_sites_by_gene_name(genome_and_gene):
@@ -178,7 +179,51 @@ def test_creates_gene_and_sites_by_gene_name(genome_and_gene):
     genome.gene_by_name.assert_called_once_with("KRAS")
     genome.gene_by_id.assert_not_called()
     assert result.id == gene.id
-    assert result.sites[0].id == "ASOkai-KRAS-Premrna-S00001"
+    assert result.sites[0].id == "site:GRCh38:12:100-500:+"
+
+
+def test_genomic_site_id_is_shared_across_region_and_target_selection(
+    genome_and_gene,
+):
+    genome, gene = genome_and_gene
+    gene.end = 103
+    gene.sequence = Seq("ACGT")
+    gene.transcripts = [
+        _transcript("ENST00000001", "ACGT", [(100, 103)])
+    ]
+    genome.get_sequence_by_locus.return_value = Seq("ACGT")
+
+    exonic = create_target_gene(
+        genome, target_id=gene.id, site_length=4, region="exonic"
+    )
+    pre_mrna = create_target_gene(
+        genome, target_name=gene.name, site_length=4, region="pre-mrna"
+    )
+    transcriptomic = create_target_gene(
+        genome, target_id=gene.id, site_length=4, region="transcriptomic"
+    )
+
+    assert [target.sites[0].id for target in (
+        exonic, pre_mrna, transcriptomic
+    )] == ["site:GRCh38:12:100-103:+"] * 3
+
+
+def test_site_id_changes_with_assembly(genome_and_gene):
+    genome, gene = genome_and_gene
+    gene.end = 103
+    gene.sequence = Seq("ACGT")
+    genome.get_sequence_by_locus.return_value = Seq("ACGT")
+
+    first = create_target_gene(
+        genome, target_id=gene.id, site_length=4, region="pre-mrna"
+    )
+    genome.id = "GRCh37"
+    second = create_target_gene(
+        genome, target_id=gene.id, site_length=4, region="pre-mrna"
+    )
+
+    assert first.sites[0].id == "site:GRCh38:12:100-103:+"
+    assert second.sites[0].id == "site:GRCh37:12:100-103:+"
 
 
 def test_pre_mrna_extraction_creates_every_overlapping_genomic_window(
@@ -230,8 +275,8 @@ def test_exonic_extraction_creates_one_site_per_unique_genomic_locus(
 
     assert [site.start for site in sites] == list(range(100, 107))
     assert [site.id for site in sites] == [
-        f"ASOkai-ENSG00000133703-Exon-S{number:05d}"
-        for number in range(1, 8)
+        f"site:GRCh38:12:{start}-{start + 3}:+"
+        for start in range(100, 107)
     ]
     assert genome.get_sequence_by_locus.call_count == 7
 
@@ -299,6 +344,11 @@ def test_negative_strand_exonic_sites_use_reference_order_and_site_orientation()
         "ACGT",
         "TACG",
     ]
+    assert [site.id for site in sites] == [
+        "site:test:12:100-103:-",
+        "site:test:12:101-104:-",
+        "site:test:12:102-105:-",
+    ]
 
 
 def test_transcriptomic_extraction_without_transcripts_is_empty(
@@ -347,6 +397,7 @@ def test_transcriptomic_extraction_includes_overlapping_and_junction_sites(
         [TranscriptLocus("ENST00000001", start, start + 4)]
         for start in range(5)
     ]
+    assert sites[1].id == "site:GRCh38:12:101-103:+|12:200-200:+"
 
 
 def test_transcriptomic_extraction_merges_sites_shared_by_transcripts(
@@ -379,6 +430,7 @@ def test_transcriptomic_extraction_merges_sites_shared_by_transcripts(
         TranscriptLocus("ENST00000001", 1, 5),
         TranscriptLocus("ENST00000002", 1, 5),
     ]
+    assert sites[1].id == "site:GRCh38:12:101-103:+|12:200-200:+"
 
 
 def test_shared_site_can_have_different_coordinates_on_each_transcript(
@@ -460,6 +512,7 @@ def test_transcriptomic_extraction_supports_negative_strand_transcripts(
     assert sites[1].loci == [
         TranscriptLocus("ENST00000001", 1, 5)
     ]
+    assert sites[1].id == "site:GRCh38:12:200-202:-|12:103-103:-"
 
 
 def test_transcriptomic_extraction_rejects_inconsistent_shared_sequences(

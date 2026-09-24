@@ -23,7 +23,7 @@ def test_transcript_site_sorts_and_copies_loci_and_derives_id():
     site = TranscriptSite(loci=loci, sequence=Seq("ACGT"))
     loci.append(TranscriptLocus("ENST00000003", 40, 44))
 
-    assert site.id == "ENST00000001:10-14"
+    assert site.id == "site:ENST00000001:10-14"
     assert site.loci == [
         TranscriptLocus("ENST00000001", 10, 14),
         TranscriptLocus("ENST00000002", 30, 34),

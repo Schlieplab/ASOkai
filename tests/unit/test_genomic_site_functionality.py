@@ -24,7 +24,7 @@ def test_genomic_site_builds_locus_and_derives_id(sample_sequence):
     )
 
     assert site.locus == Locus("12", 100, 115, "+")
-    assert site.id == "12:100-115,+"
+    assert site.id == "site:12:100-115,+"
     assert site.sequence is sample_sequence
 
 

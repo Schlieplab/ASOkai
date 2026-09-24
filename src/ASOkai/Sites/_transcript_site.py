@@ -48,7 +48,7 @@ class TranscriptSite(Site):
         if id is None:
             first_locus = self.loci[0]
             id = (
-                f"{first_locus.transcript_id}:"
+                f"site:{first_locus.transcript_id}:"
                 f"{first_locus.start}-{first_locus.end}"
             )
 

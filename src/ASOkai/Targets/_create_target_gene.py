@@ -7,8 +7,8 @@ Description: Target-gene construction and target-site extraction.
 License: LGPL-3.0-or-later
 """
 
-from collections.abc import Iterator
 from typing import cast
+from urllib.parse import quote
 
 from Bio.Seq import Seq
 from GenomeUtils.Genome import Gene, Genome, Locus, TranscriptLocus
@@ -24,18 +24,23 @@ def _validated_strand(value: str) -> Strand:
     return cast(Strand, value)
 
 
-def _site_ids(target: str, region: str) -> Iterator[str]:
-    number = 1
-    while True:
-        yield f"ASOkai-{target}-{region}-S{number:05d}"
-        number += 1
+def _site_id(assembly: str, loci: tuple[Locus, ...]) -> str:
+    """Identify one site by its ordered, 1-based inclusive genomic spans."""
+    if not assembly or not loci:
+        raise ValueError("A site ID requires an assembly and genomic loci.")
+    spans = "|".join(
+        f"{quote(locus.chr, safe='')}:{locus.start}-{locus.end}:"
+        f"{locus.strand}"
+        for locus in loci
+    )
+    return f"site:{quote(assembly, safe='')}:{spans}"
 
 
 def _extract_exonic_sites(
     gene: Gene,
     genome: Genome,
     site_length: int,
-    site_ids: Iterator[str],
+    assembly: str,
 ) -> dict[str, GenomicSite]:
     """Extract every target site wholly contained in an exon."""
     site_loci = {
@@ -51,7 +56,7 @@ def _extract_exonic_sites(
     }
     sites: dict[str, GenomicSite] = {}
     for locus in sorted(site_loci):
-        site_id = next(site_ids)
+        site_id = _site_id(assembly, (locus,))
         sites[site_id] = GenomicSite(
             id=site_id,
             chr=locus.chr,
@@ -67,15 +72,16 @@ def _extract_pre_mrna_sites(
     gene: Gene,
     genome: Genome,
     site_length: int,
-    site_ids: Iterator[str],
+    assembly: str,
 ) -> dict[str, GenomicSite]:
     """Extract every target site from the gene's genomic span."""
     sites: dict[str, GenomicSite] = {}
     strand = _validated_strand(gene.strand)
     for offset in range(len(gene.sequence) - site_length + 1):
-        site_id = next(site_ids)
         start = gene.start + offset
         end = start + site_length - 1
+        locus = Locus(gene.chr, start, end, strand)
+        site_id = _site_id(assembly, (locus,))
         site = GenomicSite(
             id=site_id,
             chr=gene.chr,
@@ -83,7 +89,7 @@ def _extract_pre_mrna_sites(
             end=end,
             strand=strand,
             sequence=genome.get_sequence_by_locus(
-                Locus(gene.chr, start, end, strand)
+                locus
             ),
         )
         sites[site_id] = site
@@ -93,7 +99,7 @@ def _extract_pre_mrna_sites(
 def _extract_transcript_sites(
     gene: Gene,
     site_length: int,
-    site_ids: Iterator[str],
+    assembly: str,
 ) -> dict[str, TranscriptSite]:
     """Extract target sites from each spliced transcript."""
     occurrences_by_genomic_loci: dict[
@@ -127,7 +133,7 @@ def _extract_transcript_sites(
                 "Transcripts disagree on the sequence at shared genomic "
                 f"loci {genomic_loci!r}."
             )
-        site_id = next(site_ids)
+        site_id = _site_id(assembly, genomic_loci)
         sites[site_id] = TranscriptSite(
             id=site_id,
             loci=[locus for _, locus in occurrences],
@@ -169,33 +175,34 @@ def create_target_gene(
     if region not in ("exonic", "pre-mrna", "transcriptomic"):
         raise ValueError(f"Invalid region: {region}")
 
+    if type(genome.id) is not str or not genome.id:
+        raise ValueError("Genome ID must identify the assembly for site IDs.")
+
     if target_id is not None:
         gene = genome.gene_by_id(target_id)
-        target_label = target_id
     else:
         assert target_name is not None
         gene = genome.gene_by_name(target_name)
-        target_label = target_name
 
     if region == "exonic":
         sites = _extract_exonic_sites(
             gene,
             genome,
             site_length,
-            _site_ids(target_label, "Exon"),
+            genome.id,
         )
     elif region == "pre-mrna":
         sites = _extract_pre_mrna_sites(
             gene,
             genome,
             site_length,
-            _site_ids(target_label, "Premrna"),
+            genome.id,
         )
     else:
         sites = _extract_transcript_sites(
             gene,
             site_length,
-            _site_ids(target_label, "Transcript"),
+            genome.id,
         )
 
     return TargetGene(

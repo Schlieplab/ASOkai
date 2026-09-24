@@ -7,15 +7,20 @@ Description: This file defines the base Chemistry class.
 License: LGPL-3.0-or-later
 """
 
-from abc import ABC
-
 from ..Utils import Serializable
 
 
-class Chemistry(Serializable, ABC):
-    """Base class for future nucleotide-level chemistry models.
+class Chemistry(Serializable):
+    """Optional oligonucleotide chemistry with a stable design identity.
 
-    Chemistry is intentionally not attached to oligonucleotides yet. Its
-    representation will be defined when per-nucleotide modifications are
-    implemented.
+    The representation of individual nucleotide modifications is deferred.
     """
+
+    id: str
+
+    def __init__(self, id: str, **kwargs):
+        """Attach a stable chemistry ID without defining its modifications."""
+        if not isinstance(id, str) or not id:
+            raise ValueError("Chemistry ID must be a non-empty string.")
+        self.id = id
+        super().__init__(**kwargs)

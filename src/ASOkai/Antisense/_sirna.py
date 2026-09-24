@@ -24,16 +24,17 @@ class siRNA(AntisenseTherapeutic):
 
     def __init__(
         self,
-        id: str,
         antisense_strand: Oligonucleotide,
         sense_strand: Oligonucleotide,
         mechanism: MechanismOfAction,
+        *,
+        id: str | None = None,
         **kwargs,
     ):
         """Initialize a small interfering RNA duplex.
 
         Args:
-            id: Unique therapeutic identifier.
+            id: Optional stored ID, checked against the design-derived ID.
             antisense_strand: Guide strand stored in the 5' to 3' direction.
             sense_strand: Passenger strand stored in the 5' to 3' direction.
             mechanism: Mechanism through which the siRNA acts.
@@ -52,3 +53,21 @@ class siRNA(AntisenseTherapeutic):
     def sense_strand(self) -> Oligonucleotide:
         """Return the sense, or passenger, strand in the 5' to 3' direction."""
         return self._sense_strand
+
+    def _design_id(self) -> str:
+        """Identify the mechanism, strands, and each strand's chemistry."""
+        antisense_chemistry = (
+            self._identity_suffix("c", self.antisense_strand.chemistry.id)
+            if self.antisense_strand.chemistry else ""
+        )
+        sense_chemistry = (
+            self._identity_suffix("c", self.sense_strand.chemistry.id)
+            if self.sense_strand.chemistry else ""
+        )
+        return (
+            f"sirna:m{self.mechanism.id}-"
+            f"a{self._sequence_token(self.antisense_strand.sequence)}"
+            f"{antisense_chemistry}-"
+            f"p{self._sequence_token(self.sense_strand.sequence)}"
+            f"{sense_chemistry}"
+        )

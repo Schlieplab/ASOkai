@@ -23,7 +23,7 @@ from ASOkai.Antisense import (
     Oligonucleotide,
     siRNA,
 )
-from ASOkai.Biochemistry import RNaseH1Mechanism
+from ASOkai.Biochemistry import Chemistry, MechanismOfAction
 from ASOkai.Plugins import JsonFile
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
@@ -33,9 +33,8 @@ from ASOkai._pipeline.steps.core.generate_aso_candidates import (
 @pytest.fixture
 def gapmer() -> Gapmer:
     return Gapmer(
-        id="gapmer-1",
         sequence=Seq("ACGT"),
-        mechanism=RNaseH1Mechanism(),
+        mechanism=MechanismOfAction("rnase-h1"),
         left_wing_length=1,
         gap_length=2,
         right_wing_length=1,
@@ -45,19 +44,17 @@ def gapmer() -> Gapmer:
 @pytest.fixture
 def aso() -> ASO:
     return ASO(
-        id="aso-1",
         sequence=Seq("ACGT"),
-        mechanism=RNaseH1Mechanism(),
+        mechanism=MechanismOfAction("rnase-h1"),
     )
 
 
 @pytest.fixture
 def sirna() -> siRNA:
     return siRNA(
-        id="sirna-1",
         antisense_strand=Oligonucleotide(sequence=Seq("ACGT")),
         sense_strand=Oligonucleotide(sequence=Seq("TGCA")),
-        mechanism=RNaseH1Mechanism(),
+        mechanism=MechanismOfAction("rnase-h1"),
     )
 
 
@@ -82,7 +79,7 @@ def _assert_therapeutic_roundtrip(therapeutic: AntisenseTherapeutic) -> None:
     assert type(restored[0]) is type(therapeutic)
     assert restored[0].id == therapeutic.id
     assert str(restored[0].sequence) == str(therapeutic.sequence)
-    assert isinstance(restored[0].mechanism, RNaseH1Mechanism)
+    assert isinstance(restored[0].mechanism, MechanismOfAction)
 
 
 def test_aso_collection_roundtrip_reconstructs_domain_values(aso):
@@ -108,6 +105,52 @@ def test_sirna_collection_roundtrip_reconstructs_domain_values(sirna):
     assert restored[0].sense_strand.sequence == Seq("TGCA")
 
 
+def test_optional_chemistry_survives_graph_roundtrip():
+    therapeutic = siRNA(
+        antisense_strand=Oligonucleotide(
+            Seq("ACGT"), chemistry=Chemistry("lna")
+        ),
+        sense_strand=Oligonucleotide(
+            Seq("TGCA"), chemistry=Chemistry("pna")
+        ),
+        mechanism=MechanismOfAction("rnase-h1"),
+    )
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+
+    restored = file_type.loads(file_type.dumps([therapeutic]))[0]
+
+    assert restored.id == therapeutic.id
+    assert restored.antisense_strand.chemistry.id == "lna"
+    assert restored.sense_strand.chemistry.id == "pna"
+
+
+def test_shared_strand_chemistry_remains_one_object_after_graph_roundtrip():
+    chemistry = Chemistry("lna")
+    therapeutic = siRNA(
+        antisense_strand=Oligonucleotide(Seq("ACGT"), chemistry=chemistry),
+        sense_strand=Oligonucleotide(Seq("TGCA"), chemistry=chemistry),
+        mechanism=MechanismOfAction("rnase-h1"),
+    )
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+
+    restored = file_type.loads(file_type.dumps([therapeutic]))[0]
+
+    assert restored.antisense_strand.chemistry is restored.sense_strand.chemistry
+
+
+@pytest.mark.parametrize("therapeutic_name", ["aso", "gapmer", "sirna"])
+def test_therapeutic_collection_rejects_mismatched_stored_id(
+    request, therapeutic_name,
+):
+    therapeutic = request.getfixturevalue(therapeutic_name)
+    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    document = json.loads(file_type.dumps([therapeutic]))
+    document["root"][0]["id"] = "unrelated-id"
+
+    with pytest.raises(ValueError, match="does not match design ID"):
+        file_type.loads(json.dumps(document))
+
+
 def test_binding_collection_roundtrip_reconstructs_domain_values():
     file_type = GenerateASOCandidatesStep.bindings_output.file_type
     binding = Binding("aso-1", "site-1")
@@ -121,24 +164,24 @@ def test_binding_collection_roundtrip_reconstructs_domain_values():
 
 
 def test_therapeutic_collection_preserves_one_shared_mechanism():
-    mechanism = RNaseH1Mechanism()
+    mechanism = MechanismOfAction("rnase-h1")
     therapeutics = [
-        ASO(id="aso-1", sequence=Seq("ACGT"), mechanism=mechanism),
-        ASO(id="aso-2", sequence=Seq("CGTA"), mechanism=mechanism),
+        ASO(sequence=Seq("ACGT"), mechanism=mechanism),
+        ASO(sequence=Seq("CGTA"), mechanism=mechanism),
     ]
     file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
 
     document = json.loads(file_type.dumps(therapeutics))
 
     assert document["root"][0]["mechanism"] == {
-        "$ref": "#/objects/RNaseH1Mechanism"
+        "$ref": "#/objects/MechanismOfAction"
     }
     assert document["root"][1]["mechanism"] == {
-        "$ref": "#/objects/RNaseH1Mechanism"
+        "$ref": "#/objects/MechanismOfAction"
     }
-    assert list(document["objects"]) == ["RNaseH1Mechanism"]
+    assert list(document["objects"]) == ["MechanismOfAction"]
     assert sum(
-        record.get("__class__") == "RNaseH1Mechanism"
+        record.get("__class__") == "MechanismOfAction"
         for record in document["objects"].values()
     ) == 1
 
@@ -167,6 +210,5 @@ def test_binding_collection_rejects_invalid_ids():
 
 def test_typed_collection_schema_rejects_the_wrong_item_type():
     file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
-
     with pytest.raises(ValueError, match=r"\$.root\[0\]"):
         file_type.dumps(cast(Any, [Binding("aso-1", "site-1")]))

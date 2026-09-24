@@ -402,11 +402,24 @@ def _example_from_schema(schema: Mapping[str, Any]) -> Any:
         properties = schema.get("properties")
         required_names = set(schema.get("required", ()))
         if isinstance(properties, Mapping) and properties:
-            return {
+            from ASOkai.Antisense import AntisenseTherapeutic
+
+            record_type = _serializable_type(schema)
+            is_therapeutic = record_type is not None and issubclass(
+                record_type, AntisenseTherapeutic
+            )
+            if is_therapeutic:
+                required_names.discard("id")
+            record = {
                 name: _example_from_schema(property_schema)
                 for name, property_schema in properties.items()
                 if name in required_names and isinstance(property_schema, Mapping)
             }
+            if is_therapeutic:
+                # Construct the design so its ID agrees with the other
+                # example fields before JSON-schema validation.
+                return AntisenseTherapeutic.from_dict(record).to_dict()
+            return record
         additional_schema = schema.get("additionalProperties")
         if isinstance(additional_schema, Mapping):
             return {"example": _example_from_schema(additional_schema)}

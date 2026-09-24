@@ -189,7 +189,7 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
         "generate-aso-candidates",
     ]
     assert document["inputs"]["design"]["type"]["type"] == "enum"
-    assert document["inputs"]["mechanism"]["type"]["type"] == "enum"
+    assert document["inputs"]["mechanism"]["type"] == "string"
     assert document["inputs"]["left_wing_length"]["type"] == "int?"
     assert document["inputs"]["gap_length"]["type"] == "int?"
     assert document["inputs"]["right_wing_length"]["type"] == "int?"
@@ -256,7 +256,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     therapeutic = therapeutics["root"][0]
     binding = bindings["root"][0]
     assert result == 0
-    assert therapeutic["id"] == "ENSG00000133703-S00001-Gapmer"
+    assert therapeutic["id"].startswith("gapmer:l3g10r3-mrnase-h1-s16x")
     assert therapeutic["left_wing_length"] == 3
     assert therapeutic["gap_length"] == 10
     assert therapeutic["right_wing_length"] == 3
@@ -315,14 +315,14 @@ def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
 
     therapeutic_document = json.loads(therapeutics_output.read_text())
     expected_bindings = [
-        (f"{site.id}-Gapmer", site.id)
-        for site in sites
+        (item["id"], site.id)
+        for item, site in zip(therapeutic_document["root"], sites)
     ]
     assert result == 0
-    assert list(therapeutic_document["objects"]) == ["RNaseH1Mechanism"]
+    assert list(therapeutic_document["objects"]) == ["MechanismOfAction"]
     assert [
         item["mechanism"] for item in therapeutic_document["root"]
-    ] == [{"$ref": "#/objects/RNaseH1Mechanism"}] * 2
+    ] == [{"$ref": "#/objects/MechanismOfAction"}] * 2
     assert [
         item["id"] for item in therapeutic_document["root"]
     ] == [therapeutic_id for therapeutic_id, _ in expected_bindings]
@@ -369,7 +369,7 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
             "--design",
             "unmodified",
             "--mechanism",
-            "rnase-h1",
+            "custom-mechanism",
             "--target-gene",
             str(target_input),
             "--therapeutics-output",
@@ -383,7 +383,11 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
     therapeutic = document["root"][0]
     assert result == 0
     assert therapeutic["__class__"] == "ASO"
-    assert therapeutic["id"] == "ENSG00000133703-S00001-ASO"
+    assert therapeutic["id"] == "aso:mcustom-mechanism-s4x1b"
+    restored = GenerateASOCandidatesStep.therapeutics_output.file_type.read(
+        therapeutics_output
+    )
+    assert restored[0].mechanism.id == "custom-mechanism"
     assert "left_wing_length" not in therapeutic
     assert "gap_length" not in therapeutic
     assert "right_wing_length" not in therapeutic

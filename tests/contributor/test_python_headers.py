@@ -32,7 +32,11 @@ def _tracked_python_files() -> tuple[Path, ...]:
         capture_output=True,
         text=True,
     )
-    return tuple(REPOSITORY_ROOT / path for path in result.stdout.splitlines())
+    return tuple(
+        absolute_path
+        for path in result.stdout.splitlines()
+        if (absolute_path := REPOSITORY_ROOT / path).is_file()
+    )
 
 
 @pytest.mark.parametrize(

@@ -565,11 +565,11 @@ def test_nested_classes_own_their_json_details() -> None:
         for table in node.findall(nodes.table)
     )
 
-    assert "chemistry" not in aso_fields
+    assert "chemistry" in aso_fields
     assert "left_wing_length" not in aso_fields
     assert "gap_length" not in aso_fields
     assert "right_wing_length" not in aso_fields
-    assert "chemistry" not in gapmer_fields
+    assert "chemistry" in gapmer_fields
     assert "left_wing_length" in gapmer_fields
     assert "gap_length" in gapmer_fields
     assert "right_wing_length" in gapmer_fields
@@ -588,7 +588,7 @@ def test_serializable_contract_describes_every_field(serializable_type: type) ->
     assert "Meaning: —" not in reference
 
 
-@pytest.mark.parametrize("serializable_type", [Chemistry, Site])
+@pytest.mark.parametrize("serializable_type", [Site])
 def test_abstract_serializable_class_has_no_json_contract(
     serializable_type: type,
 ) -> None:
@@ -596,6 +596,17 @@ def test_abstract_serializable_class_has_no_json_contract(
         serializable_type,
         refdoc=f"api/modules/{serializable_type.__module__.split('.')[1]}",
     )
+
+
+def test_chemistry_has_an_id_only_json_contract() -> None:
+    contract = serializable_contract_nodes(
+        Chemistry,
+        refdoc="api/modules/Biochemistry",
+    )
+    reference = "\n".join(node.astext() for node in contract)
+
+    assert "File contract" in reference
+    assert "id" in reference
 
 
 def test_serializable_contract_is_the_final_class_section() -> None:

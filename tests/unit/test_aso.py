@@ -12,12 +12,39 @@ import inspect
 from Bio.Seq import Seq
 import pytest
 
-from ASOkai.Antisense import ASO, AntisenseTherapeutic, Oligonucleotide, siRNA
+from ASOkai.Antisense import (
+    ASO,
+    AntisenseTherapeutic,
+    BasePair,
+    Binding,
+    Oligonucleotide,
+    siRNA,
+)
 from ASOkai.Biochemistry import Chemistry, MechanismOfAction
 
 
 def make_mechanism():
     return MechanismOfAction("example-mechanism")
+
+
+def make_sirna(
+    guide: Oligonucleotide,
+    passenger: Oligonucleotide,
+) -> siRNA:
+    binding = Binding(
+        guide.sequence,
+        passenger.sequence,
+        [
+            BasePair(index, len(passenger.sequence) - index - 1)
+            for index in range(len(guide.sequence))
+        ],
+    )
+    return siRNA(
+        antisense_strand=guide,
+        sense_strand=passenger,
+        mechanism=make_mechanism(),
+        binding=binding,
+    )
 
 
 def test_aso_combines_oligonucleotide_and_therapeutic_contracts():
@@ -68,25 +95,21 @@ def test_chemistry_is_optional_and_changes_aso_identity():
 
 
 def test_each_sirna_strand_chemistry_changes_duplex_identity():
-    mechanism = make_mechanism()
-    bare = siRNA(
-        antisense_strand=Oligonucleotide(Seq("ATGC")),
-        sense_strand=Oligonucleotide(Seq("GCAT")),
-        mechanism=mechanism,
+    bare = make_sirna(
+        Oligonucleotide(Seq("ATGC")),
+        Oligonucleotide(Seq("GCAT")),
     )
-    antisense_modified = siRNA(
-        antisense_strand=Oligonucleotide(
+    antisense_modified = make_sirna(
+        Oligonucleotide(
             Seq("ATGC"), chemistry=Chemistry("example-chemistry")
         ),
-        sense_strand=Oligonucleotide(Seq("GCAT")),
-        mechanism=mechanism,
+        Oligonucleotide(Seq("GCAT")),
     )
-    sense_modified = siRNA(
-        antisense_strand=Oligonucleotide(Seq("ATGC")),
-        sense_strand=Oligonucleotide(
+    sense_modified = make_sirna(
+        Oligonucleotide(Seq("ATGC")),
+        Oligonucleotide(
             Seq("GCAT"), chemistry=Chemistry("example-chemistry")
         ),
-        mechanism=mechanism,
     )
 
     assert len({bare.id, antisense_modified.id, sense_modified.id}) == 3
@@ -132,25 +155,20 @@ def test_sirna_sequence_is_the_antisense_sequence():
     sense = Oligonucleotide(
         sequence=Seq("GCAT"),
     )
-    sirna = siRNA(
-        antisense_strand=antisense,
-        sense_strand=sense,
-        mechanism=make_mechanism(),
-    )
+    sirna = make_sirna(antisense, sense)
 
     assert sirna.sequence == antisense.sequence
     assert sirna.sense_strand.sequence == sense.sequence
 
 
 def test_sirna_serialization_roundtrip():
-    sirna = siRNA(
-        antisense_strand=Oligonucleotide(
+    sirna = make_sirna(
+        Oligonucleotide(
             sequence=Seq("ATGC"),
         ),
-        sense_strand=Oligonucleotide(
+        Oligonucleotide(
             sequence=Seq("GCAT"),
         ),
-        mechanism=make_mechanism(),
     )
 
     data = sirna.to_dict()
@@ -158,6 +176,7 @@ def test_sirna_serialization_roundtrip():
 
     assert "antisense_strand" in data
     assert "sense_strand" in data
+    assert "binding" in data
     assert "_antisense_strand" not in data
     assert "_sense_strand" not in data
     assert "id" not in data["antisense_strand"]
@@ -165,4 +184,19 @@ def test_sirna_serialization_roundtrip():
     assert isinstance(reconstructed, siRNA)
     assert reconstructed.sequence == sirna.sequence
     assert reconstructed.sense_strand.sequence == sirna.sense_strand.sequence
+    assert reconstructed.binding.pairs == sirna.binding.pairs
     assert reconstructed.mechanism == make_mechanism()
+
+
+def test_sirna_rejects_a_binding_for_different_strands():
+    with pytest.raises(ValueError, match="must match"):
+        siRNA(
+            antisense_strand=Oligonucleotide(Seq("ATGC")),
+            sense_strand=Oligonucleotide(Seq("GCAT")),
+            mechanism=make_mechanism(),
+            binding=Binding(
+                Seq("AAAA"),
+                Seq("GCAT"),
+                [BasePair(i, 3 - i) for i in range(4)],
+            ),
+        )

@@ -15,6 +15,8 @@ from ASOkai.Antisense import (
     ASOCandidateGenerator,
     AntisenseCandidateGenerator,
     AntisenseTherapeutic,
+    BasePair,
+    Binding,
     Gapmer,
     GapmerCandidateGenerator,
     Oligonucleotide,
@@ -67,8 +69,14 @@ def test_gapmer_generator_creates_a_therapeutic_and_binding_for_each_site():
     assert therapeutics[0].id.startswith("gapmer:l3g6r3-mrnase-h1-s12x")
     assert therapeutics[0].sequence == Seq("ATTTTTGGGCAT")
     assert therapeutics[0].layout == "3-6-3"
-    assert bindings[0].therapeutic_id == therapeutics[0].id
-    assert bindings[0].site_id == site.id
+    assert bindings[0].first_id == therapeutics[0].id
+    assert bindings[0].second_id == site.id
+    assert bindings[0].first_sequence == therapeutics[0].sequence
+    assert bindings[0].second_sequence == site.sequence
+    assert bindings[0].pairs == tuple(
+        BasePair(index, len(site.sequence) - index - 1)
+        for index in range(len(site.sequence))
+    )
 
 
 def test_generator_supports_multiple_candidates_for_one_site():
@@ -81,10 +89,10 @@ def test_generator_supports_multiple_candidates_for_one_site():
 
     assert [type(therapeutic) for therapeutic in therapeutics] == [ASO, Gapmer]
     assert len({therapeutic.id for therapeutic in therapeutics}) == 2
-    assert [binding.therapeutic_id for binding in bindings] == [
+    assert [binding.first_id for binding in bindings] == [
         therapeutic.id for therapeutic in therapeutics
     ]
-    assert [binding.site_id for binding in bindings] == [site.id, site.id]
+    assert [binding.second_id for binding in bindings] == [site.id, site.id]
 
 
 def test_aso_generator_preserves_the_site_for_each_binding():
@@ -114,7 +122,7 @@ def test_aso_generator_preserves_the_site_for_each_binding():
         second_site.sequence.reverse_complement(),
     ]
     assert [
-        (binding.therapeutic_id, binding.site_id) for binding in bindings
+        (binding.first_id, binding.second_id) for binding in bindings
     ] == [
         (therapeutics[0].id, first_site.id),
         (therapeutics[1].id, second_site.id),
@@ -141,9 +149,16 @@ def test_sirna_generator_creates_an_antiparallel_duplex_for_each_site():
     assert therapeutic.id.endswith("-as4x93-ps4x39")
     assert therapeutic.antisense_strand.sequence == Seq("GCAT")
     assert therapeutic.sense_strand.sequence == Seq("ATGC")
+    assert therapeutic.binding.first_id is None
+    assert therapeutic.binding.second_id is None
+    assert therapeutic.binding.first_sequence == therapeutic.antisense_strand.sequence
+    assert therapeutic.binding.second_sequence == therapeutic.sense_strand.sequence
+    assert therapeutic.binding.pairs == tuple(
+        BasePair(index, 3 - index) for index in range(4)
+    )
     assert len(bindings) == 1
-    assert bindings[0].therapeutic_id == therapeutic.id
-    assert bindings[0].site_id == site.id
+    assert bindings[0].first_id == therapeutic.id
+    assert bindings[0].second_id == site.id
 
 
 def test_generator_returns_empty_collections_without_sites():
@@ -170,7 +185,7 @@ def test_same_design_from_two_sites_has_one_therapeutic_and_two_bindings():
     ).generate(sites)
 
     assert len(therapeutics) == 1
-    assert [(binding.therapeutic_id, binding.site_id) for binding in bindings] == [
+    assert [(binding.first_id, binding.second_id) for binding in bindings] == [
         (therapeutics[0].id, "site-1"),
         (therapeutics[0].id, "site-2"),
     ]
@@ -201,10 +216,20 @@ def test_design_id_distinguishes_layout_mechanism_and_sequence():
         antisense_strand=Oligonucleotide(Seq("ACGT")),
         sense_strand=Oligonucleotide(Seq("TGCA")),
         mechanism=mechanism,
+        binding=Binding(
+            Seq("ACGT"),
+            Seq("TGCA"),
+            [BasePair(i, 3 - i) for i in range(4)],
+        ),
     )
     second_sirna = siRNA(
         antisense_strand=Oligonucleotide(Seq("ACGT")),
         sense_strand=Oligonucleotide(Seq("AAAA")),
         mechanism=mechanism,
+        binding=Binding(
+            Seq("ACGT"),
+            Seq("AAAA"),
+            [BasePair(i, 3 - i) for i in range(4)],
+        ),
     )
     assert first_sirna.id != second_sirna.id

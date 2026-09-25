@@ -402,9 +402,23 @@ def _example_from_schema(schema: Mapping[str, Any]) -> Any:
         properties = schema.get("properties")
         required_names = set(schema.get("required", ()))
         if isinstance(properties, Mapping) and properties:
-            from ASOkai.Antisense import AntisenseTherapeutic
+            from Bio.Seq import Seq
+            from ASOkai.Antisense import (
+                AntisenseTherapeutic,
+                BasePair,
+                Binding,
+                siRNA,
+            )
 
             record_type = _serializable_type(schema)
+            if record_type is Binding:
+                return Binding(
+                    Seq("A"),
+                    Seq("T"),
+                    [BasePair(0, 0)],
+                    first_id="aso:example",
+                    second_id="site:example",
+                ).to_dict()
             is_therapeutic = record_type is not None and issubclass(
                 record_type, AntisenseTherapeutic
             )
@@ -415,7 +429,18 @@ def _example_from_schema(schema: Mapping[str, Any]) -> Any:
                 for name, property_schema in properties.items()
                 if name in required_names and isinstance(property_schema, Mapping)
             }
-            if is_therapeutic:
+            if is_therapeutic and record_type is not None:
+                if issubclass(record_type, siRNA):
+                    guide = Seq(record["antisense_strand"]["sequence"])
+                    passenger = Seq(record["sense_strand"]["sequence"])
+                    record["binding"] = Binding(
+                        guide,
+                        passenger,
+                        [
+                            BasePair(index, len(passenger) - index - 1)
+                            for index in range(min(len(guide), len(passenger)))
+                        ],
+                    ).to_dict()
                 # Construct the design so its ID agrees with the other
                 # example fields before JSON-schema validation.
                 return AntisenseTherapeutic.from_dict(record).to_dict()

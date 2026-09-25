@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 
 from ..Biochemistry import MechanismOfAction
 from ._antisense_therapeutic import AntisenseTherapeutic
+from ._binding import Binding
 from ._oligonucleotide import Oligonucleotide
 
 
@@ -17,6 +18,7 @@ class siRNA(AntisenseTherapeutic):
 
     _antisense_strand: Oligonucleotide
     _sense_strand: Oligonucleotide
+    binding: Binding
     _serialized_names = {
         "_antisense_strand": "antisense_strand",
         "_sense_strand": "sense_strand",
@@ -27,6 +29,7 @@ class siRNA(AntisenseTherapeutic):
         antisense_strand: Oligonucleotide,
         sense_strand: Oligonucleotide,
         mechanism: MechanismOfAction,
+        binding: Binding,
         *,
         id: str | None = None,
         **kwargs,
@@ -38,10 +41,23 @@ class siRNA(AntisenseTherapeutic):
             antisense_strand: Guide strand stored in the 5' to 3' direction.
             sense_strand: Passenger strand stored in the 5' to 3' direction.
             mechanism: Mechanism through which the siRNA acts.
+            binding: Explicit guide-passenger alignment.
             kwargs: Additional serializable metadata attributes.
         """
+        if not isinstance(binding, Binding):
+            raise TypeError("siRNA binding must be a Binding.")
+        if (
+            binding.first_id is not None
+            or binding.second_id is not None
+            or binding.first_sequence != antisense_strand.sequence
+            or binding.second_sequence != sense_strand.sequence
+        ):
+            raise ValueError(
+                "siRNA binding must match its guide and passenger strands."
+            )
         self._antisense_strand = antisense_strand
         self._sense_strand = sense_strand
+        self.binding = binding
         super().__init__(id=id, mechanism=mechanism, **kwargs)
 
     @property

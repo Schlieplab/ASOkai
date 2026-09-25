@@ -14,7 +14,7 @@ from ..Biochemistry import MechanismOfAction
 from ..Sites import Site
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._aso import ASO
-from ._binding import Binding
+from ._binding import BasePair, Binding
 from ._gapmer import Gapmer
 from ._oligonucleotide import Oligonucleotide
 from ._sirna import siRNA
@@ -46,7 +46,14 @@ class AntisenseCandidateGenerator(ABC):
                     raise ValueError(
                         f"Distinct therapeutic designs share ID {candidate.id!r}."
                     )
-                bindings.append(Binding(candidate.id, site.id))
+                bindings.append(
+                    Binding.from_complementary_sequences(
+                        candidate.sequence,
+                        site.sequence,
+                        first_id=candidate.id,
+                        second_id=site.id,
+                    )
+                )
         return therapeutics, bindings
 
 
@@ -109,6 +116,14 @@ class SiRNACandidateGenerator(AntisenseCandidateGenerator):
         """Return one complementary guide/passenger duplex for ``site``."""
         antisense = site.sequence.reverse_complement()
         sense = site.sequence
+        pairing = Binding(
+            antisense,
+            sense,
+            [
+                BasePair(index, len(sense) - index - 1)
+                for index in range(len(antisense))
+            ],
+        )
         return [
             siRNA(
                 antisense_strand=Oligonucleotide(
@@ -116,5 +131,6 @@ class SiRNACandidateGenerator(AntisenseCandidateGenerator):
                 ),
                 sense_strand=Oligonucleotide(sequence=sense),
                 mechanism=self.mechanism,
+                binding=pairing,
             )
         ]

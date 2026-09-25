@@ -7,7 +7,7 @@ Description: This file initializes the antisense module.
 License: LGPL-3.0-or-later
 """
 from ._antisense_therapeutic import AntisenseTherapeutic
-from ._binding import Binding
+from ._binding import BasePair, Binding
 from ._oligonucleotide import Oligonucleotide
 from ._aso import ASO
 from ._gapmer import Gapmer
@@ -23,6 +23,7 @@ __all__ = [
     "ASO",
     "AntisenseTherapeutic",
     "Binding",
+    "BasePair",
     "Gapmer",
     "Oligonucleotide",
     "siRNA",

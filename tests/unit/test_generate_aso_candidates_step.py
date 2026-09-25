@@ -260,8 +260,10 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     assert therapeutic["left_wing_length"] == 3
     assert therapeutic["gap_length"] == 10
     assert therapeutic["right_wing_length"] == 3
-    assert binding["therapeutic_id"] == therapeutic["id"]
-    assert binding["site_id"] == "ENSG00000133703-S00001"
+    assert binding["first_id"] == therapeutic["id"]
+    assert binding["second_id"] == "ENSG00000133703-S00001"
+    assert binding["first_sequence"] == therapeutic["sequence"]
+    assert binding["pairs"][0] == {"first_index": 0, "second_index": 15}
     assert caplog.messages == [
         "Starting Step",
         "Generating gapmer candidates for 1 target sites",
@@ -337,7 +339,7 @@ def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
     )
     assert therapeutics[0].mechanism is therapeutics[1].mechanism
     assert [
-        (binding.therapeutic_id, binding.site_id) for binding in bindings
+        (binding.first_id, binding.second_id) for binding in bindings
     ] == expected_bindings
 
 

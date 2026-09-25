@@ -16,7 +16,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import yaml
 
@@ -31,10 +31,13 @@ class PublicationEntry:
 
     output_id: str
     destination: PurePosixPath
+    artifact_type: Literal["File", "Directory"] = "File"
 
     def __post_init__(self) -> None:
         if not isinstance(self.output_id, str) or not self.output_id.strip():
             raise ValueError("Publication output id must be a nonblank string.")
+        if self.artifact_type not in ("File", "Directory"):
+            raise ValueError("Publication artifact type must be File or Directory.")
 
         destination = PurePosixPath(self.destination)
         if (
@@ -56,10 +59,13 @@ class PublicationEntry:
         object.__setattr__(self, "destination", destination)
 
     def to_dict(self) -> dict[str, str]:
-        return {
+        data = {
             "id": self.output_id,
             "destination": self.destination.as_posix(),
         }
+        if self.artifact_type == "Directory":
+            data["type"] = self.artifact_type
+        return data
 
 
 @dataclass(frozen=True)
@@ -130,13 +136,20 @@ class PublicationPlan:
                 raise ValueError(f"Publication output {index} must be a mapping.")
             output_id = item.get("id")
             destination = item.get("destination")
+            artifact_type = item.get("type", "File")
             if not isinstance(output_id, str) or not output_id:
                 raise ValueError(f"Publication output {index} has no valid id.")
             if not isinstance(destination, str) or not destination:
                 raise ValueError(
                     f"Publication output '{output_id}' has no valid destination."
                 )
-            entries.append(PublicationEntry(output_id, PurePosixPath(destination)))
+            entries.append(
+                PublicationEntry(
+                    output_id,
+                    PurePosixPath(destination),
+                    artifact_type,
+                )
+            )
         return cls(tuple(entries))
 
     @classmethod
@@ -184,6 +197,25 @@ def _publish_file(source: Path, destination: Path) -> str:
     return "copied"
 
 
+def _publish_directory(source: Path, destination: Path) -> str:
+    """Publish a directory, linking each regular file where possible."""
+    resolved_source = source.resolve(strict=True)
+    if not resolved_source.is_dir():
+        raise ValueError(f"Publication source is not a directory: {source}.")
+    destination.mkdir(parents=True, exist_ok=False)
+    for child in resolved_source.iterdir():
+        if child.is_symlink():
+            raise ValueError(f"Publication directory contains a symlink: {child}.")
+        child_destination = destination / child.name
+        if child.is_dir():
+            _publish_directory(child, child_destination)
+        elif child.is_file():
+            _publish_file(child, child_destination)
+        else:
+            raise ValueError(f"Publication directory contains an unsupported entry: {child}.")
+    return "published"
+
+
 def publish_outputs(
     manifest_path: Path,
     sources: Sequence[Path],
@@ -204,7 +236,11 @@ def publish_outputs(
         published: dict[str, Path] = {}
         for source, entry in zip(sources, plan.entries, strict=True):
             destination = publication_root.joinpath(*entry.destination.parts)
-            method = _publish_file(Path(source), destination)
+            method = (
+                _publish_directory(Path(source), destination)
+                if entry.artifact_type == "Directory"
+                else _publish_file(Path(source), destination)
+            )
             logger.debug(
                 "%s %s -> %s",
                 method,

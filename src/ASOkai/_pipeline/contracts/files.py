@@ -142,7 +142,7 @@ class FileOutput:
         """Return the rendered tool output declaration."""
         return CwlToolOutput(
             self.name,
-            "File",
+            self.file_type.cwl_type,
             self.working_filename(config, input_configurations),
             self.doc,
         )
@@ -328,10 +328,10 @@ class FileInput:
         return self.prefix or _flag_for_name(self.name)
 
     def to_cwl_input(self) -> CwlToolInput:
-        """Return this input as a CWL File."""
+        """Return this input with its producer's CWL artifact type."""
         return CwlToolInput(
             self.name,
-            "File",
+            self.file_type.cwl_type,
             self.cli_prefix,
             self.doc,
         )

@@ -7,12 +7,20 @@ Description: Public exports for the Utils subpackage.
 License: LGPL-3.0-or-later
 """
 from . import KMCTools
+from ._bowtie2 import Bowtie2, Bowtie2Build, Bowtie2ExecutionError, Bowtie2Inspect
 from ._kmc import KMC, KMCExecutionError
+from ._reference_sequences import ReferenceSequence, write_reference_fasta
 from ._serializer import Serializable
 
 __all__ = [
     "KMCTools",
+    "Bowtie2",
+    "Bowtie2Build",
+    "Bowtie2ExecutionError",
+    "Bowtie2Inspect",
     "KMC",
     "KMCExecutionError",
+    "ReferenceSequence",
     "Serializable",
+    "write_reference_fasta",
 ]

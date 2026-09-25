@@ -155,6 +155,7 @@ def build_publication_plan(runs: list[StepRun]) -> PublicationPlan:
                 PublicationEntry(
                     run.output(output).qualified_name,
                     PurePosixPath(*relative.parts),
+                    output.file_type.cwl_type,
                 )
             )
     return PublicationPlan(tuple(entries))
@@ -326,7 +327,11 @@ class JobCwlGenerator(BaseCwlGenerator):
 def _root_is_file(plan: PublicationPlan, root: str) -> bool:
     """Return whether a publication root is itself a single file."""
     matching = [entry for entry in plan.entries if entry.destination.parts[0] == root]
-    return len(matching) == 1 and len(matching[0].destination.parts) == 1
+    return (
+        len(matching) == 1
+        and len(matching[0].destination.parts) == 1
+        and matching[0].artifact_type == "File"
+    )
 
 
 class PublisherCwlGenerator(BaseCwlGenerator):
@@ -356,7 +361,7 @@ class PublisherCwlGenerator(BaseCwlGenerator):
                     "inputBinding": {"position": 1},
                 },
                 "files": {
-                    "type": {"type": "array", "items": "File"},
+                    "type": {"type": "array", "items": ["File", "Directory"]},
                     "inputBinding": {"position": 2},
                 },
             },

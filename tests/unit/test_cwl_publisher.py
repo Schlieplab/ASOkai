@@ -180,3 +180,45 @@ def test_publisher_refuses_an_existing_workspace(tmp_path):
         publish_outputs(manifest, [source], workdir=tmp_path / "work")
 
     assert existing.read_text(encoding="utf-8") == "keep"
+
+
+def test_publisher_preserves_directory_artifact(tmp_path):
+    source = tmp_path / "index"
+    source.mkdir()
+    for part in ("1", "2", "3", "4", "rev.1", "rev.2"):
+        (source / f"index.{part}.bt2").write_bytes(part.encode())
+    manifest = tmp_path / "layout.yml"
+    plan = PublicationPlan((
+        PublicationEntry(
+            "build.index", PurePosixPath("genome/indexes/bowtie2/GRCh38"),
+            "Directory",
+        ),
+    ))
+    manifest.write_text(plan.render(), encoding="utf-8")
+
+    published = publish_outputs(manifest, [source], workdir=tmp_path / "work")
+
+    destination = published["build.index"]
+    assert PublicationPlan.read(manifest) == plan
+    assert sorted(path.name for path in destination.iterdir()) == sorted(
+        path.name for path in source.iterdir()
+    )
+    assert os.path.samefile(source / "index.1.bt2", destination / "index.1.bt2")
+
+
+def test_publisher_rejects_symlink_inside_directory(tmp_path):
+    source = tmp_path / "index"
+    source.mkdir()
+    (source / "index.1.bt2").symlink_to(tmp_path / "elsewhere")
+    manifest = tmp_path / "layout.yml"
+    manifest.write_text(
+        PublicationPlan((
+            PublicationEntry("build.index", PurePosixPath("genome/index"), "Directory"),
+        )).render(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        publish_outputs(manifest, [source], workdir=tmp_path / "work")
+
+    assert not (tmp_path / "work/published").exists()

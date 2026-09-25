@@ -67,7 +67,7 @@ def resolve_run_inputs(
         source = binding.source
         if isinstance(source, Path):
             resolved[file_input.name] = ResolvedInput(
-                cwl_value={"class": "File", "path": str(source)},
+                cwl_value={"class": file_input.file_type.cwl_type, "path": str(source)},
                 source="input_override",
                 path=source,
                 config_path=(
@@ -93,7 +93,7 @@ def resolve_run_inputs(
                 f"resolved output '{source.qualified_name}'."
             )
         resolved[file_input.name] = ResolvedInput(
-            cwl_value={"class": "File", "path": str(path)},
+            cwl_value={"class": file_input.file_type.cwl_type, "path": str(path)},
             source="dep_disk",
             path=path,
             producer_output=source,

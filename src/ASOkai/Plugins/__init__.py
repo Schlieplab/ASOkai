@@ -9,7 +9,9 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile, KffFile
+from ASOkai._pipeline.contracts.file_types import (
+    Bowtie2IndexDirectory, CsvFile, FileType, JsonFile, KffFile,
+)
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
@@ -41,6 +43,7 @@ from ASOkai._pipeline.workflows.standard import StandardWorkflow
 __all__ = [
     "AnalysisStep",
     "BuildGenomeKmerIndexStep",
+    "Bowtie2IndexDirectory",
     "CoreStep",
     "CreateTargetGeneStep",
     "CsvFile",

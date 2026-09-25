@@ -8,4 +8,5 @@ and public Python API.
    :maxdepth: 2
 
    Utils/kmc
+   Utils/bowtie2
    Utils/serialization

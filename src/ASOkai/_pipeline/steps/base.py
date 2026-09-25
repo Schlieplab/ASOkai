@@ -196,7 +196,8 @@ class Step(Runnable):
         """Validate every declared output before reporting step success."""
         for output in self.spec.outputs:
             path = getattr(args, output.argument_name)
-            if not path.is_file():
+            expected = output.file_type.cwl_type
+            if not (path.is_dir() if expected == "Directory" else path.is_file()):
                 raise FileNotFoundError(
                     f"Step '{self.name}' did not write output "
                     f"'{output.name}' to {path}."

@@ -61,7 +61,24 @@ def _relative_output_paths(run: StepRun) -> list[dict[str, str]]:
 
 
 def _file_metadata(path: Path) -> dict[str, int]:
-    """Return inexpensive metadata that changes with ordinary file edits."""
+    """Return metadata that changes with ordinary file or directory edits."""
+    if path.is_dir():
+        digest = hashlib.sha256()
+        size = 0
+        for entry in sorted(path.rglob("*")):
+            stat = entry.stat()
+            relative = entry.relative_to(path).as_posix()
+            digest.update(
+                f"{relative}\0{stat.st_mode}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode()
+            )
+            if entry.is_file():
+                size += stat.st_size
+        return {
+            "size": size,
+            # Keep the receipt shape stable; for directories this field is a
+            # fingerprint of the contained paths and their file metadata.
+            "mtime_ns": int.from_bytes(digest.digest()[:8], "big"),
+        }
     stat = path.stat()
     return {
         "size": stat.st_size,
@@ -133,9 +150,14 @@ def _receipt_data(run: StepRun) -> dict[str, Any]:
     """Return current receipt data for a complete output set."""
     datadir = _datadir(run)
     outputs = []
+    output_types = {
+        output.name: output.file_type.cwl_type
+        for output in run.step.spec.outputs
+    }
     for declared in _relative_output_paths(run):
         path = datadir.joinpath(*PurePosixPath(declared["path"]).parts)
-        if not path.is_file():
+        expected = output_types[declared["name"]]
+        if not (path.is_dir() if expected == "Directory" else path.is_file()):
             raise FileNotFoundError(path)
         outputs.append(
             {

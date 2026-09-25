@@ -7,8 +7,9 @@ configuration and file contracts, and executes the resulting plan through CWL.
 
 ## Installation
 
-Create the Conda environment so that binary dependencies such as KMC are
-installed alongside the Python dependencies, then install ASOkai into it:
+Create the Conda environment so that binary dependencies such as KMC and
+Bowtie 2 are installed alongside the Python dependencies, then install ASOkai
+into it:
 
 ```bash
 conda env create -f environment.yaml
@@ -146,6 +147,13 @@ license.
 
 [KMC](https://github.com/refresh-bio/KMC) is GPLv3-only; see the upstream
 repository for the license text.
+
+### Bowtie 2
+
+[Bowtie 2](https://bowtie-bio.sourceforge.net/bowtie2/manual.shtml) is
+[GPLv3 software](https://github.com/BenLangmead/bowtie2/blob/master/LICENSE).
+ASOkai invokes its command-line executables but does not distribute or link
+against them.
 
 ## Contributor setup
 

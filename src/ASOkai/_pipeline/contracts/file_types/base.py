@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class FileType:
 
     media_type: str = "application/octet-stream"
     format_name: str = "Opaque file"
+    cwl_type: ClassVar[Literal["File", "Directory"]] = "File"
 
     def __post_init__(self) -> None:
         if type(self.media_type) is not str or not self.media_type.strip():

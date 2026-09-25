@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -161,11 +162,12 @@ class StepRun:
         return paths
 
     def require_output_files(self) -> dict[str, Path]:
-        """Require every concrete output path to contain a regular file."""
+        """Require each output path to contain its declared artifact kind."""
         paths = self.output_paths()
         for output in self.step.spec.outputs:
             path = paths[output.name]
-            if not path.is_file():
+            expected = output.file_type.cwl_type
+            if not (path.is_dir() if expected == "Directory" else path.is_file()):
                 raise FileNotFoundError(
                     f"Output '{self.run_id}/{output.name}' was not written "
                     f"to {path}."
@@ -173,9 +175,11 @@ class StepRun:
         return paths
 
     def cleanup_output_files(self) -> None:
-        """Remove every concrete output file that currently exists."""
+        """Remove every concrete output artifact that currently exists."""
         for path in self.output_paths().values():
-            if path.exists():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.exists() or path.is_symlink():
                 path.unlink()
 
 
@@ -219,6 +223,10 @@ class StepInputBinding:
         if isinstance(self.source, Path):
             object.__setattr__(self, "source", self.source.resolve())
         elif isinstance(self.source, StepRunOutput):
+            if self.file_input.source is None:
+                raise ValueError(
+                    f"Standalone input '{self.file_input.name}' requires a path."
+                )
             if self.source.output is not self.file_input.source:
                 raise ValueError(
                     f"Input '{self.file_input.name}' requires output "

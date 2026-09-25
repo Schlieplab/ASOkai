@@ -20,6 +20,7 @@ from ASOkai.Plugins import (
     StepSpec,
 )
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
+from ASOkai._pipeline.contracts.file_types import Bowtie2IndexDirectory
 from ASOkai._pipeline.output_receipts import (
     receipt_path,
     record_validated_outputs,
@@ -75,6 +76,15 @@ class OverrideConsumerStep(Step):
     )
     summary_output = FileOutput("summary", destination="consumer/summary.txt")
     spec = StepSpec(inputs=[result_input], outputs=[summary_output])
+
+
+class DirectoryOutputStep(Step):
+    name = "directory-output"
+    description = "Produce a test directory artifact."
+    index_output = FileOutput(
+        "index", destination="genome/index", file_type=Bowtie2IndexDirectory()
+    )
+    spec = StepSpec(outputs=[index_output])
 
 
 def _materialize_and_record(run: StepRun) -> dict[str, Path]:
@@ -183,3 +193,28 @@ def test_override_affects_run_identity_without_receiving_a_receipt(tmp_path):
     assert sorted(path.name for path in tmp_path.glob("override*")) == [
         "override.txt"
     ]
+
+
+def test_directory_receipt_tracks_member_changes_and_cleanup(monkeypatch, tmp_path):
+    from ASOkai._pipeline.contracts.file_types import bowtie2
+
+    class FakeInspector:
+        def run(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(bowtie2, "Bowtie2Inspect", FakeInspector)
+    run = StepRun("directory-output", DirectoryOutputStep(), {"datadir": str(tmp_path)})
+    directory = run.output_paths()["index"]
+    directory.mkdir(parents=True)
+    for part in ("1", "2", "3", "4", "rev.1", "rev.2"):
+        (directory / f"index.{part}.bt2").write_bytes(part.encode())
+
+    run.validate_output_files()
+    record_validated_outputs(run)
+    assert reusable_output_paths(run) == {"index": directory}
+
+    (directory / "index.1.bt2").write_bytes(b"changed")
+    assert reusable_output_paths(run) is None
+
+    run.cleanup_output_files()
+    assert not directory.exists()

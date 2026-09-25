@@ -9,6 +9,7 @@ License: LGPL-3.0-or-later
 
 from .csv import CsvFile, CsvRow, CsvTable
 from .base import FileType
+from .bowtie2 import Bowtie2IndexDirectory
 from .json import JsonFile
 from .kff import KffFile
 
@@ -18,6 +19,7 @@ __all__ = [
     "CsvRow",
     "CsvTable",
     "FileType",
+    "Bowtie2IndexDirectory",
     "JsonFile",
     "KffFile",
 ]

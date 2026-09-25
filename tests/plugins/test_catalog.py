@@ -184,6 +184,7 @@ class RegisteredPluginWorkflow:
 def test_step_authoring_contracts_are_public() -> None:
     expected = {
         "AnalysisStep",
+        "Bowtie2IndexDirectory",
         "BuildGenomeKmerIndexStep",
         "CreateTargetGeneStep",
         "CoreStep",

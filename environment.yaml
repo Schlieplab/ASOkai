@@ -6,6 +6,7 @@ channels:
 dependencies:
   - python=3.12
   - kmc=3.2.4
+  - bowtie2>=2.5
   - biopython>=1.83
   - jsonschema>=4,<5
   - pyyaml>=6.0

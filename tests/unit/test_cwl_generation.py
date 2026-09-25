@@ -383,7 +383,7 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     assert publisher["baseCommand"] == ["ASOkai", "publish-outputs"]
     assert publisher["inputs"]["files"]["type"] == {
         "type": "array",
-        "items": "File",
+        "items": ["File", "Directory"],
     }
     assert publisher["outputs"]["published_GRCh38"] == {
         "type": "Directory",

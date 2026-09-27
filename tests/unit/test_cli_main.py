@@ -171,6 +171,39 @@ def test_list_commands_show_registered_units():
     assert "Standard pipeline" in workflows.output
 
 
+def test_verbose_catalog_reveals_internal_steps(monkeypatch):
+    from dataclasses import replace
+
+    from ASOkai._pipeline.catalog import get_pipeline_catalog
+    from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+
+    class InternalDownloadStep(DownloadGenomeStep):
+        listed = False
+
+    catalog = get_pipeline_catalog()
+    catalog = replace(
+        catalog,
+        steps={**catalog.steps, "download-genome": InternalDownloadStep()},
+    )
+    monkeypatch.setattr("ASOkai._cli.catalog.get_pipeline_catalog", lambda: catalog)
+    runner = CliRunner()
+
+    public = runner.invoke(main, ["list", "steps"])
+    verbose = runner.invoke(main, ["list", "-v", "steps"])
+    hidden = runner.invoke(main, ["describe", "step", "download-genome"])
+    described = runner.invoke(
+        main, ["describe", "-v", "step", "download-genome"]
+    )
+
+    assert public.exit_code == verbose.exit_code == described.exit_code == 0
+    assert "download-genome" not in public.output
+    assert "download-genome" in verbose.output
+    assert "Internal\n" in verbose.output
+    assert hidden.exit_code != 0
+    assert "Unknown step 'download-genome'" in hidden.output
+    assert "Type        : Internal" in described.output
+
+
 def test_describe_step_create_target_gene_shows_details():
     runner = CliRunner()
 

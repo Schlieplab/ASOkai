@@ -26,6 +26,10 @@ Component hierarchy
    A step that downloads, prepares, constructs, or transforms core data.
    These steps usually implement ``run_from_args`` directly.
 
+``UtilityStep``
+   A reusable operation on supplied inputs, such as building an index from
+   FASTA. Tasks can connect utility inputs to particular producers.
+
 ``AnalysisStep``
    A step that runs an ``ASOkai.Analysis.Analysis`` subclass. Its shared
    implementation owns analysis construction and result serialization.
@@ -114,6 +118,12 @@ The file type owns serialization and validation:
    and closing KFF markers, then makes ``kmc_tools`` read the complete index
    by dumping it to the operating system's null device. The scan uses one
    thread and does not load the index into Python memory or retain the dump.
+
+``FastaFile(gzip=True)`` declares a compressed FASTA output, while
+``FastaFile()`` defaults to ``gzip=False`` and declares plain FASTA.
+The flag always describes a known compression state; ``None`` is not allowed.
+The file contract checks that a path is a file and leaves content parsing to
+the consuming tool.
 
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
 file type. Every input automatically has a ``path_override`` configuration

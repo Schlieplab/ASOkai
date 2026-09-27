@@ -49,6 +49,7 @@ from ASOkai._pipeline.contracts.files import FileInput, FileOutput  # noqa: E402
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
+from ASOkai._pipeline.steps.utils.base import UtilityStep  # noqa: E402
 from ASOkai.Antisense import (  # noqa: E402
     ASO,
     AntisenseTherapeutic,
@@ -104,16 +105,18 @@ def test_every_built_in_step_has_generated_documentation() -> None:
 def test_step_index_is_generated_from_the_built_in_registry() -> None:
     core_list = build_step_list("core", include_descriptions=True)
     analysis_list = build_step_list("analysis")
+    utility_list = build_step_list("utils")
     built_in_steps = get_built_in_steps()
 
     for step_type, generated_list in (
         (CoreStep, core_list),
         (AnalysisStep, analysis_list),
+        (UtilityStep, utility_list),
     ):
         expected_targets = [
             f"/steps/{step.name}"
             for step in built_in_steps
-            if isinstance(step, step_type)
+            if isinstance(step, step_type) and step.listed
         ]
         generated_targets = [
             link["reftarget"]
@@ -673,7 +676,7 @@ def test_opaque_outputs_use_human_readable_format_names() -> None:
         node.astext() for node in build_step_reference(step, _config_schema())
     )
 
-    assert "gzip-compressed DNA FASTA" in reference
+    assert "FASTA reference" in reference
     assert "SQLite gffutils database" in reference
     assert "application/gzip" not in reference
 

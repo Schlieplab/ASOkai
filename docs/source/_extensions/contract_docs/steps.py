@@ -48,6 +48,7 @@ def _path_override_example(step: Any) -> nodes.literal_block:
     suffixes = {
         "application/json": ".json",
         "text/csv": ".csv",
+        "application/x-fasta": ".fa",
     }
     inputs = {
         file_input.name: {
@@ -273,18 +274,28 @@ def _resources_table(step: Any, config_fields: list[Any]) -> nodes.table:
 
 def _step_kind(step: Any) -> str:
     from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+    from ASOkai._pipeline.steps.core.base import CoreStep
+    from ASOkai._pipeline.steps.utils.base import UtilityStep
 
-    return "Analysis step" if isinstance(step, AnalysisStep) else "Core step"
+    if isinstance(step, AnalysisStep):
+        return "Analysis step"
+    if isinstance(step, CoreStep):
+        return "Core step"
+    if isinstance(step, UtilityStep):
+        return "Utility step"
+    return "Internal step"
 
 
 def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
     """Return registered built-in steps of one kind."""
     from ASOkai._pipeline.steps.analysis.base import AnalysisStep
     from ASOkai._pipeline.steps.core.base import CoreStep
+    from ASOkai._pipeline.steps.utils.base import UtilityStep
 
     step_types = {
         "analysis": AnalysisStep,
         "core": CoreStep,
+        "utils": UtilityStep,
     }
     try:
         step_type = step_types[step_kind]
@@ -296,7 +307,7 @@ def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
     return tuple(
         step
         for step in get_built_in_steps()
-        if isinstance(step, step_type)
+        if isinstance(step, step_type) and step.listed
     )
 
 

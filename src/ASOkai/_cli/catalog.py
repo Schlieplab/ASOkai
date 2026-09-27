@@ -20,16 +20,21 @@ from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.base import CoreStep
+from ASOkai._pipeline.steps.utils.base import UtilityStep
 
-from .options import CONTEXT_SETTINGS, verbose_option
+from .options import CONTEXT_SETTINGS, catalog_verbose_option
 
 
 def _step_category_path(step: object) -> tuple[str, ...]:
     """Return the CLI category path for a step."""
+    if isinstance(step, Step) and not step.listed:
+        return ("internal",)
     if isinstance(step, CoreStep):
         return ("core",)
     if isinstance(step, AnalysisStep):
         return ("analysis",)
+    if isinstance(step, UtilityStep):
+        return ("utils",)
     return ("pipeline",)
 
 
@@ -63,11 +68,13 @@ def _display_description(pipeline_unit: object) -> str:
 
 
 @click.command("list", context_settings=CONTEXT_SETTINGS)
+@catalog_verbose_option
 @click.argument(
     "unit",
     type=click.Choice(["steps", "tasks", "workflows"]),
 )
-def list_command(unit: str) -> None:
+@click.pass_context
+def list_command(ctx: click.Context, unit: str) -> None:
     """List available steps, tasks, or workflows."""
     try:
         catalog = get_pipeline_catalog()
@@ -85,9 +92,13 @@ def list_command(unit: str) -> None:
     name_width = max(len(name) for name in registry) + 2
 
     if unit == "steps":
-        category_order = {"core": 0, "analysis": 1}
+        category_order = {"core": 0, "analysis": 1, "utils": 2, "internal": 3}
         rows = sorted(
-            registry.items(),
+            (
+                (name, step)
+                for name, step in registry.items()
+                if step.listed or ctx.obj.get("verbose", False)
+            ),
             key=lambda item: (
                 category_order.get(
                     _step_category_path(item[1])[0],
@@ -233,7 +244,7 @@ def _describe_dependencies(
 
 
 @click.command("describe", context_settings=CONTEXT_SETTINGS)
-@verbose_option
+@catalog_verbose_option
 @click.argument(
     "unit",
     type=click.Choice(["step", "task", "workflow"]),
@@ -256,7 +267,11 @@ def describe_command(
         "workflow": catalog.workflows,
     }[unit]
     pipeline_unit = registry.get(name)
-    if pipeline_unit is None:
+    if pipeline_unit is None or (
+        unit == "step"
+        and not pipeline_unit.listed
+        and not ctx.obj.get("verbose", False)
+    ):
         raise click.ClickException(f"Unknown {unit} '{name}'.")
 
     click.echo(f"Name        : {pipeline_unit.name}")

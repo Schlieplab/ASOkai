@@ -48,6 +48,7 @@ class Step(Runnable):
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
     supports_multiple_threads: ClassVar[bool] = False
+    listed: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Bind each declared output port to its concrete producer step."""

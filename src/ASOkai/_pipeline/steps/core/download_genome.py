@@ -14,7 +14,7 @@ from typing import Literal
 
 from GenomeUtils.Downloaders import EnsemblGenomeDownloader
 
-from ASOkai._pipeline.contracts.file_types import FileType
+from ASOkai._pipeline.contracts.file_types import FastaFile, FileType
 from ASOkai._pipeline.contracts.files import FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
@@ -41,10 +41,7 @@ class DownloadGenomeStep(CoreStep):
     description = "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
     dna_output = FileOutput(
         "dna",
-        file_type=FileType(
-            media_type="application/gzip",
-            format_name="gzip-compressed DNA FASTA",
-        ),
+        file_type=FastaFile(gzip=True),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.dna.primary_assembly.fa.gz",
@@ -54,10 +51,7 @@ class DownloadGenomeStep(CoreStep):
     )
     cdna_output = FileOutput(
         "cdna",
-        file_type=FileType(
-            media_type="application/gzip",
-            format_name="gzip-compressed cDNA FASTA",
-        ),
+        file_type=FastaFile(gzip=True),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/genome/"
             "{species}.{assembly}.cdna.all.fa.gz",

@@ -194,6 +194,8 @@ def test_step_authoring_contracts_are_public() -> None:
         "FileInput",
         "FileOutput",
         "FileType",
+        "FastaFile",
+        "UtilityStep",
         "GenerateASOCandidatesStep",
         "IntrinsicFeaturesStep",
         "InputConfigField",

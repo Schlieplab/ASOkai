@@ -72,6 +72,16 @@ verbose_option = click.option(
     help="Enable debug logging.",
 )
 
+catalog_verbose_option = click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_set_verbose,
+    help="Enable debug logging and show internal steps.",
+)
+
 
 def parse_config_overrides(
     config_overrides: tuple[str, ...],

@@ -19,6 +19,7 @@ import pytest
 from ASOkai.Utils import KMCTools, Serializable
 from ASOkai._pipeline.contracts.file_types import (
     CsvFile,
+    FastaFile,
     FileType,
     JsonFile,
     KffFile,
@@ -30,6 +31,22 @@ def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
 
     assert FileType().read(path) == path
     assert FileType().validate(path) is None
+
+
+def test_fasta_file_declares_boolean_gzip_compression(tmp_path):
+    path = tmp_path / "reference.fa.gz"
+    path.write_bytes(b"placeholder")
+
+    assert FastaFile(gzip=True).gzip is True
+    assert FastaFile(gzip=False).gzip is False
+    assert FastaFile().gzip is False
+    assert FastaFile() == FastaFile(gzip=False)
+    assert FastaFile() != FastaFile(gzip=True)
+    assert FastaFile(gzip=True).read(path) == path
+    FastaFile(gzip=True).validate(path)
+    for invalid in (None, "yes", 1):
+        with pytest.raises(TypeError, match="gzip must be a boolean"):
+            FastaFile(gzip=invalid)
 
 
 def test_kff_file_keeps_inputs_as_paths_without_loading_the_index(tmp_path):

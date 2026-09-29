@@ -106,6 +106,7 @@ properties:
           minLength: 1
         parameters:
           type: object
+          description: Overrides for a selected step or declared task parameter.
           additionalProperties:
             type:
               - string
@@ -144,9 +145,6 @@ properties:
             - task
       not:
         anyOf:
-          - required:
-              - task
-              - parameters
           - required:
               - task
               - inputs

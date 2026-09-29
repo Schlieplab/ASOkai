@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from ASOkai._pipeline.steps.base import Step
+    from ASOkai._pipeline.tasks.base import Task
 
 _RUNNABLE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
@@ -31,11 +32,11 @@ class Runnable(Protocol):
     description: ClassVar[str]
 
 
-def expand_runnable_steps(
+def flatten_workflow_members(
     runnable: Runnable,
     seen_workflows: frozenset[str] = frozenset(),
-) -> list[Step]:
-    """Expand one runnable into its ordered endpoint steps."""
+) -> list[Step | Task]:
+    """Flatten nested workflows into steps and intact tasks."""
     from ASOkai._pipeline.steps.base import Step
     from ASOkai._pipeline.tasks.base import Task
     from ASOkai._pipeline.workflows.base import Workflow
@@ -44,12 +45,28 @@ def expand_runnable_steps(
         if runnable.name in seen_workflows:
             raise ValueError(f"Workflow '{runnable.name}' participates in a cycle.")
         seen = seen_workflows | {runnable.name}
-        steps: list[Step] = []
+        members: list[Step | Task] = []
         for member in runnable.members:
-            steps.extend(expand_runnable_steps(member, seen))
-        return steps
+            members.extend(flatten_workflow_members(member, seen))
+        return members
     if isinstance(runnable, Task):
-        return list(runnable.steps)
+        return [runnable]
     if isinstance(runnable, Step):
         return [runnable]
     raise TypeError(f"Unsupported runnable type: {type(runnable).__name__!r}.")
+
+
+def expand_runnable_steps(
+    runnable: Runnable,
+    seen_workflows: frozenset[str] = frozenset(),
+) -> list[Step]:
+    """Expand one runnable into its ordered endpoint steps."""
+    from ASOkai._pipeline.steps.base import Step
+
+    steps: list[Step] = []
+    for member in flatten_workflow_members(runnable, seen_workflows):
+        if isinstance(member, Step):
+            steps.append(member)
+        else:
+            steps.extend(member.steps)
+    return steps

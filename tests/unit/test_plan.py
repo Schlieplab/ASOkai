@@ -31,7 +31,11 @@ from ASOkai._pipeline.contracts.execution import (
     StepRun,
     StepRunOutput,
 )
-from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
+from ASOkai._pipeline.contracts.paths import (
+    InputConfigField,
+    OutputPathTemplate,
+    TemplateField,
+)
 from ASOkai._pipeline.base import expand_runnable_steps
 from ASOkai._pipeline.plan import build_export_plan, build_plan
 from ASOkai._pipeline.output_receipts import record_validated_outputs
@@ -136,6 +140,104 @@ def _make_fasta_producer_and_consumer(*, gzip: bool = False) -> tuple[Step, Step
         },
     )
     return producer_type(), consumer_type()
+
+
+def _make_named_task() -> tuple[Task, Step, Step]:
+    source_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "sources/{mode}.txt",
+            fields={"mode": TemplateField("source.mode")},
+        ),
+    )
+    source_type = type(
+        "_TaskSourceStep",
+        (Step,),
+        {
+            "name": "task-source",
+            "description": "",
+            "result_output": source_output,
+            "spec": StepSpec(
+                params=[ScalarParam("mode", str, config="source.mode")],
+                outputs=[source_output],
+            ),
+        },
+    )
+    consumer_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "results/{mode}.txt",
+            fields={"mode": InputConfigField("input", "source.mode")},
+        ),
+    )
+    consumer_type = type(
+        "_TaskConsumerStep",
+        (Step,),
+        {
+            "name": "task-consumer",
+            "description": "",
+            "result_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[FileInput("input", file_type=FileType())],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    source = source_type()
+    consumer = consumer_type()
+    task_type = type(
+        "_LinkedTask",
+        (Task,),
+        {
+            "name": "linked-task",
+            "description": "Connects two specific producer runs.",
+            "runs": (
+                {
+                    "id": "left_result",
+                    "step": consumer,
+                    "inputs": {"input": {"run_id": "left_source", "output": "result"}},
+                },
+                {
+                    "id": "right_result",
+                    "step": consumer,
+                    "inputs": {"input": {"run_id": "right_source", "output": "result"}},
+                },
+                {"id": "left_source", "step": source, "parameters": {"mode": "left"}},
+                {"id": "right_source", "step": source, "parameters": {"mode": "right"}},
+            ),
+        },
+    )
+    return task_type(), source, consumer
+
+
+def _make_forwarding_task(
+    *, required: bool = False, default: str | None = None
+) -> tuple[Task, Step]:
+    step = _make_parameter_step()
+    parameter = ScalarParam(
+        "selection",
+        str,
+        config=None if required else "shared.mode",
+        **({"default": default} if default is not None else {}),
+    )
+    task_type = type(
+        "_ForwardingTask",
+        (Task,),
+        {
+            "name": "forwarding-task",
+            "description": "Forwards one declared task parameter.",
+            "params": (parameter,),
+            "runs": (
+                {
+                    "id": "selected",
+                    "step": step,
+                    "parameters": {"mode": {"task_parameter": "selection"}},
+                },
+                {"id": "fixed", "step": step, "parameters": {"mode": "fixed"}},
+            ),
+        },
+    )
+    return task_type(), step
 
 
 def _materialize_run(run: StepRun) -> StepRun:
@@ -297,6 +399,113 @@ def test_configured_task_expands_its_steps_in_order(config):
         "runs.1.second",
     ]
     assert _scheduled_run_ids(plan) == ["runs.1.first", "runs.1.second"]
+
+
+@pytest.mark.parametrize("selection", ["task", "yaml", "workflow"])
+@pytest.mark.parametrize("export", [False, True])
+def test_named_task_runs_keep_local_links_and_repeated_steps(config, selection, export):
+    task, source, consumer = _make_named_task()
+    config["source"] = {"mode": "shared"}
+    prefix = "runs.1" if selection == "yaml" else task.name
+    if selection == "yaml":
+        config["runs"] = [{"task": task.name}]
+        runnables = []
+    elif selection == "workflow":
+        workflow_type = type(
+            "_TaskWorkflow",
+            (),
+            {"name": "task-workflow", "description": "", "members": (task,)},
+        )
+        runnables = [cast(Runnable, workflow_type())]
+    else:
+        runnables = [cast(Runnable, task)]
+
+    build = build_export_plan if export else build_plan
+    plan = build(
+        runnables,
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: cast(Task, task)},
+    )
+
+    assert [run.run_id for run in plan.goals] == [
+        f"{prefix}.left_result",
+        f"{prefix}.right_result",
+        f"{prefix}.left_source",
+        f"{prefix}.right_source",
+    ]
+    assert _scheduled_run_ids(plan) == [
+        f"{prefix}.left_source",
+        f"{prefix}.right_source",
+        f"{prefix}.left_result",
+        f"{prefix}.right_result",
+    ]
+    for consumer_run, source_run in zip(plan.goals[:2], plan.goals[2:]):
+        selected = consumer_run.inputs[0].source
+        assert isinstance(selected, StepRunOutput)
+        assert selected.run is source_run
+        assert (
+            consumer_run.output_paths()["result"].stem == source_run.parameters["mode"]
+        )
+
+
+@pytest.mark.parametrize("export", [False, True])
+def test_task_parameters_forward_only_to_declared_run_ports(config, export):
+    task, step = _make_forwarding_task()
+    config["shared"] = {"mode": "global"}
+    config["runs"] = [
+        {"task": task.name, "parameters": {"selection": "left"}},
+        {"task": task.name, "parameters": {"selection": "right"}},
+    ]
+
+    build = build_export_plan if export else build_plan
+    plan = build([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+    assert [run.parameters["mode"] for run in plan.goals] == [
+        "left", "fixed", "right", "fixed"
+    ]
+    assert plan.goals[1] is plan.goals[3]
+    assert {run.output_paths()["result"].stem for run in plan.runs_to_execute} == {
+        "left", "right", "fixed"
+    }
+
+
+def test_task_parameter_uses_shared_config_when_selection_omits_it(config):
+    task, step = _make_forwarding_task()
+    config["shared"] = {"mode": "global"}
+
+    plan = build_plan([task], config, _registry={step.name: step})
+
+    assert [run.parameters["mode"] for run in plan.goals] == ["global", "fixed"]
+
+
+def test_task_parameter_uses_declared_default_when_selection_omits_it(config):
+    task, step = _make_forwarding_task(required=True, default="task-default")
+    config["runs"] = [{"task": task.name}]
+
+    plan = build_plan(
+        [], config, _registry={step.name: step}, _tasks={task.name: task}
+    )
+
+    assert [run.parameters["mode"] for run in plan.goals] == [
+        "task-default", "fixed"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("parameters", "message"),
+    [
+        ({"unknown": "left"}, "unknown parameter"),
+        ({"selection": 21}, "must be str"),
+        ({}, "requires a value"),
+    ],
+)
+def test_task_selection_rejects_invalid_parameter_values(config, parameters, message):
+    task, step = _make_forwarding_task(required=True)
+    config["runs"] = [{"task": task.name, "parameters": parameters}]
+
+    with pytest.raises(ValueError, match=message):
+        build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
 
 
 @pytest.mark.parametrize("kind", ["step", "task"])

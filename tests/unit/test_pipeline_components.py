@@ -14,11 +14,18 @@ import pytest
 from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai._pipeline import catalog as pipeline_catalog
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.contracts.file_types import CsvFile, FileType, JsonFile
+from ASOkai._pipeline.contracts.file_types import (
+    CsvFile,
+    FastaFile,
+    FileType,
+    JsonFile,
+)
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
+from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.validation import (
     validate_component,
     validate_step_dependencies,
@@ -169,6 +176,156 @@ def test_builtin_declaration_errors_identify_the_component_as_builtin():
             "task",
             (InvalidBuiltinTask(),),
         )
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("duplicate", "duplicate run id"),
+        ("unknown_run", "unknown run"),
+        ("unknown_output", "unknown output"),
+        ("unknown_input", "has no input"),
+        ("incompatible", "cannot accept output"),
+    ],
+)
+def test_named_task_runs_reject_invalid_local_links(failure, message):
+    result = FileOutput("result", destination="consumer.txt")
+    consumer_type = type(
+        "_TaskConsumer",
+        (Step,),
+        {
+            "name": "task-consumer",
+            "description": "Consumes a task-local output.",
+            "result_output": result,
+            "spec": StepSpec(
+                inputs=[FileInput("input", file_type=FileType())],
+                outputs=[result],
+            ),
+            "run_from_args": lambda self, args: 0,
+        },
+    )
+    producer = RegisteredProducerStep()
+    consumer = consumer_type()
+    producer_run = {"id": "source", "step": producer}
+    input_name = "missing" if failure == "unknown_input" else "input"
+    source_id = "missing" if failure == "unknown_run" else "source"
+    output_name = "missing" if failure == "unknown_output" else "result"
+    if failure == "incompatible":
+        fasta_input = FileInput("input", file_type=FastaFile())
+        fasta_result = FileOutput("result", destination="fasta-consumer.txt")
+        incompatible_type = type(
+            "_FastaTaskConsumer",
+            (Step,),
+            {
+                "name": "fasta-task-consumer",
+                "description": "Requires FASTA.",
+                "result_output": fasta_result,
+                "spec": StepSpec(inputs=[fasta_input], outputs=[fasta_result]),
+                "run_from_args": lambda self, args: 0,
+            },
+        )
+        consumer = incompatible_type()
+    runs = (
+        producer_run,
+        {
+            "id": "source" if failure == "duplicate" else "consumer",
+            "step": consumer,
+            "inputs": {input_name: {"run_id": source_id, "output": output_name}},
+        },
+    )
+    task_type = type(
+        "_InvalidTask",
+        (Task,),
+        {"name": "invalid-task", "description": "Invalid links.", "runs": runs},
+    )
+
+    with pytest.raises(ValueError, match=message):
+        validate_component("task", task_type())
+
+
+@pytest.mark.parametrize(
+    ("run", "error", "message"),
+    [
+        ({"step": RegisteredProducerStep()}, ValueError, "run id"),
+        ({"id": "source", "step": object()}, TypeError, "step must be a Step"),
+        (
+            {"id": "source", "step": RegisteredProducerStep(), "paramters": {}},
+            ValueError,
+            "unknown field.*paramters",
+        ),
+    ],
+)
+def test_named_task_runs_reject_malformed_declarations(run, error, message):
+    task_type = type(
+        "_MalformedTask",
+        (Task,),
+        {"name": "malformed-task", "description": "Invalid run.", "runs": (run,)},
+    )
+
+    with pytest.raises(error, match=message):
+        validate_component("task", task_type())
+
+
+@pytest.mark.parametrize(
+    ("params", "forwarding", "error", "message"),
+    [
+        ((), {"task_parameter": "selection"}, ValueError, "undeclared task parameter"),
+        (
+            (ScalarParam("selection", str),),
+            {"wrong": "selection"},
+            TypeError,
+            "must specify only task_parameter",
+        ),
+        (
+            (ScalarParam("selection", str),),
+            "fixed",
+            ValueError,
+            "unused parameter",
+        ),
+        (
+            (ScalarParam("selection", str), ScalarParam("selection", str)),
+            {"task_parameter": "selection"},
+            ValueError,
+            "duplicate parameter",
+        ),
+    ],
+)
+def test_task_parameter_forwarding_rejects_invalid_declarations(
+    params, forwarding, error, message
+):
+    result = FileOutput("result", destination="task-param.txt")
+    step_type = type(
+        "_TaskParameterStep",
+        (Step,),
+        {
+            "name": "task-parameter-step",
+            "description": "Receives a forwarded task parameter.",
+            "result_output": result,
+            "spec": StepSpec(
+                params=[ScalarParam("mode", str)], outputs=[result]
+            ),
+            "run_from_args": lambda self, args: 0,
+        },
+    )
+    task_type = type(
+        "_InvalidForwardingTask",
+        (Task,),
+        {
+            "name": "invalid-forwarding-task",
+            "description": "Has invalid task parameter forwarding.",
+            "params": params,
+            "runs": (
+                {
+                    "id": "run",
+                    "step": step_type(),
+                    "parameters": {"mode": forwarding},
+                },
+            ),
+        },
+    )
+
+    with pytest.raises(error, match=message):
+        validate_component("task", task_type())
 
 
 def test_step_component_must_implement_its_execution_method():

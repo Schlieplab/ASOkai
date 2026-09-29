@@ -16,12 +16,14 @@ import pytest
 import ASOkai.Plugins as Plugins
 from ASOkai.Plugins import (
     AnalysisStep,
+    CreateTargetGeneStep,
     CsvFile,
     FileInput,
     FileOutput,
     ScalarParam,
     Step,
     StepSpec,
+    Task,
 )
 from ASOkai._pipeline import catalog as pipeline_catalog
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
@@ -175,6 +177,25 @@ class RegisteredPluginTask:
     steps = [RegisteredPluginStep()]
 
 
+class RegisteredNamedTask(Task):
+    name = "registered-named-task"
+    description = "A valid task with named step runs."
+    runs = ({"id": "source", "step": RegisteredPluginStep()},)
+
+
+class TaskWithUnknownFallback(Task):
+    name = "task-with-unknown-fallback"
+    description = "Uses a task parameter absent from configuration schemas."
+    params = (ScalarParam("site_length", int, config="missing.task_value"),)
+    runs = (
+        {
+            "id": "gene",
+            "step": CreateTargetGeneStep(),
+            "parameters": {"k": {"task_parameter": "site_length"}},
+        },
+    )
+
+
 class RegisteredPluginWorkflow:
     name = "registered-plugin-workflow"
     description = "A valid plugin workflow."
@@ -304,6 +325,32 @@ def test_pipeline_catalog_loads_each_plugin_once(monkeypatch) -> None:
     assert task_entry_point.load_count == 1
     assert workflow_entry_point.load_count == 1
     assert schema_entry_point.load_count == 1
+
+
+def test_named_task_plugin_is_discovered(monkeypatch) -> None:
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint("asokai.steps", RegisteredPluginStep.name, RegisteredPluginStep),
+        FakeEntryPoint("asokai.tasks", RegisteredNamedTask.name, RegisteredNamedTask),
+    )
+
+    task = pipeline_catalog.get_tasks()[RegisteredNamedTask.name]
+
+    assert isinstance(task, RegisteredNamedTask)
+    assert [run["id"] for run in task.runs] == ["source"]
+    assert [step.name for step in task.steps] == [RegisteredPluginStep.name]
+
+
+def test_task_plugin_fallback_must_have_registered_schema(monkeypatch) -> None:
+    _provide_entry_points(
+        monkeypatch,
+        FakeEntryPoint(
+            "asokai.tasks", TaskWithUnknownFallback.name, TaskWithUnknownFallback
+        ),
+    )
+
+    with pytest.raises(ValueError, match="missing.task_value"):
+        pipeline_catalog.get_tasks()
 
 
 def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:

@@ -35,7 +35,8 @@ Component hierarchy
    implementation owns analysis construction and result serialization.
 
 ``Task``
-   A named CLI-level collection exposing a non-empty sequence of steps.
+   A named CLI-level collection of steps. It may declare named step
+   invocations and optional links; existing tasks may expose ``steps``.
 
 ``Workflow``
    A named collection exposing a non-empty sequence of runnable components.
@@ -163,11 +164,59 @@ will be supplied later. A task entry selects its declared steps::
    runs:
      - task: instantiate-target-gene
 
-Task entries do not accept ``parameters``. Invoke
+Task entries may supply declared task ``parameters``. Invoke
 ``ASOkai run --configfile config.yaml`` or ``ASOkai export --configfile
 config.yaml`` to use the file's ``runs`` without CLI selections. ``--config
 KEY=VALUE`` still changes shared fallback values. A file with ``runs`` cannot
 also be used with ``--step``, ``--task``, or ``--workflow`` selections.
+
+Composing task runs
+~~~~~~~~~~~~~~~~~~~
+
+Declare ``runs`` on a ``Task`` using the same ``id``, ``parameters``, and
+``inputs`` keys as a YAML step run. Every task run needs an ``id``, and its
+``step`` value is a Step instance rather than a step name. Run IDs are local
+to each task invocation. An input's ``run_id`` names its producer, even if it
+is declared later::
+
+   from ASOkai.Plugins import (
+       CreateTargetGeneStep, IntrinsicFeaturesStep, ScalarParam, Task,
+   )
+
+   class TargetAnalysisTask(Task):
+       name = "target-analysis"
+       description = "Create a target gene and analyze its features."
+       params = (ScalarParam("site_length", int, config="target.k"),)
+       runs = (
+           {
+               "id": "features",
+               "step": IntrinsicFeaturesStep(),
+               "inputs": {
+                   "target_gene": {"run_id": "gene", "output": "target_gene"}
+               },
+           },
+           {
+               "id": "gene",
+               "step": CreateTargetGeneStep(),
+               "parameters": {"k": {"task_parameter": "site_length"}},
+           },
+       )
+
+The planner schedules ``gene`` before ``features``. Once registered, the task
+can be selected with a parameter override::
+
+   runs:
+     - task: target-analysis
+       parameters:
+         site_length: 21
+
+The explicit ``task_parameter`` reference forwards that value to ``gene.k``;
+matching names alone do not forward values. Omitted task parameters use their
+shared configuration value or declared default. CLI task selections use those
+fallbacks too. Omit ``inputs`` when a step needs no explicit task link. A task
+may use the same step more than once with different fixed or forwarded
+parameters. Each distinct run must have a distinct output destination. Older
+tasks with ``steps`` remain valid.
 
 File contracts
 ~~~~~~~~~~~~~~

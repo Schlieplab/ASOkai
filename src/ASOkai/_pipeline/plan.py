@@ -18,7 +18,7 @@ from typing import Any, Mapping, Sequence
 
 from ASOkai.Types import Scalar
 from ASOkai._pipeline import config as cfg
-from ASOkai._pipeline.base import Runnable, expand_runnable_steps
+from ASOkai._pipeline.base import Runnable, flatten_workflow_members
 from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
     StepInputBinding,
@@ -28,14 +28,18 @@ from ASOkai._pipeline.contracts.execution import (
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
-from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.tasks.base import (
+    Task,
+    validate_task_parameters,
+    validate_task_runs,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class _RunOutputReference:
-    """A YAML input link to the output of a named run."""
+    """An input link to the output of a named run."""
 
     request_id: str
     output_name: str
@@ -43,7 +47,7 @@ class _RunOutputReference:
 
 @dataclass(frozen=True)
 class _ExplicitInput:
-    """A YAML input selection and its configuration location."""
+    """An input selection and its declaration location."""
 
     source: Path | _RunOutputReference
     location: str
@@ -51,7 +55,7 @@ class _ExplicitInput:
 
 @dataclass(frozen=True)
 class _GoalRequest:
-    """One normalized CLI or YAML goal before dependency discovery."""
+    """One normalized goal before dependency discovery."""
 
     request_id: str
     step: Step
@@ -623,17 +627,17 @@ class _PlanBuilder:
         )
 
 
-def _configured_input_selections(
-    index: int,
+def _declared_input_selections(
     step: Step,
     declarations: Mapping[str, Any],
     named_run_ids: Mapping[str, str],
+    location_prefix: str,
 ) -> dict[str, _ExplicitInput]:
-    """Normalize one YAML step entry's selected file inputs."""
+    """Normalize selected inputs from YAML or a task declaration."""
     selections: dict[str, _ExplicitInput] = {}
     declared_inputs = {file_input.name for file_input in step.spec.inputs}
     for name, declaration in declarations.items():
-        location = f"$.runs[{index}].inputs.{name}"
+        location = f"{location_prefix}.inputs.{name}"
         if name not in declared_inputs:
             raise ValueError(
                 f"{location}: step '{step.name}' has no input with this name."
@@ -646,14 +650,94 @@ def _configured_input_selections(
         run_id = declaration["run_id"]
         request_id = named_run_ids.get(run_id)
         if request_id is None:
-            raise ValueError(
-                f"{location}.run_id: unknown named run '{run_id}'."
-            )
+            raise ValueError(f"{location}.run_id: unknown named run '{run_id}'.")
         selections[name] = _ExplicitInput(
             _RunOutputReference(request_id, declaration["output"]),
             location,
         )
     return selections
+
+
+def _resolved_task_parameters(
+    task: Task,
+    config: Mapping[str, Any],
+    overrides: Mapping[str, Any],
+    location: str,
+) -> dict[str, Any]:
+    """Resolve one task selection's declared scalar parameters."""
+    if not isinstance(overrides, Mapping):
+        raise TypeError(f"{location}.parameters must be a mapping.")
+    declarations = validate_task_parameters(task)
+    unknown = set(overrides) - {parameter.name for parameter in declarations}
+    if unknown:
+        names = ", ".join(sorted(str(name) for name in unknown))
+        raise ValueError(f"{location}.parameters has unknown parameter(s): {names}.")
+
+    values: dict[str, Any] = {}
+    for parameter in declarations:
+        try:
+            if parameter.name in overrides:
+                value = cfg.resolve_parameter_value(
+                    config, parameter, override=overrides[parameter.name]
+                )
+            else:
+                value = cfg.resolve_parameter_value(config, parameter)
+        except KeyError as error:
+            raise ValueError(
+                f"{location}.parameters.{parameter.name}: requires a value."
+            ) from error
+        try:
+            parameter.validate(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"{location}.parameters.{parameter.name}: {error}"
+            ) from error
+        values[parameter.name] = value
+    return values
+
+
+def _task_goal_requests(
+    task: Task,
+    prefix: str | None,
+    config: Mapping[str, Any],
+    parameters: Mapping[str, Any] | None = None,
+    *,
+    location: str | None = None,
+) -> list[_GoalRequest]:
+    """Normalize steps or named task runs into step-run requests."""
+    selection_location = location or f"task[{task.name}]"
+    values = _resolved_task_parameters(
+        task, config, parameters if parameters is not None else {}, selection_location
+    )
+    if not hasattr(task, "runs"):
+        if values:
+            raise ValueError("task params require named runs for forwarding.")
+        return [
+            _GoalRequest(f"{prefix}.{step.name}" if prefix else step.name, step)
+            for step in task.steps
+        ]
+
+    runs = validate_task_runs(task)
+    context = prefix or task.name
+    named_run_ids = {run["id"]: f"{context}.{run['id']}" for run in runs}
+    return [
+        _GoalRequest(
+            request_id=named_run_ids[run["id"]],
+            step=run["step"],
+            parameters={
+                name: values[value["task_parameter"]]
+                if isinstance(value, Mapping) else value
+                for name, value in run.get("parameters", {}).items()
+            },
+            input_selections=_declared_input_selections(
+                run["step"],
+                run.get("inputs", {}),
+                named_run_ids,
+                f"task[{task.name}].runs[{run['id']}]",
+            ),
+        )
+        for run in runs
+    ]
 
 
 def _validated_goal_requests(
@@ -709,11 +793,11 @@ def _validated_goal_requests(
                         ),
                         step=step,
                         parameters=dict(declaration.get("parameters", {})),
-                        input_selections=_configured_input_selections(
-                            index,
+                        input_selections=_declared_input_selections(
                             step,
                             declaration.get("inputs", {}),
                             named_run_ids,
+                            f"$.runs[{index}]",
                         ),
                     )
                 )
@@ -727,19 +811,29 @@ def _validated_goal_requests(
             task = registered_tasks.get(task_name)
             if task is None:
                 raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
-            for step in expand_runnable_steps(task):
-                goal_requests.append(
-                    _GoalRequest(f"runs.{index + 1}.{step.name}", step)
+            goal_requests.extend(
+                _task_goal_requests(
+                    task,
+                    f"runs.{index + 1}",
+                    config,
+                    declaration.get("parameters", {}),
+                    location=f"$.runs[{index}]",
                 )
+            )
         return registered_steps, goal_requests
 
-    seen_goal_names: set[str] = set()
+    seen_goal_ids: set[str] = set()
     for runnable in runnables:
-        for step in expand_runnable_steps(runnable):
-            if step.name in seen_goal_names:
-                continue
-            seen_goal_names.add(step.name)
-            goal_requests.append(_GoalRequest(step.name, step))
+        for member in flatten_workflow_members(runnable):
+            if isinstance(member, Task):
+                requests = _task_goal_requests(member, None, config)
+            else:
+                requests = [_GoalRequest(member.name, member)]
+            for request in requests:
+                if request.request_id in seen_goal_ids:
+                    continue
+                seen_goal_ids.add(request.request_id)
+                goal_requests.append(request)
     return registered_steps, goal_requests
 
 

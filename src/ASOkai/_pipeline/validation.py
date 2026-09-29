@@ -19,7 +19,11 @@ from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
-from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.tasks.base import (
+    Task,
+    validate_task_parameters,
+    validate_task_runs,
+)
 from ASOkai._pipeline.workflows.base import Workflow
 
 ComponentKind = Literal["step", "task", "workflow"]
@@ -81,6 +85,10 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
 
     if kind == "task":
         assert isinstance(instance, Task)
+        if hasattr(instance, "runs"):
+            validate_task_runs(instance)
+        elif validate_task_parameters(instance):
+            raise ValueError("task params require named runs for forwarding.")
         if (
             isinstance(instance.steps, (str, bytes))
             or not isinstance(instance.steps, Sequence)
@@ -185,6 +193,8 @@ def validate_task_members(
     registered_steps: dict[str, Step],
 ) -> None:
     """Require task members to match registered step implementations."""
+    if hasattr(task, "runs"):
+        validate_task_runs(task)
     for step in task.steps:
         if not _is_registered_step(step, registered_steps):
             raise ValueError(

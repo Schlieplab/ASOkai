@@ -15,6 +15,7 @@ from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     OutputPathTemplate,
+    ScalarParam,
     Step,
     StepSpec,
     TemplateField,
@@ -29,6 +30,7 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
+from ASOkai._pipeline.tasks.base import Task
 
 
 @pytest.fixture
@@ -55,7 +57,6 @@ def test_load_reads_a_yaml_mapping(sample_config):
     [
         [],
         [{"step": "download-genome", "task": "instantiate-target-gene"}],
-        [{"task": "instantiate-target-gene", "parameters": {"mode": "fast"}}],
         [{"step": "download-genome", "parameters": {"mode": ["fast"]}}],
         [{"step": "download-genome", "inputs": {}}],
         [{"task": "instantiate-target-gene", "id": "named"}],
@@ -72,6 +73,42 @@ def test_config_schema_rejects_invalid_run_declarations(tmp_path, runs):
             {"datadir": str(tmp_path), "runs": runs},
             plugin_schema_paths={},
         )
+
+
+def test_config_schema_accepts_task_parameter_overrides(tmp_path):
+    cfg.validate_config_schema(
+        {
+            "datadir": str(tmp_path),
+            "runs": [{"task": "build-index", "parameters": {"k": 21}}],
+        },
+        plugin_schema_paths={},
+    )
+
+
+@pytest.mark.parametrize("path", ["target.k", "missing.task_value"])
+def test_task_parameter_fallback_path_requires_registered_schema(path):
+    task_type = type(
+        "_TaskWithFallback",
+        (Task,),
+        {
+            "name": "task-with-fallback",
+            "description": "Forwards a configured value.",
+            "params": (ScalarParam("site_length", int, config=path),),
+            "runs": (
+                {
+                    "id": "gene",
+                    "step": CreateTargetGeneStep(),
+                    "parameters": {"k": {"task_parameter": "site_length"}},
+                },
+            ),
+        },
+    )
+
+    if path == "target.k":
+        cfg.validate_task_config_paths([task_type()])
+    else:
+        with pytest.raises(ValueError, match="missing.task_value"):
+            cfg.validate_task_config_paths([task_type()])
 
 
 @pytest.mark.parametrize("content", ["", "- one\n- two\n"])

@@ -58,6 +58,12 @@ def test_load_reads_a_yaml_mapping(sample_config):
         [{"task": "instantiate-target-gene", "parameters": {"mode": "fast"}}],
         [{"step": "download-genome", "parameters": {"mode": ["fast"]}}],
         [{"step": "download-genome", "inputs": {}}],
+        [{"task": "instantiate-target-gene", "id": "named"}],
+        [{"task": "instantiate-target-gene", "inputs": {"reference": {"path": "a.fa"}}}],
+        [{"id": "1", "step": "download-genome"}],
+        [{"step": "download-genome", "inputs": {"reference": {"run_id": "named"}}}],
+        [{"step": "download-genome", "inputs": {"reference": {"path": "a.fa", "run_id": "named", "output": "reference"}}}],
+        [{"step": "download-genome", "inputs": {"reference": {"run": "named", "output": "reference"}}}],
     ],
 )
 def test_config_schema_rejects_invalid_run_declarations(tmp_path, runs):

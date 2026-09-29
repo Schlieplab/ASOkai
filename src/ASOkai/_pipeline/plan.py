@@ -25,7 +25,7 @@ from ASOkai._pipeline.contracts.execution import (
     StepRun,
     StepRunOutput,
 )
-from ASOkai._pipeline.contracts.files import FileInput
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import Task
@@ -34,11 +34,39 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class _RunOutputReference:
+    """A YAML input link to the output of a named run."""
+
+    request_id: str
+    output_name: str
+
+
+@dataclass(frozen=True)
+class _ExplicitInput:
+    """A YAML input selection and its configuration location."""
+
+    source: Path | _RunOutputReference
+    location: str
+
+
+@dataclass(frozen=True)
+class _GoalRequest:
+    """One normalized CLI or YAML goal before dependency discovery."""
+
+    request_id: str
+    step: Step
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+    input_selections: Mapping[str, _ExplicitInput] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class _RequestedInputSource:
     """The path override or producer request found for one file input."""
 
     file_input: FileInput
     source: Path | _RunRequest
+    output: FileOutput | None = None
+    selection_path: str | None = None
 
 
 @dataclass
@@ -50,6 +78,7 @@ class _RunRequest:
     config: dict[str, Any]
     dependency_path: tuple[str, ...]
     parameters: dict[str, Any] = field(default_factory=dict)
+    input_selections: dict[str, _ExplicitInput] = field(default_factory=dict)
     input_sources: list[_RequestedInputSource] = field(default_factory=list)
 
 
@@ -67,12 +96,14 @@ def _request_matches_step_config(
     step: Step,
     config: Mapping[str, Any],
     parameters: Mapping[str, Any] | None = None,
+    input_selections: Mapping[str, _ExplicitInput] | None = None,
 ) -> bool:
     """Return whether an existing request describes this step configuration."""
     return (
         type(request.step) is type(step)
         and request.config == config
         and request.parameters == (parameters or {})
+        and request.input_selections == (input_selections or {})
     )
 
 
@@ -107,6 +138,22 @@ def _run_signature(
     )
 
 
+def _validate_unique_output_paths(runs: Sequence[StepRun]) -> None:
+    """Reject distinct outputs that would publish to the same path."""
+    owners: dict[Path, str] = {}
+    for run in runs:
+        for output in run.step.spec.outputs:
+            path = run.output_path(output).resolve()
+            qualified_name = f"{run.run_id}.{output.name}"
+            previous = owners.get(path)
+            if previous is not None:
+                raise ValueError(
+                    f"Output path collision: '{previous}' and "
+                    f"'{qualified_name}' both write to {path}."
+                )
+            owners[path] = qualified_name
+
+
 class _PlanBuilder:
     """Discover run requests breadth-first, then resolve them producer-first."""
 
@@ -136,6 +183,7 @@ class _PlanBuilder:
     ) -> Step:
         """Return and validate the registered producer for one file input."""
         source = file_input.source
+        assert source is not None
         producer = self.registered_steps.get(source.producer)
         if producer is None:
             raise ValueError(
@@ -202,6 +250,7 @@ class _PlanBuilder:
         *,
         dependency_path: tuple[str, ...],
         parameters: Mapping[str, Any] | None = None,
+        input_selections: Mapping[str, _ExplicitInput] | None = None,
     ) -> _RunRequest:
         """Reserve one request in the breadth-first discovery queue."""
         step.validate_output_declaration()
@@ -212,6 +261,7 @@ class _PlanBuilder:
                 step,
                 config,
                 parameters,
+                input_selections,
             ):
                 raise ValueError(
                     f"Request id '{request_id}' resolves to conflicting step "
@@ -225,6 +275,7 @@ class _PlanBuilder:
             config=config,
             dependency_path=dependency_path,
             parameters=dict(parameters or {}),
+            input_selections=dict(input_selections or {}),
         )
         self.requests[request_id] = request
         self.pending_request_ids.append(request_id)
@@ -236,6 +287,38 @@ class _PlanBuilder:
         file_input: FileInput,
     ) -> _RequestedInputSource:
         """Resolve one override or discover its producer request."""
+        explicit = consumer_request.input_selections.get(file_input.name)
+        if explicit is not None:
+            if isinstance(explicit.source, Path):
+                return _RequestedInputSource(
+                    file_input=file_input,
+                    source=explicit.source,
+                    selection_path=f"{explicit.location}.path",
+                )
+            producer_request = self.requests[explicit.source.request_id]
+            try:
+                output = producer_request.step.spec.output(
+                    explicit.source.output_name
+                )
+            except KeyError as error:
+                raise ValueError(
+                    f"{explicit.location}.output: run "
+                    f"'{producer_request.request_id}' has no output "
+                    f"'{explicit.source.output_name}'."
+                ) from error
+            if not file_input.accepts_output(output):
+                raise ValueError(
+                    f"{explicit.location}: output '{output.name}' from "
+                    f"'{producer_request.request_id}' is incompatible with "
+                    f"input '{file_input.name}'."
+                )
+            return _RequestedInputSource(
+                file_input=file_input,
+                source=producer_request,
+                output=output,
+                selection_path=explicit.location,
+            )
+
         path_override = file_input.configured_path_override(
             consumer_request.config,
             consumer_request.step.name,
@@ -244,6 +327,12 @@ class _PlanBuilder:
             return _RequestedInputSource(
                 file_input=file_input,
                 source=path_override,
+            )
+
+        if file_input.source is None:
+            raise ValueError(
+                f"Run '{consumer_request.request_id}' input '{file_input.name}' "
+                "requires a path or a named producer run."
             )
 
         producer = self._registered_producer(consumer_request.step, file_input)
@@ -293,6 +382,7 @@ class _PlanBuilder:
         return _RequestedInputSource(
             file_input=file_input,
             source=producer_request,
+            output=file_input.source,
         )
 
     def _discover_run_requests(self) -> None:
@@ -306,12 +396,28 @@ class _PlanBuilder:
 
     def _validate_run(self, run: StepRun) -> None:
         """Validate one concrete run when its configuration is required."""
+        selected_inputs = {
+            binding.file_input.name
+            for binding in run.inputs
+            if binding.selection_path is not None
+        }
         cfg.validate_step_config(
             run.config,
             [run.step],
             validate_input_files=self.validate_input_files,
             parameters=run.parameters,
+            skip_input_names=selected_inputs,
         )
+        if self.validate_input_files:
+            for binding in run.inputs:
+                if binding.selection_path is not None and isinstance(
+                    binding.source, Path
+                ):
+                    cfg.validate_file_input_path(
+                        binding.file_input,
+                        binding.source,
+                        binding.selection_path,
+                    )
 
     def _producer_first_requests(self) -> list[_RunRequest]:
         """Return discovered requests with producers before consumers."""
@@ -364,14 +470,17 @@ class _PlanBuilder:
                         StepInputBinding(
                             input_source.file_input,
                             source,
+                            selection_path=input_source.selection_path,
                         )
                     )
                     continue
                 producer_run = run_by_request_id[source.request_id]
+                assert input_source.output is not None
                 input_bindings.append(
                     StepInputBinding(
                         input_source.file_input,
-                        producer_run.output(input_source.file_input.source),
+                        producer_run.output(input_source.output),
+                        selection_path=input_source.selection_path,
                     )
                 )
 
@@ -436,13 +545,18 @@ class _PlanBuilder:
         return ordered_runs_to_execute, reusable_outputs
 
     def build(
-        self, goal_requests: list[tuple[str, Step, dict[str, Any]]]
+        self, goal_requests: list[_GoalRequest]
     ) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
         goals, producer_first_runs = self._resolve_goals(goal_requests)
         runs_to_execute, reusable_outputs = self._schedule_required_runs(
             goals,
             producer_first_runs,
+        )
+        active_runs = set(runs_to_execute)
+        active_runs.update(output.run for output in reusable_outputs)
+        _validate_unique_output_paths(
+            tuple(run for run in producer_first_runs if run in active_runs)
         )
 
         return ExecutionPlan(
@@ -453,28 +567,27 @@ class _PlanBuilder:
 
     def _resolve_goals(
         self,
-        goal_requests: list[tuple[str, Step, dict[str, Any]]],
+        goal_requests: list[_GoalRequest],
     ) -> tuple[tuple[StepRun, ...], tuple[StepRun, ...]]:
         """Discover dependencies and return goals plus producer-first runs."""
-        for request_id, step, parameters in goal_requests:
+        for goal in goal_requests:
             self._reserve_request(
-                request_id,
-                step,
+                goal.request_id,
+                goal.step,
                 self.main_config,
-                dependency_path=(step.name,),
-                parameters=parameters,
+                dependency_path=(goal.step.name,),
+                parameters=goal.parameters,
+                input_selections=goal.input_selections,
             )
         self._discover_run_requests()
 
         run_by_request_id, producer_first_runs = self._resolve_run_requests()
-        goals = tuple(
-            run_by_request_id[request_id] for request_id, _, _ in goal_requests
-        )
+        goals = tuple(run_by_request_id[goal.request_id] for goal in goal_requests)
         return goals, producer_first_runs
 
     def build_export(
         self,
-        goal_requests: list[tuple[str, Step, dict[str, Any]]],
+        goal_requests: list[_GoalRequest],
         *,
         recursive: bool,
     ) -> ExecutionPlan:
@@ -489,6 +602,7 @@ class _PlanBuilder:
             if recursive
             else tuple(run for run in producer_first_runs if run in goal_runs)
         )
+        _validate_unique_output_paths(included_runs)
         included_run_set = set(included_runs)
         external_outputs: dict[StepRunOutput, Path] = {}
         for run in included_runs:
@@ -509,13 +623,46 @@ class _PlanBuilder:
         )
 
 
+def _configured_input_selections(
+    index: int,
+    step: Step,
+    declarations: Mapping[str, Any],
+    named_run_ids: Mapping[str, str],
+) -> dict[str, _ExplicitInput]:
+    """Normalize one YAML step entry's selected file inputs."""
+    selections: dict[str, _ExplicitInput] = {}
+    declared_inputs = {file_input.name for file_input in step.spec.inputs}
+    for name, declaration in declarations.items():
+        location = f"$.runs[{index}].inputs.{name}"
+        if name not in declared_inputs:
+            raise ValueError(
+                f"{location}: step '{step.name}' has no input with this name."
+            )
+        if "path" in declaration:
+            selections[name] = _ExplicitInput(
+                Path(declaration["path"]).resolve(), location
+            )
+            continue
+        run_id = declaration["run_id"]
+        request_id = named_run_ids.get(run_id)
+        if request_id is None:
+            raise ValueError(
+                f"{location}.run_id: unknown named run '{run_id}'."
+            )
+        selections[name] = _ExplicitInput(
+            _RunOutputReference(request_id, declaration["output"]),
+            location,
+        )
+    return selections
+
+
 def _validated_goal_requests(
     runnables: Sequence[Runnable],
     config: dict,
     registered_steps: dict[str, Step] | None,
     registered_tasks: Mapping[str, Task] | None,
     config_schema_paths: Mapping[str, Path] | None,
-) -> tuple[dict[str, Step], list[tuple[str, Step, dict[str, Any]]]]:
+) -> tuple[dict[str, Step], list[_GoalRequest]]:
     """Resolve CLI or YAML selections into ordered concrete goal requests."""
     if registered_steps is None:
         from ASOkai._pipeline.catalog import get_pipeline_catalog
@@ -531,13 +678,22 @@ def _validated_goal_requests(
     )
     cfg.validate_configured_step_names(config, registered_steps)
 
-    goal_requests: list[tuple[str, Step, dict[str, Any]]] = []
+    goal_requests: list[_GoalRequest] = []
     if "runs" in config:
         if runnables:
             raise ValueError(
                 "Select runs in the configuration or with --step/--task/--workflow, "
                 "not both."
             )
+        named_run_ids: dict[str, str] = {}
+        for index, declaration in enumerate(config["runs"]):
+            if "id" not in declaration:
+                continue
+            name = declaration["id"]
+            if name in named_run_ids:
+                raise ValueError(f"$.runs[{index}].id: duplicate run id '{name}'.")
+            named_run_ids[name] = f"runs.{name}"
+
         for index, declaration in enumerate(config["runs"]):
             if "step" in declaration:
                 step_name = declaration["step"]
@@ -547,7 +703,19 @@ def _validated_goal_requests(
                         f"$.runs[{index}].step: unknown step '{step_name}'."
                     )
                 goal_requests.append(
-                    (f"runs.{index + 1}", step, dict(declaration.get("parameters", {})))
+                    _GoalRequest(
+                        request_id=named_run_ids.get(
+                            declaration.get("id"), f"runs.{index + 1}"
+                        ),
+                        step=step,
+                        parameters=dict(declaration.get("parameters", {})),
+                        input_selections=_configured_input_selections(
+                            index,
+                            step,
+                            declaration.get("inputs", {}),
+                            named_run_ids,
+                        ),
+                    )
                 )
                 continue
 
@@ -560,7 +728,9 @@ def _validated_goal_requests(
             if task is None:
                 raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
             for step in expand_runnable_steps(task):
-                goal_requests.append((f"runs.{index + 1}.{step.name}", step, {}))
+                goal_requests.append(
+                    _GoalRequest(f"runs.{index + 1}.{step.name}", step)
+                )
         return registered_steps, goal_requests
 
     seen_goal_names: set[str] = set()
@@ -569,7 +739,7 @@ def _validated_goal_requests(
             if step.name in seen_goal_names:
                 continue
             seen_goal_names.add(step.name)
-            goal_requests.append((step.name, step, {}))
+            goal_requests.append(_GoalRequest(step.name, step))
     return registered_steps, goal_requests
 
 

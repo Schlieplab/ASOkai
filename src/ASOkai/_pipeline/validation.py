@@ -150,6 +150,8 @@ def validate_step_dependencies(
     """Require inputs to use exact outputs from registered producer steps."""
     for file_input in step.spec.inputs:
         source = file_input.source
+        if source is None:
+            continue
         producer = registered_steps.get(source.producer)
         if producer is None:
             raise ValueError(

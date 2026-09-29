@@ -12,6 +12,7 @@ from typing import Literal
 import pytest
 
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.file_types import FastaFile
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.contracts.step_spec import StepSpec
@@ -61,6 +62,31 @@ def test_file_input_inherits_its_exact_producer_output():
     assert file_input.source is ProducerStep.result_output
     assert file_input.source.producer == "producer"
     assert file_input.file_type is ProducerStep.result_output.file_type
+
+
+def test_typed_file_input_accepts_matching_fasta_format_only():
+    file_input = FileInput("reference", file_type=FastaFile(gzip=False))
+    plain = FileOutput(
+        "plain", destination="plain.fa", file_type=FastaFile(gzip=False)
+    )
+    compressed = FileOutput(
+        "compressed", destination="compressed.fa.gz", file_type=FastaFile(gzip=True)
+    )
+
+    assert file_input.source is None
+    assert file_input.accepts_output(plain)
+    assert not file_input.accepts_output(compressed)
+
+
+def test_file_input_requires_one_source_contract():
+    with pytest.raises(ValueError, match="exactly one of source or file_type"):
+        FileInput("reference")
+    with pytest.raises(ValueError, match="exactly one of source or file_type"):
+        FileInput(
+            "reference",
+            source=ProducerStep.result_output,
+            file_type=FastaFile(),
+        )
 
 
 def test_file_output_cannot_be_shared_by_two_producer_steps():

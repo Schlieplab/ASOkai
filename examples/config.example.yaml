@@ -63,7 +63,15 @@ resources:
 # Do not combine runs with --step, --task, or --workflow.
 # runs:
 #   - step: create-target-gene
+#     id: gene
+#   - step: intrinsic-features
+#     inputs:
+#       target_gene:
+#         run_id: gene
+#         output: target_gene
 #   - step: create-target-gene
 #     parameters:
 #       region: exonic
 #   - task: instantiate-target-gene
+# To use an existing file instead, replace an input's run/output pair with:
+#         path: /path/to/target_gene.json

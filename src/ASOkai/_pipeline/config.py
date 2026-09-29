@@ -12,7 +12,7 @@ from __future__ import annotations
 from copy import deepcopy
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
+from typing import TYPE_CHECKING, AbstractSet, Any, Literal, Mapping, Sequence
 
 import yaml
 from jsonschema.exceptions import SchemaError
@@ -26,6 +26,7 @@ from ASOkai._pipeline.contracts.json_schema import (
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 
 if TYPE_CHECKING:
+    from ASOkai._pipeline.contracts.files import FileInput
     from ASOkai._pipeline.steps.base import Step
 
 
@@ -195,6 +196,7 @@ def validate_step_config(
     *,
     validate_input_files: bool = True,
     parameters: Mapping[str, Any] | None = None,
+    skip_input_names: AbstractSet[str] = frozenset(),
 ) -> None:
     """Validate selected-step values, compatibility, paths, and input files."""
     errors: list[str] = []
@@ -254,6 +256,8 @@ def validate_step_config(
                 )
 
         for file_input in step.spec.inputs:
+            if file_input.name in skip_input_names:
+                continue
             configuration_path = file_input.configuration_path(step.name)
             try:
                 path_override = file_input.configured_path_override(
@@ -271,25 +275,17 @@ def validate_step_config(
                 if not validate_input_files:
                     continue
                 path_config = f"{configuration_path}.path_override"
-                if not path_override.exists():
-                    errors.append(
-                        f"$.{path_config}: file does not exist: " f"{path_override}"
-                    )
-                    continue
-                if not path_override.is_file():
-                    errors.append(
-                        f"$.{path_config}: path is not a file: " f"{path_override}"
-                    )
-                    continue
                 try:
-                    file_input.validate(path_override)
+                    validate_file_input_path(
+                        file_input, path_override, f"$.{path_config}"
+                    )
                 except (
                     OSError,
                     UnicodeError,
                     TypeError,
                     ValueError,
                 ) as error:
-                    errors.append(f"$.{path_config}: {error}")
+                    errors.append(str(error))
             elif configured_parameters is not None:
                 for name, value in configured_parameters.items():
                     try:
@@ -315,6 +311,25 @@ def validate_step_config(
 
     if errors:
         _raise_config_errors(errors)
+
+
+def validate_file_input_path(
+    file_input: FileInput,
+    path: Path,
+    location: str,
+) -> None:
+    """Validate an external path using the input's artifact contract."""
+    if not path.exists():
+        raise ValueError(f"{location}: file does not exist: {path}")
+    is_directory = file_input.file_type.cwl_type == "Directory"
+    if is_directory and not path.is_dir():
+        raise ValueError(f"{location}: path is not a directory: {path}")
+    if not is_directory and not path.is_file():
+        raise ValueError(f"{location}: path is not a file: {path}")
+    try:
+        file_input.validate(path)
+    except (OSError, UnicodeError, TypeError, ValueError) as error:
+        raise ValueError(f"{location}: {error}") from error
 
 
 def validate_configured_step_names(

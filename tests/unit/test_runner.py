@@ -17,6 +17,7 @@ import yaml
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
+    FileType,
     Step,
     StepSpec,
 )
@@ -455,6 +456,60 @@ def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_pa
     }
     assert (export_dir / "steps" / "runs.1.cwl").exists()
     assert (export_dir / "steps" / "runs.2.cwl").exists()
+
+
+def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
+    source_output = FileOutput("result", destination="source/result.txt")
+    source_type = type(
+        "_NamedSourceStep",
+        (Step,),
+        {
+            "name": "named-source",
+            "description": "",
+            "result_output": source_output,
+            "spec": StepSpec(outputs=[source_output]),
+        },
+    )
+    source = source_type()
+    consumer_output = FileOutput("result", destination="consumer/result.txt")
+    consumer_type = type(
+        "_NamedConsumerStep",
+        (Step,),
+        {
+            "name": "named-consumer",
+            "description": "",
+            "result_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[FileInput("input", file_type=FileType())],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    consumer = consumer_type()
+    config = {
+        "datadir": str(tmp_path),
+        "runs": [
+            {
+                "step": consumer.name,
+                "inputs": {"input": {"run_id": "source", "output": "result"}},
+            },
+            {"id": "source", "step": source.name},
+        ],
+    }
+
+    export_dir = runner.export_all(
+        [],
+        config,
+        outdir=tmp_path,
+        registered_steps={source.name: source, consumer.name: consumer},
+        config_schema_paths={},
+    )
+
+    workflow = yaml.safe_load((export_dir / "run.cwl").read_text())
+    assert workflow["steps"]["step_runs.1"]["in"]["input"] == (
+        "step_runs.source/result"
+    )
+    assert list(workflow["steps"])[:2] == ["step_runs.source", "step_runs.1"]
 
 
 def test_executor_from_name_uses_central_runner_configuration():

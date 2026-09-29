@@ -17,8 +17,10 @@ from unittest.mock import patch
 import pytest
 
 from ASOkai.Plugins import (
+    FastaFile,
     FileInput,
     FileOutput,
+    FileType,
     Runnable,
     ScalarParam,
     Step,
@@ -101,6 +103,39 @@ def _make_parameter_step() -> Step:
         },
     )
     return step_type()
+
+
+def _make_fasta_producer_and_consumer(*, gzip: bool = False) -> tuple[Step, Step]:
+    output = FileOutput(
+        "reference",
+        destination="references/reference.fa",
+        file_type=FastaFile(gzip=gzip),
+    )
+    producer_type = type(
+        "_FastaProducer",
+        (Step,),
+        {
+            "name": "fasta-producer",
+            "description": "",
+            "reference_output": output,
+            "spec": StepSpec(outputs=[output]),
+        },
+    )
+    consumer_output = FileOutput("result", destination="results/result.txt")
+    consumer_type = type(
+        "_FastaConsumer",
+        (Step,),
+        {
+            "name": "fasta-consumer",
+            "description": "",
+            "result_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[FileInput("reference", file_type=FastaFile())],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    return producer_type(), consumer_type()
 
 
 def _materialize_run(run: StepRun) -> StepRun:
@@ -196,6 +231,19 @@ def test_equivalent_configured_runs_share_one_execution(config):
     assert _scheduled_run_ids(plan) == ["runs.1"]
 
 
+def test_reused_run_cannot_share_an_output_path_with_another_run(config):
+    step = _make_parameter_step()
+    config["shared"] = {"mode": "fast"}
+    _materialize_run(StepRun("previous", step, config, parameters={"local": 5}))
+    config["runs"] = [
+        {"step": step.name, "parameters": {"local": 5}},
+        {"step": step.name, "parameters": {"local": 7}},
+    ]
+
+    with pytest.raises(ValueError, match="Output path collision"):
+        build_plan([], config, _registry={step.name: step})
+
+
 def test_configured_run_parameters_are_validated(config):
     step = _make_parameter_step()
     config["runs"] = [{"step": step.name, "parameters": {"mode": 3}}]
@@ -265,6 +313,203 @@ def test_configured_runs_cannot_mix_with_explicit_selections(config):
 
     with pytest.raises(ValueError, match="not both"):
         build_plan([step], config, _registry={step.name: step})
+
+
+def test_named_run_input_link_resolves_forward_reference_before_consumer(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config["producer"] = {"mode": "main"}
+    config["steps"] = {
+        consumer.name: {
+            "inputs": {
+                "result": {"path_override": str(Path(config["datadir"]) / "missing")}
+            }
+        }
+    }
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"result": {"run_id": "alternate", "output": "result"}},
+        },
+        {
+            "id": "alternate",
+            "step": producer.name,
+            "parameters": {"mode": "alternate"},
+        },
+    ]
+
+    plan = build_plan(
+        [], config, _registry={producer.name: producer, consumer.name: consumer}
+    )
+
+    assert [run.run_id for run in plan.goals] == ["runs.1", "runs.alternate"]
+    assert _scheduled_run_ids(plan) == ["runs.alternate", "runs.1"]
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is plan.goals[1]
+    assert source.run.parameters["mode"] == "alternate"
+
+
+def test_configured_run_external_path_replaces_global_input(config, tmp_path):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    selected_path = tmp_path / "selected.txt"
+    selected_path.write_text("selected")
+    config["producer"] = {"mode": "main"}
+    config["steps"] = {
+        consumer.name: {
+            "inputs": {
+                "result": {"path_override": str(tmp_path / "missing.txt")}
+            }
+        }
+    }
+    config["runs"] = [
+        {"step": consumer.name, "inputs": {"result": {"path": str(selected_path)}}}
+    ]
+
+    plan = build_plan(
+        [], config, _registry={producer.name: producer, consumer.name: consumer}
+    )
+
+    assert _scheduled_run_ids(plan) == ["runs.1"]
+    assert plan.goals[0].input_paths()["result"] == selected_path
+    assert plan.goals[0].inputs[0].selection_path == "$.runs[0].inputs.result.path"
+
+
+def test_configured_run_external_path_is_validated(config, tmp_path):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config["producer"] = {"mode": "main"}
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"result": {"path": str(tmp_path / "missing.txt")}},
+        }
+    ]
+
+    with pytest.raises(ValueError, match=r"runs\[0\].*file does not exist"):
+        build_plan(
+            [], config, _registry={producer.name: producer, consumer.name: consumer}
+        )
+
+
+@pytest.mark.parametrize("export", [False, True])
+def test_distinct_runs_cannot_publish_to_the_same_path(config, tmp_path, export):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first")
+    second.write_text("second")
+    config["producer"] = {"mode": "main"}
+    config["runs"] = [
+        {
+            "id": "first",
+            "step": consumer.name,
+            "inputs": {"result": {"path": str(first)}},
+        },
+        {
+            "id": "second",
+            "step": consumer.name,
+            "inputs": {"result": {"path": str(second)}},
+        },
+    ]
+
+    build = build_export_plan if export else build_plan
+    with pytest.raises(ValueError, match="Output path collision") as error:
+        build(
+            [], config, _registry={producer.name: producer, consumer.name: consumer}
+        )
+
+    assert "runs.first.consumer_out" in str(error.value)
+    assert "runs.second.consumer_out" in str(error.value)
+    assert str(Path(config["datadir"]) / "consumer.txt") in str(error.value)
+
+
+def test_typed_input_accepts_compatible_named_producer(config):
+    producer, consumer = _make_fasta_producer_and_consumer()
+    config["runs"] = [
+        {"id": "source", "step": producer.name},
+        {
+            "step": consumer.name,
+            "inputs": {"reference": {"run_id": "source", "output": "reference"}},
+        },
+    ]
+
+    plan = build_plan(
+        [], config, _registry={producer.name: producer, consumer.name: consumer}
+    )
+
+    source = plan.goals[1].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is plan.goals[0]
+
+
+def test_typed_input_rejects_incompatible_named_producer(config):
+    producer, consumer = _make_fasta_producer_and_consumer(gzip=True)
+    config["runs"] = [
+        {"id": "compressed", "step": producer.name},
+        {
+            "step": consumer.name,
+            "inputs": {"reference": {"run_id": "compressed", "output": "reference"}},
+        },
+    ]
+
+    with pytest.raises(ValueError, match="incompatible"):
+        build_plan(
+            [], config, _registry={producer.name: producer, consumer.name: consumer}
+        )
+
+
+def test_typed_input_requires_explicit_source(config):
+    _, consumer = _make_fasta_producer_and_consumer()
+    config["runs"] = [{"step": consumer.name}]
+
+    with pytest.raises(ValueError, match="requires a path or a named producer"):
+        build_plan([], config, _registry={consumer.name: consumer})
+
+
+@pytest.mark.parametrize(
+    ("runs", "message"),
+    [
+        ([{"id": "same", "step": "producer"}, {"id": "same", "step": "producer"}], "duplicate run id"),
+        ([{"step": "consumer", "inputs": {"result": {"run_id": "missing", "output": "result"}}}], "unknown named run"),
+        ([{"id": "source", "step": "producer"}, {"step": "consumer", "inputs": {"result": {"run_id": "source", "output": "missing"}}}], "has no output"),
+    ],
+)
+def test_configured_run_links_reject_bad_references(config, runs, message):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config["producer"] = {"mode": "main"}
+    config["runs"] = runs
+
+    with pytest.raises(ValueError, match=message):
+        build_plan(
+            [], config, _registry={producer.name: producer, consumer.name: consumer}
+        )
+
+
+def test_configured_run_links_reject_cycles(config):
+    output = FileOutput("result", destination="result.txt")
+    step_type = type(
+        "_SelfReferencingStep",
+        (Step,),
+        {
+            "name": "self-referencing",
+            "description": "",
+            "result_output": output,
+            "spec": StepSpec(
+                inputs=[FileInput("input", file_type=FileType())],
+                outputs=[output],
+            ),
+        },
+    )
+    step = step_type()
+    config["runs"] = [
+        {
+            "id": "loop",
+            "step": step.name,
+            "inputs": {"input": {"run_id": "loop", "output": "result"}},
+        }
+    ]
+
+    with pytest.raises(ValueError, match="Dependency cycle"):
+        build_plan([], config, _registry={step.name: step})
 
 
 def _make_configurable_producer_and_consumers(

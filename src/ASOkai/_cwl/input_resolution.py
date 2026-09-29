@@ -66,8 +66,8 @@ def resolve_run_inputs(
                 source="input_override",
                 path=source,
                 config_path=(
-                    f"{file_input.configuration_path(run.step.name)}"
-                    ".path_override"
+                    binding.selection_path
+                    or f"{file_input.configuration_path(run.step.name)}.path_override"
                 ),
             )
             continue

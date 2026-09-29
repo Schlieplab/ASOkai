@@ -258,7 +258,13 @@ class StepSpec:
 
     def dependencies(self) -> tuple[str, ...]:
         """Return producer step names, derived from source outputs."""
-        return tuple(dict.fromkeys(item.source.producer for item in self.inputs))
+        return tuple(
+            dict.fromkeys(
+                item.source.producer
+                for item in self.inputs
+                if item.source is not None
+            )
+        )
 
     def build_parser(
         self,

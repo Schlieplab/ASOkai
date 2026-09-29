@@ -171,21 +171,51 @@ class FileOutput:
         self.file_type.validate(value)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class FileInput:
-    """A file input that inherits its behavior from a producer output."""
+    """A file input with a fixed producer or an explicit file type."""
 
     name: str
-    source: FileOutput
-    configurable_parameters: tuple[str, ...] = ()
-    prefix: str | None = None
-    doc: str | None = None
+    source: FileOutput | None
+    _declared_file_type: FileType | None = field(repr=False)
+    configurable_parameters: tuple[str, ...]
+    prefix: str | None
+    doc: str | None
+
+    def __init__(
+        self,
+        name: str,
+        source: FileOutput | None = None,
+        configurable_parameters: tuple[str, ...] = (),
+        prefix: str | None = None,
+        doc: str | None = None,
+        *,
+        file_type: FileType | None = None,
+    ) -> None:
+        if (source is None) == (file_type is None):
+            raise ValueError(
+                "FileInput requires exactly one of source or file_type."
+            )
+        if source is not None:
+            if not isinstance(source, FileOutput):
+                raise TypeError("FileInput.source must be a FileOutput.")
+            source._require_bound()
+        elif not isinstance(file_type, FileType):
+            raise TypeError("FileInput.file_type must be a FileType.")
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "_declared_file_type", file_type)
+        object.__setattr__(self, "configurable_parameters", configurable_parameters)
+        object.__setattr__(self, "prefix", prefix)
+        object.__setattr__(self, "doc", doc)
+        self.__post_init__()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.source, FileOutput):
-            raise TypeError("FileInput.source must be a FileOutput.")
-        self.source._require_bound()
         parameter_names = tuple(self.configurable_parameters)
+        if self.source is None and parameter_names:
+            raise ValueError(
+                "FileInput.configurable_parameters requires a fixed source."
+            )
         if any(type(name) is not str or not name.strip() for name in parameter_names):
             raise ValueError(
                 "FileInput.configurable_parameters must contain non-blank "
@@ -302,7 +332,7 @@ class FileInput:
         """Return one producer parameter exposed by this input."""
         if name not in self.configurable_parameters:
             raise KeyError(f"Input '{self.name}' does not expose parameter {name!r}.")
-        assert self.source._owner is not None
+        assert self.source is not None and self.source._owner is not None
         try:
             parameter = self.source._owner.spec.parameter(name)
         except KeyError as error:
@@ -317,10 +347,22 @@ class FileInput:
             )
         return parameter
 
+    def accepts_output(self, output: FileOutput) -> bool:
+        """Return whether an output satisfies this input's declared contract."""
+        if self.source is not None:
+            return output is self.source
+        return (
+            type(output.file_type) is type(self.file_type)
+            and output.file_type == self.file_type
+        )
+
     @property
     def file_type(self) -> FileType:
-        """Return the file type inherited from the producer output."""
-        return self.source.file_type
+        """Return the fixed output's type or this input's declared type."""
+        if self.source is not None:
+            return self.source.file_type
+        assert self._declared_file_type is not None
+        return self._declared_file_type
 
     @property
     def cli_prefix(self) -> str:

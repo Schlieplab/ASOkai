@@ -226,18 +226,26 @@ class StepInputBinding:
 
     file_input: FileInput
     source: Path | StepRunOutput
+    selection_path: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.file_input, FileInput):
             raise TypeError("StepInputBinding.file_input must be a FileInput.")
+        if self.selection_path is not None and (
+            type(self.selection_path) is not str or not self.selection_path
+        ):
+            raise ValueError("StepInputBinding.selection_path must be non-blank.")
         if isinstance(self.source, Path):
             object.__setattr__(self, "source", self.source.resolve())
         elif isinstance(self.source, StepRunOutput):
-            if self.file_input.source is None:
-                raise ValueError(
-                    f"Standalone input '{self.file_input.name}' requires a path."
-                )
-            if self.source.output is not self.file_input.source:
+            if not self.file_input.accepts_output(self.source.output):
+                if self.file_input.source is None:
+                    raise ValueError(
+                        f"Input '{self.file_input.name}' requires "
+                        f"{self.file_input.file_type.format_name}, but received "
+                        f"{self.source.output.file_type.format_name} from "
+                        f"'{self.source.qualified_name}'."
+                    )
                 raise ValueError(
                     f"Input '{self.file_input.name}' requires output "
                     f"'{self.file_input.source.producer}."

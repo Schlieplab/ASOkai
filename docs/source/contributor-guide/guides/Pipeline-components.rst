@@ -132,8 +132,33 @@ example, with ``target.region: pre-mrna`` in the shared configuration::
          region: exonic
 
 These entries request two runs of the same step with different regions. The
-planner shares equivalent runs and dependencies where possible. A task entry
-selects its declared steps::
+planner shares equivalent runs and dependencies where possible. Distinct runs
+must resolve to different output paths; a collision is reported during planning.
+A step run can have a stable ``id`` so another run can select its output, even
+when the producer is listed later in the file::
+
+   runs:
+     - step: intrinsic-features
+       inputs:
+         target_gene:
+           run_id: gene
+           output: target_gene
+     - step: create-target-gene
+       id: gene
+
+An input can instead select an existing path::
+
+   runs:
+     - step: intrinsic-features
+       inputs:
+         target_gene:
+           path: /path/to/target_gene.json
+
+Relative input paths are resolved from the current working directory, like
+the existing ``path_override`` configuration. A per-run input selection
+takes precedence over the shared input configuration for that input. The
+planner validates external files for ``run``; ``export`` permits paths that
+will be supplied later. A task entry selects its declared steps::
 
    runs:
      - task: instantiate-target-gene
@@ -176,9 +201,13 @@ The file contract checks that a path is a file and leaves content parsing to
 the consuming tool.
 
 ``FileInput`` points to a source ``FileOutput`` and therefore inherits its
-file type. Every input automatically has a ``path_override`` configuration
-option that lets a user substitute an existing file. ASOkai validates that
-external override before admitting it to the execution plan.
+file type. A reusable step can instead declare a typed input without a fixed
+producer, for example ``FileInput("reference", file_type=FastaFile())``.
+This input requires a selected path or producer run. Named producer outputs
+must match the declared file type, including FASTA compression. An input with
+a fixed source accepts named runs of that exact output. Every input also has
+a ``path_override`` configuration option that lets a user substitute an
+existing file. ASOkai validates external files before running them.
 
 .. _configuring-an-input-producer:
 

@@ -81,11 +81,34 @@ Scalar parameters
 
 ``ScalarParam`` declares a named ``str``, ``int``, ``float``, ``bool``, string
 enum, or optional non-boolean scalar value. Its ``config`` path maps the
-parameter to a value in the validated YAML configuration. Defaults and choices
-belong in the declaration when they are part of the command-line contract.
+parameter to a shared fallback in the validated YAML configuration. Defaults
+and choices belong in the declaration when they are part of the command-line
+contract.
 A ``bool`` parameter is a presence flag: it defaults to ``False``, and a true
 value emits its option, such as ``--enabled``, without a following value.
 Generated CWL represents it as a native Boolean input.
+
+Concrete ``StepRun`` values accept a ``parameters`` mapping of invocation
+overrides. Each declared scalar resolves in this order:
+
+1. A value supplied in the invocation's ``parameters`` mapping.
+2. The global configuration value at ``ScalarParam.config``, when declared.
+3. The declared default, or ``None`` for an omitted optional parameter.
+
+A supplied value overrides the fallback. Supplying ``None`` explicitly clears
+a nullable parameter; omitting the parameter uses its fallback. A required
+parameter without a value, invalid values, and unknown parameter names are
+rejected. Parameters without a ``config`` path use invocation values or their
+declared defaults.
+
+For an optional scalar, giving its step CLI flag without a value explicitly
+sets it to ``None``. Generated CWL uses this form when clearing a non-null
+default. Supplying a value or omitting the flag retains the normal CLI
+behavior.
+
+If parameters share a global fallback path, their resolved values must agree;
+conflicting values are rejected because output templates use those
+configuration paths.
 
 Steps must not declare ``n_threads`` themselves. Every analysis step exposes
 the standard ``--n-threads`` argument, resolved from the shared resource
@@ -93,6 +116,33 @@ configuration. Per-unit analyses use it for ASOkai's worker pool; batch
 analyses receive it in ``analyze_batch`` and manage their own parallelism.
 A core step opts in with ``supports_multiple_threads = True`` only when its
 runtime consumes ``args.n_threads``.
+
+Configuring runs in YAML
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+A config file can select ordered step or task runs with ``runs``. Each step
+entry may supply ``parameters`` using names from its ``StepSpec.params``.
+Omitted values use the shared configuration and then declared defaults. For
+example, with ``target.region: pre-mrna`` in the shared configuration::
+
+   runs:
+     - step: create-target-gene
+     - step: create-target-gene
+       parameters:
+         region: exonic
+
+These entries request two runs of the same step with different regions. The
+planner shares equivalent runs and dependencies where possible. A task entry
+selects its declared steps::
+
+   runs:
+     - task: instantiate-target-gene
+
+Task entries do not accept ``parameters``. Invoke
+``ASOkai run --configfile config.yaml`` or ``ASOkai export --configfile
+config.yaml`` to use the file's ``runs`` without CLI selections. ``--config
+KEY=VALUE`` still changes shared fallback values. A file with ``runs`` cannot
+also be used with ``--step``, ``--task``, or ``--workflow`` selections.
 
 File contracts
 ~~~~~~~~~~~~~~

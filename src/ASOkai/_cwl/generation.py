@@ -207,7 +207,7 @@ class JobCwlGenerator(BaseCwlGenerator):
         - producer outputs outside the plan become top-level ``File`` inputs.
         - input overrides become top-level inputs matching the declared step
           CWL type.
-        - config_map values become top-level inputs matching declared step CWL types.
+        - resolved scalar values become top-level inputs matching step CWL types.
         - every planned step output is wired into the final publisher.
         - the publisher's top-level data roots become workflow outputs.
         """
@@ -236,7 +236,7 @@ class JobCwlGenerator(BaseCwlGenerator):
         for run in runs:
             step = run.step
             input_types = run.cwl_spec().input_types()
-            for cwl_key in step.config_map:
+            for cwl_key in run.parameters:
                 _declare_workflow_input(
                     all_inputs,
                     workflow_input_id(run, cwl_key),
@@ -256,7 +256,7 @@ class JobCwlGenerator(BaseCwlGenerator):
                     ]
                 }
 
-            for cwl_key in step.config_map:
+            for cwl_key in run.parameters:
                 in_map[cwl_key] = workflow_input_id(run, cwl_key)
 
             for binding in run.inputs:

@@ -167,12 +167,14 @@ class Step(Runnable):
         self,
         config: Mapping[str, Any],
         input_configurations: Mapping[str, Mapping[str, Any]],
+        parameters: Mapping[str, Any],
     ) -> CwlCommandLineToolSpec:
         """Return the CWL spec for resolved configuration and file inputs."""
         self._validate_standard_parameters()
         spec = self.spec.to_cwl_tool_spec(
             config,
             input_configurations,
+            parameters=parameters,
         )
         if not self.supports_multiple_threads:
             return spec
@@ -245,42 +247,43 @@ class Step(Runnable):
     def resolved_parameter_values(
         self,
         config: Mapping[str, Any],
+        parameters: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Return config-backed parameter values that can be resolved."""
+        """Resolve and validate every parameter for one invocation."""
         from ASOkai._pipeline import config as cfg
 
-        values: dict[str, Any] = {}
-        for parameter in self.spec.params:
-            if parameter.config is None:
-                continue
-            try:
-                values[parameter.name] = cfg.resolve_parameter_value(
-                    config,
-                    parameter,
-                )
-            except KeyError:
-                pass
+        values, errors = cfg._resolve_step_parameters(config, self, parameters)
+        if errors:
+            details = "\n".join(f"- {error}" for error in errors)
+            raise ValueError(f"Invalid parameters for step '{self.name}':\n{details}")
         return values
 
-    def _configuration_with_defaults(
+    def _configuration_for_parameters(
         self,
         config: Mapping[str, Any],
+        parameters: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Return a configuration copy with this step's defaults applied."""
+        """Copy configuration with resolved values at declared global paths."""
         from ASOkai._pipeline import config as cfg
 
         resolved = deepcopy(dict(config))
         overrides: dict[str, Any] = {}
+        names_by_path: dict[str, str] = {}
         for parameter in self.spec.params:
             if parameter.config is None:
                 continue
-            try:
-                overrides[parameter.config] = cfg.resolve_parameter_value(
-                    config,
-                    parameter,
+            value = parameters[parameter.name]
+            if parameter.config in overrides and (
+                type(value) is not type(overrides[parameter.config])
+                or value != overrides[parameter.config]
+            ):
+                raise ValueError(
+                    f"Step '{self.name}' parameters "
+                    f"'{names_by_path[parameter.config]}' and '{parameter.name}' "
+                    f"have conflicting values for config path '{parameter.config}'."
                 )
-            except KeyError:
-                continue
+            overrides[parameter.config] = value
+            names_by_path[parameter.config] = parameter.name
         return cfg.apply_overrides(resolved, overrides)
 
 

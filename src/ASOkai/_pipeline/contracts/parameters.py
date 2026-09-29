@@ -22,7 +22,7 @@ from typing import (
     get_origin,
 )
 
-from ASOkai._cwl.model import CwlToolInput, _UNSET
+from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, _UNSET
 
 
 def _flag_for_name(name: str) -> str:
@@ -165,6 +165,10 @@ class ScalarParam:
             return False
         return not _is_optional(self.annotation)
 
+    def allows_null(self) -> bool:
+        """Return whether an explicit null is a valid parameter value."""
+        return _is_optional(self.annotation)
+
     def parser_type(self) -> Any:
         """Return the argparse type callable inferred for this parameter."""
         return _argparse_type_for_annotation(self.annotation)
@@ -209,15 +213,23 @@ class ScalarParam:
             f"{annotation!r}"
         )
 
-    def to_cwl_input(self) -> CwlToolInput:
-        """Return this parameter as a rendered tool input."""
+    def to_cwl_input(self, *, value: Any = _UNSET) -> CwlToolInput:
+        """Bind a scalar with an optional resolved CWL default."""
         return CwlToolInput(
-            self.name,
-            self.inferred_cwl_type(),
-            self.cli_prefix,
-            self.doc,
-            self.default,
+            name=self.name,
+            type=self.inferred_cwl_type(),
+            prefix=self.cli_prefix,
+            doc=self.doc,
+            default=self.default if value is _UNSET else value,
         )
+
+    def to_cwl_argument(self, *, value: Any = _UNSET) -> CwlToolArgument | None:
+        """Clear a non-null parser default before normal input bindings."""
+        if value is None and self.default is not _UNSET and self.default is not None:
+            # CWL arguments precede input bindings at their default position.
+            # A supplied --flag value can therefore override this bare flag.
+            return CwlToolArgument(value_from=self.cli_prefix)
+        return None
 
     def add_to_parser(self, parser: argparse.ArgumentParser) -> None:
         """Add this parameter as an argparse option."""
@@ -228,6 +240,9 @@ class ScalarParam:
         if self.annotation is bool:
             kwargs["action"] = "store_true"
         else:
+            if self.allows_null():
+                kwargs["nargs"] = "?"
+                kwargs["const"] = None
             parser_type = self.parser_type()
             choices = self.parser_choices()
             if parser_type is not None:

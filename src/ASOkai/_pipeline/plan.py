@@ -28,6 +28,7 @@ from ASOkai._pipeline.contracts.execution import (
 from ASOkai._pipeline.contracts.files import FileInput
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
+from ASOkai._pipeline.tasks.base import Task
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class _RunRequest:
     step: Step
     config: dict[str, Any]
     dependency_path: tuple[str, ...]
+    parameters: dict[str, Any] = field(default_factory=dict)
     input_sources: list[_RequestedInputSource] = field(default_factory=list)
 
 
@@ -64,9 +66,14 @@ def _request_matches_step_config(
     request: _RunRequest,
     step: Step,
     config: Mapping[str, Any],
+    parameters: Mapping[str, Any] | None = None,
 ) -> bool:
     """Return whether an existing request describes this step configuration."""
-    return type(request.step) is type(step) and request.config == config
+    return (
+        type(request.step) is type(step)
+        and request.config == config
+        and request.parameters == (parameters or {})
+    )
 
 
 def _configured_producer_request_id(
@@ -90,7 +97,9 @@ def _run_signature(
     return _RunSignature(
         step_name=request.step.name,
         parameter_values=tuple(
-            request.step.resolved_parameter_values(request.config).items()
+            request.step.resolved_parameter_values(
+                request.config, request.parameters
+            ).items()
         ),
         input_sources=tuple(
             (binding.file_input.name, binding.source) for binding in input_bindings
@@ -192,6 +201,7 @@ class _PlanBuilder:
         config: dict[str, Any],
         *,
         dependency_path: tuple[str, ...],
+        parameters: Mapping[str, Any] | None = None,
     ) -> _RunRequest:
         """Reserve one request in the breadth-first discovery queue."""
         step.validate_output_declaration()
@@ -201,6 +211,7 @@ class _PlanBuilder:
                 existing_request,
                 step,
                 config,
+                parameters,
             ):
                 raise ValueError(
                     f"Request id '{request_id}' resolves to conflicting step "
@@ -213,6 +224,7 @@ class _PlanBuilder:
             step=step,
             config=config,
             dependency_path=dependency_path,
+            parameters=dict(parameters or {}),
         )
         self.requests[request_id] = request
         self.pending_request_ids.append(request_id)
@@ -298,6 +310,7 @@ class _PlanBuilder:
             run.config,
             [run.step],
             validate_input_files=self.validate_input_files,
+            parameters=run.parameters,
         )
 
     def _producer_first_requests(self) -> list[_RunRequest]:
@@ -370,6 +383,7 @@ class _PlanBuilder:
                     step=request.step,
                     config=request.config,
                     inputs=tuple(input_bindings),
+                    parameters=request.parameters,
                 )
                 run_by_signature[run_signature] = run
                 producer_first_runs.append(run)
@@ -421,9 +435,11 @@ class _PlanBuilder:
         )
         return ordered_runs_to_execute, reusable_outputs
 
-    def build(self, goal_steps: list[Step]) -> ExecutionPlan:
+    def build(
+        self, goal_requests: list[tuple[str, Step, dict[str, Any]]]
+    ) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
-        goals, producer_first_runs = self._resolve_goals(goal_steps)
+        goals, producer_first_runs = self._resolve_goals(goal_requests)
         runs_to_execute, reusable_outputs = self._schedule_required_runs(
             goals,
             producer_first_runs,
@@ -437,30 +453,33 @@ class _PlanBuilder:
 
     def _resolve_goals(
         self,
-        goal_steps: list[Step],
+        goal_requests: list[tuple[str, Step, dict[str, Any]]],
     ) -> tuple[tuple[StepRun, ...], tuple[StepRun, ...]]:
         """Discover dependencies and return goals plus producer-first runs."""
-        for step in goal_steps:
+        for request_id, step, parameters in goal_requests:
             self._reserve_request(
-                step.name,
+                request_id,
                 step,
                 self.main_config,
                 dependency_path=(step.name,),
+                parameters=parameters,
             )
         self._discover_run_requests()
 
         run_by_request_id, producer_first_runs = self._resolve_run_requests()
-        goals = tuple(run_by_request_id[step.name] for step in goal_steps)
+        goals = tuple(
+            run_by_request_id[request_id] for request_id, _, _ in goal_requests
+        )
         return goals, producer_first_runs
 
     def build_export(
         self,
-        goal_steps: list[Step],
+        goal_requests: list[tuple[str, Step, dict[str, Any]]],
         *,
         recursive: bool,
     ) -> ExecutionPlan:
         """Resolve runs for export without consulting existing output files."""
-        goals, producer_first_runs = self._resolve_goals(goal_steps)
+        goals, producer_first_runs = self._resolve_goals(goal_requests)
         for run in producer_first_runs:
             self._validate_run(run)
 
@@ -490,18 +509,20 @@ class _PlanBuilder:
         )
 
 
-def _validated_goal_steps(
+def _validated_goal_requests(
     runnables: Sequence[Runnable],
     config: dict,
     registered_steps: dict[str, Step] | None,
+    registered_tasks: Mapping[str, Task] | None,
     config_schema_paths: Mapping[str, Path] | None,
-) -> tuple[dict[str, Step], list[Step]]:
-    """Resolve the registry and validate shared planning inputs once."""
+) -> tuple[dict[str, Step], list[tuple[str, Step, dict[str, Any]]]]:
+    """Resolve CLI or YAML selections into ordered concrete goal requests."""
     if registered_steps is None:
         from ASOkai._pipeline.catalog import get_pipeline_catalog
 
         catalog = get_pipeline_catalog()
         registered_steps = catalog.steps
+        registered_tasks = catalog.tasks
         config_schema_paths = catalog.config_schema_paths
 
     cfg.validate_config_schema(
@@ -510,15 +531,46 @@ def _validated_goal_steps(
     )
     cfg.validate_configured_step_names(config, registered_steps)
 
-    goal_steps: list[Step] = []
+    goal_requests: list[tuple[str, Step, dict[str, Any]]] = []
+    if "runs" in config:
+        if runnables:
+            raise ValueError(
+                "Select runs in the configuration or with --step/--task/--workflow, "
+                "not both."
+            )
+        for index, declaration in enumerate(config["runs"]):
+            if "step" in declaration:
+                step_name = declaration["step"]
+                step = registered_steps.get(step_name)
+                if step is None:
+                    raise ValueError(
+                        f"$.runs[{index}].step: unknown step '{step_name}'."
+                    )
+                goal_requests.append(
+                    (f"runs.{index + 1}", step, dict(declaration.get("parameters", {})))
+                )
+                continue
+
+            task_name = declaration["task"]
+            if registered_tasks is None:
+                from ASOkai._pipeline.catalog import get_pipeline_catalog
+
+                registered_tasks = get_pipeline_catalog().tasks
+            task = registered_tasks.get(task_name)
+            if task is None:
+                raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
+            for step in expand_runnable_steps(task):
+                goal_requests.append((f"runs.{index + 1}.{step.name}", step, {}))
+        return registered_steps, goal_requests
+
     seen_goal_names: set[str] = set()
     for runnable in runnables:
         for step in expand_runnable_steps(runnable):
             if step.name in seen_goal_names:
                 continue
             seen_goal_names.add(step.name)
-            goal_steps.append(step)
-    return registered_steps, goal_steps
+            goal_requests.append((step.name, step, {}))
+    return registered_steps, goal_requests
 
 
 def build_plan(
@@ -528,13 +580,15 @@ def build_plan(
     non_recursive: bool = False,
     force: bool = False,
     _registry: dict[str, Step] | None = None,
+    _tasks: Mapping[str, Task] | None = None,
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve requested runnables into a dependency-complete execution plan."""
-    _registry, goal_steps = _validated_goal_steps(
+    _registry, goal_requests = _validated_goal_requests(
         runnables,
         config,
         _registry,
+        _tasks,
         _config_schema_paths,
     )
 
@@ -545,7 +599,7 @@ def build_plan(
         force=force,
         output_validation_mode=cfg.output_validation_mode(config),
     )
-    return builder.build(goal_steps)
+    return builder.build(goal_requests)
 
 
 def build_export_plan(
@@ -554,13 +608,15 @@ def build_export_plan(
     *,
     recursive: bool = False,
     _registry: dict[str, Step] | None = None,
+    _tasks: Mapping[str, Task] | None = None,
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve a file-system-independent plan for a CWL export bundle."""
-    _registry, goal_steps = _validated_goal_steps(
+    _registry, goal_requests = _validated_goal_requests(
         runnables,
         config,
         _registry,
+        _tasks,
         _config_schema_paths,
     )
     builder = _PlanBuilder(
@@ -570,4 +626,4 @@ def build_export_plan(
         force=True,
         validate_input_files=False,
     )
-    return builder.build_export(goal_steps, recursive=recursive)
+    return builder.build_export(goal_requests, recursive=recursive)

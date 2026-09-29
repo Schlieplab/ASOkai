@@ -429,6 +429,34 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert "create-target-gene.target_gene_output" not in job
 
 
+def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_path):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    workflow_config["runs"] = [
+        {"step": create.name},
+        {"step": create.name, "parameters": {"region": "exonic"}},
+    ]
+
+    export_dir = runner.export_all(
+        [],
+        workflow_config,
+        outdir=tmp_path,
+        registered_steps={step.name: step for step in (download, create)},
+        config_schema_paths={},
+    )
+
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    layout = yaml.safe_load((export_dir / "output-layout.yml").read_text())
+    assert job["runs.1.region"] == "pre-mrna"
+    assert job["runs.2.region"] == "exonic"
+    assert {entry["id"] for entry in layout["outputs"]} == {
+        "runs.1.target_gene",
+        "runs.2.target_gene",
+    }
+    assert (export_dir / "steps" / "runs.1.cwl").exists()
+    assert (export_dir / "steps" / "runs.2.cwl").exists()
+
+
 def test_executor_from_name_uses_central_runner_configuration():
     assert isinstance(runner.executor_from_name("cwltool"), CwlToolExecutor)
     assert isinstance(runner.executor_from_name("toil"), ToilExecutor)

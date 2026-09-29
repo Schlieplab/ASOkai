@@ -58,10 +58,6 @@ def _collect_runnables(
             )
         runnables.append(catalog.workflows[workflow_name])
 
-    if not runnables:
-        raise click.UsageError(
-            "Select at least one runnable with " "--step, --task, or --workflow."
-        )
     return runnables
 
 
@@ -144,15 +140,19 @@ def run_command(
     """Run selected steps, tasks, or a workflow."""
     try:
         catalog = get_pipeline_catalog()
+        config = cfg.load(config_path)
+        overrides = parse_config_overrides(config_overrides)
+        cfg.apply_overrides(config, overrides)
         runnables = _collect_runnables(
             step_names,
             task_names,
             workflow_name,
             catalog,
         )
-        config = cfg.load(config_path)
-        overrides = parse_config_overrides(config_overrides)
-        cfg.apply_overrides(config, overrides)
+        if not runnables and "runs" not in config:
+            raise click.UsageError(
+                "Select at least one runnable with --step, --task, or --workflow."
+            )
 
         verbose = bool(ctx.obj and ctx.obj.get("verbose", False))
         runner.run_all(
@@ -166,6 +166,7 @@ def run_command(
                 verbose=verbose,
             ),
             registered_steps=catalog.steps,
+            registered_tasks=catalog.tasks,
             config_schema_paths=catalog.config_schema_paths,
         )
     except (OSError, RuntimeError, ValueError) as error:
@@ -247,15 +248,19 @@ def export_command(
     """Export selected pipeline units as a runnable CWL bundle."""
     try:
         catalog = get_pipeline_catalog()
+        config = cfg.load(config_path)
+        overrides = parse_config_overrides(config_overrides)
+        cfg.apply_overrides(config, overrides)
         runnables = _collect_runnables(
             step_names,
             task_names,
             workflow_name,
             catalog,
         )
-        config = cfg.load(config_path)
-        overrides = parse_config_overrides(config_overrides)
-        cfg.apply_overrides(config, overrides)
+        if not runnables and "runs" not in config:
+            raise click.UsageError(
+                "Select at least one runnable with --step, --task, or --workflow."
+            )
 
         export_directory = runner.export_all(
             runnables,
@@ -264,6 +269,7 @@ def export_command(
             outdir=outdir,
             runner_name=runner.runner_executable_from_name(executor_name),
             registered_steps=catalog.steps,
+            registered_tasks=catalog.tasks,
             config_schema_paths=catalog.config_schema_paths,
         )
     except (OSError, RuntimeError, ValueError) as error:

@@ -268,7 +268,7 @@ def test_step_cannot_override_output_validation_lifecycle():
                 return 0
 
 
-def test_step_resolves_available_config_backed_parameters():
+def test_step_requires_values_for_every_declared_parameter():
     class ParameterizedStep(Step):
         name = "parameterized"
         description = "Test parameter resolution."
@@ -285,8 +285,16 @@ def test_step_resolves_available_config_backed_parameters():
             ],
         )
 
+    with pytest.raises(ValueError, match="values.missing"):
+        ParameterizedStep().resolved_parameter_values(
+            {"values": {"visible": "yes", "internal": 3}},
+        )
+
     values = ParameterizedStep().resolved_parameter_values(
         {"values": {"visible": "yes", "internal": 3}},
+        {"missing": "supplied", "unconfigured": "local"},
     )
-
-    assert values == {"visible": "yes", "internal": 3}
+    assert values == {
+        "visible": "yes", "internal": 3,
+        "missing": "supplied", "unconfigured": "local",
+    }

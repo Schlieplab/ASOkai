@@ -33,6 +33,7 @@ from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.base import expand_runnable_steps
 from ASOkai._pipeline.plan import build_export_plan, build_plan
 from ASOkai._pipeline.output_receipts import record_validated_outputs
+from ASOkai._pipeline.tasks.base import Task
 
 
 def _make_step(
@@ -70,6 +71,33 @@ def _make_step(
             "description": "",
             "spec": spec,
             **{f"{output.name}_output": output for output in outputs},
+        },
+    )
+    return step_type()
+
+
+def _make_parameter_step() -> Step:
+    output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "results/{mode}.txt",
+            fields={"mode": TemplateField("shared.mode")},
+        ),
+    )
+    step_type = type(
+        "_ParameterizedStep",
+        (Step,),
+        {
+            "name": "parameterized",
+            "description": "",
+            "result_output": output,
+            "spec": StepSpec(
+                params=[
+                    ScalarParam("mode", str, config="shared.mode"),
+                    ScalarParam("local", int, default=5),
+                ],
+                outputs=[output],
+            ),
         },
     )
     return step_type()
@@ -127,6 +155,115 @@ def test_planner_rejects_unknown_configured_step_name(config):
     config["steps"] = {"misspelled-step": {"inputs": {}}}
 
     with pytest.raises(ValueError, match=r"steps\.misspelled-step.*unknown"):
+        build_plan([step], config, _registry={step.name: step})
+
+
+def test_configured_runs_keep_order_and_resolve_parameter_fallback(config):
+    step = _make_parameter_step()
+    config["shared"] = {"mode": "fast"}
+    config["runs"] = [
+        {"step": step.name, "parameters": {"local": 7}},
+        {"step": step.name, "parameters": {"mode": "slow"}},
+    ]
+
+    plan = build_plan([], config, _registry={step.name: step})
+
+    assert [run.run_id for run in plan.goals] == ["runs.1", "runs.2"]
+    assert [run.parameters for run in plan.goals] == [
+        {"mode": "fast", "local": 7},
+        {"mode": "slow", "local": 5},
+    ]
+    assert [run.output_paths()["result"] for run in plan.goals] == [
+        Path(config["datadir"]) / "results/fast.txt",
+        Path(config["datadir"]) / "results/slow.txt",
+    ]
+    assert _scheduled_run_ids(plan) == ["runs.1", "runs.2"]
+    assert config["shared"]["mode"] == "fast"
+
+
+def test_equivalent_configured_runs_share_one_execution(config):
+    step = _make_parameter_step()
+    config["shared"] = {"mode": "fast"}
+    config["runs"] = [
+        {"step": step.name},
+        {"step": step.name, "parameters": {"mode": "fast"}},
+    ]
+
+    plan = build_plan([], config, _registry={step.name: step})
+
+    assert len(plan.goals) == 2
+    assert plan.goals[0] is plan.goals[1]
+    assert _scheduled_run_ids(plan) == ["runs.1"]
+
+
+def test_configured_run_parameters_are_validated(config):
+    step = _make_parameter_step()
+    config["runs"] = [{"step": step.name, "parameters": {"mode": 3}}]
+
+    with pytest.raises(ValueError, match="parameter 'mode'"):
+        build_plan([], config, _registry={step.name: step})
+
+
+def test_configured_run_supplies_parameter_without_global_binding(config):
+    output = FileOutput("result", destination="required/result.txt")
+    step_type = type(
+        "_RequiredParameterStep",
+        (Step,),
+        {
+            "name": "required-parameter",
+            "description": "",
+            "result_output": output,
+            "spec": StepSpec(params=[ScalarParam("count", int)], outputs=[output]),
+        },
+    )
+    step = step_type()
+    config["runs"] = [{"step": step.name, "parameters": {"count": 21}}]
+
+    plan = build_plan([], config, _registry={step.name: step})
+    assert plan.goals[0].parameters["count"] == 21
+
+    config["runs"] = [{"step": step.name}]
+    with pytest.raises(ValueError, match="requires a value"):
+        build_plan([], config, _registry={step.name: step})
+
+
+def test_configured_task_expands_its_steps_in_order(config):
+    first = _make_step("first")
+    second = _make_step("second", [first])
+
+    class FakeTask:
+        name = "two-step-task"
+        description = ""
+        steps = (first, second)
+
+    config["runs"] = [{"task": FakeTask.name}]
+    plan = build_plan(
+        [],
+        config,
+        _registry={step.name: step for step in (first, second)},
+        _tasks={FakeTask.name: cast(Task, FakeTask())},
+    )
+
+    assert [run.run_id for run in plan.goals] == [
+        "runs.1.first",
+        "runs.1.second",
+    ]
+    assert _scheduled_run_ids(plan) == ["runs.1.first", "runs.1.second"]
+
+
+@pytest.mark.parametrize("kind", ["step", "task"])
+def test_configured_runs_reject_unknown_selections(config, kind):
+    config["runs"] = [{kind: "missing"}]
+
+    with pytest.raises(ValueError, match=rf"\$\.runs\[0\]\.{kind}: unknown"):
+        build_plan([], config, _registry={}, _tasks={})
+
+
+def test_configured_runs_cannot_mix_with_explicit_selections(config):
+    step = _make_step("first")
+    config["runs"] = [{"step": step.name}]
+
+    with pytest.raises(ValueError, match="not both"):
         build_plan([step], config, _registry={step.name: step})
 
 
@@ -465,18 +602,18 @@ def test_reused_goal_does_not_require_its_missing_dependencies(config):
     assert {output.run.run_id for output in plan.resolved_outputs} == {"goal"}
 
 
-def test_reused_goal_does_not_validate_unneeded_dependency_config(config):
+def test_reused_goal_requires_dependency_parameters_for_its_identity(config):
     dependency, goal = _make_configurable_producer_and_consumer()
+    config["producer"] = {"mode": "main"}
     _materialize_run(_run_with_producer(goal, dependency, config))
+    del config["producer"]
 
-    plan = build_plan(
-        [goal],
-        config,
-        _registry={dependency.name: dependency, goal.name: goal},
-    )
-
-    assert plan.runs_to_execute == ()
-    assert {output.run.run_id for output in plan.resolved_outputs} == {"consumer"}
+    with pytest.raises(ValueError, match="producer.mode"):
+        build_plan(
+            [goal],
+            config,
+            _registry={dependency.name: dependency, goal.name: goal},
+        )
 
 
 def test_dependency_chain_is_scheduled_in_topological_order(config):

@@ -326,7 +326,6 @@ def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
         },
         "target": {
             "target_id": "ENSG00000133703",
-            "target_name": "KRAS",
             "k": 16,
             "region": "pre-mrna",
         },
@@ -697,7 +696,10 @@ def test_generate_cwl_qualifies_same_named_inputs_by_run(tmp_path):
     )
 
     document = yaml.safe_load(
-        _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
+        _generate_run_cwl([first, second], {
+            "datadir": str(tmp_path), "first": {"shared": "value"},
+            "second": {"shared": 3},
+        })
     )
 
     assert document["inputs"]["first.shared"] == "string"

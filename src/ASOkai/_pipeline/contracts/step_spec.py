@@ -17,7 +17,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from ASOkai.Types import Scalar
-from ASOkai._cwl.model import CwlCommandLineToolSpec
+from ASOkai._cwl.model import CwlCommandLineToolSpec, _UNSET
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 
@@ -191,6 +191,8 @@ class StepSpec:
             str,
             Mapping[str, Any],
         ] | None = None,
+        *,
+        parameters: Mapping[str, Any] | None = None,
     ) -> CwlCommandLineToolSpec:
         """Return the low-level CommandLineTool spec generated from this step spec."""
         config = config or {}
@@ -199,19 +201,24 @@ class StepSpec:
             for output in self.outputs
         ]
         self._require_unique("CWL output filename", working_filenames)
-        inputs = [param.to_cwl_input() for param in self.params]
+        inputs = []
+        arguments = [
+            output.to_cwl_argument(config, input_configurations)
+            for output in self.outputs
+        ]
+        for param in self.params:
+            value = parameters[param.name] if parameters is not None else _UNSET
+            inputs.append(param.to_cwl_input(value=value))
+            argument = param.to_cwl_argument(value=value)
+            if argument is not None:
+                arguments.append(argument)
         inputs.extend(
             input_param.to_cwl_input()
             for input_param in self.inputs
         )
         return CwlCommandLineToolSpec(
             requirements=deepcopy(dict(self.requirements)),
-            arguments=[
-                *(
-                    output.to_cwl_argument(config, input_configurations)
-                    for output in self.outputs
-                ),
-            ],
+            arguments=arguments,
             inputs=inputs,
             outputs=[
                 output.to_cwl_output(config, input_configurations)

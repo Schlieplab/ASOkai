@@ -120,20 +120,73 @@ def apply_overrides(config: dict, overrides: dict[str, Any]) -> dict:
 def resolve_parameter_value(
     config: Mapping[str, Any],
     parameter: ScalarParam,
+    *,
+    override: Any = _UNSET,
 ) -> Any:
-    """Resolve one configured parameter, including its declared fallback."""
-    if parameter.config is None:
-        raise ValueError(
-            f"Parameter '{parameter.name}' does not declare a config path."
+    """Resolve invocation values, global configuration, then declared defaults."""
+    if override is not _UNSET:
+        return override
+    if parameter.config is not None:
+        try:
+            return resolve(config, parameter.config)
+        except KeyError:
+            if parameter.parser_required():
+                raise
+    if parameter.default is not _UNSET:
+        return deepcopy(parameter.default)
+    if not parameter.parser_required():
+        return None
+    raise KeyError(f"Parameter '{parameter.name}' requires a value.")
+
+
+def _resolve_step_parameters(
+    config: Mapping[str, Any],
+    step: Step,
+    parameters: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Resolve one parameter set and collect scalar and relationship errors."""
+    if parameters is not None:
+        if not isinstance(parameters, Mapping):
+            raise TypeError("Invocation parameters must be a mapping.")
+        unknown = set(parameters) - {
+            parameter.name for parameter in step.spec.params
+        }
+        if unknown:
+            names = ", ".join(sorted(str(name) for name in unknown))
+            raise ValueError(f"Step '{step.name}' has unknown parameter(s): {names}.")
+
+    values: dict[str, Any] = {}
+    errors: list[str] = []
+    for parameter in step.spec.params:
+        location = (
+            f"$.{parameter.config}"
+            if parameter.config is not None
+            else f"Step '{step.name}' parameter '{parameter.name}'"
         )
-    try:
-        return resolve(config, parameter.config)
-    except KeyError:
-        if parameter.default is not _UNSET:
-            return deepcopy(parameter.default)
-        if not parameter.parser_required():
-            return None
-        raise
+        override = (
+            parameters.get(parameter.name, _UNSET)
+            if parameters is not None else _UNSET
+        )
+        try:
+            value = resolve_parameter_value(config, parameter, override=override)
+        except KeyError:
+            errors.append(
+                f"{location}: parameter '{parameter.name}' requires a value "
+                f"(required by step '{step.name}')"
+            )
+            continue
+        values[parameter.name] = value
+        try:
+            parameter.validate(value)
+        except (TypeError, ValueError) as error:
+            errors.append(f"{location}: {error}")
+
+    if not errors:
+        try:
+            step.validate_parameters(values)
+        except ValueError as error:
+            errors.append(f"Step '{step.name}' parameters: {error}")
+    return values, errors
 
 
 def validate_step_config(
@@ -141,6 +194,7 @@ def validate_step_config(
     steps: Sequence[Step],
     *,
     validate_input_files: bool = True,
+    parameters: Mapping[str, Any] | None = None,
 ) -> None:
     """Validate selected-step values, compatibility, paths, and input files."""
     errors: list[str] = []
@@ -149,9 +203,10 @@ def validate_step_config(
         errors.append(f"$.datadir: {datadir} is not a directory")
 
     for step in _unique_steps(steps):
-        missing_parameter = False
-        parameters_are_valid = True
-        parameter_values: dict[str, object] = {}
+        parameter_values, parameter_errors = _resolve_step_parameters(
+            config, step, parameters
+        )
+        errors.extend(parameter_errors)
         configured_step_resources = config.get("resources", {}).get(
             step.name,
             {},
@@ -169,37 +224,11 @@ def validate_step_config(
             for parameter in step.spec.params
             if parameter.config is not None
         }
-        for parameter in step.spec.params:
-            if parameter.config is None:
-                continue
-            try:
-                configured_value = resolve_parameter_value(config, parameter)
-            except KeyError:
-                errors.append(
-                    f"$.{parameter.config}: required by step " f"'{step.name}'"
-                )
-                missing_parameter = True
-                parameters_are_valid = False
-                continue
-
-            parameter_values[parameter.name] = configured_value
-            try:
-                parameter.validate(configured_value)
-            except (TypeError, ValueError) as error:
-                errors.append(f"$.{parameter.config}: {error}")
-                parameters_are_valid = False
-
-        if parameters_are_valid:
-            try:
-                step.validate_parameters(parameter_values)
-            except ValueError as error:
-                errors.append(f"Step '{step.name}' parameters: {error}")
-
         for path, supported_values in step.spec.compatible_with.items():
             parameter = parameters_by_path.get(path)
             try:
                 configured_value = (
-                    resolve_parameter_value(config, parameter)
+                    parameter_values[parameter.name]
                     if parameter is not None
                     else resolve(config, path)
                 )
@@ -270,8 +299,14 @@ def validate_step_config(
                             f"$.{configuration_path}.parameters.{name}: {error}"
                         )
 
-        if not missing_parameter:
-            output_config = step._configuration_with_defaults(config)
+        if len(parameter_values) == len(step.spec.params):
+            try:
+                output_config = step._configuration_for_parameters(
+                    config, parameter_values
+                )
+            except (TypeError, ValueError) as error:
+                errors.append(f"Step '{step.name}' configuration: {error}")
+                continue
             for output in step.spec.outputs:
                 try:
                     output.destination.validate_configuration(output_config)

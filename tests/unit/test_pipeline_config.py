@@ -50,6 +50,24 @@ def test_load_reads_a_yaml_mapping(sample_config):
     assert config["genome"]["assembly_id"] == "GRCh38"
 
 
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [],
+        [{"step": "download-genome", "task": "instantiate-target-gene"}],
+        [{"task": "instantiate-target-gene", "parameters": {"mode": "fast"}}],
+        [{"step": "download-genome", "parameters": {"mode": ["fast"]}}],
+        [{"step": "download-genome", "inputs": {}}],
+    ],
+)
+def test_config_schema_rejects_invalid_run_declarations(tmp_path, runs):
+    with pytest.raises(ValueError, match="runs"):
+        cfg.validate_config_schema(
+            {"datadir": str(tmp_path), "runs": runs},
+            plugin_schema_paths={},
+        )
+
+
 @pytest.mark.parametrize("content", ["", "- one\n- two\n"])
 def test_load_rejects_non_mapping_root(tmp_path, content):
     path = tmp_path / "config.yaml"

@@ -148,7 +148,10 @@ def _log_dry_run_plan(plan: ExecutionPlan) -> None:
     lines = [f"Dry run: {count} {noun} would execute:"]
 
     for position, run in enumerate(plan.runs_to_execute, start=1):
-        lines.extend(("", f"  {position}. {run.run_id}"))
+        label = run.run_id
+        if run.run_id != run.step.name:
+            label = f"{label} ({run.step.name})"
+        lines.extend(("", f"  {position}. {label}"))
         resolved = resolve_run_inputs(
             run,
             resolved_outputs=plan.resolved_outputs,
@@ -286,19 +289,21 @@ def run_all(
     non_recursive: bool = False,
     executor: Executor | None = None,
     registered_steps: dict[str, Step] | None = None,
+    registered_tasks: dict[str, Task] | None = None,
     config_schema_paths: dict[str, Path] | None = None,
 ) -> dict[str, Path]:
     """Run an arbitrary list of Runnables as a single unified ExecutionPlan."""
-    if not runnables:
+    if not runnables and "runs" not in config:
         raise ValueError("run_all called with an empty runnables list.")
 
-    label = ", ".join(r.name for r in runnables)
+    label = ", ".join(r.name for r in runnables) or "configured-runs"
     plan = build_plan(
         runnables,
         config,
         non_recursive=non_recursive,
         force=force,
         _registry=registered_steps,
+        _tasks=registered_tasks,
         _config_schema_paths=config_schema_paths,
     )
     return run_plan(
@@ -318,19 +323,21 @@ def export_all(
     outdir: Path | None = None,
     runner_name: str = "cwltool",
     registered_steps: dict[str, Step] | None = None,
+    registered_tasks: dict[str, Task] | None = None,
     config_schema_paths: dict[str, Path] | None = None,
 ) -> Path:
     """Export a complete runnable CWL bundle for the selected runnables."""
-    if not runnables:
+    if not runnables and "runs" not in config:
         raise ValueError("export_all called with an empty runnables list.")
 
-    label = ", ".join(r.name for r in runnables)
+    label = ", ".join(r.name for r in runnables) or "configured-runs"
     log_contexts = tuple(_runnable_log_context(runnable) for runnable in runnables)
     plan = build_export_plan(
         runnables,
         config,
         recursive=recursive,
         _registry=registered_steps,
+        _tasks=registered_tasks,
         _config_schema_paths=config_schema_paths,
     )
     if not plan.runs_to_execute:

@@ -192,7 +192,8 @@ def _file_outputs_table(
     refdoc: str,
 ) -> nodes.table:
     rows = []
-    output_config = step._configuration_with_defaults(example_config)
+    parameters = step.resolved_parameter_values(example_config)
+    output_config = step._configuration_for_parameters(example_config, parameters)
     example_input_configurations = {
         file_input.name: output_config
         for file_input in step.spec.inputs

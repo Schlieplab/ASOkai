@@ -323,6 +323,52 @@ def test_run_requires_explicit_runnable_selection():
     assert "Select at least one runnable" in result.output
 
 
+def test_run_accepts_configured_runs_without_cli_selection(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path, **_kwargs: {
+            "datadir": str(tmp_path),
+            "runs": [{"step": "download-genome"}],
+        },
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables, config=config, **kwargs
+        ),
+    )
+
+    result = CliRunner().invoke(main, ["run"])
+
+    assert result.exit_code == 0
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [{"step": "download-genome"}]
+    assert "download-genome" in captured["registered_steps"]
+
+
+def test_run_dry_run_reads_configured_runs_from_yaml(tmp_path, caplog):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        f"datadir: {tmp_path}\n"
+        "genome:\n"
+        "  assembly_id: GRCh38\n"
+        "  ensembl_release: 114\n"
+        "  species: Homo_sapiens\n"
+        "runs:\n"
+        "  - step: download-genome\n"
+    )
+
+    caplog.set_level(logging.INFO)
+    result = CliRunner().invoke(
+        main,
+        ["run", "--configfile", str(config_file), "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert any("download-genome" in record.message for record in caplog.records)
+
+
 def test_run_workflow_selects_standard_explicitly(monkeypatch):
     captured = {}
 
@@ -536,6 +582,31 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert [r.name for r in captured["runnables"]] == ["instantiate-target-gene"]
+
+
+def test_export_accepts_configured_runs_without_cli_selection(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path, **_kwargs: {
+            "datadir": str(tmp_path),
+            "runs": [{"task": "instantiate-target-gene"}],
+        },
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.export_all",
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables, config=config, **kwargs
+        )
+        or tmp_path / "export",
+    )
+
+    result = CliRunner().invoke(main, ["export"])
+
+    assert result.exit_code == 0
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [{"task": "instantiate-target-gene"}]
+    assert "instantiate-target-gene" in captured["registered_tasks"]
 
 
 @pytest.mark.parametrize(

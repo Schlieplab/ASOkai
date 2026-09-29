@@ -57,3 +57,13 @@ resources:
     memory_mb: 4096
   intrinsic-features:
     n_threads: 4
+
+# Select ordered runs in this file, then use `ASOkai run --configfile config.yaml`.
+# Step parameters override the shared values above for that run only.
+# Do not combine runs with --step, --task, or --workflow.
+# runs:
+#   - step: create-target-gene
+#   - step: create-target-gene
+#     parameters:
+#       region: exonic
+#   - task: instantiate-target-gene

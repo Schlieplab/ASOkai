@@ -23,12 +23,16 @@ from ASOkai._pipeline.steps.base import Step
 
 @dataclass(frozen=True, eq=False)
 class StepRun:
-    """One plan-local concrete execution of a configured step."""
+    """One plan-local concrete execution of a configured step.
+
+    ``parameters`` accepts invocation overrides and stores the resolved values.
+    """
 
     run_id: str
     step: Step
     config: Mapping[str, Any] = field(repr=False)
     inputs: tuple[StepInputBinding, ...] = ()
+    parameters: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if type(self.run_id) is not str or not all(
@@ -85,14 +89,19 @@ class StepRun:
                     f"use the declaration from step '{self.step.name}'."
                 )
 
+        self.step._validate_standard_parameters()
+        parameters = self.step.resolved_parameter_values(
+            self.config, self.parameters
+        )
         object.__setattr__(
             self,
             "config",
             MappingProxyType(
-                self.step._configuration_with_defaults(self.config)
+                self.step._configuration_for_parameters(self.config, parameters)
             ),
         )
         object.__setattr__(self, "inputs", inputs)
+        object.__setattr__(self, "parameters", MappingProxyType(parameters))
 
     def output(self, output: FileOutput) -> StepRunOutput:
         """Return one output port qualified by this concrete run."""
@@ -128,6 +137,7 @@ class StepRun:
         return self.step._cwl_spec(
             self.config,
             self.input_configurations(),
+            self.parameters,
         )
 
     def _output_path(

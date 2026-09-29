@@ -49,14 +49,9 @@ def resolve_run_inputs(
         runs_to_execute = set()
 
     resolved: dict[str, ResolvedInput] = {}
-    parameter_values = run.step.resolved_parameter_values(run.config)
     for parameter in run.step.spec.params:
-        if parameter.config is None:
-            continue
-        if parameter.name not in parameter_values:
-            continue
         resolved[parameter.name] = ResolvedInput(
-            cwl_value=parameter_values[parameter.name],
+            cwl_value=run.parameters[parameter.name],
             source="scalar",
             config_path=parameter.config,
         )
@@ -107,7 +102,7 @@ def to_cwl_inputs(resolved: dict[str, ResolvedInput]) -> dict[str, Any]:
     return {
         name: item.cwl_value
         for name, item in resolved.items()
-        if item.cwl_value is not None
+        if item.source != "dep_wired"
     }
 
 
@@ -141,7 +136,7 @@ def resolve_run_sequence_inputs(
             runs_to_execute=runs_to_execute,
         )
         for input_name, item in resolved.items():
-            if item.cwl_value is None:
+            if item.source == "dep_wired":
                 continue
             if item.source == "scalar":
                 input_id = workflow_input_id(run, input_name)

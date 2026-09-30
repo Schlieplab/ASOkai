@@ -231,7 +231,7 @@ def test_named_task_runs_reject_invalid_local_links(failure, message):
         RunSpec(
             "source" if failure == "duplicate" else "consumer",
             consumer,
-            inputs={input_name: {"run_id": source_id, "output": output_name}},
+            inputs={input_name: {"from_run": source_id, "output": output_name}},
         ),
     )
     task_type = type(
@@ -264,7 +264,13 @@ def test_named_task_runs_require_run_specs():
     [
         ("bad name", RegisteredProducerStep(), {}, ValueError, "run_id"),
         ("source", object(), {}, TypeError, "step must be a Step"),
-        ("source", RegisteredProducerStep(), {"parameters": []}, TypeError, "parameters"),
+        (
+            "source",
+            RegisteredProducerStep(),
+            {"parameters": []},
+            TypeError,
+            "parameters",
+        ),
     ],
 )
 def test_run_spec_rejects_invalid_declarations(run_id, step, kwargs, error, message):
@@ -272,59 +278,46 @@ def test_run_spec_rejects_invalid_declarations(run_id, step, kwargs, error, mess
         RunSpec(run_id, step, **kwargs)
 
 
-@pytest.mark.parametrize(
-    ("params", "forwarding", "error", "message"),
-    [
-        ((), {"task_parameter": "selection"}, ValueError, "undeclared task parameter"),
-        (
-            (ScalarParam("selection", str),),
-            {"wrong": "selection"},
-            TypeError,
-            "must specify only task_parameter",
-        ),
-        (
-            (ScalarParam("selection", str),),
-            "fixed",
-            ValueError,
-            "unused parameter",
-        ),
-        (
-            (ScalarParam("selection", str), ScalarParam("selection", str)),
-            {"task_parameter": "selection"},
-            ValueError,
-            "duplicate parameter",
-        ),
-    ],
-)
-def test_task_parameter_forwarding_rejects_invalid_declarations(
-    params, forwarding, error, message
-):
+def test_task_run_rejects_invalid_fixed_parameter():
     result = FileOutput("result", destination="task-param.txt")
     step_type = type(
         "_TaskParameterStep",
         (Step,),
         {
             "name": "task-parameter-step",
-            "description": "Receives a forwarded task parameter.",
+            "description": "Receives a task run parameter.",
             "result_output": result,
-            "spec": StepSpec(
-                params=[ScalarParam("mode", str)], outputs=[result]
-            ),
+            "spec": StepSpec(params=[ScalarParam("mode", str)], outputs=[result]),
             "run_from_args": lambda self, args: 0,
         },
     )
     task_type = type(
-        "_InvalidForwardingTask",
+        "_InvalidParameterTask",
         (Task,),
         {
-            "name": "invalid-forwarding-task",
-            "description": "Has invalid task parameter forwarding.",
-            "params": params,
-            "runs": (RunSpec("run", step_type(), parameters={"mode": forwarding}),),
+            "name": "invalid-parameter-task",
+            "description": "Has an invalid fixed run parameter.",
+            "runs": (RunSpec("run", step_type(), parameters={"mode": 21}),),
         },
     )
 
-    with pytest.raises(error, match=message):
+    with pytest.raises(ValueError, match="must be str"):
+        validate_component("task", task_type())
+
+
+def test_task_rejects_obsolete_parameter_declarations():
+    task_type = type(
+        "_OldTaskParameters",
+        (Task,),
+        {
+            "name": "old-task-parameters",
+            "description": "Uses removed task parameter declarations.",
+            "params": (ScalarParam("mode", str),),
+            "runs": (RunSpec("source", RegisteredProducerStep()),),
+        },
+    )
+
+    with pytest.raises(ValueError, match="no longer supported"):
         validate_component("task", task_type())
 
 

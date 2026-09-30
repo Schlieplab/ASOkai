@@ -28,7 +28,6 @@ from ASOkai._pipeline.contracts.parameters import ScalarParam
 if TYPE_CHECKING:
     from ASOkai._pipeline.contracts.files import FileInput
     from ASOkai._pipeline.steps.base import Step
-    from ASOkai._pipeline.tasks.base import Task
 
 
 RESOURCE_N_THREADS_KEY = "n_threads"
@@ -409,31 +408,6 @@ def validate_step_config_paths(
     if errors:
         details = "\n".join(f"- {error}" for error in errors)
         raise ValueError(f"Invalid step configuration contract:\n{details}")
-
-
-def validate_task_config_paths(
-    tasks: Sequence[Task],
-    plugin_schema_paths: Mapping[str, Path] | None = None,
-) -> None:
-    """Require task parameter fallback paths to exist in registered schemas."""
-    from ASOkai._pipeline.tasks.base import validate_task_parameters
-
-    schemas = _registered_config_schemas(plugin_schema_paths)
-    errors: list[str] = []
-    for task in tasks:
-        for parameter in validate_task_parameters(task):
-            path = parameter.config
-            if path is None or any(
-                _schema_declares_path(schema, path) for schema in schemas.values()
-            ):
-                continue
-            errors.append(
-                f"Task '{task.name}' uses '{path}', but no registered "
-                "configuration schema declares it."
-            )
-    if errors:
-        details = "\n".join(f"- {error}" for error in errors)
-        raise ValueError(f"Invalid task configuration contract:\n{details}")
 
 
 def validate_config_schema(

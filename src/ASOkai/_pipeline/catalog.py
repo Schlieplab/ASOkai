@@ -307,11 +307,8 @@ def get_steps() -> dict[str, Step]:
 
 def get_tasks(
     registered_steps: dict[str, Step] | None = None,
-    config_schemas: Sequence[_DiscoveredConfigSchema] | None = None,
 ) -> dict[str, Task]:
     """Return tasks, reusing an existing step registry when provided."""
-    from ASOkai._pipeline import config
-
     plugins = _discover_plugins("asokai.tasks", "task")
     registered = _index_components(
         "task",
@@ -320,13 +317,9 @@ def get_tasks(
     )
     if registered_steps is None:
         registered_steps = get_steps()
-    if config_schemas is None:
-        config_schemas = _discover_config_schemas()
-    schema_paths = {schema.name: schema.path for schema in config_schemas}
     for task in registered.values():
         try:
             validate_task_members(task, registered_steps)
-            config.validate_task_config_paths([task], schema_paths)
         except (TypeError, ValueError) as error:
             raise ValueError(
                 f"{_validation_context('task', task, plugins)}: {error}"
@@ -371,7 +364,7 @@ def get_pipeline_catalog() -> PipelineCatalog:
         _discover_plugins("asokai.steps", "step"),
         config_schemas,
     )
-    tasks = get_tasks(steps, config_schemas)
+    tasks = get_tasks(steps)
     workflows = get_workflows(steps, tasks)
     return PipelineCatalog(
         steps=steps,

@@ -184,19 +184,6 @@ class RegisteredNamedTask(Task):
     runs = (RunSpec("source", RegisteredPluginStep()),)
 
 
-class TaskWithUnknownFallback(Task):
-    name = "task-with-unknown-fallback"
-    description = "Uses a task parameter absent from configuration schemas."
-    params = (ScalarParam("site_length", int, config="missing.task_value"),)
-    runs = (
-        RunSpec(
-            "gene",
-            CreateTargetGeneStep(),
-            parameters={"k": {"task_parameter": "site_length"}},
-        ),
-    )
-
-
 class RegisteredPluginWorkflow:
     name = "registered-plugin-workflow"
     description = "A valid plugin workflow."
@@ -341,18 +328,6 @@ def test_named_task_plugin_is_discovered(monkeypatch) -> None:
     assert isinstance(task, RegisteredNamedTask)
     assert [run.run_id for run in task.runs] == ["source"]
     assert [step.name for step in task.steps] == [RegisteredPluginStep.name]
-
-
-def test_task_plugin_fallback_must_have_registered_schema(monkeypatch) -> None:
-    _provide_entry_points(
-        monkeypatch,
-        FakeEntryPoint(
-            "asokai.tasks", TaskWithUnknownFallback.name, TaskWithUnknownFallback
-        ),
-    )
-
-    with pytest.raises(ValueError, match="missing.task_value"):
-        pipeline_catalog.get_tasks()
 
 
 def test_plugin_steps_cannot_replace_registered_names(monkeypatch) -> None:

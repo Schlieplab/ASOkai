@@ -491,7 +491,7 @@ def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
         "runs": [
             {
                 "step": consumer.name,
-                "inputs": {"input": {"run_id": "source", "output": "result"}},
+                "inputs": {"input": {"from_run": "source", "output": "result"}},
             },
             {"id": "source", "step": source.name},
         ],

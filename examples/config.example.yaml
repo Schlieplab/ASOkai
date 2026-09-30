@@ -67,11 +67,18 @@ resources:
 #   - step: intrinsic-features
 #     inputs:
 #       target_gene:
-#         run_id: gene
+#         from_run: gene
 #         output: target_gene
 #   - step: create-target-gene
 #     parameters:
 #       region: exonic
-#   - task: instantiate-target-gene
+#   - task: compare-regions  # Requires the task from the contributor guide.
+#     id: comparison
+#     parameters:
+#       k: 21
+#     runs:
+#       - id: transcriptomic
+#         parameters:
+#           k: 18
 # To use an existing file instead, replace an input's run/output pair with:
 #         path: /path/to/target_gene.json

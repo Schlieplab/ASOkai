@@ -97,7 +97,7 @@ properties:
         id:
           type: string
           pattern: ^[A-Za-z][A-Za-z0-9_-]*$
-          description: Stable name for a step run referenced by another run.
+          description: Stable name for a step or task selection.
         step:
           type: string
           minLength: 1
@@ -106,7 +106,7 @@ properties:
           minLength: 1
         parameters:
           type: object
-          description: Overrides for a selected step or declared task parameter.
+          description: Step parameters or task-wide child-step parameter overrides.
           additionalProperties:
             type:
               - string
@@ -129,15 +129,48 @@ properties:
               - type: object
                 additionalProperties: false
                 required:
-                  - run_id
+                  - from_run
                   - output
                 properties:
-                  run_id:
+                  from_run:
                     type: string
                     minLength: 1
                   output:
                     type: string
                     minLength: 1
+        runs:
+          type: array
+          minItems: 1
+          description: Overrides for child run IDs declared by the selected task.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - id
+            properties:
+              id:
+                type: string
+                pattern: ^[A-Za-z][A-Za-z0-9_-]*$
+              parameters:
+                type: object
+                additionalProperties:
+                  type: [string, number, boolean, "null"]
+              inputs:
+                type: object
+                minProperties: 1
+                additionalProperties:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [path]
+                      properties:
+                        path: {type: string, minLength: 1}
+                    - type: object
+                      additionalProperties: false
+                      required: [from_run, output]
+                      properties:
+                        from_run: {type: string, minLength: 1}
+                        output: {type: string, minLength: 1}
       oneOf:
         - required:
             - step
@@ -149,8 +182,8 @@ properties:
               - task
               - inputs
           - required:
-              - task
-              - id
+              - step
+              - runs
 
   steps:
     type: object

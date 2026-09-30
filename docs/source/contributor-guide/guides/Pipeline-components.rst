@@ -142,7 +142,7 @@ when the producer is listed later in the file::
      - step: intrinsic-features
        inputs:
          target_gene:
-           run_id: gene
+          from_run: gene
            output: target_gene
      - step: create-target-gene
        id: gene
@@ -164,7 +164,8 @@ will be supplied later. A task entry selects its declared steps::
    runs:
      - task: instantiate-target-gene
 
-Task entries may supply declared task ``parameters``. Invoke
+Task entries may supply parameters shared by their child steps, and ``runs``
+entries keyed by child ID for specific overrides. Invoke
 ``ASOkai run --configfile config.yaml`` or ``ASOkai export --configfile
 config.yaml`` to use the file's ``runs`` without CLI selections. ``--config
 KEY=VALUE`` still changes shared fallback values. A file with ``runs`` cannot
@@ -175,49 +176,68 @@ Composing task runs
 
 Declare ``runs`` on a ``Task`` as ``RunSpec`` objects. Each specification has
 a local ``run_id`` and a Step instance, plus optional ``parameters`` and
-``inputs``. An input's ``run_id`` names its producer, even if it is declared
+``inputs``. An input's ``from_run`` names its producer, even if it is declared
 later::
 
    from ASOkai.Plugins import (
-       CreateTargetGeneStep, IntrinsicFeaturesStep, RunSpec, ScalarParam, Task,
+       CreateTargetGeneStep, IntrinsicFeaturesStep, RunSpec, Task,
    )
 
    class TargetAnalysisTask(Task):
        name = "target-analysis"
        description = "Create a target gene and analyze its features."
-       params = (ScalarParam("site_length", int, config="target.k"),)
        runs = (
            RunSpec(
                "features",
                IntrinsicFeaturesStep(),
                inputs={
-                   "target_gene": {"run_id": "gene", "output": "target_gene"}
+                   "target_gene": {"from_run": "gene", "output": "target_gene"}
                },
            ),
            RunSpec(
                "gene",
                CreateTargetGeneStep(),
-               parameters={"k": {"task_parameter": "site_length"}},
            ),
        )
 
-The planner schedules ``gene`` before ``features``. Once registered, the task
-can be selected with a parameter override::
+The planner schedules ``gene`` before ``features``. A task can also declare
+the same step more than once, using local IDs to distinguish the runs::
+
+   class CompareRegionsTask(Task):
+       name = "compare-regions"
+       description = "Create two versions of the target gene."
+       runs = (
+           RunSpec("exonic", CreateTargetGeneStep(),
+                   parameters={"region": "exonic"}),
+           RunSpec("transcriptomic", CreateTargetGeneStep(),
+                   parameters={"region": "transcriptomic"}),
+       )
+
+Once registered, this task can receive a task-wide parameter and an override
+for one declared child run::
 
    runs:
-     - task: target-analysis
+     - task: compare-regions
+       id: comparison
        parameters:
-         site_length: 21
+         k: 21
+       runs:
+         - id: transcriptomic
+           parameters:
+             k: 18
 
-The explicit ``task_parameter`` reference forwards that value to ``gene.k``;
-matching names alone do not forward values. Omitted task parameters use their
-shared configuration value or declared default. CLI task selections use those
-fallbacks too. Omit ``inputs`` when a step needs no explicit task link. A task
-may use the same step more than once with different fixed or forwarded
-parameters. Each distinct run must have a distinct output destination. Older
-tasks with ``steps`` remain valid. The planner also converts YAML and CLI
-selections into ``RunSpec`` objects, then resolves their configuration and
-input sources into concrete ``StepRun`` objects.
+``k`` applies to both child runs; the ``transcriptomic`` child uses 18 because
+its own ``parameters`` entry takes precedence. Values declared in a task's
+``RunSpec.parameters``, such as each child's ``region`` above, are fixed:
+task-wide parameters cannot replace them, and an attempted child override is
+rejected. Nested ``runs`` must name IDs
+already declared by the task and can also override their ``inputs``. A link
+inside a task uses a local child ID such as ``gene``. Outside the task, a
+named child's output can be selected with ``from_run: comparison.exonic``. Omit
+``inputs`` when no explicit link is needed. Each distinct run must have a
+distinct output destination. Older tasks with ``steps`` remain valid. The
+planner converts YAML and CLI selections into ``RunSpec`` objects, then
+resolves them into concrete ``StepRun`` objects.
 
 File contracts
 ~~~~~~~~~~~~~~

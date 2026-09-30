@@ -26,12 +26,13 @@ from ASOkai._pipeline.contracts.execution import (
     StepRunOutput,
 )
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import (
     Task,
-    validate_task_parameters,
+    validate_task_parameter_contract,
     validate_task_runs,
 )
 
@@ -292,9 +293,7 @@ class _PlanBuilder:
                 )
             producer_request = self.requests[explicit.source.request_id]
             try:
-                output = producer_request.step.spec.output(
-                    explicit.source.output_name
-                )
+                output = producer_request.step.spec.output(explicit.source.output_name)
             except KeyError as error:
                 raise ValueError(
                     f"{explicit.location}.output: run "
@@ -539,9 +538,7 @@ class _PlanBuilder:
         )
         return ordered_runs_to_execute, reusable_outputs
 
-    def build(
-        self, run_specs: list[RunSpec]
-    ) -> ExecutionPlan:
+    def build(self, run_specs: list[RunSpec]) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
         goals, producer_first_runs = self._resolve_goals(run_specs)
         runs_to_execute, reusable_outputs = self._schedule_required_runs(
@@ -581,15 +578,16 @@ class _PlanBuilder:
                     input_selections[name] = _ExplicitInput(source, location)
                     continue
                 if not isinstance(source, Mapping) or set(source) != {
-                    "run_id", "output"
+                    "from_run",
+                    "output",
                 }:
                     raise TypeError(
-                        f"{location} must specify a path or run_id and output."
+                        f"{location} must specify a path or from_run and output."
                     )
-                producer_id = source["run_id"]
+                producer_id = source["from_run"]
                 if type(producer_id) is not str or producer_id not in available_ids:
                     raise ValueError(
-                        f"{location}.run_id: unknown named run '{producer_id}'."
+                        f"{location}.from_run: unknown named run '{producer_id}'."
                     )
                 input_selections[name] = _ExplicitInput(
                     _RunOutputReference(producer_id, source["output"]), location
@@ -635,9 +633,7 @@ class _PlanBuilder:
                     isinstance(source, StepRunOutput)
                     and source.run not in included_run_set
                 ):
-                    external_outputs[source] = source.run.output_path(
-                        source.output
-                    )
+                    external_outputs[source] = source.run.output_path(source.output)
 
         return ExecutionPlan(
             goals=goals,
@@ -664,95 +660,149 @@ def _normalized_inputs(
         if "path" in declaration:
             selections[name] = Path(declaration["path"]).resolve()
             continue
-        run_id = declaration["run_id"]
+        run_id = declaration["from_run"]
         request_id = named_run_ids.get(run_id)
         if request_id is None:
-            raise ValueError(f"{location}.run_id: unknown named run '{run_id}'.")
-        selections[name] = {"run_id": request_id, "output": declaration["output"]}
+            raise ValueError(f"{location}.from_run: unknown named run '{run_id}'.")
+        selections[name] = {"from_run": request_id, "output": declaration["output"]}
     return selections
 
 
-def _resolved_task_parameters(
-    task: Task,
-    config: Mapping[str, Any],
+def _task_parameters(
+    runs: Sequence[RunSpec],
     overrides: Mapping[str, Any],
     location: str,
 ) -> dict[str, Any]:
-    """Resolve one task selection's declared scalar parameters."""
+    """Validate parameters for child ports left open by the task."""
     if not isinstance(overrides, Mapping):
         raise TypeError(f"{location}.parameters must be a mapping.")
-    declarations = validate_task_parameters(task)
-    unknown = set(overrides) - {parameter.name for parameter in declarations}
+    declarations: dict[str, list[ScalarParam]] = {}
+    for run in runs:
+        for parameter in run.step.spec.params:
+            if parameter.name not in run.parameters:
+                declarations.setdefault(parameter.name, []).append(parameter)
+    unknown = set(overrides) - declarations.keys()
     if unknown:
         names = ", ".join(sorted(str(name) for name in unknown))
         raise ValueError(f"{location}.parameters has unknown parameter(s): {names}.")
-
-    values: dict[str, Any] = {}
-    for parameter in declarations:
-        try:
-            if parameter.name in overrides:
-                value = cfg.resolve_parameter_value(
-                    config, parameter, override=overrides[parameter.name]
-                )
-            else:
-                value = cfg.resolve_parameter_value(config, parameter)
-        except KeyError as error:
-            raise ValueError(
-                f"{location}.parameters.{parameter.name}: requires a value."
-            ) from error
-        try:
-            parameter.validate(value)
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"{location}.parameters.{parameter.name}: {error}"
-            ) from error
-        values[parameter.name] = value
-    return values
+    for name, value in overrides.items():
+        for parameter in declarations[name]:
+            try:
+                parameter.validate(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"{location}.parameters.{name}: {error}") from error
+    return dict(overrides)
 
 
 def _task_run_specs(
     task: Task,
     prefix: str | None,
-    config: Mapping[str, Any],
     parameters: Mapping[str, Any] | None = None,
+    run_overrides: Sequence[Mapping[str, Any]] = (),
+    global_run_ids: Mapping[str, str] | None = None,
     *,
     location: str | None = None,
 ) -> list[RunSpec]:
-    """Normalize steps or named task runs into step-run requests."""
+    """Apply task-wide and child-specific overrides to declared runs."""
     selection_location = location or f"task[{task.name}]"
-    values = _resolved_task_parameters(
-        task, config, parameters if parameters is not None else {}, selection_location
+    validate_task_parameter_contract(task)
+    runs = (
+        validate_task_runs(task)
+        if hasattr(task, "runs")
+        else tuple(RunSpec(step.name, step) for step in task.steps)
+    )
+    values = _task_parameters(
+        runs, parameters if parameters is not None else {}, selection_location
     )
     if not hasattr(task, "runs"):
-        if values:
-            raise ValueError("task params require named runs for forwarding.")
+        if run_overrides:
+            raise ValueError(f"{selection_location}.runs requires named task runs.")
         return [
-            RunSpec(f"{prefix}.{step.name}" if prefix else step.name, step)
+            RunSpec(
+                f"{prefix}.{step.name}" if prefix else step.name,
+                step,
+                parameters={
+                    name: value
+                    for name, value in values.items()
+                    if name in {param.name for param in step.spec.params}
+                },
+            )
             for step in task.steps
         ]
 
-    runs = validate_task_runs(task)
     context = prefix or task.name
     named_run_ids = {run.run_id: f"{context}.{run.run_id}" for run in runs}
-    return [
-        RunSpec(
-            run_id=named_run_ids[run.run_id],
-            step=run.step,
-            parameters={
-                name: values[value["task_parameter"]]
-                if isinstance(value, Mapping) else value
-                for name, value in run.parameters.items()
-            },
-            inputs=_normalized_inputs(
-                run.step,
-                run.inputs,
-                named_run_ids,
-                f"task[{task.name}].runs[{run.run_id}]",
-            ),
-            location=f"task[{task.name}].runs[{run.run_id}]",
+    overrides_by_id: dict[str, tuple[Mapping[str, Any], str]] = {}
+    for index, override in enumerate(run_overrides):
+        child_id = override["id"]
+        child_location = f"{selection_location}.runs[{index}]"
+        if child_id not in named_run_ids:
+            raise ValueError(f"{child_location}.id: unknown task run '{child_id}'.")
+        if child_id in overrides_by_id:
+            raise ValueError(f"{child_location}.id: duplicate task run '{child_id}'.")
+        overrides_by_id[child_id] = (override, child_location)
+
+    available_ids = dict(global_run_ids or {})
+    available_ids.update(named_run_ids)
+    result: list[RunSpec] = []
+    for run in runs:
+        override, child_location = overrides_by_id.get(
+            run.run_id, ({}, f"task[{task.name}].runs[{run.run_id}]")
         )
-        for run in runs
-    ]
+        child_parameters = override.get("parameters", {})
+        declared_parameters = {
+            parameter.name: parameter for parameter in run.step.spec.params
+        }
+        unknown_parameters = set(child_parameters) - declared_parameters.keys()
+        if unknown_parameters:
+            names = ", ".join(sorted(str(name) for name in unknown_parameters))
+            raise ValueError(
+                f"{child_location}.parameters has unknown parameter(s): {names}."
+            )
+        fixed_parameters = set(child_parameters) & run.parameters.keys()
+        if fixed_parameters:
+            names = ", ".join(sorted(fixed_parameters))
+            raise ValueError(
+                f"{child_location}.parameters cannot override task-declared "
+                f"parameter(s): {names}."
+            )
+        for name, value in child_parameters.items():
+            try:
+                declared_parameters[name].validate(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"{child_location}.parameters.{name}: {error}"
+                ) from error
+        matching_values = {
+            name: value
+            for name, value in values.items()
+            if name in declared_parameters and name not in run.parameters
+        }
+        inputs = _normalized_inputs(
+            run.step,
+            run.inputs,
+            named_run_ids,
+            f"task[{task.name}].runs[{run.run_id}]",
+        )
+        inputs.update(
+            _normalized_inputs(
+                run.step, override.get("inputs", {}), available_ids, child_location
+            )
+        )
+        result.append(
+            RunSpec(
+                run_id=named_run_ids[run.run_id],
+                step=run.step,
+                parameters={
+                    **matching_values,
+                    **child_parameters,
+                    **run.parameters,
+                },
+                inputs=inputs,
+                location=child_location,
+            )
+        )
+    return result
 
 
 def _validated_run_specs(
@@ -785,13 +835,30 @@ def _validated_run_specs(
                 "not both."
             )
         named_run_ids: dict[str, str] = {}
+        selection_ids: set[str] = set()
         for index, declaration in enumerate(config["runs"]):
             if "id" not in declaration:
                 continue
             name = declaration["id"]
-            if name in named_run_ids:
+            if name in selection_ids:
                 raise ValueError(f"$.runs[{index}].id: duplicate run id '{name}'.")
-            named_run_ids[name] = f"runs.{name}"
+            selection_ids.add(name)
+            if "step" in declaration:
+                named_run_ids[name] = f"runs.{name}"
+                continue
+            task_name = declaration["task"]
+            if registered_tasks is None:
+                from ASOkai._pipeline.catalog import get_pipeline_catalog
+
+                registered_tasks = get_pipeline_catalog().tasks
+            task = registered_tasks.get(task_name)
+            if task is None:
+                raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
+            if hasattr(task, "runs"):
+                for child in validate_task_runs(task):
+                    named_run_ids[f"{name}.{child.run_id}"] = (
+                        f"runs.{name}.{child.run_id}"
+                    )
 
         for index, declaration in enumerate(config["runs"]):
             if "step" in declaration:
@@ -830,9 +897,10 @@ def _validated_run_specs(
             run_specs.extend(
                 _task_run_specs(
                     task,
-                    f"runs.{index + 1}",
-                    config,
+                    f"runs.{declaration.get('id', index + 1)}",
                     declaration.get("parameters", {}),
+                    declaration.get("runs", ()),
+                    named_run_ids,
                     location=f"$.runs[{index}]",
                 )
             )
@@ -842,7 +910,7 @@ def _validated_run_specs(
     for runnable in runnables:
         for member in flatten_workflow_members(runnable):
             if isinstance(member, Task):
-                requests = _task_run_specs(member, None, config)
+                requests = _task_run_specs(member, None)
             else:
                 requests = [RunSpec(member.name, member)]
             for request in requests:

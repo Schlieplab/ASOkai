@@ -15,7 +15,6 @@ from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     OutputPathTemplate,
-    RunSpec,
     ScalarParam,
     Step,
     StepSpec,
@@ -31,7 +30,6 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
-from ASOkai._pipeline.tasks.base import Task
 
 
 @pytest.fixture
@@ -60,12 +58,33 @@ def test_load_reads_a_yaml_mapping(sample_config):
         [{"step": "download-genome", "task": "instantiate-target-gene"}],
         [{"step": "download-genome", "parameters": {"mode": ["fast"]}}],
         [{"step": "download-genome", "inputs": {}}],
-        [{"task": "instantiate-target-gene", "id": "named"}],
-        [{"task": "instantiate-target-gene", "inputs": {"reference": {"path": "a.fa"}}}],
+        [{"task": "instantiate-target-gene", "runs": [{"parameters": {"k": 21}}]}],
+        [
+            {
+                "task": "instantiate-target-gene",
+                "inputs": {"reference": {"path": "a.fa"}},
+            }
+        ],
         [{"id": "1", "step": "download-genome"}],
-        [{"step": "download-genome", "inputs": {"reference": {"run_id": "named"}}}],
-        [{"step": "download-genome", "inputs": {"reference": {"path": "a.fa", "run_id": "named", "output": "reference"}}}],
-        [{"step": "download-genome", "inputs": {"reference": {"run": "named", "output": "reference"}}}],
+        [{"step": "download-genome", "inputs": {"reference": {"from_run": "named"}}}],
+        [
+            {
+                "step": "download-genome",
+                "inputs": {
+                    "reference": {
+                        "path": "a.fa",
+                        "from_run": "named",
+                        "output": "reference",
+                    }
+                },
+            }
+        ],
+        [
+            {
+                "step": "download-genome",
+                "inputs": {"reference": {"run": "named", "output": "reference"}},
+            }
+        ],
     ],
 )
 def test_config_schema_rejects_invalid_run_declarations(tmp_path, runs):
@@ -76,40 +95,29 @@ def test_config_schema_rejects_invalid_run_declarations(tmp_path, runs):
         )
 
 
-def test_config_schema_accepts_task_parameter_overrides(tmp_path):
+def test_config_schema_accepts_task_and_child_run_overrides(tmp_path):
     cfg.validate_config_schema(
         {
             "datadir": str(tmp_path),
-            "runs": [{"task": "build-index", "parameters": {"k": 21}}],
+            "runs": [
+                {
+                    "task": "build-index",
+                    "id": "index",
+                    "parameters": {"k": 21},
+                    "runs": [
+                        {
+                            "id": "gene",
+                            "parameters": {"region": "exonic"},
+                            "inputs": {
+                                "source": {"from_run": "reference", "output": "result"}
+                            },
+                        }
+                    ],
+                }
+            ],
         },
         plugin_schema_paths={},
     )
-
-
-@pytest.mark.parametrize("path", ["target.k", "missing.task_value"])
-def test_task_parameter_fallback_path_requires_registered_schema(path):
-    task_type = type(
-        "_TaskWithFallback",
-        (Task,),
-        {
-            "name": "task-with-fallback",
-            "description": "Forwards a configured value.",
-            "params": (ScalarParam("site_length", int, config=path),),
-            "runs": (
-                RunSpec(
-                    "gene",
-                    CreateTargetGeneStep(),
-                    parameters={"k": {"task_parameter": "site_length"}},
-                ),
-            ),
-        },
-    )
-
-    if path == "target.k":
-        cfg.validate_task_config_paths([task_type()])
-    else:
-        with pytest.raises(ValueError, match="missing.task_value"):
-            cfg.validate_task_config_paths([task_type()])
 
 
 @pytest.mark.parametrize("content", ["", "- one\n- two\n"])
@@ -187,11 +195,7 @@ def test_apply_overrides_rejects_scalar_parent(sample_config):
 
 def test_schema_validation_is_separate_from_loading(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text(
-        "datadir: ./data\n"
-        "genome:\n"
-        "  source: ''\n"
-    )
+    path.write_text("datadir: ./data\n" "genome:\n" "  source: ''\n")
 
     config = cfg.load(path)
 
@@ -706,6 +710,7 @@ def test_validate_step_config_checks_configured_producer_parameter_type(
                 ),
             ],
         )
+
     config = {
         "datadir": str(tmp_path),
         "steps": {

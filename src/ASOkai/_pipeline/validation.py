@@ -21,7 +21,7 @@ from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.tasks.base import (
     Task,
-    validate_task_parameters,
+    validate_task_parameter_contract,
     validate_task_runs,
 )
 from ASOkai._pipeline.workflows.base import Workflow
@@ -85,10 +85,9 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
 
     if kind == "task":
         assert isinstance(instance, Task)
+        validate_task_parameter_contract(instance)
         if hasattr(instance, "runs"):
             validate_task_runs(instance)
-        elif validate_task_parameters(instance):
-            raise ValueError("task params require named runs for forwarding.")
         if (
             isinstance(instance.steps, (str, bytes))
             or not isinstance(instance.steps, Sequence)

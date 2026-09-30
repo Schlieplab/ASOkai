@@ -196,12 +196,12 @@ def _make_named_task() -> tuple[Task, Step, Step]:
                 RunSpec(
                     "left_result",
                     consumer,
-                    inputs={"input": {"run_id": "left_source", "output": "result"}},
+                    inputs={"input": {"from_run": "left_source", "output": "result"}},
                 ),
                 RunSpec(
                     "right_result",
                     consumer,
-                    inputs={"input": {"run_id": "right_source", "output": "result"}},
+                    inputs={"input": {"from_run": "right_source", "output": "result"}},
                 ),
                 RunSpec("left_source", source, parameters={"mode": "left"}),
                 RunSpec("right_source", source, parameters={"mode": "right"}),
@@ -211,29 +211,16 @@ def _make_named_task() -> tuple[Task, Step, Step]:
     return task_type(), source, consumer
 
 
-def _make_forwarding_task(
-    *, required: bool = False, default: str | None = None
-) -> tuple[Task, Step]:
+def _make_configurable_task() -> tuple[Task, Step]:
     step = _make_parameter_step()
-    parameter = ScalarParam(
-        "selection",
-        str,
-        config=None if required else "shared.mode",
-        **({"default": default} if default is not None else {}),
-    )
     task_type = type(
-        "_ForwardingTask",
+        "_ConfigurableTask",
         (Task,),
         {
-            "name": "forwarding-task",
-            "description": "Forwards one declared task parameter.",
-            "params": (parameter,),
+            "name": "configurable-task",
+            "description": "Selects two runs of one step.",
             "runs": (
-                RunSpec(
-                    "selected",
-                    step,
-                    parameters={"mode": {"task_parameter": "selection"}},
-                ),
+                RunSpec("selected", step),
                 RunSpec("fixed", step, parameters={"mode": "fixed"}),
             ),
         },
@@ -332,7 +319,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     config["runs"] = [
         {
             "step": consumer.name,
-            "inputs": {"result": {"run_id": "source", "output": "result"}},
+            "inputs": {"result": {"from_run": "source", "output": "result"}},
         },
         {"id": "source", "step": producer.name, "parameters": {"mode": "alt"}},
     ]
@@ -340,7 +327,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     assert all(isinstance(spec, RunSpec) for spec in configured_specs)
     assert [spec.run_id for spec in configured_specs] == ["runs.1", "runs.source"]
     assert configured_specs[0].inputs == {
-        "result": {"run_id": "runs.source", "output": "result"}
+        "result": {"from_run": "runs.source", "output": "result"}
     }
     assert configured_specs[1].parameters == {"mode": "alt"}
 
@@ -428,6 +415,25 @@ def test_configured_task_expands_its_steps_in_order(config):
     assert _scheduled_run_ids(plan) == ["runs.1.first", "runs.1.second"]
 
 
+def test_legacy_task_general_parameter_applies_to_matching_step(config):
+    step = _make_parameter_step()
+
+    class LegacyTask:
+        name = "legacy-task"
+        description = "Selects one step."
+        steps = (step,)
+
+    config["runs"] = [{"task": LegacyTask.name, "parameters": {"mode": "task"}}]
+    plan = build_plan(
+        [],
+        config,
+        _registry={step.name: step},
+        _tasks={LegacyTask.name: cast(Task, LegacyTask())},
+    )
+
+    assert plan.goals[0].parameters["mode"] == "task"
+
+
 @pytest.mark.parametrize("selection", ["task", "yaml", "workflow"])
 @pytest.mark.parametrize("export", [False, True])
 def test_named_task_runs_keep_local_links_and_repeated_steps(config, selection, export):
@@ -477,28 +483,41 @@ def test_named_task_runs_keep_local_links_and_repeated_steps(config, selection, 
 
 
 @pytest.mark.parametrize("export", [False, True])
-def test_task_parameters_forward_only_to_declared_run_ports(config, export):
-    task, step = _make_forwarding_task()
+def test_task_general_parameters_and_child_overrides(config, export):
+    task, step = _make_configurable_task()
     config["shared"] = {"mode": "global"}
     config["runs"] = [
-        {"task": task.name, "parameters": {"selection": "left"}},
-        {"task": task.name, "parameters": {"selection": "right"}},
+        {
+            "task": task.name,
+            "id": "first",
+            "parameters": {"mode": "left"},
+        },
+        {
+            "task": task.name,
+            "id": "second",
+            "parameters": {"mode": "right"},
+        },
     ]
 
     build = build_export_plan if export else build_plan
     plan = build([], config, _registry={step.name: step}, _tasks={task.name: task})
 
     assert [run.parameters["mode"] for run in plan.goals] == [
-        "left", "fixed", "right", "fixed"
+        "left",
+        "fixed",
+        "right",
+        "fixed",
     ]
     assert plan.goals[1] is plan.goals[3]
     assert {run.output_paths()["result"].stem for run in plan.runs_to_execute} == {
-        "left", "right", "fixed"
+        "left",
+        "right",
+        "fixed",
     }
 
 
-def test_task_parameter_uses_shared_config_when_selection_omits_it(config):
-    task, step = _make_forwarding_task()
+def test_task_uses_shared_config_when_general_parameter_is_omitted(config):
+    task, step = _make_configurable_task()
     config["shared"] = {"mode": "global"}
 
     plan = build_plan([task], config, _registry={step.name: step})
@@ -506,29 +525,104 @@ def test_task_parameter_uses_shared_config_when_selection_omits_it(config):
     assert [run.parameters["mode"] for run in plan.goals] == ["global", "fixed"]
 
 
-def test_task_parameter_uses_declared_default_when_selection_omits_it(config):
-    task, step = _make_forwarding_task(required=True, default="task-default")
-    config["runs"] = [{"task": task.name}]
+def test_task_child_override_changes_only_named_run(config):
+    task, step = _make_configurable_task()
+    config["shared"] = {"mode": "global"}
+    config["runs"] = [
+        {
+            "task": task.name,
+            "runs": [{"id": "selected", "parameters": {"mode": "child"}}],
+        }
+    ]
+
+    plan = build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+    assert [run.parameters["mode"] for run in plan.goals] == ["child", "fixed"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ([{"id": "missing", "parameters": {"mode": "left"}}], "unknown task run"),
+        ([{"id": "selected"}, {"id": "selected"}], "duplicate task run"),
+        ([{"id": "selected", "parameters": {"unknown": "left"}}], "unknown parameter"),
+        ([{"id": "selected", "parameters": {"mode": 21}}], "must be str"),
+        ([{"id": "fixed", "parameters": {"mode": "changed"}}], "task-declared"),
+    ],
+)
+def test_task_rejects_invalid_child_run_ids(config, overrides, message):
+    task, step = _make_configurable_task()
+    config["runs"] = [{"task": task.name, "runs": overrides}]
+
+    with pytest.raises(ValueError, match=message):
+        build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+
+def test_task_child_input_can_link_to_top_level_named_run(config):
+    task, source, consumer = _make_named_task()
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {
+            "task": task.name,
+            "id": "analysis",
+            "runs": [
+                {
+                    "id": "left_result",
+                    "inputs": {"input": {"from_run": "outside", "output": "result"}},
+                }
+            ],
+        },
+        {"step": source.name, "id": "outside", "parameters": {"mode": "outside"}},
+    ]
 
     plan = build_plan(
-        [], config, _registry={step.name: step}, _tasks={task.name: task}
+        [],
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: task},
     )
 
-    assert [run.parameters["mode"] for run in plan.goals] == [
-        "task-default", "fixed"
+    assert plan.goals[0].run_id == "runs.analysis.left_result"
+    binding = plan.goals[0].inputs[0].source
+    assert isinstance(binding, StepRunOutput)
+    assert binding.run is plan.goals[-1]
+
+
+def test_top_level_run_can_link_to_named_task_child(config):
+    task, source, consumer = _make_named_task()
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "id": "outside-consumer",
+            "inputs": {
+                "input": {"from_run": "analysis.right_source", "output": "result"}
+            },
+        },
+        {"task": task.name, "id": "analysis"},
     ]
+
+    plan = build_plan(
+        [],
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: task},
+    )
+
+    binding = plan.goals[0].inputs[0].source
+    assert isinstance(binding, StepRunOutput)
+    assert binding.run.run_id == "runs.analysis.right_source"
 
 
 @pytest.mark.parametrize(
     ("parameters", "message"),
     [
         ({"unknown": "left"}, "unknown parameter"),
-        ({"selection": 21}, "must be str"),
-        ({}, "requires a value"),
+        ({"mode": 21}, "must be str"),
     ],
 )
 def test_task_selection_rejects_invalid_parameter_values(config, parameters, message):
-    task, step = _make_forwarding_task(required=True)
+    task, step = _make_configurable_task()
     config["runs"] = [{"task": task.name, "parameters": parameters}]
 
     with pytest.raises(ValueError, match=message):
@@ -564,7 +658,7 @@ def test_named_run_input_link_resolves_forward_reference_before_consumer(config)
     config["runs"] = [
         {
             "step": consumer.name,
-            "inputs": {"result": {"run_id": "alternate", "output": "result"}},
+            "inputs": {"result": {"from_run": "alternate", "output": "result"}},
         },
         {
             "id": "alternate",
@@ -592,9 +686,7 @@ def test_configured_run_external_path_replaces_global_input(config, tmp_path):
     config["producer"] = {"mode": "main"}
     config["steps"] = {
         consumer.name: {
-            "inputs": {
-                "result": {"path_override": str(tmp_path / "missing.txt")}
-            }
+            "inputs": {"result": {"path_override": str(tmp_path / "missing.txt")}}
         }
     }
     config["runs"] = [
@@ -649,9 +741,7 @@ def test_distinct_runs_cannot_publish_to_the_same_path(config, tmp_path, export)
 
     build = build_export_plan if export else build_plan
     with pytest.raises(ValueError, match="Output path collision") as error:
-        build(
-            [], config, _registry={producer.name: producer, consumer.name: consumer}
-        )
+        build([], config, _registry={producer.name: producer, consumer.name: consumer})
 
     assert "runs.first.consumer_out" in str(error.value)
     assert "runs.second.consumer_out" in str(error.value)
@@ -664,7 +754,7 @@ def test_typed_input_accepts_compatible_named_producer(config):
         {"id": "source", "step": producer.name},
         {
             "step": consumer.name,
-            "inputs": {"reference": {"run_id": "source", "output": "reference"}},
+            "inputs": {"reference": {"from_run": "source", "output": "reference"}},
         },
     ]
 
@@ -683,7 +773,7 @@ def test_typed_input_rejects_incompatible_named_producer(config):
         {"id": "compressed", "step": producer.name},
         {
             "step": consumer.name,
-            "inputs": {"reference": {"run_id": "compressed", "output": "reference"}},
+            "inputs": {"reference": {"from_run": "compressed", "output": "reference"}},
         },
     ]
 
@@ -704,9 +794,29 @@ def test_typed_input_requires_explicit_source(config):
 @pytest.mark.parametrize(
     ("runs", "message"),
     [
-        ([{"id": "same", "step": "producer"}, {"id": "same", "step": "producer"}], "duplicate run id"),
-        ([{"step": "consumer", "inputs": {"result": {"run_id": "missing", "output": "result"}}}], "unknown named run"),
-        ([{"id": "source", "step": "producer"}, {"step": "consumer", "inputs": {"result": {"run_id": "source", "output": "missing"}}}], "has no output"),
+        (
+            [{"id": "same", "step": "producer"}, {"id": "same", "step": "producer"}],
+            "duplicate run id",
+        ),
+        (
+            [
+                {
+                    "step": "consumer",
+                    "inputs": {"result": {"from_run": "missing", "output": "result"}},
+                }
+            ],
+            "unknown named run",
+        ),
+        (
+            [
+                {"id": "source", "step": "producer"},
+                {
+                    "step": "consumer",
+                    "inputs": {"result": {"from_run": "source", "output": "missing"}},
+                },
+            ],
+            "has no output",
+        ),
     ],
 )
 def test_configured_run_links_reject_bad_references(config, runs, message):
@@ -740,7 +850,7 @@ def test_configured_run_links_reject_cycles(config):
         {
             "id": "loop",
             "step": step.name,
-            "inputs": {"input": {"run_id": "loop", "output": "result"}},
+            "inputs": {"input": {"from_run": "loop", "output": "result"}},
         }
     ]
 
@@ -1664,10 +1774,7 @@ def test_non_recursive_export_exposes_only_direct_dependency_boundary(config):
     plan = build_export_plan(
         [goal],
         config,
-        _registry={
-            step.name: step
-            for step in (source, intermediate, goal)
-        },
+        _registry={step.name: step for step in (source, intermediate, goal)},
     )
 
     assert _scheduled_run_ids(plan) == ["goal"]
@@ -1690,10 +1797,7 @@ def test_recursive_export_includes_complete_producer_closure(config):
         [goal],
         config,
         recursive=True,
-        _registry={
-            step.name: step
-            for step in (source, intermediate, goal)
-        },
+        _registry={step.name: step for step in (source, intermediate, goal)},
     )
 
     assert _scheduled_run_ids(plan) == ["source", "intermediate", "goal"]

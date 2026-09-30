@@ -15,6 +15,7 @@ from ASOkai.Plugins import (
     FileInput,
     FileOutput,
     OutputPathTemplate,
+    RunSpec,
     ScalarParam,
     Step,
     StepSpec,
@@ -95,11 +96,11 @@ def test_task_parameter_fallback_path_requires_registered_schema(path):
             "description": "Forwards a configured value.",
             "params": (ScalarParam("site_length", int, config=path),),
             "runs": (
-                {
-                    "id": "gene",
-                    "step": CreateTargetGeneStep(),
-                    "parameters": {"k": {"task_parameter": "site_length"}},
-                },
+                RunSpec(
+                    "gene",
+                    CreateTargetGeneStep(),
+                    parameters={"k": {"task_parameter": "site_length"}},
+                ),
             ),
         },
     )

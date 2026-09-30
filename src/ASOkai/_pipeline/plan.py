@@ -26,6 +26,7 @@ from ASOkai._pipeline.contracts.execution import (
     StepRunOutput,
 )
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import (
@@ -51,16 +52,6 @@ class _ExplicitInput:
 
     source: Path | _RunOutputReference
     location: str
-
-
-@dataclass(frozen=True)
-class _GoalRequest:
-    """One normalized goal before dependency discovery."""
-
-    request_id: str
-    step: Step
-    parameters: Mapping[str, Any] = field(default_factory=dict)
-    input_selections: Mapping[str, _ExplicitInput] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -549,10 +540,10 @@ class _PlanBuilder:
         return ordered_runs_to_execute, reusable_outputs
 
     def build(
-        self, goal_requests: list[_GoalRequest]
+        self, run_specs: list[RunSpec]
     ) -> ExecutionPlan:
         """Resolve reserved main goals into a dependency-complete plan."""
-        goals, producer_first_runs = self._resolve_goals(goal_requests)
+        goals, producer_first_runs = self._resolve_goals(run_specs)
         runs_to_execute, reusable_outputs = self._schedule_required_runs(
             goals,
             producer_first_runs,
@@ -571,32 +562,60 @@ class _PlanBuilder:
 
     def _resolve_goals(
         self,
-        goal_requests: list[_GoalRequest],
+        run_specs: list[RunSpec],
     ) -> tuple[tuple[StepRun, ...], tuple[StepRun, ...]]:
         """Discover dependencies and return goals plus producer-first runs."""
-        for goal in goal_requests:
+        available_ids = {spec.run_id for spec in run_specs}
+        for spec in run_specs:
+            input_selections: dict[str, _ExplicitInput] = {}
+            declared_inputs = {item.name for item in spec.step.spec.inputs}
+            location_prefix = spec.location or f"run[{spec.run_id}]"
+            for name, source in spec.inputs.items():
+                location = f"{location_prefix}.inputs.{name}"
+                if name not in declared_inputs:
+                    raise ValueError(
+                        f"{location}: step '{spec.step.name}' has no input "
+                        "with this name."
+                    )
+                if isinstance(source, Path):
+                    input_selections[name] = _ExplicitInput(source, location)
+                    continue
+                if not isinstance(source, Mapping) or set(source) != {
+                    "run_id", "output"
+                }:
+                    raise TypeError(
+                        f"{location} must specify a path or run_id and output."
+                    )
+                producer_id = source["run_id"]
+                if type(producer_id) is not str or producer_id not in available_ids:
+                    raise ValueError(
+                        f"{location}.run_id: unknown named run '{producer_id}'."
+                    )
+                input_selections[name] = _ExplicitInput(
+                    _RunOutputReference(producer_id, source["output"]), location
+                )
             self._reserve_request(
-                goal.request_id,
-                goal.step,
+                spec.run_id,
+                spec.step,
                 self.main_config,
-                dependency_path=(goal.step.name,),
-                parameters=goal.parameters,
-                input_selections=goal.input_selections,
+                dependency_path=(spec.step.name,),
+                parameters=spec.parameters,
+                input_selections=input_selections,
             )
         self._discover_run_requests()
 
         run_by_request_id, producer_first_runs = self._resolve_run_requests()
-        goals = tuple(run_by_request_id[goal.request_id] for goal in goal_requests)
+        goals = tuple(run_by_request_id[spec.run_id] for spec in run_specs)
         return goals, producer_first_runs
 
     def build_export(
         self,
-        goal_requests: list[_GoalRequest],
+        run_specs: list[RunSpec],
         *,
         recursive: bool,
     ) -> ExecutionPlan:
         """Resolve runs for export without consulting existing output files."""
-        goals, producer_first_runs = self._resolve_goals(goal_requests)
+        goals, producer_first_runs = self._resolve_goals(run_specs)
         for run in producer_first_runs:
             self._validate_run(run)
 
@@ -627,14 +646,14 @@ class _PlanBuilder:
         )
 
 
-def _declared_input_selections(
+def _normalized_inputs(
     step: Step,
     declarations: Mapping[str, Any],
     named_run_ids: Mapping[str, str],
     location_prefix: str,
-) -> dict[str, _ExplicitInput]:
-    """Normalize selected inputs from YAML or a task declaration."""
-    selections: dict[str, _ExplicitInput] = {}
+) -> dict[str, Path | dict[str, str]]:
+    """Qualify declared input links for one selected step run."""
+    selections: dict[str, Path | dict[str, str]] = {}
     declared_inputs = {file_input.name for file_input in step.spec.inputs}
     for name, declaration in declarations.items():
         location = f"{location_prefix}.inputs.{name}"
@@ -643,18 +662,13 @@ def _declared_input_selections(
                 f"{location}: step '{step.name}' has no input with this name."
             )
         if "path" in declaration:
-            selections[name] = _ExplicitInput(
-                Path(declaration["path"]).resolve(), location
-            )
+            selections[name] = Path(declaration["path"]).resolve()
             continue
         run_id = declaration["run_id"]
         request_id = named_run_ids.get(run_id)
         if request_id is None:
             raise ValueError(f"{location}.run_id: unknown named run '{run_id}'.")
-        selections[name] = _ExplicitInput(
-            _RunOutputReference(request_id, declaration["output"]),
-            location,
-        )
+        selections[name] = {"run_id": request_id, "output": declaration["output"]}
     return selections
 
 
@@ -696,14 +710,14 @@ def _resolved_task_parameters(
     return values
 
 
-def _task_goal_requests(
+def _task_run_specs(
     task: Task,
     prefix: str | None,
     config: Mapping[str, Any],
     parameters: Mapping[str, Any] | None = None,
     *,
     location: str | None = None,
-) -> list[_GoalRequest]:
+) -> list[RunSpec]:
     """Normalize steps or named task runs into step-run requests."""
     selection_location = location or f"task[{task.name}]"
     values = _resolved_task_parameters(
@@ -713,41 +727,42 @@ def _task_goal_requests(
         if values:
             raise ValueError("task params require named runs for forwarding.")
         return [
-            _GoalRequest(f"{prefix}.{step.name}" if prefix else step.name, step)
+            RunSpec(f"{prefix}.{step.name}" if prefix else step.name, step)
             for step in task.steps
         ]
 
     runs = validate_task_runs(task)
     context = prefix or task.name
-    named_run_ids = {run["id"]: f"{context}.{run['id']}" for run in runs}
+    named_run_ids = {run.run_id: f"{context}.{run.run_id}" for run in runs}
     return [
-        _GoalRequest(
-            request_id=named_run_ids[run["id"]],
-            step=run["step"],
+        RunSpec(
+            run_id=named_run_ids[run.run_id],
+            step=run.step,
             parameters={
                 name: values[value["task_parameter"]]
                 if isinstance(value, Mapping) else value
-                for name, value in run.get("parameters", {}).items()
+                for name, value in run.parameters.items()
             },
-            input_selections=_declared_input_selections(
-                run["step"],
-                run.get("inputs", {}),
+            inputs=_normalized_inputs(
+                run.step,
+                run.inputs,
                 named_run_ids,
-                f"task[{task.name}].runs[{run['id']}]",
+                f"task[{task.name}].runs[{run.run_id}]",
             ),
+            location=f"task[{task.name}].runs[{run.run_id}]",
         )
         for run in runs
     ]
 
 
-def _validated_goal_requests(
+def _validated_run_specs(
     runnables: Sequence[Runnable],
     config: dict,
     registered_steps: dict[str, Step] | None,
     registered_tasks: Mapping[str, Task] | None,
     config_schema_paths: Mapping[str, Path] | None,
-) -> tuple[dict[str, Step], list[_GoalRequest]]:
-    """Resolve CLI or YAML selections into ordered concrete goal requests."""
+) -> tuple[dict[str, Step], list[RunSpec]]:
+    """Normalize CLI or YAML selections into ordered step run specs."""
     if registered_steps is None:
         from ASOkai._pipeline.catalog import get_pipeline_catalog
 
@@ -762,7 +777,7 @@ def _validated_goal_requests(
     )
     cfg.validate_configured_step_names(config, registered_steps)
 
-    goal_requests: list[_GoalRequest] = []
+    run_specs: list[RunSpec] = []
     if "runs" in config:
         if runnables:
             raise ValueError(
@@ -786,19 +801,20 @@ def _validated_goal_requests(
                     raise ValueError(
                         f"$.runs[{index}].step: unknown step '{step_name}'."
                     )
-                goal_requests.append(
-                    _GoalRequest(
-                        request_id=named_run_ids.get(
+                run_specs.append(
+                    RunSpec(
+                        run_id=named_run_ids.get(
                             declaration.get("id"), f"runs.{index + 1}"
                         ),
                         step=step,
                         parameters=dict(declaration.get("parameters", {})),
-                        input_selections=_declared_input_selections(
+                        inputs=_normalized_inputs(
                             step,
                             declaration.get("inputs", {}),
                             named_run_ids,
                             f"$.runs[{index}]",
                         ),
+                        location=f"$.runs[{index}]",
                     )
                 )
                 continue
@@ -811,8 +827,8 @@ def _validated_goal_requests(
             task = registered_tasks.get(task_name)
             if task is None:
                 raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
-            goal_requests.extend(
-                _task_goal_requests(
+            run_specs.extend(
+                _task_run_specs(
                     task,
                     f"runs.{index + 1}",
                     config,
@@ -820,21 +836,21 @@ def _validated_goal_requests(
                     location=f"$.runs[{index}]",
                 )
             )
-        return registered_steps, goal_requests
+        return registered_steps, run_specs
 
     seen_goal_ids: set[str] = set()
     for runnable in runnables:
         for member in flatten_workflow_members(runnable):
             if isinstance(member, Task):
-                requests = _task_goal_requests(member, None, config)
+                requests = _task_run_specs(member, None, config)
             else:
-                requests = [_GoalRequest(member.name, member)]
+                requests = [RunSpec(member.name, member)]
             for request in requests:
-                if request.request_id in seen_goal_ids:
+                if request.run_id in seen_goal_ids:
                     continue
-                seen_goal_ids.add(request.request_id)
-                goal_requests.append(request)
-    return registered_steps, goal_requests
+                seen_goal_ids.add(request.run_id)
+                run_specs.append(request)
+    return registered_steps, run_specs
 
 
 def build_plan(
@@ -848,7 +864,7 @@ def build_plan(
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve requested runnables into a dependency-complete execution plan."""
-    _registry, goal_requests = _validated_goal_requests(
+    _registry, run_specs = _validated_run_specs(
         runnables,
         config,
         _registry,
@@ -863,7 +879,7 @@ def build_plan(
         force=force,
         output_validation_mode=cfg.output_validation_mode(config),
     )
-    return builder.build(goal_requests)
+    return builder.build(run_specs)
 
 
 def build_export_plan(
@@ -876,7 +892,7 @@ def build_export_plan(
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve a file-system-independent plan for a CWL export bundle."""
-    _registry, goal_requests = _validated_goal_requests(
+    _registry, run_specs = _validated_run_specs(
         runnables,
         config,
         _registry,
@@ -890,4 +906,4 @@ def build_export_plan(
         force=True,
         validate_input_files=False,
     )
-    return builder.build_export(goal_requests, recursive=recursive)
+    return builder.build_export(run_specs, recursive=recursive)

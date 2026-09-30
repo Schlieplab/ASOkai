@@ -22,6 +22,7 @@ from ASOkai._pipeline.contracts.file_types import (
 )
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
@@ -206,7 +207,7 @@ def test_named_task_runs_reject_invalid_local_links(failure, message):
     )
     producer = RegisteredProducerStep()
     consumer = consumer_type()
-    producer_run = {"id": "source", "step": producer}
+    producer_run = RunSpec("source", producer)
     input_name = "missing" if failure == "unknown_input" else "input"
     source_id = "missing" if failure == "unknown_run" else "source"
     output_name = "missing" if failure == "unknown_output" else "result"
@@ -227,11 +228,11 @@ def test_named_task_runs_reject_invalid_local_links(failure, message):
         consumer = incompatible_type()
     runs = (
         producer_run,
-        {
-            "id": "source" if failure == "duplicate" else "consumer",
-            "step": consumer,
-            "inputs": {input_name: {"run_id": source_id, "output": output_name}},
-        },
+        RunSpec(
+            "source" if failure == "duplicate" else "consumer",
+            consumer,
+            inputs={input_name: {"run_id": source_id, "output": output_name}},
+        ),
     )
     task_type = type(
         "_InvalidTask",
@@ -243,27 +244,32 @@ def test_named_task_runs_reject_invalid_local_links(failure, message):
         validate_component("task", task_type())
 
 
-@pytest.mark.parametrize(
-    ("run", "error", "message"),
-    [
-        ({"step": RegisteredProducerStep()}, ValueError, "run id"),
-        ({"id": "source", "step": object()}, TypeError, "step must be a Step"),
-        (
-            {"id": "source", "step": RegisteredProducerStep(), "paramters": {}},
-            ValueError,
-            "unknown field.*paramters",
-        ),
-    ],
-)
-def test_named_task_runs_reject_malformed_declarations(run, error, message):
+def test_named_task_runs_require_run_specs():
     task_type = type(
         "_MalformedTask",
         (Task,),
-        {"name": "malformed-task", "description": "Invalid run.", "runs": (run,)},
+        {
+            "name": "malformed-task",
+            "description": "Invalid run.",
+            "runs": ({"id": "source", "step": RegisteredProducerStep()},),
+        },
     )
 
-    with pytest.raises(error, match=message):
+    with pytest.raises(TypeError, match="RunSpec"):
         validate_component("task", task_type())
+
+
+@pytest.mark.parametrize(
+    ("run_id", "step", "kwargs", "error", "message"),
+    [
+        ("bad name", RegisteredProducerStep(), {}, ValueError, "run_id"),
+        ("source", object(), {}, TypeError, "step must be a Step"),
+        ("source", RegisteredProducerStep(), {"parameters": []}, TypeError, "parameters"),
+    ],
+)
+def test_run_spec_rejects_invalid_declarations(run_id, step, kwargs, error, message):
+    with pytest.raises(error, match=message):
+        RunSpec(run_id, step, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -314,13 +320,7 @@ def test_task_parameter_forwarding_rejects_invalid_declarations(
             "name": "invalid-forwarding-task",
             "description": "Has invalid task parameter forwarding.",
             "params": params,
-            "runs": (
-                {
-                    "id": "run",
-                    "step": step_type(),
-                    "parameters": {"mode": forwarding},
-                },
-            ),
+            "runs": (RunSpec("run", step_type(), parameters={"mode": forwarding}),),
         },
     )
 

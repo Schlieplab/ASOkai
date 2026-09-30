@@ -173,14 +173,13 @@ also be used with ``--step``, ``--task``, or ``--workflow`` selections.
 Composing task runs
 ~~~~~~~~~~~~~~~~~~~
 
-Declare ``runs`` on a ``Task`` using the same ``id``, ``parameters``, and
-``inputs`` keys as a YAML step run. Every task run needs an ``id``, and its
-``step`` value is a Step instance rather than a step name. Run IDs are local
-to each task invocation. An input's ``run_id`` names its producer, even if it
-is declared later::
+Declare ``runs`` on a ``Task`` as ``RunSpec`` objects. Each specification has
+a local ``run_id`` and a Step instance, plus optional ``parameters`` and
+``inputs``. An input's ``run_id`` names its producer, even if it is declared
+later::
 
    from ASOkai.Plugins import (
-       CreateTargetGeneStep, IntrinsicFeaturesStep, ScalarParam, Task,
+       CreateTargetGeneStep, IntrinsicFeaturesStep, RunSpec, ScalarParam, Task,
    )
 
    class TargetAnalysisTask(Task):
@@ -188,18 +187,18 @@ is declared later::
        description = "Create a target gene and analyze its features."
        params = (ScalarParam("site_length", int, config="target.k"),)
        runs = (
-           {
-               "id": "features",
-               "step": IntrinsicFeaturesStep(),
-               "inputs": {
+           RunSpec(
+               "features",
+               IntrinsicFeaturesStep(),
+               inputs={
                    "target_gene": {"run_id": "gene", "output": "target_gene"}
                },
-           },
-           {
-               "id": "gene",
-               "step": CreateTargetGeneStep(),
-               "parameters": {"k": {"task_parameter": "site_length"}},
-           },
+           ),
+           RunSpec(
+               "gene",
+               CreateTargetGeneStep(),
+               parameters={"k": {"task_parameter": "site_length"}},
+           ),
        )
 
 The planner schedules ``gene`` before ``features``. Once registered, the task
@@ -216,7 +215,9 @@ shared configuration value or declared default. CLI task selections use those
 fallbacks too. Omit ``inputs`` when a step needs no explicit task link. A task
 may use the same step more than once with different fixed or forwarded
 parameters. Each distinct run must have a distinct output destination. Older
-tasks with ``steps`` remain valid.
+tasks with ``steps`` remain valid. The planner also converts YAML and CLI
+selections into ``RunSpec`` objects, then resolves their configuration and
+input sources into concrete ``StepRun`` objects.
 
 File contracts
 ~~~~~~~~~~~~~~

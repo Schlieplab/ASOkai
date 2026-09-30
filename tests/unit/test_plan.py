@@ -22,6 +22,7 @@ from ASOkai.Plugins import (
     FileOutput,
     FileType,
     Runnable,
+    RunSpec,
     ScalarParam,
     Step,
     StepSpec,
@@ -37,7 +38,7 @@ from ASOkai._pipeline.contracts.paths import (
     TemplateField,
 )
 from ASOkai._pipeline.base import expand_runnable_steps
-from ASOkai._pipeline.plan import build_export_plan, build_plan
+from ASOkai._pipeline.plan import _validated_run_specs, build_export_plan, build_plan
 from ASOkai._pipeline.output_receipts import record_validated_outputs
 from ASOkai._pipeline.tasks.base import Task
 
@@ -192,18 +193,18 @@ def _make_named_task() -> tuple[Task, Step, Step]:
             "name": "linked-task",
             "description": "Connects two specific producer runs.",
             "runs": (
-                {
-                    "id": "left_result",
-                    "step": consumer,
-                    "inputs": {"input": {"run_id": "left_source", "output": "result"}},
-                },
-                {
-                    "id": "right_result",
-                    "step": consumer,
-                    "inputs": {"input": {"run_id": "right_source", "output": "result"}},
-                },
-                {"id": "left_source", "step": source, "parameters": {"mode": "left"}},
-                {"id": "right_source", "step": source, "parameters": {"mode": "right"}},
+                RunSpec(
+                    "left_result",
+                    consumer,
+                    inputs={"input": {"run_id": "left_source", "output": "result"}},
+                ),
+                RunSpec(
+                    "right_result",
+                    consumer,
+                    inputs={"input": {"run_id": "right_source", "output": "result"}},
+                ),
+                RunSpec("left_source", source, parameters={"mode": "left"}),
+                RunSpec("right_source", source, parameters={"mode": "right"}),
             ),
         },
     )
@@ -228,12 +229,12 @@ def _make_forwarding_task(
             "description": "Forwards one declared task parameter.",
             "params": (parameter,),
             "runs": (
-                {
-                    "id": "selected",
-                    "step": step,
-                    "parameters": {"mode": {"task_parameter": "selection"}},
-                },
-                {"id": "fixed", "step": step, "parameters": {"mode": "fixed"}},
+                RunSpec(
+                    "selected",
+                    step,
+                    parameters={"mode": {"task_parameter": "selection"}},
+                ),
+                RunSpec("fixed", step, parameters={"mode": "fixed"}),
             ),
         },
     )
@@ -316,6 +317,32 @@ def test_configured_runs_keep_order_and_resolve_parameter_fallback(config):
     ]
     assert _scheduled_run_ids(plan) == ["runs.1", "runs.2"]
     assert config["shared"]["mode"] == "fast"
+
+
+def test_cli_and_config_selections_normalize_to_run_specs(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    registry = {producer.name: producer, consumer.name: consumer}
+
+    _, cli_specs = _validated_run_specs([producer], config, registry, None, None)
+    assert len(cli_specs) == 1
+    assert isinstance(cli_specs[0], RunSpec)
+    assert cli_specs[0].run_id == producer.name
+    assert cli_specs[0].step is producer
+
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"result": {"run_id": "source", "output": "result"}},
+        },
+        {"id": "source", "step": producer.name, "parameters": {"mode": "alt"}},
+    ]
+    _, configured_specs = _validated_run_specs([], config, registry, None, None)
+    assert all(isinstance(spec, RunSpec) for spec in configured_specs)
+    assert [spec.run_id for spec in configured_specs] == ["runs.1", "runs.source"]
+    assert configured_specs[0].inputs == {
+        "result": {"run_id": "runs.source", "output": "result"}
+    }
+    assert configured_specs[1].parameters == {"mode": "alt"}
 
 
 def test_equivalent_configured_runs_share_one_execution(config):

@@ -19,6 +19,7 @@ from ASOkai._pipeline.contracts.paths import (
     OutputPathTemplate,
     TemplateField,
 )
+from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
@@ -62,6 +63,7 @@ __all__ = [
     "KffFile",
     "OutputPathTemplate",
     "Runnable",
+    "RunSpec",
     "ScalarParam",
     "Step",
     "StepSpec",

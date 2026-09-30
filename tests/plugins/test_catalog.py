@@ -20,6 +20,7 @@ from ASOkai.Plugins import (
     CsvFile,
     FileInput,
     FileOutput,
+    RunSpec,
     ScalarParam,
     Step,
     StepSpec,
@@ -180,7 +181,7 @@ class RegisteredPluginTask:
 class RegisteredNamedTask(Task):
     name = "registered-named-task"
     description = "A valid task with named step runs."
-    runs = ({"id": "source", "step": RegisteredPluginStep()},)
+    runs = (RunSpec("source", RegisteredPluginStep()),)
 
 
 class TaskWithUnknownFallback(Task):
@@ -188,11 +189,11 @@ class TaskWithUnknownFallback(Task):
     description = "Uses a task parameter absent from configuration schemas."
     params = (ScalarParam("site_length", int, config="missing.task_value"),)
     runs = (
-        {
-            "id": "gene",
-            "step": CreateTargetGeneStep(),
-            "parameters": {"k": {"task_parameter": "site_length"}},
-        },
+        RunSpec(
+            "gene",
+            CreateTargetGeneStep(),
+            parameters={"k": {"task_parameter": "site_length"}},
+        ),
     )
 
 
@@ -225,6 +226,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "KffFile",
         "OutputPathTemplate",
         "Runnable",
+        "RunSpec",
         "ScalarParam",
         "Step",
         "StepSpec",
@@ -337,7 +339,7 @@ def test_named_task_plugin_is_discovered(monkeypatch) -> None:
     task = pipeline_catalog.get_tasks()[RegisteredNamedTask.name]
 
     assert isinstance(task, RegisteredNamedTask)
-    assert [run["id"] for run in task.runs] == ["source"]
+    assert [run.run_id for run in task.runs] == ["source"]
     assert [step.name for step in task.steps] == [RegisteredPluginStep.name]
 
 

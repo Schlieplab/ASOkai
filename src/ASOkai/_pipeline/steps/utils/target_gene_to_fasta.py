@@ -12,10 +12,10 @@ from __future__ import annotations
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 
-from ASOkai.Targets import TargetGene
-from ASOkai._pipeline.contracts.file_types import FastaFile, JsonFile
+from ASOkai._pipeline.contracts.file_types import FastaFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.step_spec import StepSpec
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
 
 
@@ -26,8 +26,8 @@ class TargetGeneToFastaStep(UtilityStep):
     description = "Converts a target-gene JSON file to a plain FASTA reference."
     target_gene_input = FileInput(
         "target_gene",
-        file_type=JsonFile(TargetGene),
-        doc="Serialized target gene to convert.",
+        source=CreateTargetGeneStep.target_gene_output,
+        doc="Serialized target gene from create-target-gene by default.",
     )
     fasta_output = FileOutput(
         "fasta",

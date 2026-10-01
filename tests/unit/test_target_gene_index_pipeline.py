@@ -19,7 +19,11 @@ import pytest
 
 from ASOkai.Targets import TargetGene
 from ASOkai._pipeline import catalog
-from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
+from ASOkai._pipeline.contracts.execution import (
+    StepInputBinding,
+    StepRun,
+    StepRunOutput,
+)
 from ASOkai._pipeline.contracts.file_types import Bowtie2IndexDirectory
 from ASOkai._pipeline.output_receipts import (
     receipt_path,
@@ -245,7 +249,10 @@ def test_gene_override_invalidates_downstream_index_receipt(
 def test_index_target_gene_task_wiring_and_registration() -> None:
     task = IndexTargetGeneTask()
     assert [run.run_id for run in validate_task_runs(task)] == ["fasta", "index"]
-    assert task.runs[0].step.target_gene_input.source is None
+    assert (
+        task.runs[0].step.target_gene_input.source
+        is CreateTargetGeneStep.target_gene_output
+    )
     assert set(task.outputs) == {"fasta", "index"}
     assert catalog.get_pipeline_catalog().tasks[task.name].name == task.name
     assert "build-bowtie2-index" in catalog.get_pipeline_catalog().steps
@@ -290,13 +297,32 @@ def test_index_target_gene_task_accepts_instantiation_output(
     )
 
 
-def test_index_target_gene_requires_a_target_input(config: dict) -> None:
-    with pytest.raises(ValueError, match="requires a path or a named producer run"):
-        build_plan(
-            [IndexTargetGeneTask()],
-            config,
-            _registry=catalog.get_pipeline_catalog().steps,
-        )
+def test_fasta_step_uses_default_target_gene_producer(config: dict) -> None:
+    plan = build_plan(
+        [TargetGeneToFastaStep()],
+        config,
+        _registry=catalog.get_pipeline_catalog().steps,
+    )
+
+    source = plan.goals[0].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run.step.name == "create-target-gene"
+    assert source.run in plan.runs_to_execute
+
+
+def test_index_target_gene_uses_default_target_gene_producer(config: dict) -> None:
+    plan = build_plan(
+        [IndexTargetGeneTask()],
+        config,
+        _registry=catalog.get_pipeline_catalog().steps,
+    )
+
+    assert [run.step.name for run in plan.runs_to_execute] == [
+        "download-genome",
+        "create-target-gene",
+        "target-gene-to-fasta",
+        "build-bowtie2-index",
+    ]
 
 
 def test_index_target_gene_accepts_existing_file(

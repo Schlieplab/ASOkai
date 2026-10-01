@@ -169,3 +169,4 @@ submit_job.sh
 
 .vscode/*
 .DS_Store
+config.yaml

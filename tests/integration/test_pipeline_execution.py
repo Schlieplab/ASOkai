@@ -118,19 +118,15 @@ def test_registered_step_executes_validates_and_publishes_output(
         executor=executor,
     )
 
-    output = (
-        tmp_path
-        / "GRCh38"
-        / "ensembl"
-        / "114"
-        / "genome"
-        / "indexes"
-        / "kmc"
-        / "GRCh38.k16.kff"
+    assert len(outputs) == 1
+    output = outputs["build-genome-kmer-index.kmer_index"]
+    assert output.parent == (
+        tmp_path / "GRCh38" / "ensembl" / "114" / "genome" / "indexes" / "kmc"
     )
-    assert outputs == {
-        "build-genome-kmer-index.kmer_index": output,
-    }
+    assert output.name == (
+        "GRCh38.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
+        "bFalse.rFalse.nna.sfna.spna.srna.opt_out_sizeFalse.kff"
+    )
     assert output.read_bytes() == b"KFF\x01index-dataKFF"
     assert len(list((tmp_path / ".asokai" / "validation").glob("*.json"))) == 1
 

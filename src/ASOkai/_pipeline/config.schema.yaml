@@ -158,6 +158,26 @@ properties:
     type: object
     description: Shared scalar settings used as fallbacks for selected runs.
     properties:
+      kmc:
+        type: object
+        additionalProperties: false
+        description: KMC index options shared by index-builder runs.
+        properties:
+          m: {type: integer, minimum: 2, maximum: 1024}
+          f: {enum: [fa, fm]}
+          sm: {type: boolean}
+          hc: {type: boolean}
+          p: {type: [integer, 'null'], minimum: 5, maximum: 11}
+          ci: {type: integer, minimum: 1}
+          cs: {type: [integer, 'null'], minimum: 1}
+          cx: {type: [integer, 'null'], minimum: 1}
+          b: {type: boolean}
+          r: {type: boolean}
+          n: {type: [integer, 'null'], minimum: 1}
+          sf: {type: [integer, 'null'], minimum: 1}
+          sp: {type: [integer, 'null'], minimum: 1}
+          sr: {type: [integer, 'null'], minimum: 1}
+          opt_out_size: {type: boolean}
       genome:
         type: object
         additionalProperties: false

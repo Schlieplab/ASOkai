@@ -295,7 +295,8 @@ def test_execution_commands_reject_removed_global_config_option(command):
     )
 
     assert result.exit_code != 0
-    assert "No such option: --config" in result.output
+    assert "No such option" in result.output
+    assert "--config" in result.output
 
 
 def test_run_requires_explicit_runnable_selection():

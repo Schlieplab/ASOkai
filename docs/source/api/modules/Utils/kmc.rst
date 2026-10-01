@@ -50,6 +50,16 @@ step rather than included in the standard workflow before an analysis needs
 it. Analyses should reuse that index and batch their query k-mers; short query
 passes do not need separate persistent pipeline steps.
 
+The index builder accepts ``--param`` overrides for KMC's memory limit,
+FASTA format, strict-memory and homopolymer modes, signature length, count
+thresholds, canonicalization, RAM-only mode, bin count, per-stage thread
+counts, and output-size optimization. These options also have optional
+``parameters.kmc`` configuration keys. The output filename spells out the
+resolved options as key/value segments, such as ``.k16.m4.ffm.ci1.``. The
+directory already includes the configured assembly, source, and release.
+KFF output is fixed for this step; KMC modes that suppress the index are not
+available here.
+
 Running kmc_tools
 -----------------
 

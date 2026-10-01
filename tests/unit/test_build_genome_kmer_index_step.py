@@ -63,7 +63,29 @@ def test_step_contract(step: BuildGenomeKmerIndexStep) -> None:
     assert step.dependencies == ["download-genome"]
     assert step.dna_input.source is DownloadGenomeStep.dna_output
     assert isinstance(step.kmer_index_output.file_type, KffFile)
-    assert step.config_map == {"k": "parameters.target.k"}
+    assert step.config_map == {
+        "k": "parameters.target.k",
+        **{
+            name: f"parameters.kmc.{name}"
+            for name in (
+                "m",
+                "f",
+                "sm",
+                "hc",
+                "p",
+                "ci",
+                "cs",
+                "cx",
+                "b",
+                "r",
+                "n",
+                "sf",
+                "sp",
+                "sr",
+                "opt_out_size",
+            )
+        },
+    }
     assert step.supports_multiple_threads is True
 
 
@@ -74,16 +96,32 @@ def test_output_path_is_genome_scoped(
 ) -> None:
     output = _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmer_index"]
 
-    assert output == (
-        tmp_path
-        / "GRCh38"
-        / "ensembl"
-        / "114"
-        / "genome"
-        / "indexes"
-        / "kmc"
-        / "GRCh38.k16.kff"
+    assert output.parent == (
+        tmp_path / "GRCh38" / "ensembl" / "114" / "genome" / "indexes" / "kmc"
     )
+    assert output.name == (
+        "GRCh38.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
+        "bFalse.rFalse.nna.sfna.spna.srna.opt_out_sizeFalse.kff"
+    )
+
+
+def test_output_name_changes_with_kmc_options(
+    step: BuildGenomeKmerIndexStep,
+    config: dict,
+    tmp_path: Path,
+) -> None:
+    dna = tmp_path / "dna.fa.gz"
+    original = _run(step, config, dna).output_paths()["kmer_index"]
+    changed_option = StepRun(
+        step.name,
+        step,
+        config,
+        parameters={"ci": 2},
+        inputs=(StepInputBinding(step.dna_input, dna),),
+    ).output_paths()["kmer_index"]
+    assert original != changed_option
+    assert ".ci2." in changed_option.name
+    assert original == _run(step, config, dna).output_paths()["kmer_index"]
 
 
 def test_cwl_spec_exposes_runtime_resources(
@@ -95,11 +133,18 @@ def test_cwl_spec_exposes_runtime_resources(
         StepCwlGenerator().render(_run(step, config, tmp_path / "dna.fa.gz"))
     )
 
-    assert set(doc["inputs"]) == {"k", "dna", "n_threads"}
+    assert set(doc["inputs"]) == {
+        *step.config_map,
+        "dna",
+        "n_threads",
+    }
     assert doc["inputs"]["n_threads"]["inputBinding"] == {"prefix": "--n-threads"}
+    filename = (
+        _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmer_index"].name
+    )
     assert {
         "prefix": "--kmer-index-output",
-        "valueFrom": "GRCh38.k16.kff",
+        "valueFrom": filename,
     } in doc["arguments"]
 
 
@@ -174,13 +219,121 @@ def test_run_cli_builds_one_kff_with_configured_resources(
         "m": 4,
         "f": "fm",
         "t": 6,
+        "sm": False,
+        "hc": False,
+        "p": None,
         "ci": 1,
+        "cs": None,
+        "cx": None,
+        "b": False,
+        "r": False,
+        "n": None,
+        "sf": None,
+        "sp": None,
+        "sr": None,
+        "opt_out_size": False,
         "o": "kff",
         "hp": True,
         "debug": False,
     }
     assert not captured["working_directory"].exists()
     assert output.is_file()
+
+
+def test_run_cli_forwards_selected_kmc_options(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from ASOkai._pipeline.contracts.file_types import kff
+    from ASOkai._pipeline.steps.core import build_genome_kmer_index
+
+    captured: dict = {}
+
+    class FakeKMC:
+        def run(self, input_path, output_path, working_directory, **kwargs):
+            captured.update(kwargs)
+            Path(output_path).write_bytes(b"KFF\x01index-dataKFF")
+
+    class FakeTransform:
+        def dump(self, output_path):
+            return self
+
+        def run(self, input_path, **kwargs):
+            return None
+
+    monkeypatch.setattr(build_genome_kmer_index, "KMC", FakeKMC)
+    monkeypatch.setattr(kff.KMCTools, "Transform", FakeTransform)
+    dna = tmp_path / "dna.fa.gz"
+    dna.write_bytes(b"input")
+    output = tmp_path / "index.kff"
+
+    result = BuildGenomeKmerIndexStep().run_cli(
+        [
+            "--k",
+            "16",
+            "--m",
+            "8",
+            "--f",
+            "fa",
+            "--hc",
+            "--p",
+            "9",
+            "--ci",
+            "2",
+            "--cs",
+            "100",
+            "--cx",
+            "500",
+            "--b",
+            "--n",
+            "32",
+            "--sf",
+            "2",
+            "--sp",
+            "3",
+            "--sr",
+            "4",
+            "--opt-out-size",
+            "--dna",
+            str(dna),
+            "--kmer-index-output",
+            str(output),
+        ]
+    )
+
+    assert result == 0
+    assert {
+        name: captured[name]
+        for name in (
+            "m",
+            "f",
+            "hc",
+            "p",
+            "ci",
+            "cs",
+            "cx",
+            "b",
+            "n",
+            "sf",
+            "sp",
+            "sr",
+            "opt_out_size",
+        )
+    } == {
+        "m": 8,
+        "f": "fa",
+        "hc": True,
+        "p": 9,
+        "ci": 2,
+        "cs": 100,
+        "cx": 500,
+        "b": True,
+        "n": 32,
+        "sf": 2,
+        "sp": 3,
+        "sr": 4,
+        "opt_out_size": True,
+    }
 
 
 def test_config_rejects_k_above_kmc_limit(
@@ -190,4 +343,22 @@ def test_config_rejects_k_above_kmc_limit(
     config["parameters"]["target"]["k"] = 257
 
     with pytest.raises(ValueError, match=r"k must be between 1 and 256"):
+        cfg.validate_step_config(config, [step], validate_input_files=False)
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"m": 1}, "m must be between 2 and 1024"),
+        ({"p": 11}, "p must be between 5 and 11 and no greater than k"),
+        ({"ci": 3, "cx": 2}, "ci must be no greater than cx"),
+        ({"n": 0}, "n must be a positive integer"),
+    ],
+)
+def test_config_rejects_invalid_kmc_options(step, config, options, message):
+    if "p" in options:
+        config["parameters"]["target"]["k"] = 8
+    config["parameters"]["kmc"] = options
+
+    with pytest.raises(ValueError, match=message):
         cfg.validate_step_config(config, [step], validate_input_files=False)

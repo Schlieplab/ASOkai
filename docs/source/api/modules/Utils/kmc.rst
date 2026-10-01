@@ -44,10 +44,10 @@ prefix so that it does not produce ``.kff.kff``.
 Pipeline integration
 --------------------
 
-The built-in ``build-genome-kmer-index`` step creates one durable KFF index
-from the downloaded primary-assembly FASTA. It is registered as an independent
-step rather than included in the standard workflow before an analysis needs
-it. Analyses should reuse that index and batch their query k-mers; short query
+The built-in ``build-kmer-index`` step creates one durable KFF index from a
+supplied plain or gzip-compressed FASTA. Link its ``reference`` input to the
+``dna`` output of a named ``download-genome`` run, or supply an existing FASTA
+path. Analyses can reuse the index and batch their query k-mers; short query
 passes do not need separate persistent pipeline steps.
 
 The index builder accepts ``--param`` overrides for KMC's memory limit,
@@ -56,7 +56,9 @@ thresholds, canonicalization, RAM-only mode, bin count, per-stage thread
 counts, and output-size optimization. These options also have optional
 ``parameters.kmc`` configuration keys. The output filename spells out the
 resolved options as key/value segments, such as ``.k16.m4.ffm.ci1.``. The
-directory already includes the configured assembly, source, and release.
+directory uses the configured genome assembly, source, and Ensembl release.
+These values are required when planning the builder; the step does not infer
+them from the FASTA.
 KFF output is fixed for this step; KMC modes that suppress the index are not
 available here.
 

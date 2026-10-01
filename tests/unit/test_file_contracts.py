@@ -77,6 +77,10 @@ def test_typed_file_input_accepts_matching_fasta_format_only():
     assert file_input.accepts_output(plain)
     assert not file_input.accepts_output(compressed)
 
+    either = FileInput("reference", file_type=FastaFile(gzip=None))
+    assert either.accepts_output(plain)
+    assert either.accepts_output(compressed)
+
 
 def test_file_input_requires_one_source_contract():
     with pytest.raises(ValueError, match="exactly one of source or file_type"):

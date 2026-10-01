@@ -33,19 +33,21 @@ def test_opaque_file_type_keeps_inputs_as_paths(tmp_path):
     assert FileType().validate(path) is None
 
 
-def test_fasta_file_declares_boolean_gzip_compression(tmp_path):
+def test_fasta_file_declares_optional_gzip_compression(tmp_path):
     path = tmp_path / "reference.fa.gz"
     path.write_bytes(b"placeholder")
 
     assert FastaFile(gzip=True).gzip is True
     assert FastaFile(gzip=False).gzip is False
     assert FastaFile().gzip is False
+    assert FastaFile(gzip=None).gzip is None
+    assert FastaFile(gzip=None).format_name == "plain or gzip-compressed FASTA reference"
     assert FastaFile() == FastaFile(gzip=False)
     assert FastaFile() != FastaFile(gzip=True)
     assert FastaFile(gzip=True).read(path) == path
     FastaFile(gzip=True).validate(path)
-    for invalid in (None, "yes", 1):
-        with pytest.raises(TypeError, match="gzip must be a boolean"):
+    for invalid in ("yes", 1):
+        with pytest.raises(TypeError, match="gzip must be a boolean or None"):
             FastaFile(gzip=invalid)
 
 

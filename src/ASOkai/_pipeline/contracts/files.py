@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
-from ASOkai._pipeline.contracts.file_types import FileType
+from ASOkai._pipeline.contracts.file_types import FastaFile, FileType
 from ASOkai._pipeline.contracts.parameters import (
     ScalarParam,
     _flag_for_name,
@@ -351,6 +351,8 @@ class FileInput:
         """Return whether an output satisfies this input's declared contract."""
         if self.source is not None:
             return output is self.source
+        if type(self.file_type) is FastaFile and self.file_type.gzip is None:
+            return type(output.file_type) is FastaFile
         return (
             type(output.file_type) is type(self.file_type)
             and output.file_type == self.file_type

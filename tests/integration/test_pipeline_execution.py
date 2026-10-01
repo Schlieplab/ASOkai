@@ -15,8 +15,8 @@ import pytest
 
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.runner import run_all
-from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
-    BuildGenomeKmerIndexStep,
+from ASOkai._pipeline.steps.utils.build_kmer_index import (
+    BuildKmerIndexStep,
 )
 
 
@@ -97,7 +97,9 @@ def test_registered_step_executes_validates_and_publishes_output(
     config = {
         "datadir": str(tmp_path),
         "steps": {
-            "build-genome-kmer-index": {"inputs": {"dna": {"path_override": str(dna)}}}
+            "build-kmer-index": {
+                "inputs": {"reference": {"path_override": str(dna)}}
+            }
         },
         "resources": {"default": {"n_threads": 1, "memory_mb": 4096}},
         "parameters": {
@@ -112,19 +114,19 @@ def test_registered_step_executes_validates_and_publishes_output(
     }
 
     outputs = run_all(
-        [BuildGenomeKmerIndexStep()],
+        [BuildKmerIndexStep()],
         config,
         force=True,
         executor=executor,
     )
 
     assert len(outputs) == 1
-    output = outputs["build-genome-kmer-index.kmer_index"]
+    output = outputs["build-kmer-index.kmer_index"]
     assert output.parent == (
-        tmp_path / "GRCh38" / "ensembl" / "114" / "genome" / "indexes" / "kmc"
+        tmp_path / "GRCh38" / "ensembl" / "114" / "indexes" / "kmc"
     )
     assert output.name == (
-        "GRCh38.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
+        "index.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
         "bFalse.rFalse.nna.sfna.spna.srna.opt_out_sizeFalse.kff"
     )
     assert output.read_bytes() == b"KFF\x01index-dataKFF"
@@ -132,5 +134,5 @@ def test_registered_step_executes_validates_and_publishes_output(
 
     job_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(job_dirs) == 1
-    step_cwl = job_dirs[0] / "steps" / "build-genome-kmer-index.cwl"
+    step_cwl = job_dirs[0] / "steps" / "build-kmer-index.cwl"
     assert "baseCommand:\n- ASOkai\n- step" in step_cwl.read_text(encoding="utf-8")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/core/build_genome_kmer_index.py
+Filename: src/ASOkai/_pipeline/steps/utils/build_kmer_index.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Definition of the build-genome-kmer-index pipeline step.
+Description: Reusable KMC index builder for a supplied FASTA reference.
 License: LGPL-3.0-or-later
 """
 
@@ -14,13 +14,12 @@ from tempfile import TemporaryDirectory
 from typing import Literal, Mapping, cast
 
 from ASOkai.Utils import KMC
-from ASOkai._pipeline.contracts.file_types import KffFile
+from ASOkai._pipeline.contracts.file_types import FastaFile, KffFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.contracts.step_spec import StepSpec
-from ASOkai._pipeline.steps.core.base import CoreStep
-from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.steps.utils.base import UtilityStep
 
 _KMC_OPTIONS = (
     ScalarParam(
@@ -108,7 +107,7 @@ _KMC_OPTIONS = (
 
 _KMC_PATH_FIELDS = {
     "assembly": TemplateField("parameters.genome.assembly_id"),
-    "source": TemplateField("parameters.genome.source", default="ensembl"),
+    "source": TemplateField("parameters.genome.source"),
     "release": TemplateField("parameters.genome.ensembl_release"),
     "k": TemplateField("parameters.target.k"),
     **{
@@ -121,28 +120,28 @@ _KMC_PATH_FIELDS = {
 }
 
 
-class BuildGenomeKmerIndexStep(CoreStep):
-    """Build one reusable KFF index from the primary genome assembly."""
+class BuildKmerIndexStep(UtilityStep):
+    """Build one reusable KFF index from a supplied FASTA reference."""
 
-    name = "build-genome-kmer-index"
-    description = "Builds a reusable KFF k-mer index of the genome DNA."
+    name = "build-kmer-index"
+    description = "Builds a reusable KFF k-mer index from a FASTA reference."
     supports_multiple_threads = True
-    dna_input = FileInput(
-        "dna",
-        source=DownloadGenomeStep.dna_output,
-        doc="Primary assembly DNA FASTA from download-genome.",
+    reference_input = FileInput(
+        "reference",
+        file_type=FastaFile(gzip=None),
+        doc="Plain or gzip-compressed FASTA reference to count.",
     )
     kmer_index_output = FileOutput(
         "kmer_index",
         file_type=KffFile(),
         destination=OutputPathTemplate(
-            "{assembly}/{source}/{release}/genome/indexes/kmc/"
-            "{assembly}.k{k}.m{m}.f{f}.sm{sm}.hc{hc}.p{p}.ci{ci}."
+            "{assembly}/{source}/{release}/indexes/kmc/"
+            "index.k{k}.m{m}.f{f}.sm{sm}.hc{hc}.p{p}.ci{ci}."
             "cs{cs}.cx{cx}.b{b}.r{r}.n{n}.sf{sf}.sp{sp}.sr{sr}."
             "opt_out_size{opt_out_size}.kff",
             fields=_KMC_PATH_FIELDS,
         ),
-        doc="Genome k-mer counts in KFF format.",
+        doc="Reference k-mer counts in KFF format.",
     )
     spec = StepSpec(
         requirements={"WorkReuse": {"enableReuse": True}},
@@ -151,11 +150,11 @@ class BuildGenomeKmerIndexStep(CoreStep):
                 "k",
                 int,
                 config="parameters.target.k",
-                doc="K-mer length used to build the genome index.",
+                doc="K-mer length used to build the reference index.",
             ),
             *_KMC_OPTIONS,
         ],
-        inputs=[dna_input],
+        inputs=[reference_input],
         outputs=[kmer_index_output],
     )
 
@@ -180,14 +179,14 @@ class BuildGenomeKmerIndexStep(CoreStep):
             raise ValueError("ci must be no greater than cx")
 
     def run_from_args(self, args) -> int:
-        """Count genome k-mers and write one KFF index."""
+        """Count reference k-mers and write one KFF index."""
         output = Path(args.kmer_index_output)
         with TemporaryDirectory(
             prefix="asokai-kmc-",
             dir=Path.cwd(),
         ) as working_directory:
             KMC().run(
-                args.dna,
+                args.reference,
                 output,
                 working_directory,
                 k=args.k,

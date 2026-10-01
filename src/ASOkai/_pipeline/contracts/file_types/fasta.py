@@ -19,16 +19,17 @@ from .base import FileType
 class FastaFile(FileType):
     """A plain or gzipped FASTA path passed to external tools."""
 
-    gzip: bool = False
+    gzip: bool | None = False
 
-    def __init__(self, gzip: bool = False) -> None:
-        if type(gzip) is not bool:
-            raise TypeError("FastaFile.gzip must be a boolean.")
+    def __init__(self, gzip: bool | None = False) -> None:
+        if gzip is not None and type(gzip) is not bool:
+            raise TypeError("FastaFile.gzip must be a boolean or None.")
         object.__setattr__(self, "media_type", "application/x-fasta")
-        format_name = (
-            "gzip-compressed FASTA reference" if gzip else
-            "plain FASTA reference"
-        )
+        format_name = {
+            True: "gzip-compressed FASTA reference",
+            False: "plain FASTA reference",
+            None: "plain or gzip-compressed FASTA reference",
+        }[gzip]
         object.__setattr__(self, "format_name", format_name)
         object.__setattr__(self, "gzip", gzip)
 

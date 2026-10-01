@@ -32,10 +32,8 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
-from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
-    BuildGenomeKmerIndexStep,
-)
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
+from ASOkai._pipeline.steps.utils.build_kmer_index import BuildKmerIndexStep
 from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
@@ -52,7 +50,7 @@ from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 __all__ = [
     "AnalysisStep",
-    "BuildGenomeKmerIndexStep",
+    "BuildKmerIndexStep",
     "BuildBowtie2IndexStep",
     "Bowtie2IndexDirectory",
     "CoreStep",

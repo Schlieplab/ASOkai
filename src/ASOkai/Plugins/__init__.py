@@ -35,6 +35,8 @@ from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.steps.core.build_genome_kmer_index import (
     BuildGenomeKmerIndexStep,
 )
+from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
+from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
@@ -43,6 +45,7 @@ from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
@@ -50,6 +53,7 @@ from ASOkai._pipeline.workflows.standard import StandardWorkflow
 __all__ = [
     "AnalysisStep",
     "BuildGenomeKmerIndexStep",
+    "BuildBowtie2IndexStep",
     "Bowtie2IndexDirectory",
     "CoreStep",
     "CreateTargetGeneStep",
@@ -63,6 +67,7 @@ __all__ = [
     "GenerateASOCandidatesStep",
     "IntrinsicFeaturesStep",
     "InputConfigField",
+    "IndexTargetGeneTask",
     "InstantiateTargetGeneTask",
     "JsonFile",
     "KffFile",
@@ -75,6 +80,7 @@ __all__ = [
     "StepSpec",
     "StandardWorkflow",
     "Task",
+    "TargetGeneToFastaStep",
     "TemplateField",
     "UtilityStep",
     "Workflow",

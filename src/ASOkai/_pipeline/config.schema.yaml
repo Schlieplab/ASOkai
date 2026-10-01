@@ -158,26 +158,41 @@ properties:
     type: object
     description: Shared scalar settings used as fallbacks for selected runs.
     properties:
+      bowtie2:
+        type: object
+        additionalProperties: false
+        description: Bowtie 2 options shared by reference index builders.
+        properties:
+          large_index:
+            type: boolean
+            description: Force the large .bt2l index format.
+          offrate:
+            type: [integer, 'null']
+            minimum: 0
+            description: Suffix-array sampling rate.
+          packed:
+            type: boolean
+            description: Use packed representation while building.
       kmc:
         type: object
         additionalProperties: false
         description: KMC index options shared by index-builder runs.
         properties:
-          m: {type: integer, minimum: 2, maximum: 1024}
-          f: {enum: [fa, fm]}
-          sm: {type: boolean}
-          hc: {type: boolean}
-          p: {type: [integer, 'null'], minimum: 5, maximum: 11}
-          ci: {type: integer, minimum: 1}
-          cs: {type: [integer, 'null'], minimum: 1}
-          cx: {type: [integer, 'null'], minimum: 1}
-          b: {type: boolean}
-          r: {type: boolean}
-          n: {type: [integer, 'null'], minimum: 1}
-          sf: {type: [integer, 'null'], minimum: 1}
-          sp: {type: [integer, 'null'], minimum: 1}
-          sr: {type: [integer, 'null'], minimum: 1}
-          opt_out_size: {type: boolean}
+          m: {type: integer, minimum: 2, maximum: 1024, description: Maximum RAM in GiB.}
+          f: {enum: [fa, fm], description: FASTA input format.}
+          sm: {type: boolean, description: Use strict memory mode.}
+          hc: {type: boolean, description: Count homopolymer-compressed k-mers.}
+          p: {type: [integer, 'null'], minimum: 5, maximum: 11, description: Signature length.}
+          ci: {type: integer, minimum: 1, description: Minimum count to retain.}
+          cs: {type: [integer, 'null'], minimum: 1, description: Maximum stored count.}
+          cx: {type: [integer, 'null'], minimum: 1, description: Maximum count to retain.}
+          b: {type: boolean, description: Disable canonical k-mers.}
+          r: {type: boolean, description: Use RAM-only mode.}
+          n: {type: [integer, 'null'], minimum: 1, description: Number of bins.}
+          sf: {type: [integer, 'null'], minimum: 1, description: Input-reading threads.}
+          sp: {type: [integer, 'null'], minimum: 1, description: Splitting threads.}
+          sr: {type: [integer, 'null'], minimum: 1, description: Second-stage threads.}
+          opt_out_size: {type: boolean, description: Optimize output database size.}
       genome:
         type: object
         additionalProperties: false

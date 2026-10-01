@@ -37,6 +37,10 @@ search when a complete count of short repeats is required.
 ``index_base(index_directory)`` result to ``Bowtie2.run`` when using an index
 directory produced by ASOkai.
 
+The pipeline's ``build-bowtie2-index`` utility step builds this directory from
+any plain FASTA. The ``index-target-gene`` task converts a supplied target-gene
+JSON file to FASTA and uses that step to build its index.
+
 Bowtie 2 is third-party GPLv3 software. ASOkai invokes its executables
 without distributing or linking against them.
 

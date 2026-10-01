@@ -120,20 +120,20 @@ def _inputs_table(
 ) -> nodes.table:
     rows = []
     for file_input in file_inputs:
-        producer_output = nodes.inline()
-        producer_output += document_link(
-            f"steps/{file_input.source.producer}",
-            file_input.source.producer,
-            refdoc=refdoc,
-        )
-        producer_output += nodes.Text(".")
-        producer_output += nodes.literal(
-            file_input.source.name,
-            file_input.source.name,
-        )
-        input_details: list[tuple[str, str | nodes.Node, bool]] = [
-            ("Producer output", producer_output, False)
-        ]
+        input_details: list[tuple[str, str | nodes.Node, bool]] = []
+        if file_input.source is not None:
+            producer_output = nodes.inline()
+            producer_output += document_link(
+                f"steps/{file_input.source.producer}",
+                file_input.source.producer,
+                refdoc=refdoc,
+            )
+            producer_output += nodes.Text(".")
+            producer_output += nodes.literal(
+                file_input.source.name,
+                file_input.source.name,
+            )
+            input_details.append(("Producer output", producer_output, False))
         configuration_path = file_input.configuration_path(step.name)
         input_details.append(
             (

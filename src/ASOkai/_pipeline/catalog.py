@@ -27,7 +27,10 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
+from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
+from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.tasks.base import Task
+from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
@@ -45,12 +48,17 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
     DownloadGenomeStep(),
     BuildGenomeKmerIndexStep(),
     CreateTargetGeneStep(),
+    TargetGeneToFastaStep(),
+    BuildBowtie2IndexStep(),
     GenerateASOCandidatesStep(),
     IntrinsicFeaturesStep(),
 )
 
 # Built-in task registry
-_BUILTIN_TASKS: tuple[Task, ...] = (InstantiateTargetGeneTask(),)
+_BUILTIN_TASKS: tuple[Task, ...] = (
+    InstantiateTargetGeneTask(),
+    IndexTargetGeneTask(),
+)
 
 # Built-in workflow registry
 _BUILTIN_WORKFLOWS: tuple[Workflow, ...] = (StandardWorkflow(),)

@@ -195,6 +195,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "AnalysisStep",
         "Bowtie2IndexDirectory",
         "BuildGenomeKmerIndexStep",
+        "BuildBowtie2IndexStep",
         "CreateTargetGeneStep",
         "CoreStep",
         "CsvFile",
@@ -208,6 +209,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "GenerateASOCandidatesStep",
         "IntrinsicFeaturesStep",
         "InputConfigField",
+        "IndexTargetGeneTask",
         "InstantiateTargetGeneTask",
         "JsonFile",
         "KffFile",
@@ -220,6 +222,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "StepSpec",
         "StandardWorkflow",
         "Task",
+        "TargetGeneToFastaStep",
         "TemplateField",
         "Workflow",
     }

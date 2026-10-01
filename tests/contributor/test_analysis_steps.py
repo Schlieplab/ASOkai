@@ -120,9 +120,16 @@ def test_step_dependencies_use_registered_outputs(step: Step) -> None:
 @pytest.mark.parametrize("step", CONTRIBUTOR_STEPS, ids=_step_name)
 def test_step_contract_builds_from_example_config(step: Step) -> None:
     validate_component("step", step)
+    config = deepcopy(EXAMPLE_CONFIG)
+    free_inputs = [item for item in step.spec.inputs if item.source is None]
+    if free_inputs:
+        config.setdefault("steps", {}).setdefault(step.name, {})["inputs"] = {
+            item.name: {"path_override": f"/tmp/{item.name}.fa"}
+            for item in free_inputs
+        }
     plan = build_export_plan(
         [step],
-        EXAMPLE_CONFIG,
+        config,
         recursive=True,
         _registry=CONTRIBUTOR_REGISTRY,
     )

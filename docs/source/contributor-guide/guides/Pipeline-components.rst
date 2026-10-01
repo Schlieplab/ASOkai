@@ -239,7 +239,10 @@ for one declared child run::
 its own ``parameters`` entry takes precedence. Values declared in a task's
 ``RunSpec.parameters``, such as each child's ``region`` above, are fixed:
 task-wide parameters cannot replace them, and an attempted child override is
-rejected. Nested ``runs`` must name IDs already declared by the task. They
+rejected. Prefer task-wide settings for routine use. Child overrides remain
+available for targeted variation; runs with different inputs can share a
+destination and therefore cannot execute together in one plan unless their
+destinations differ. Nested ``runs`` must name IDs already declared by the task. They
 can supply inputs left open by its ``RunSpec`` declarations, but cannot replace
 a task-declared input link. Thus the ``features`` to ``gene`` link above is
 part of the task's wiring. A link inside a task uses a local child ID such as
@@ -385,16 +388,16 @@ value from the resolved producer configuration selected for one file input.
 For ``path_override``, where no producer run exists, it reads the consumer's
 main configuration.
 
-Every parameter that can change an output's contents must be represented in
-that output's ``OutputPathTemplate``. Distinct parameter configurations must
-resolve to distinct destination paths so that one run cannot overwrite or be
-mistaken for another run's output. Parameters that only affect execution,
-such as resource allocation, do not belong in the destination.
+Output templates can include a step's own content-changing parameters so
+indexes built with different options have distinct destinations. Parameters
+that only affect execution, such as resource allocation, do not belong in the
+destination. Upstream parameters need not be copied into a consumer's filename.
 
-The same rule applies to an input-specific producer configuration. If that
-choice changes a consumer's output contents, add an ``InputConfigField`` for
-that input to the consumer's destination. Output identity remains entirely
-configuration-driven; ASOkai does not infer it from filenames.
+For steps whose output keeps one destination across input changes, validation
+receipts include the selected file input or producer run in the run signature.
+With the default ``signature`` validation mode, changing an input schedules a
+rebuild at that destination. Separate runs that would publish to the same
+destination in one plan are still rejected.
 
 Shared step lifecycle
 ---------------------

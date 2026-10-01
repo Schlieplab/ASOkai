@@ -87,7 +87,8 @@ def _step_runs(steps: list[Step], config: dict) -> list[StepRun]:
                 (
                     candidate
                     for candidate in runs
-                    if candidate.step.name == file_input.source.producer
+                    if file_input.source is not None
+                    and candidate.step.name == file_input.source.producer
                 ),
                 None,
             )

@@ -64,12 +64,12 @@ in ``StepSpec.outputs``. Referencing that class attribute from a later
 Configure a producer for one input
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A file input uses its producer's main configuration by default. Set
-``configurable_parameters`` only when that particular input should permit a
-user to change selected producer parameters. The
-:ref:`configuring-an-input-producer` section shows the declaration, YAML
-configuration, path-override alternative, sharing behavior, and output-path
-rule. These rules apply unchanged to analysis steps.
+A file input uses its fixed producer's main configuration by default. To use a
+different producer configuration for one input, select a named producer run
+and link its output in the consuming run. The
+:ref:`configuring-an-input-producer` section shows the YAML selection,
+existing-file alternative, sharing behavior, and output-path rule. These
+rules apply unchanged to analysis steps.
 
 Analysis outputs
 ~~~~~~~~~~~~~~~~
@@ -109,11 +109,10 @@ For a built-in step, add new configuration fields to
 ``examples/config.example.yaml``. Reuse existing fields when they already
 represent the required value.
 
-The shared schema already defines the
-``steps.<consumer>.inputs.<input>.parameters`` and ``path_override``
-structure. Adding a configurable input does not require another schema entry;
-its allowed parameter names and value types come from the ``FileInput`` and
-the producer's ``ScalarParam`` declarations.
+The shared schema already defines named run ``parameters`` and ``inputs``
+selections, along with ``steps.<consumer>.inputs.<input>.path_override``.
+Parameter names and value types come from each step's ``ScalarParam``
+declarations.
 
 Follow the :ref:`pipeline-validation-boundaries`: express structural and scalar
 constraints in YAML Schema, and override ``validate_parameters(values)`` only

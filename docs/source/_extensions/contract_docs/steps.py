@@ -142,15 +142,6 @@ def _inputs_table(
                 True,
             )
         )
-        if file_input.configurable_parameters:
-            input_details.extend(
-                (
-                    "Producer parameter",
-                    f"{configuration_path}.parameters.{name}",
-                    True,
-                )
-                for name in file_input.configurable_parameters
-            )
         input_details.extend(
             (
                 (
@@ -753,21 +744,14 @@ def _inputs_section(step: Any, *, refdoc: str) -> nodes.section:
         [
             nodes.paragraph(
                 text=(
-                    "Each input is normally supplied by the linked producer "
-                    "output. ASOkai schedules that producer when its required "
-                    "outputs do not already exist. To use an existing file "
-                    "instead, set the input's path override in config.yaml. "
-                    "Overrides are validated against the input's file contract."
+                    "An input with a fixed producer uses that output by "
+                    "default. A selected run can instead link a named output "
+                    "or supply an existing path. The input's path override "
+                    "in config.yaml also selects an existing file. External "
+                    "paths are validated against the input's file contract."
                 )
             ),
             _inputs_table(step, step.spec.inputs, refdoc=refdoc),
-            nodes.paragraph(
-                text=(
-                    "Inputs with exposed producer parameters can request a "
-                    "separate producer run. Configure producer parameters or "
-                    "a path override for an input, never both."
-                )
-            ),
             nodes.paragraph(text="Example path-override configuration:"),
             _path_override_example(step),
         ],

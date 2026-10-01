@@ -154,7 +154,7 @@ def _shared_producer_plan(
     *,
     producer_output_exists: bool = False,
 ) -> ExecutionPlan:
-    """Plan two consumers requesting the same configured producer run."""
+    """Plan two consumers linked to the same named producer run."""
     producer_output = FileOutput(
         "result",
         destination=OutputPathTemplate(
@@ -177,7 +177,6 @@ def _shared_producer_plan(
                     FileInput(
                         "result",
                         source=producer_output,
-                        configurable_parameters=("mode",),
                     ),
                 ],
                 outputs=[FileOutput(f"{name}_result", destination=f"{name}.txt")],
@@ -188,18 +187,25 @@ def _shared_producer_plan(
     config = {
         "datadir": str(tmp_path),
         "producer": {"mode": "main"},
-        "steps": {
-            consumer.name: {
-                "inputs": {
-                    "result": {"parameters": {"mode": "alternate"}},
-                },
-            }
-            for consumer in consumers
-        },
+        "runs": [
+            {
+                "id": "alternate",
+                "step": "producer",
+                "parameters": {"mode": "alternate"},
+            },
+            *(
+                {
+                    "id": consumer.name,
+                    "step": consumer.name,
+                    "inputs": {"result": {"from": "run.alternate.result"}},
+                }
+                for consumer in consumers
+            ),
+        ],
     }
     registry = {step.name: step for step in (producer, *consumers)}
     plan = build_plan(
-        consumers,
+        [],
         config,
         _registry=registry,
     )
@@ -212,7 +218,7 @@ def _shared_producer_plan(
     producer_path.touch()
     producer_run.validate_output_files()
     record_validated_outputs(producer_run)
-    return build_plan(consumers, config, _registry=registry)
+    return build_plan([], config, _registry=registry)
 
 
 def _validate_bundle_with_cwltool(
@@ -613,28 +619,28 @@ def test_shared_producer_is_generated_and_wired_once(tmp_path):
     layout = yaml.safe_load(generated.output_layout)
 
     assert set(generated.step_cwls) == {
-        "first.producer.cwl",
-        "first.cwl",
-        "second.cwl",
+        "runs.alternate.cwl",
+        "runs.first.cwl",
+        "runs.second.cwl",
     }
     assert set(workflow["steps"]) == {
-        "step_first.producer",
-        "step_first",
-        "step_second",
+        "step_runs.alternate",
+        "step_runs.first",
+        "step_runs.second",
         "publish_outputs",
     }
-    assert workflow["steps"]["step_first"]["in"]["result"] == (
-        "step_first.producer/result"
+    assert workflow["steps"]["step_runs.first"]["in"]["result"] == (
+        "step_runs.alternate/result"
     )
-    assert workflow["steps"]["step_second"]["in"]["result"] == (
-        "step_first.producer/result"
+    assert workflow["steps"]["step_runs.second"]["in"]["result"] == (
+        "step_runs.alternate/result"
     )
     publication_sources = workflow["steps"]["publish_outputs"]["in"]["files"]["source"]
-    assert publication_sources.count("step_first.producer/result") == 1
+    assert publication_sources.count("step_runs.alternate/result") == 1
     assert [entry["id"] for entry in layout["outputs"]] == [
-        "first.producer.result",
-        "first.first_result",
-        "second.second_result",
+        "runs.alternate.result",
+        "runs.first.first_result",
+        "runs.second.second_result",
     ]
 
 
@@ -647,11 +653,15 @@ def test_reused_shared_producer_is_one_workflow_input(tmp_path):
     generated = generate_cwl_bundle(list(plan.runs_to_execute))
     workflow = yaml.safe_load(generated.run_cwl)
 
-    assert set(generated.step_cwls) == {"first.cwl", "second.cwl"}
-    assert "step_first.producer" not in workflow["steps"]
-    assert workflow["inputs"] == {"first.producer.result": "File"}
-    assert workflow["steps"]["step_first"]["in"]["result"] == ("first.producer.result")
-    assert workflow["steps"]["step_second"]["in"]["result"] == ("first.producer.result")
+    assert set(generated.step_cwls) == {"runs.first.cwl", "runs.second.cwl"}
+    assert "step_runs.alternate" not in workflow["steps"]
+    assert workflow["inputs"] == {"runs.alternate.result": "File"}
+    assert workflow["steps"]["step_runs.first"]["in"]["result"] == (
+        "runs.alternate.result"
+    )
+    assert workflow["steps"]["step_runs.second"]["in"]["result"] == (
+        "runs.alternate.result"
+    )
 
 
 def test_registered_step_specs_cover_config_and_output_keys(workflow_config):

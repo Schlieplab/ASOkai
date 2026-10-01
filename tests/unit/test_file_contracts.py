@@ -7,14 +7,10 @@ Description: Tests for pipeline file input and output declarations.
 License: LGPL-3.0-or-later
 """
 
-from typing import Literal
-
 import pytest
 
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.file_types import FastaFile
-from ASOkai._pipeline.contracts.parameters import ScalarParam
-from ASOkai._pipeline.contracts.paths import OutputPathTemplate, TemplateField
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.base import Step
 
@@ -24,36 +20,6 @@ class ProducerStep(Step):
     description = "Test input producer."
     result_output = FileOutput("result", destination="result.json")
     spec = StepSpec(outputs=[result_output])
-
-
-class ConfigurableProducerStep(Step):
-    name = "configurable-producer"
-    description = "Test producer with a configurable output."
-    result_output = FileOutput(
-        "result",
-        destination=OutputPathTemplate(
-            "{region}/result.json",
-            fields={"region": TemplateField("target.region")},
-        ),
-    )
-    spec = StepSpec(
-        params=[
-            ScalarParam(
-                "region",
-                Literal["exonic", "transcriptomic"],
-                config="target.region",
-            ),
-        ],
-        outputs=[result_output],
-    )
-
-
-def _configurable_input() -> FileInput:
-    return FileInput(
-        "target",
-        source=ConfigurableProducerStep.result_output,
-        configurable_parameters=("region",),
-    )
 
 
 def test_file_input_inherits_its_exact_producer_output():
@@ -111,8 +77,8 @@ def test_file_output_cannot_be_shared_by_two_producer_steps():
             spec = StepSpec(outputs=[result_output])
 
 
-def test_file_input_reads_path_or_parameter_configuration(tmp_path):
-    file_input = _configurable_input()
+def test_file_input_reads_path_override(tmp_path):
+    file_input = FileInput("target", source=ProducerStep.result_output)
     path_override = tmp_path / "target.json"
 
     assert file_input.configuration_path("consumer") == (
@@ -130,62 +96,22 @@ def test_file_input_reads_path_or_parameter_configuration(tmp_path):
         },
         "consumer",
     ) == path_override.resolve()
-    assert file_input.configured_parameters(
-        {
-            "steps": {
-                "consumer": {
-                    "inputs": {
-                        "target": {
-                            "parameters": {"region": "transcriptomic"},
-                        },
-                    },
-                },
-            },
-        },
-        "consumer",
-    ) == {"region": "transcriptomic"}
 
 
-def test_file_input_rejects_unknown_configurable_producer_parameter():
-    with pytest.raises(ValueError, match="unknown parameter 'missing'"):
-        FileInput(
-            "target",
-            source=ConfigurableProducerStep.result_output,
-            configurable_parameters=("missing",),
-        )
-
-
-def test_file_input_rejects_path_and_parameters_together():
+def test_file_input_rejects_removed_parameter_configuration():
     config = {
         "steps": {
             "consumer": {
                 "inputs": {
-                    "target": {
-                        "path_override": "target.json",
-                        "parameters": {"region": "transcriptomic"},
-                    },
+                    "target": {"parameters": {"region": "exonic"}},
                 },
             },
         },
     }
 
-    with pytest.raises(ValueError, match="exactly one"):
-        _configurable_input().configured_path_override(config, "consumer")
-
-
-def test_file_input_rejects_unexposed_configured_parameters():
-    config = {
-        "steps": {
-            "consumer": {
-                "inputs": {
-                    "target": {"parameters": {"missing": "value"}},
-                },
-            },
-        },
-    }
-
-    with pytest.raises(ValueError, match="does not allow parameter.*missing"):
-        _configurable_input().configured_parameters(config, "consumer")
+    file_input = FileInput("target", source=ProducerStep.result_output)
+    with pytest.raises(ValueError, match="unsupported field.*parameters"):
+        file_input.configured_path_override(config, "consumer")
 
 
 def test_file_output_generates_its_cli_argument_and_cwl_output():

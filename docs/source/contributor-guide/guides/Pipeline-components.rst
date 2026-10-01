@@ -324,7 +324,7 @@ The file type owns serialization and validation:
 
 ``FastaFile(gzip=True)`` declares a compressed FASTA output, while
 ``FastaFile()`` defaults to ``gzip=False`` and declares plain FASTA.
-The flag always describes a known compression state; ``None`` is not allowed.
+``FastaFile(gzip=None)`` accepts either format as an input contract.
 The file contract checks that a path is a file and leaves content parsing to
 the consuming tool.
 
@@ -345,47 +345,41 @@ Choosing the producer run for an input
 Normally, a ``FileInput`` receives the producer output made with the main
 configuration. This is the default for core and analysis steps alike.
 
-An input can expose a small, explicit set of producer parameters when a
-consumer needs a differently configured producer output::
+A selected producer run can use different parameters and provide one input
+to a consumer::
 
-   target_input = FileInput(
-       "target",
-       source=CreateTargetGeneStep.target_gene_output,
-       configurable_parameters=("region",),
-   )
-
-The names in ``configurable_parameters`` are names from the producer's
-``StepSpec.params``. Only expose parameters that make biological sense for
-that input; this is the contributor-owned boundary for what users may change.
-A user can then select the producer configuration below the consuming step::
-
-   steps:
-     example-analysis:
+   runs:
+     - step: create-target-gene
+       id: comparison
+       parameters:
+         region: pre-mrna
+     - step: example-analysis
        inputs:
          target:
-           parameters:
-             region: pre-mrna
+           from: run.comparison.target_gene
 
-ASOkai copies the main configuration, changes the selected producer
-parameters, and resolves that producer's dependencies recursively. Requests
-with the same producer step, resolved scalar values, and file inputs share
-one run. Requests that differ in any of those values remain separate.
+The consumer's other inputs continue to use their declared default producers.
+Runs with the same step, resolved scalar values, and file inputs share one
+execution. Runs that differ in any of those values remain separate.
 
-``path_override`` is the alternative when the required file already exists::
+For an existing file, select ``path:`` on the consuming run::
 
-   steps:
-     example-analysis:
+   runs:
+     - step: example-analysis
        inputs:
          target:
-           path_override: /path/to/target_gene.json
+           path: /path/to/target_gene.json
 
-An input may specify ``parameters`` or ``path_override``, never both. With
-neither, it uses the producer's main configuration.
+``steps.example-analysis.inputs.target.path_override`` is also available in
+shared configuration.
+
+Without an explicit input selection or path override, a fixed-source input
+uses the producer's main configuration.
 
 Output destinations read configuration values through ``TemplateField``
 without requiring a runtime ``ScalarParam``. ``InputConfigField`` reads a
 value from the resolved producer configuration selected for one file input.
-For ``path_override``, where no producer run exists, it reads the consumer's
+For an existing path, where no producer run exists, it reads the consumer's
 main configuration.
 
 Output templates can include a step's own content-changing parameters so

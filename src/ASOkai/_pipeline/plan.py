@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -99,19 +98,6 @@ def _request_matches_step_config(
         and request.parameters == (parameters or {})
         and request.input_selections == (input_selections or {})
     )
-
-
-def _configured_producer_request_id(
-    consumer_request_id: str,
-    producer_step_name: str,
-    *,
-    input_name: str | None = None,
-) -> str:
-    """Return the contextual ID for a parameter-configured producer request."""
-    context = consumer_request_id
-    if input_name is not None:
-        context = f"{context}.{input_name}"
-    return f"{context}.{producer_step_name}"
 
 
 def _run_signature(
@@ -223,19 +209,6 @@ class _PlanBuilder:
         )
         return paths
 
-    def _producer_config_with_overrides(
-        self,
-        file_input: FileInput,
-        producer_parameter_overrides: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        """Return main configuration with one input's producer overrides."""
-        overrides: dict[str, Any] = {}
-        for name, value in producer_parameter_overrides.items():
-            parameter = file_input.configurable_parameter(name)
-            assert parameter.config is not None
-            overrides[parameter.config] = value
-        return cfg.apply_overrides(deepcopy(self.main_config), overrides)
-
     def _reserve_request(
         self,
         request_id: str,
@@ -332,44 +305,11 @@ class _PlanBuilder:
             cycle = " -> ".join((*consumer_request.dependency_path, producer.name))
             raise ValueError(f"Dependency cycle detected: {cycle}.")
 
-        producer_parameter_overrides = file_input.configured_parameters(
-            consumer_request.config,
-            consumer_request.step.name,
-        )
-        if producer_parameter_overrides is None:
-            producer_request_id = producer.name
-            producer_config = self.main_config
-            producer_dependency_path = (producer.name,)
-        else:
-            producer_request_id = _configured_producer_request_id(
-                consumer_request.request_id,
-                producer.name,
-            )
-            producer_config = self._producer_config_with_overrides(
-                file_input,
-                producer_parameter_overrides,
-            )
-            existing_request = self.requests.get(producer_request_id)
-            if existing_request is not None and not _request_matches_step_config(
-                existing_request,
-                producer,
-                producer_config,
-            ):
-                producer_request_id = _configured_producer_request_id(
-                    consumer_request.request_id,
-                    producer.name,
-                    input_name=file_input.name,
-                )
-            producer_dependency_path = (
-                *consumer_request.dependency_path,
-                producer.name,
-            )
-
         producer_request = self._reserve_request(
-            producer_request_id,
+            producer.name,
             producer,
-            producer_config,
-            dependency_path=producer_dependency_path,
+            self.main_config,
+            dependency_path=(producer.name,),
         )
         return _RequestedInputSource(
             file_input=file_input,

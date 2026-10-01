@@ -262,10 +262,6 @@ def validate_step_config(
                     config,
                     step.name,
                 )
-                configured_parameters = file_input.configured_parameters(
-                    config,
-                    step.name,
-                )
             except (TypeError, ValueError) as error:
                 errors.append(f"$.{configuration_path}: {error}")
                 continue
@@ -284,14 +280,6 @@ def validate_step_config(
                     ValueError,
                 ) as error:
                     errors.append(str(error))
-            elif configured_parameters is not None:
-                for name, value in configured_parameters.items():
-                    try:
-                        file_input.configurable_parameter(name).validate(value)
-                    except (TypeError, ValueError) as error:
-                        errors.append(
-                            f"$.{configuration_path}.parameters.{name}: {error}"
-                        )
 
         if len(parameter_values) == len(step.spec.params):
             try:
@@ -389,11 +377,6 @@ def validate_step_config_paths(
         ]
         for output in step.spec.outputs:
             paths.extend(output.destination.config_paths())
-        for file_input in step.spec.inputs:
-            for name in file_input.configurable_parameters:
-                parameter_path = file_input.configurable_parameter(name).config
-                if parameter_path is not None:
-                    paths.append(parameter_path)
         paths.extend(step.spec.compatible_with)
         for path in dict.fromkeys(paths):
             if any(_schema_declares_path(schema, path) for schema in schemas.values()):

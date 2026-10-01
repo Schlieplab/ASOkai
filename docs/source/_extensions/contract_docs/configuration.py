@@ -411,16 +411,6 @@ def collect_step_config_fields(
                 requirement="Optional path override",
             )
         )
-        for name in file_input.configurable_parameters:
-            parameter = file_input.configurable_parameter(name)
-            assert parameter.config is not None
-            add(
-                replace(
-                    all_fields[parameter.config],
-                    path=f"{configuration_path}.parameters.{name}",
-                    requirement="Optional producer-run parameter",
-                )
-            )
 
     from ASOkai._pipeline.config import (
         DEFAULT_STEP_RESOURCES,
@@ -465,10 +455,6 @@ def collect_step_schema_rules(
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
         paths.add(f"{configuration_path}.path_override")
-        paths.update(
-            f"{configuration_path}.parameters.{name}"
-            for name in file_input.configurable_parameters
-        )
     paths.update(step.spec.compatible_with)
     return [
         message

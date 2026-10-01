@@ -230,7 +230,7 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     ]
 
 
-def test_step_reference_documents_configurable_producer_runs() -> None:
+def test_step_reference_documents_named_run_input_selection() -> None:
     from ASOkai._pipeline.steps.core.create_target_gene import (
         CreateTargetGeneStep,
     )
@@ -241,7 +241,6 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
         context_target_input = FileInput(
             "context_target",
             source=CreateTargetGeneStep.target_gene_output,
-            configurable_parameters=("region",),
         )
         result_output = FileOutput("result", destination="context/result.txt")
         spec = StepSpec(
@@ -258,11 +257,9 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
     )
     input_path = "steps.context-consumer.inputs.context_target"
 
-    assert f"{input_path}.parameters.region" in reference
-    assert f"Producer parameter: {input_path}.parameters.region" in reference
-    assert (
-        "producer parameters or a path override for an input, never both" in reference
-    )
+    assert f"{input_path}.path_override" in reference
+    assert "A selected run can instead link a named output" in reference
+    assert f"{input_path}.parameters.region" not in reference
 
 
 def test_single_thread_step_omits_thread_count() -> None:

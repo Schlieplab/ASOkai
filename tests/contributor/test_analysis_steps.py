@@ -143,20 +143,24 @@ def test_step_contract_builds_from_example_config(step: Step) -> None:
 
 def test_target_context_example_can_select_an_alternate_target_region() -> None:
     config = deepcopy(EXAMPLE_CONFIG)
-    config.setdefault("steps", {})[TEMPLATE_STEP.name] = {
-        "inputs": {
-            "target": {
-                "parameters": {"region": "exonic"},
-            },
+    config["runs"] = [
+        {
+            "id": "comparison",
+            "step": "create-target-gene",
+            "parameters": {"region": "exonic"},
         },
-    }
+        {
+            "step": TEMPLATE_STEP.name,
+            "inputs": {"target": {"from": "run.comparison.target_gene"}},
+        },
+    ]
     plan = build_export_plan(
-        [TEMPLATE_STEP],
+        [],
         config,
         recursive=True,
         _registry=CONTRIBUTOR_REGISTRY,
     )
-    example_run = plan.goals[0]
+    example_run = plan.goals[1]
     bindings = {
         binding.file_input.name: binding.source for binding in example_run.inputs
     }
@@ -164,7 +168,7 @@ def test_target_context_example_can_select_an_alternate_target_region() -> None:
     assert isinstance(bindings["sites"], StepRunOutput)
     assert isinstance(bindings["target"], StepRunOutput)
     assert bindings["sites"].run.run_id == "create-target-gene"
-    assert bindings["target"].run.run_id == ("example-analysis.create-target-gene")
+    assert bindings["target"].run.run_id == "runs.comparison"
     assert bindings["sites"].run.config["parameters"]["target"]["region"] == "pre-mrna"
     assert bindings["target"].run.config["parameters"]["target"]["region"] == "exonic"
     assert example_run.output_paths()["analysis"].name == (

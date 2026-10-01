@@ -16,10 +16,7 @@ from typing import Any, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
 from ASOkai._pipeline.contracts.file_types import FastaFile, FileType
-from ASOkai._pipeline.contracts.parameters import (
-    ScalarParam,
-    _flag_for_name,
-)
+from ASOkai._pipeline.contracts.parameters import _flag_for_name
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate
 
 
@@ -178,7 +175,6 @@ class FileInput:
     name: str
     source: FileOutput | None
     _declared_file_type: FileType | None = field(repr=False)
-    configurable_parameters: tuple[str, ...]
     prefix: str | None
     doc: str | None
 
@@ -186,7 +182,6 @@ class FileInput:
         self,
         name: str,
         source: FileOutput | None = None,
-        configurable_parameters: tuple[str, ...] = (),
         prefix: str | None = None,
         doc: str | None = None,
         *,
@@ -205,33 +200,8 @@ class FileInput:
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "source", source)
         object.__setattr__(self, "_declared_file_type", file_type)
-        object.__setattr__(self, "configurable_parameters", configurable_parameters)
         object.__setattr__(self, "prefix", prefix)
         object.__setattr__(self, "doc", doc)
-        self.__post_init__()
-
-    def __post_init__(self) -> None:
-        parameter_names = tuple(self.configurable_parameters)
-        if self.source is None and parameter_names:
-            raise ValueError(
-                "FileInput.configurable_parameters requires a fixed source."
-            )
-        if any(type(name) is not str or not name.strip() for name in parameter_names):
-            raise ValueError(
-                "FileInput.configurable_parameters must contain non-blank "
-                "parameter names."
-            )
-        duplicates = sorted(
-            {name for name in parameter_names if parameter_names.count(name) > 1}
-        )
-        if duplicates:
-            raise ValueError(
-                "FileInput.configurable_parameters contains duplicate "
-                f"name(s): {', '.join(duplicates)}."
-            )
-        object.__setattr__(self, "configurable_parameters", parameter_names)
-        for parameter_name in parameter_names:
-            self.configurable_parameter(parameter_name)
 
     def configuration_path(self, consumer_step_name: str) -> str:
         """Return this input's standard configuration path."""
@@ -255,20 +225,17 @@ class FileInput:
             raise TypeError(
                 f"Input configuration '{configuration_path}' must be a mapping."
             )
-        unexpected = set(value) - {"path_override", "parameters"}
+        unexpected = set(value) - {"path_override"}
         if unexpected:
             names = ", ".join(sorted(str(name) for name in unexpected))
             raise ValueError(
                 f"Input configuration '{configuration_path}' has unsupported "
                 f"field(s): {names}."
             )
-        configured_choices = [
-            choice for choice in ("path_override", "parameters") if choice in value
-        ]
-        if len(configured_choices) != 1:
+        if "path_override" not in value:
             raise ValueError(
                 f"Input configuration '{configuration_path}' must define "
-                "exactly one of 'path_override' or 'parameters'."
+                "'path_override'."
             )
         return value
 
@@ -279,7 +246,7 @@ class FileInput:
     ) -> Path | None:
         """Return this input's configured path override, when present."""
         values = self._configured_values(config, consumer_step_name)
-        if values is None or "path_override" not in values:
+        if values is None:
             return None
         value = values["path_override"]
         if isinstance(value, str) and not value.strip():
@@ -296,56 +263,6 @@ class FileInput:
                 f"'{self.configuration_path(consumer_step_name)}.path_override' "
                 "must be a path."
             ) from error
-
-    def configured_parameters(
-        self,
-        config: Mapping[str, Any],
-        consumer_step_name: str,
-    ) -> dict[str, Any] | None:
-        """Return configured producer-parameter overrides, when present."""
-        values = self._configured_values(config, consumer_step_name)
-        if values is None or "parameters" not in values:
-            return None
-        parameters = values["parameters"]
-        if not isinstance(parameters, Mapping):
-            raise TypeError(
-                f"Input parameters "
-                f"'{self.configuration_path(consumer_step_name)}.parameters' "
-                "must be a mapping."
-            )
-        if not parameters:
-            raise ValueError(
-                f"Input parameters "
-                f"'{self.configuration_path(consumer_step_name)}.parameters' "
-                "must not be empty."
-            )
-        unexpected = set(parameters) - set(self.configurable_parameters)
-        if unexpected:
-            names = ", ".join(sorted(str(name) for name in unexpected))
-            raise ValueError(
-                f"Input '{consumer_step_name}.{self.name}' does not allow "
-                f"parameter(s): {names}."
-            )
-        return dict(parameters)
-
-    def configurable_parameter(self, name: str) -> ScalarParam:
-        """Return one producer parameter exposed by this input."""
-        if name not in self.configurable_parameters:
-            raise KeyError(f"Input '{self.name}' does not expose parameter {name!r}.")
-        assert self.source is not None and self.source._owner is not None
-        try:
-            parameter = self.source._owner.spec.parameter(name)
-        except KeyError as error:
-            raise ValueError(
-                f"FileInput '{self.name}' exposes unknown parameter {name!r} "
-                f"from producer '{self.source.producer}'."
-            ) from error
-        if parameter.config is None:
-            raise ValueError(
-                f"FileInput '{self.name}' exposes producer parameter {name!r}, "
-                "but that parameter has no main configuration path."
-            )
-        return parameter
 
     def accepts_output(self, output: FileOutput) -> bool:
         """Return whether an output satisfies this input's declared contract."""

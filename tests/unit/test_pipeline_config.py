@@ -716,22 +716,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
         )
 
 
-def test_validate_step_config_checks_configured_producer_parameter_type(
-    tmp_path,
-):
-    class ConfiguredConsumerStep(Step):
-        name = "consumer"
-        description = ""
-        spec = StepSpec(
-            inputs=[
-                FileInput(
-                    "target_gene",
-                    source=CreateTargetGeneStep.target_gene_output,
-                    configurable_parameters=("region",),
-                ),
-            ],
-        )
-
+def test_config_schema_rejects_removed_input_parameter_overrides(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "steps": {
@@ -743,11 +728,8 @@ def test_validate_step_config_checks_configured_producer_parameter_type(
         },
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"steps.consumer.inputs.target_gene.parameters.region.*must be one of",
-    ):
-        cfg.validate_step_config(config, [ConfiguredConsumerStep()])
+    with pytest.raises(ValueError, match="parameters"):
+        cfg.validate_config_schema(config)
 
 
 def test_validate_step_config_rejects_datadir_file(tmp_path):

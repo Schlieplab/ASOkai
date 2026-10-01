@@ -195,11 +195,6 @@ def _describe_step_input_configuration(step) -> None:
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
         click.echo(f"  {configuration_path}.path_override  existing file")
-        for name in file_input.configurable_parameters:
-            click.echo(
-                f"  {configuration_path}.parameters.{name}  "
-                "separate producer-run value"
-            )
 
 
 def _describe_step(step) -> tuple[list[str], str]:

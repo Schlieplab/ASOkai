@@ -89,10 +89,9 @@ class ExampleAnalysisStep(AnalysisStep):
     target_input = FileInput(
         "target",
         source=CreateTargetGeneStep.target_gene_output,
-        configurable_parameters=("region",),
         doc=(
-            "Target used for the target-wide comparison. Its region may be "
-            "configured independently from the main sites."
+            "Target used for the target-wide comparison. Link a named "
+            "producer run to select a different region from the main sites."
         ),
     )
     analysis_output = FileOutput(

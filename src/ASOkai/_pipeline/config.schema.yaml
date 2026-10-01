@@ -138,21 +138,8 @@ properties:
                 type: string
                 minLength: 1
                 description: Existing file used instead of the producer output.
-              parameters:
-                type: object
-                minProperties: 1
-                description: Parameters changed for a separate producer run.
-                additionalProperties:
-                  type:
-                    - string
-                    - number
-                    - boolean
-                    - "null"
-            oneOf:
-              - required:
-                  - path_override
-              - required:
-                  - parameters
+            required:
+              - path_override
 
   parameters:
     type: object

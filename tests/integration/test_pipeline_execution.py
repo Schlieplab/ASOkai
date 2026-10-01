@@ -96,29 +96,18 @@ def test_registered_step_executes_validates_and_publishes_output(
     dna.write_text(">chr1\nACGTACGT\n", encoding="utf-8")
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
         "steps": {
-            "build-genome-kmer-index": {
-                "inputs": {
-                    "dna": {"path_override": str(dna)},
-                },
-            },
+            "build-genome-kmer-index": {"inputs": {"dna": {"path_override": str(dna)}}}
         },
-        "resources": {
-            "default": {
-                "n_threads": 1,
-                "memory_mb": 4096,
+        "resources": {"default": {"n_threads": 1, "memory_mb": 4096}},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
             },
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
         },
     }
 

@@ -3,53 +3,32 @@
 
 datadir: ./data
 
-# Use "contract" to bypass output receipts and fully validate every existing
-# generated output before reusing it.
+parameters:
+  genome:
+    assembly_id: GRCh38
+    ensembl_release: 114
+    source: ensembl
+    species: Homo_sapiens
+  target:
+    # Set exactly one of target_id or target_name.
+    target_id: ENSG00000133703
+    # target_name: KRAS
+    k: 16
+    region: pre-mrna  # exonic | pre-mrna | transcriptomic
+  antisense:
+    modality: aso
+    mechanism: rnase-h1
+    design:
+      type: gapmer
+      left_wing_length: 3
+      gap_length: 10
+      right_wing_length: 3
+    # For unmodified DNA ASOs, use design: {type: unmodified} instead.
+
+# How to check generated outputs before reusing them. "signature" is the default;
+# "contract" fully validates each existing output instead.
 validation:
   existing_outputs: signature
-
-genome:
-  assembly_id: GRCh38
-  ensembl_release: 114
-  source: ensembl
-  species: Homo_sapiens
-
-target:
-  # Set exactly one of target_id or target_name.
-  target_id: ENSG00000133703
-  # target_name: KRAS
-  k: 16
-  region: pre-mrna  # exonic | pre-mrna | transcriptomic
-
-# Any file input can use an existing file instead of its producer output.
-# steps:
-#   intrinsic-features:
-#     inputs:
-#       target_gene:
-#         path_override: /path/to/target_gene.json
-#
-# If that FileInput explicitly exposes producer parameters, it can instead
-# request a separate producer run. The allowed names come from the input's
-# configurable_parameters declaration. Use parameters or path_override,
-# never both.
-# steps:
-#   consumer-step:
-#     inputs:
-#       input_name:
-#         parameters:
-#           producer_parameter: alternate-value
-
-antisense:
-  modality: aso
-  mechanism: rnase-h1
-  design:
-    type: gapmer
-    left_wing_length: 3
-    gap_length: 10
-    right_wing_length: 3
-  # To generate unmodified DNA ASOs instead, use only:
-  # design:
-  #   type: unmodified
 
 resources:
   default:
@@ -58,27 +37,19 @@ resources:
   intrinsic-features:
     n_threads: 4
 
-# Select ordered runs in this file, then use `ASOkai run --configfile config.yaml`.
-# Step parameters override the shared values above for that run only.
-# Do not combine runs with --step, --task, or --workflow.
+# Select ordered runs here and invoke `ASOkai run --configfile config.yaml`.
+# A run needs an ID only if another run refers to it. Task outputs are the
+# public names declared by the task; child IDs stay inside the task.
 # runs:
-#   - step: create-target-gene
-#     id: gene
 #   - step: intrinsic-features
 #     inputs:
 #       target_gene:
-#         from_run: gene
-#         output: target_gene
+#         from: run.gene.target_gene
+#   - task: instantiate-target-gene
+#     id: gene
 #   - step: create-target-gene
 #     parameters:
 #       region: exonic
-#   - task: compare-regions  # Requires the task from the contributor guide.
-#     id: comparison
-#     parameters:
-#       k: 21
-#     runs:
-#       - id: transcriptomic
-#         parameters:
-#           k: 18
-# To use an existing file instead, replace an input's run/output pair with:
+# An existing file can be selected instead with:
+#       target_gene:
 #         path: /path/to/target_gene.json

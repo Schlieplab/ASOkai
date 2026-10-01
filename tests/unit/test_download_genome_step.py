@@ -21,11 +21,13 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            }
         },
     }
 
@@ -109,14 +111,22 @@ def test_run_cli_downloads_to_declared_destinations(
 
     result = DownloadGenomeStep().run_cli(
         [
-            "--assembly", "GRCh38",
-            "--release", "114",
-            "--source", "ensembl",
-            "--species", "Homo_sapiens",
-            "--dna-output", str(tmp_path / "out" / "dna.fa.gz"),
-            "--cdna-output", str(tmp_path / "out" / "cdna.fa.gz"),
-            "--annotation-output", str(tmp_path / "out" / "annotation.gtf.gz"),
-            "--db-output", str(tmp_path / "out" / "annotation.db"),
+            "--assembly",
+            "GRCh38",
+            "--release",
+            "114",
+            "--source",
+            "ensembl",
+            "--species",
+            "Homo_sapiens",
+            "--dna-output",
+            str(tmp_path / "out" / "dna.fa.gz"),
+            "--cdna-output",
+            str(tmp_path / "out" / "cdna.fa.gz"),
+            "--annotation-output",
+            str(tmp_path / "out" / "annotation.gtf.gz"),
+            "--db-output",
+            str(tmp_path / "out" / "annotation.db"),
         ]
     )
 

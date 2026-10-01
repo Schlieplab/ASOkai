@@ -19,8 +19,25 @@ ASOkai list steps
 Add the plugin setting to the ASOkai configuration:
 
 ```yaml
-example_analysis:
-  minimum_length: 16
+datadir: ./data
+parameters:
+  genome:
+    assembly_id: GRCh38
+    ensembl_release: 114
+    source: ensembl
+    species: Homo_sapiens
+  target:
+    target_name: KRAS
+    k: 16
+    region: pre-mrna
+  example_analysis:
+    minimum_length: 16
+resources:
+  default:
+    n_threads: 1
+    memory_mb: 4096
+validation:
+  existing_outputs: signature
 ```
 
 The step can then be selected like any built-in analysis:
@@ -37,7 +54,7 @@ that the YAML schema cannot express.
 
 The schema permits unrelated settings at its root because ASOkai passes the
 complete merged configuration to every registered schema. It rejects unknown
-settings inside `example_analysis`, the namespace owned by this plugin.
+settings inside `parameters.example_analysis`, the namespace owned by this plugin.
 
 Installed plugins are not added to ASOkai's static documentation. The plugin
 remains responsible for its own documentation build and example configuration.

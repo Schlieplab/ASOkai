@@ -72,9 +72,10 @@ def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:
     Resolve a dotted key against a config dict.
 
     Example:
-        resolve(config, "genome.assembly_id")  →  config["genome"]["assembly_id"]
+        resolve(config, "parameters.genome.assembly_id")
     """
     keys = _dotted_key_parts(dotted_key)
+
     value: Any = config
     traversed: list[str] = []
     for key in keys:
@@ -93,10 +94,10 @@ def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:
 
 def apply_overrides(config: dict, overrides: dict[str, Any]) -> dict:
     """
-    Apply CLI overrides to config in-place.
+    Apply dotted-key overrides to config in-place.
 
     Overrides use dotted keys, e.g.:
-        {"genome.ensembl_release": 115}  →  config["genome"]["ensembl_release"] = 115
+        {"parameters.genome.ensembl_release": 115} updates that shared value.
     """
     for dotted_key, value in overrides.items():
         keys = _dotted_key_parts(dotted_key)
@@ -149,9 +150,7 @@ def _resolve_step_parameters(
     if parameters is not None:
         if not isinstance(parameters, Mapping):
             raise TypeError("Invocation parameters must be a mapping.")
-        unknown = set(parameters) - {
-            parameter.name for parameter in step.spec.params
-        }
+        unknown = set(parameters) - {parameter.name for parameter in step.spec.params}
         if unknown:
             names = ", ".join(sorted(str(name) for name in unknown))
             raise ValueError(f"Step '{step.name}' has unknown parameter(s): {names}.")
@@ -165,8 +164,7 @@ def _resolve_step_parameters(
             else f"Step '{step.name}' parameter '{parameter.name}'"
         )
         override = (
-            parameters.get(parameter.name, _UNSET)
-            if parameters is not None else _UNSET
+            parameters.get(parameter.name, _UNSET) if parameters is not None else _UNSET
         )
         try:
             value = resolve_parameter_value(config, parameter, override=override)
@@ -416,6 +414,15 @@ def validate_config_schema(
     plugin_schema_paths: Mapping[str, Path] | None = None,
 ) -> None:
     """Validate data against ASOkai and installed-plugin config schemas."""
+    if isinstance(config, Mapping):
+        old_groups = {"genome", "target", "antisense"} & config.keys()
+        if old_groups:
+            _raise_config_errors(
+                [
+                    f"$.{name}: move this group under parameters.{name}"
+                    for name in sorted(old_groups)
+                ]
+            )
     resources = config.get("resources") if isinstance(config, Mapping) else None
     if isinstance(resources, Mapping):
         migration_errors = [
@@ -543,10 +550,7 @@ def step_resource_names(step: Step) -> tuple[str, ...]:
     return tuple(
         resource_name
         for resource_name in DEFAULT_STEP_RESOURCES
-        if (
-            resource_name != RESOURCE_N_THREADS_KEY
-            or step.supports_multiple_threads
-        )
+        if (resource_name != RESOURCE_N_THREADS_KEY or step.supports_multiple_threads)
     )
 
 

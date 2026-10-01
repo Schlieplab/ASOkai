@@ -58,25 +58,27 @@ wing-gap-wing gapmer ASOs. The example configuration selects an RNase-H1
 gapmer:
 
 ```yaml
-antisense:
-  modality: aso
-  mechanism: rnase-h1
-  design:
-    type: gapmer
-    left_wing_length: 3
-    gap_length: 10
-    right_wing_length: 3
+parameters:
+  antisense:
+    modality: aso
+    mechanism: rnase-h1
+    design:
+      type: gapmer
+      left_wing_length: 3
+      gap_length: 10
+      right_wing_length: 3
 ```
 
 ## ASOkai CLI
 
 ### Configuration
 
-The CLI reads `./config.yaml` by default. Use `--config-file` to select another
-file and `--config KEY=VALUE` to override individual values for one command:
+The CLI reads `./config.yaml` by default. Use `--configfile` to select another
+file. For a CLI-selected step or task, place `--param NAME=VALUE` after its
+selection to override a parameter for that run:
 
 ```bash
-ASOkai run --step intrinsic-features --config target.region=transcriptomic
+ASOkai run --step create-target-gene --param region=transcriptomic
 ```
 
 Run `ASOkai describe step NAME` to see the configuration keys and input

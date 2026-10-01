@@ -24,68 +24,6 @@ properties:
           How existing generated outputs are checked before reuse: match a
           validation receipt signature or run full file-contract validation.
 
-  genome:
-    type: object
-    additionalProperties: false
-    properties:
-      assembly_id:
-        type: string
-        minLength: 1
-        description: Genome assembly ID, such as GRCh38.
-      ensembl_release:
-        type: integer
-        minimum: 1
-        description: Ensembl release number.
-      source:
-        const: ensembl
-        default: ensembl
-        description: Genome data source.
-      species:
-        type: string
-        minLength: 1
-        description: Ensembl species name, such as Homo_sapiens.
-  target:
-    type: object
-    additionalProperties: false
-    properties:
-      target_id:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Ensembl gene ID; use this or target_name, but not both.
-      target_name:
-        type:
-          - string
-          - "null"
-        minLength: 1
-        description: Gene name; use this or target_id, but not both.
-      k:
-        type: integer
-        minimum: 1
-        description: Target-site length.
-      region:
-        enum:
-          - exonic
-          - pre-mrna
-          - transcriptomic
-        description: Target region type.
-    allOf:
-      - oneOf:
-          - required:
-              - target_id
-            properties:
-              target_id:
-                type: string
-          - required:
-              - target_name
-            properties:
-              target_name:
-                type: string
-        x-error-message: >-
-          exactly one of these config values is required:
-          target.target_id, target.target_name
-
   runs:
     type: array
     minItems: 1
@@ -129,15 +67,12 @@ properties:
               - type: object
                 additionalProperties: false
                 required:
-                  - from_run
-                  - output
+                  - from
                 properties:
-                  from_run:
+                  from:
                     type: string
-                    minLength: 1
-                  output:
-                    type: string
-                    minLength: 1
+                    pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
+                    description: Named run or task output, as run.ID.OUTPUT.
         runs:
           type: array
           minItems: 1
@@ -167,10 +102,11 @@ properties:
                         path: {type: string, minLength: 1}
                     - type: object
                       additionalProperties: false
-                      required: [from_run, output]
+                      required: [from]
                       properties:
-                        from_run: {type: string, minLength: 1}
-                        output: {type: string, minLength: 1}
+                        from:
+                          type: string
+                          pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
       oneOf:
         - required:
             - step
@@ -218,81 +154,146 @@ properties:
               - required:
                   - parameters
 
-  antisense:
+  parameters:
     type: object
-    additionalProperties: false
+    description: Shared scalar settings used as fallbacks for selected runs.
     properties:
-      modality:
-        type: string
-        minLength: 1
-        description: Antisense therapeutic modality.
-      mechanism:
-        type: string
-        minLength: 1
-        description: Therapeutic mechanism of action.
-      design:
+      genome:
         type: object
         additionalProperties: false
         properties:
-          type:
+          assembly_id:
             type: string
             minLength: 1
-            description: Structural design of the antisense therapeutic.
-          left_wing_length:
+            description: Genome assembly ID, such as GRCh38.
+          ensembl_release:
             type: integer
             minimum: 1
-            description: >-
-              Number of nucleotides in the left gapmer wing. Required for a
-              gapmer design and not used by an unmodified design.
-          gap_length:
+            description: Ensembl release number.
+          source:
+            const: ensembl
+            default: ensembl
+            description: Genome data source.
+          species:
+            type: string
+            minLength: 1
+            description: Ensembl species name, such as Homo_sapiens.
+      target:
+        type: object
+        additionalProperties: false
+        properties:
+          target_id:
+            type:
+              - string
+              - "null"
+            minLength: 1
+            description: Ensembl gene ID; use this or target_name, but not both.
+          target_name:
+            type:
+              - string
+              - "null"
+            minLength: 1
+            description: Gene name; use this or target_id, but not both.
+          k:
             type: integer
             minimum: 1
-            description: >-
-              Number of nucleotides in the central gapmer gap. Required for a
-              gapmer design and not used by an unmodified design.
-          right_wing_length:
-            type: integer
-            minimum: 1
-            description: >-
-              Number of nucleotides in the right gapmer wing. Required for a
-              gapmer design and not used by an unmodified design.
+            description: Target-site length.
+          region:
+            enum:
+              - exonic
+              - pre-mrna
+              - transcriptomic
+            description: Target region type.
         allOf:
-          - x-error-message: >-
-              A gapmer design requires left_wing_length, gap_length, and
-              right_wing_length.
-            if:
-              required:
-                - type
-              properties:
-                type:
-                  const: gapmer
-            then:
-              x-error-message: >-
-                A gapmer design requires left_wing_length, gap_length, and
-                right_wing_length.
-              required:
-                - left_wing_length
-                - gap_length
-                - right_wing_length
-          - x-error-message: >-
-              An unmodified design must not define gapmer segment lengths.
-            if:
-              required:
-                - type
-              properties:
-                type:
-                  const: unmodified
-            then:
-              x-error-message: >-
-                An unmodified design must not define gapmer segment lengths.
-              not:
-                anyOf:
-                  - required:
-                      - left_wing_length
-                  - required:
-                      - gap_length
-                  - required:
-                      - right_wing_length
+          - oneOf:
+              - required:
+                  - target_id
+                properties:
+                  target_id:
+                    type: string
+              - required:
+                  - target_name
+                properties:
+                  target_name:
+                    type: string
+            x-error-message: >-
+              exactly one of these config values is required:
+              target_id, target_name
+      antisense:
+        type: object
+        additionalProperties: false
+        properties:
+          modality:
+            type: string
+            minLength: 1
+            description: Antisense therapeutic modality.
+          mechanism:
+            type: string
+            minLength: 1
+            description: Therapeutic mechanism of action.
+          design:
+            type: object
+            additionalProperties: false
+            properties:
+              type:
+                type: string
+                minLength: 1
+                description: Structural design of the antisense therapeutic.
+              left_wing_length:
+                type: integer
+                minimum: 1
+                description: >-
+                  Number of nucleotides in the left gapmer wing. Required for a
+                  gapmer design and not used by an unmodified design.
+              gap_length:
+                type: integer
+                minimum: 1
+                description: >-
+                  Number of nucleotides in the central gapmer gap. Required for a
+                  gapmer design and not used by an unmodified design.
+              right_wing_length:
+                type: integer
+                minimum: 1
+                description: >-
+                  Number of nucleotides in the right gapmer wing. Required for a
+                  gapmer design and not used by an unmodified design.
+            allOf:
+              - x-error-message: >-
+                  A gapmer design requires left_wing_length, gap_length, and
+                  right_wing_length.
+                if:
+                  required:
+                    - type
+                  properties:
+                    type:
+                      const: gapmer
+                then:
+                  x-error-message: >-
+                    A gapmer design requires left_wing_length, gap_length, and
+                    right_wing_length.
+                  required:
+                    - left_wing_length
+                    - gap_length
+                    - right_wing_length
+              - x-error-message: >-
+                  An unmodified design must not define gapmer segment lengths.
+                if:
+                  required:
+                    - type
+                  properties:
+                    type:
+                      const: unmodified
+                then:
+                  x-error-message: >-
+                    An unmodified design must not define gapmer segment lengths.
+                  not:
+                    anyOf:
+                      - required:
+                          - left_wing_length
+                      - required:
+                          - gap_length
+                      - required:
+                          - right_wing_length
 
   resources:
     type: object

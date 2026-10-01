@@ -25,15 +25,13 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id":   "ENSG00000133703",
-            "k":           16,
-            "region":      "pre-mrna",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
         },
     }
 
@@ -60,8 +58,7 @@ def test_declares_intrinsic_analysis_contract(step):
     assert step.analysis_cls is IntrinsicFeaturesAnalysis
     assert step.dependencies == ["create-target-gene"]
     assert (
-        step.spec.input("target_gene").source
-        is CreateTargetGeneStep.target_gene_output
+        step.spec.input("target_gene").source is CreateTargetGeneStep.target_gene_output
     )
     assert isinstance(step.spec.input("target_gene"), FileInput)
     assert isinstance(step.target_gene_input.file_type, JsonFile)
@@ -86,9 +83,15 @@ def test_output_path_configuration_is_not_a_runtime_parameter(step):
 def test_output_paths_structure(step, config, tmp_path):
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "ensembl" / "114"
-        / "targets" / "ENSG00000133703"
-        / "analysis" / "intrinsic" / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
+        tmp_path
+        / "GRCh38"
+        / "ensembl"
+        / "114"
+        / "targets"
+        / "ENSG00000133703"
+        / "analysis"
+        / "intrinsic"
+        / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
 
@@ -96,21 +99,33 @@ def test_output_paths_structure(step, config, tmp_path):
 def test_output_paths_uses_target_name_fallback(step, tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38", "ensembl_release": 114, "species": "Homo_sapiens"},
-        "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
+        },
     }
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
-        tmp_path / "GRCh38" / "ensembl" / "114"
-        / "targets" / "KRAS"
-        / "analysis" / "intrinsic" / "KRAS_k16_pre-mrna_intrinsic.csv"
+        tmp_path
+        / "GRCh38"
+        / "ensembl"
+        / "114"
+        / "targets"
+        / "KRAS"
+        / "analysis"
+        / "intrinsic"
+        / "KRAS_k16_pre-mrna_intrinsic.csv"
     )
     assert paths["intrinsic_features"] == expected
 
 
 def test_output_path_distinguishes_genome_releases(step, config, tmp_path):
     release_114 = _run(step, config, tmp_path).output_paths()
-    config["genome"]["ensembl_release"] = 115
+    config["parameters"]["genome"]["ensembl_release"] = 115
     release_115 = _run(step, config, tmp_path).output_paths()
 
     assert release_114 != release_115
@@ -160,15 +175,15 @@ def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
     output = tmp_path / "intrinsic.csv"
     result = IntrinsicFeaturesStep().run_cli(
         [
-            "--target-gene", str(target_input),
-            "--intrinsic-features-output", str(output),
+            "--target-gene",
+            str(target_input),
+            "--intrinsic-features-output",
+            str(output),
         ]
     )
 
     assert result == 0
-    assert IntrinsicFeaturesStep.intrinsic_features_output.file_type.read(
-        output
-    ) == [
+    assert IntrinsicFeaturesStep.intrinsic_features_output.file_type.read(output) == [
         {
             "site_id": "site-1",
             "GC_content": 0.75,

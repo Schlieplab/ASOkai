@@ -5,14 +5,18 @@ type: object
 # must allow top-level namespaces owned by ASOkai and other plugins.
 additionalProperties: true
 properties:
-  example_analysis:
+  parameters:
     type: object
-    # This plugin owns this namespace and rejects misspelled settings in it.
-    additionalProperties: false
-    required:
-      - minimum_length
+    additionalProperties: true
     properties:
-      minimum_length:
-        type: integer
-        minimum: 1
-        description: Minimum site length reported as passing the example check.
+      example_analysis:
+        type: object
+        # This plugin owns this namespace and rejects misspelled settings in it.
+        additionalProperties: false
+        required:
+          - minimum_length
+        properties:
+          minimum_length:
+            type: integer
+            minimum: 1
+            description: Minimum site length reported as passing the example check.

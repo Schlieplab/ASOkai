@@ -6,6 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Definition of the create-target-gene pipeline step.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,13 +25,14 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
-
 logger = logging.getLogger(__name__)
 
 
 class CreateTargetGeneStep(CoreStep):
     name = "create-target-gene"
-    description = "Creates a target gene object from genome data and extracts target sites."
+    description = (
+        "Creates a target gene object from genome data and extracts target sites."
+    )
     target_gene_output = FileOutput(
         "target_gene",
         file_type=JsonFile(TargetGene),
@@ -38,18 +40,18 @@ class CreateTargetGeneStep(CoreStep):
             "{assembly}/{source}/{release}/targets/{target}/"
             "{target}_k{k}_{region}.json",
             fields={
-                "assembly": TemplateField("genome.assembly_id"),
+                "assembly": TemplateField("parameters.genome.assembly_id"),
                 "source": TemplateField(
-                    "genome.source",
+                    "parameters.genome.source",
                     default="ensembl",
                 ),
-                "release": TemplateField("genome.ensembl_release"),
+                "release": TemplateField("parameters.genome.ensembl_release"),
                 "target": TemplateField.first_of(
-                    "target.target_id",
-                    "target.target_name",
+                    "parameters.target.target_id",
+                    "parameters.target.target_name",
                 ),
-                "k": TemplateField("target.k"),
-                "region": TemplateField("target.region"),
+                "k": TemplateField("parameters.target.k"),
+                "region": TemplateField("parameters.target.region"),
             },
         ),
         doc="Serialized target gene object.",
@@ -62,24 +64,36 @@ class CreateTargetGeneStep(CoreStep):
             ScalarParam(
                 "target_id",
                 str | None,
-                config="target.target_id",
+                config="parameters.target.target_id",
                 doc="Ensembl gene ID (e.g. ENSG00000133703). Use this or target_name.",
             ),
             ScalarParam(
                 "target_name",
                 str | None,
-                config="target.target_name",
+                config="parameters.target.target_name",
                 doc="Gene name (e.g. KRAS). Use this or target_id.",
             ),
-            ScalarParam("k", int, config="target.k", doc="Target-site length."),
+            ScalarParam(
+                "k", int, config="parameters.target.k", doc="Target-site length."
+            ),
             ScalarParam(
                 "region",
                 TargetRegion,
-                config="target.region",
+                config="parameters.target.region",
                 doc="Target region type.",
             ),
-            ScalarParam("assembly", str, config="genome.assembly_id", doc="Assembly ID (e.g. GRCh38)."),
-            ScalarParam("species", str, config="genome.species", doc="Species name (e.g. Homo_sapiens)."),
+            ScalarParam(
+                "assembly",
+                str,
+                config="parameters.genome.assembly_id",
+                doc="Assembly ID (e.g. GRCh38).",
+            ),
+            ScalarParam(
+                "species",
+                str,
+                config="parameters.genome.species",
+                doc="Species name (e.g. Homo_sapiens).",
+            ),
         ],
         inputs=[
             FileInput(
@@ -111,9 +125,7 @@ class CreateTargetGeneStep(CoreStep):
         has_target_id = values.get("target_id") is not None
         has_target_name = values.get("target_name") is not None
         if has_target_id == has_target_name:
-            raise ValueError(
-                "exactly one of --target-id or --target-name is required"
-            )
+            raise ValueError("exactly one of --target-id or --target-name is required")
 
     def run_from_args(self, args) -> int:
         """Create and serialize the configured target gene."""
@@ -142,8 +154,7 @@ class CreateTargetGeneStep(CoreStep):
         genome, _ = builder.build()
 
         logger.info(
-            "Extracting %s sites for "
-            "target_id=%s target_name=%s k=%s",
+            "Extracting %s sites for " "target_id=%s target_name=%s k=%s",
             args.region,
             args.target_id,
             args.target_name,

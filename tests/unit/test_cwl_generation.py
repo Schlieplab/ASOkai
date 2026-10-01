@@ -246,25 +246,23 @@ def _validate_bundle_with_cwltool(
 def workflow_config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
@@ -318,16 +316,14 @@ def test_generate_cwl_uses_declared_step_input_types(workflow_config):
 def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "k": 16,
-            "region": "pre-mrna",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
         },
     }
 
@@ -484,9 +480,7 @@ def test_generate_cwl_configures_threads_for_analysis_steps(workflow_config):
         [IntrinsicFeaturesStep()],
         workflow_config,
     )
-    intrinsic = yaml.safe_load(
-        generated.step_cwls["intrinsic-features.cwl"]
-    )
+    intrinsic = yaml.safe_load(generated.step_cwls["intrinsic-features.cwl"])
     workflow = yaml.safe_load(generated.run_cwl)
 
     assert intrinsic["requirements"]["ResourceRequirement"] == {
@@ -576,7 +570,9 @@ def test_generate_cwl_references_generated_step_files(workflow_config):
     )
 
     assert doc["steps"]["step_download_genome"]["run"] == "steps/download-genome.cwl"
-    assert doc["steps"]["step_create_target_gene"]["run"] == "steps/create-target-gene.cwl"
+    assert (
+        doc["steps"]["step_create_target_gene"]["run"] == "steps/create-target-gene.cwl"
+    )
 
 
 def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
@@ -632,9 +628,7 @@ def test_shared_producer_is_generated_and_wired_once(tmp_path):
     assert workflow["steps"]["step_second"]["in"]["result"] == (
         "step_first.producer/result"
     )
-    publication_sources = workflow["steps"]["publish_outputs"]["in"]["files"][
-        "source"
-    ]
+    publication_sources = workflow["steps"]["publish_outputs"]["in"]["files"]["source"]
     assert publication_sources.count("step_first.producer/result") == 1
     assert [entry["id"] for entry in layout["outputs"]] == [
         "first.producer.result",
@@ -655,12 +649,8 @@ def test_reused_shared_producer_is_one_workflow_input(tmp_path):
     assert set(generated.step_cwls) == {"first.cwl", "second.cwl"}
     assert "step_first.producer" not in workflow["steps"]
     assert workflow["inputs"] == {"first.producer.result": "File"}
-    assert workflow["steps"]["step_first"]["in"]["result"] == (
-        "first.producer.result"
-    )
-    assert workflow["steps"]["step_second"]["in"]["result"] == (
-        "first.producer.result"
-    )
+    assert workflow["steps"]["step_first"]["in"]["result"] == ("first.producer.result")
+    assert workflow["steps"]["step_second"]["in"]["result"] == ("first.producer.result")
 
 
 def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
@@ -680,26 +670,26 @@ def test_generate_cwl_qualifies_same_named_inputs_by_run(tmp_path):
         "first",
         StepSpec(
             params=[ScalarParam("shared", str, config="first.shared")],
-            outputs=[
-                FileOutput("first_result", destination="first_result.txt")
-            ],
+            outputs=[FileOutput("first_result", destination="first_result.txt")],
         ),
     )
     second = _spec_step(
         "second",
         StepSpec(
             params=[ScalarParam("shared", int, config="second.shared")],
-            outputs=[
-                FileOutput("second_result", destination="second_result.txt")
-            ],
+            outputs=[FileOutput("second_result", destination="second_result.txt")],
         ),
     )
 
     document = yaml.safe_load(
-        _generate_run_cwl([first, second], {
-            "datadir": str(tmp_path), "first": {"shared": "value"},
-            "second": {"shared": 3},
-        })
+        _generate_run_cwl(
+            [first, second],
+            {
+                "datadir": str(tmp_path),
+                "first": {"shared": "value"},
+                "second": {"shared": 3},
+            },
+        )
     )
 
     assert document["inputs"]["first.shared"] == "string"
@@ -727,9 +717,7 @@ def test_generate_cwl_does_not_wire_undeclared_dependency_outputs(tmp_path):
 def test_generate_cwl_wires_differently_named_input_to_exact_output(tmp_path):
     producer = _spec_step(
         "producer",
-        StepSpec(
-            outputs=[FileOutput("result", destination="producer-result.txt")]
-        ),
+        StepSpec(outputs=[FileOutput("result", destination="producer-result.txt")]),
     )
     consumer = _spec_step(
         "consumer",

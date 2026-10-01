@@ -38,13 +38,12 @@ class BuildGenomeKmerIndexStep(CoreStep):
         "kmer_index",
         file_type=KffFile(),
         destination=OutputPathTemplate(
-            "{assembly}/{source}/{release}/genome/indexes/kmc/"
-            "{assembly}.k{k}.kff",
+            "{assembly}/{source}/{release}/genome/indexes/kmc/" "{assembly}.k{k}.kff",
             fields={
-                "assembly": TemplateField("genome.assembly_id"),
-                "source": TemplateField("genome.source", default="ensembl"),
-                "release": TemplateField("genome.ensembl_release"),
-                "k": TemplateField("target.k"),
+                "assembly": TemplateField("parameters.genome.assembly_id"),
+                "source": TemplateField("parameters.genome.source", default="ensembl"),
+                "release": TemplateField("parameters.genome.ensembl_release"),
+                "k": TemplateField("parameters.target.k"),
             },
         ),
         doc="Canonical genome k-mer counts in KFF format.",
@@ -55,7 +54,7 @@ class BuildGenomeKmerIndexStep(CoreStep):
             ScalarParam(
                 "k",
                 int,
-                config="target.k",
+                config="parameters.target.k",
                 doc="K-mer length used to build the genome index.",
             ),
         ],

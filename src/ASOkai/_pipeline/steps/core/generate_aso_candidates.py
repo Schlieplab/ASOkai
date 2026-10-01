@@ -24,34 +24,33 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
-
 logger = logging.getLogger(__name__)
 
 
 _ASO_PATH_FIELDS = {
-    "assembly": TemplateField("genome.assembly_id"),
-    "source": TemplateField("genome.source", default="ensembl"),
-    "release": TemplateField("genome.ensembl_release"),
+    "assembly": TemplateField("parameters.genome.assembly_id"),
+    "source": TemplateField("parameters.genome.source", default="ensembl"),
+    "release": TemplateField("parameters.genome.ensembl_release"),
     "target": TemplateField.first_of(
-        "target.target_id",
-        "target.target_name",
+        "parameters.target.target_id",
+        "parameters.target.target_name",
     ),
-    "k": TemplateField("target.k"),
-    "region": TemplateField("target.region"),
-    "design": TemplateField("antisense.design.type"),
+    "k": TemplateField("parameters.target.k"),
+    "region": TemplateField("parameters.target.region"),
+    "design": TemplateField("parameters.antisense.design.type"),
     "left": TemplateField(
-        "antisense.design.left_wing_length",
+        "parameters.antisense.design.left_wing_length",
         default="na",
     ),
     "gap": TemplateField(
-        "antisense.design.gap_length",
+        "parameters.antisense.design.gap_length",
         default="na",
     ),
     "right": TemplateField(
-        "antisense.design.right_wing_length",
+        "parameters.antisense.design.right_wing_length",
         default="na",
     ),
-    "mechanism": TemplateField("antisense.mechanism"),
+    "mechanism": TemplateField("parameters.antisense.mechanism"),
 }
 
 
@@ -93,39 +92,39 @@ class GenerateASOCandidatesStep(CoreStep):
     spec = StepSpec(
         requirements={"WorkReuse": {"enableReuse": True}},
         params=[
-            ScalarParam("k", int, config="target.k"),
+            ScalarParam("k", int, config="parameters.target.k"),
             ScalarParam(
                 "design",
                 Literal["unmodified", "gapmer"],
-                config="antisense.design.type",
+                config="parameters.antisense.design.type",
             ),
             ScalarParam(
                 "left_wing_length",
                 int | None,
-                config="antisense.design.left_wing_length",
+                config="parameters.antisense.design.left_wing_length",
                 default=None,
             ),
             ScalarParam(
                 "gap_length",
                 int | None,
-                config="antisense.design.gap_length",
+                config="parameters.antisense.design.gap_length",
                 default=None,
             ),
             ScalarParam(
                 "right_wing_length",
                 int | None,
-                config="antisense.design.right_wing_length",
+                config="parameters.antisense.design.right_wing_length",
                 default=None,
             ),
             ScalarParam(
                 "mechanism",
                 str,
-                config="antisense.mechanism",
+                config="parameters.antisense.mechanism",
             ),
         ],
         inputs=[target_gene_input],
         outputs=[therapeutics_output, bindings_output],
-        compatible_with={"antisense.modality": ["aso"]},
+        compatible_with={"parameters.antisense.modality": ["aso"]},
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
@@ -144,8 +143,7 @@ class GenerateASOCandidatesStep(CoreStep):
         if design == "unmodified":
             if any(length is not None for length in lengths):
                 raise ValueError(
-                    "an unmodified design must not define gapmer segment "
-                    "lengths"
+                    "an unmodified design must not define gapmer segment " "lengths"
                 )
             return
 
@@ -157,9 +155,7 @@ class GenerateASOCandidatesStep(CoreStep):
                 "and --right-wing-length"
             )
         if any(type(length) is not int or length < 1 for length in lengths):
-            raise ValueError(
-                "gapmer segment lengths must be positive integers"
-            )
+            raise ValueError("gapmer segment lengths must be positive integers")
 
         target_site_length = values.get("k")
         if type(target_site_length) is not int:

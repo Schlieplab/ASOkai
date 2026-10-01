@@ -10,7 +10,12 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from ASOkai._pipeline.contracts.file_types import (
-    Bowtie2IndexDirectory, CsvFile, FastaFile, FileType, JsonFile, KffFile,
+    Bowtie2IndexDirectory,
+    CsvFile,
+    FastaFile,
+    FileType,
+    JsonFile,
+    KffFile,
 )
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -19,7 +24,7 @@ from ASOkai._pipeline.contracts.paths import (
     OutputPathTemplate,
     TemplateField,
 )
-from ASOkai._pipeline.contracts.run_spec import RunSpec
+from ASOkai._pipeline.contracts.run_spec import FromRun, RunSpec
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
@@ -64,6 +69,7 @@ __all__ = [
     "OutputPathTemplate",
     "Runnable",
     "RunSpec",
+    "FromRun",
     "ScalarParam",
     "Step",
     "StepSpec",

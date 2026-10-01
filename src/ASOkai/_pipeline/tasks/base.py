@@ -9,10 +9,11 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Mapping, Protocol, Sequence, runtime_checkable
 
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
-from ASOkai._pipeline.contracts.run_spec import RunSpec
+from ASOkai._pipeline.contracts.run_spec import FromRun, RunSpec
 from ASOkai._pipeline.steps.base import Step
 
 
@@ -76,17 +77,19 @@ def validate_task_runs(task: Task) -> tuple[RunSpec, ...]:
                     f"task {task.name!r} run {run_id!r} has no input "
                     f"{input_name!r}."
                 )
-            if not isinstance(link, Mapping) or set(link) != {"from_run", "output"}:
+            if isinstance(link, Path):
+                continue
+            if not isinstance(link, FromRun):
                 raise TypeError(
                     f"task {task.name!r} run {run_id!r} input {input_name!r} "
-                    "must specify from_run and output."
+                    "must specify a path or declared run output."
                 )
-            producer_id = link["from_run"]
-            output_name = link["output"]
+            producer_id = link.run_id
+            output_name = link.output_name
             if not is_valid_runnable_name(producer_id):
                 raise ValueError(
                     f"task {task.name!r} run {run_id!r} input {input_name!r} "
-                    "from_run must be a valid name."
+                    "producer ID must be a valid local name."
                 )
             if type(output_name) is not str or not output_name.strip():
                 raise ValueError(
@@ -113,4 +116,41 @@ def validate_task_runs(task: Task) -> tuple[RunSpec, ...]:
                     f"{input_name!r} cannot accept output {output_name!r} "
                     f"from run {producer_id!r}."
                 )
+    validate_task_outputs(task, by_id)
     return tuple(runs)
+
+
+def validate_task_outputs(
+    task: Task,
+    runs_by_id: Mapping[str, RunSpec] | None = None,
+) -> dict[str, FromRun]:
+    """Validate and return public output aliases declared by a task."""
+    declared = getattr(task, "outputs", {})
+    if not isinstance(declared, Mapping):
+        raise TypeError(f"task {task.name!r} outputs must be a mapping.")
+    if runs_by_id is None:
+        runs_by_id = {run.run_id: run for run in validate_task_runs(task)}
+    outputs: dict[str, FromRun] = {}
+    for name, value in declared.items():
+        if not is_valid_runnable_name(name):
+            raise ValueError(f"task {task.name!r} has invalid output name {name!r}.")
+        reference = FromRun.parse(value) if isinstance(value, str) else value
+        if not isinstance(reference, FromRun):
+            raise TypeError(
+                f"task {task.name!r} output {name!r} must reference "
+                "run.CHILD.OUTPUT."
+            )
+        child = runs_by_id.get(reference.run_id)
+        if child is None or not is_valid_runnable_name(reference.run_id):
+            raise ValueError(
+                f"task {task.name!r} output {name!r} references an unknown child run."
+            )
+        try:
+            child.step.spec.output(reference.output_name)
+        except KeyError as error:
+            raise ValueError(
+                f"task {task.name!r} output {name!r} references an unknown "
+                f"output on child {reference.run_id!r}."
+            ) from error
+        outputs[name] = reference
+    return outputs

@@ -32,6 +32,7 @@ from ASOkai._pipeline.contracts.execution import (
     StepRun,
     StepRunOutput,
 )
+from ASOkai._pipeline.contracts.run_spec import FromRun
 from ASOkai._pipeline.contracts.paths import (
     InputConfigField,
     OutputPathTemplate,
@@ -143,7 +144,7 @@ def _make_fasta_producer_and_consumer(*, gzip: bool = False) -> tuple[Step, Step
     return producer_type(), consumer_type()
 
 
-def _make_named_task() -> tuple[Task, Step, Step]:
+def _make_named_task(*, open_left_input: bool = False) -> tuple[Task, Step, Step]:
     source_output = FileOutput(
         "result",
         destination=OutputPathTemplate(
@@ -196,16 +197,21 @@ def _make_named_task() -> tuple[Task, Step, Step]:
                 RunSpec(
                     "left_result",
                     consumer,
-                    inputs={"input": {"from_run": "left_source", "output": "result"}},
+                    inputs=(
+                        {}
+                        if open_left_input
+                        else {"input": {"from": "run.left_source.result"}}
+                    ),
                 ),
                 RunSpec(
                     "right_result",
                     consumer,
-                    inputs={"input": {"from_run": "right_source", "output": "result"}},
+                    inputs={"input": {"from": "run.right_source.result"}},
                 ),
                 RunSpec("left_source", source, parameters={"mode": "left"}),
                 RunSpec("right_source", source, parameters={"mode": "right"}),
             ),
+            "outputs": {"left": FromRun("left_source", "result")},
         },
     )
     return task_type(), source, consumer
@@ -319,7 +325,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     config["runs"] = [
         {
             "step": consumer.name,
-            "inputs": {"result": {"from_run": "source", "output": "result"}},
+            "inputs": {"result": {"from": "run.source.result"}},
         },
         {"id": "source", "step": producer.name, "parameters": {"mode": "alt"}},
     ]
@@ -327,9 +333,32 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     assert all(isinstance(spec, RunSpec) for spec in configured_specs)
     assert [spec.run_id for spec in configured_specs] == ["runs.1", "runs.source"]
     assert configured_specs[0].inputs == {
-        "result": {"from_run": "runs.source", "output": "result"}
+        "result": FromRun("runs.source", "result")
     }
     assert configured_specs[1].parameters == {"mode": "alt"}
+
+
+def test_from_reference_links_named_step_declared_later(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config["shared"] = {"mode": "base"}
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"result": {"from": "run.source.result"}},
+        },
+        {"step": producer.name, "id": "source", "parameters": {"mode": "alt"}},
+    ]
+
+    plan = build_export_plan(
+        [],
+        config,
+        recursive=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    selected = plan.goals[0].inputs[0].source
+    assert isinstance(selected, StepRunOutput)
+    assert selected.run is plan.goals[1]
 
 
 def test_equivalent_configured_runs_share_one_execution(config):
@@ -559,7 +588,7 @@ def test_task_rejects_invalid_child_run_ids(config, overrides, message):
 
 
 def test_task_child_input_can_link_to_top_level_named_run(config):
-    task, source, consumer = _make_named_task()
+    task, source, consumer = _make_named_task(open_left_input=True)
     config["source"] = {"mode": "shared"}
     config["runs"] = [
         {
@@ -568,7 +597,7 @@ def test_task_child_input_can_link_to_top_level_named_run(config):
             "runs": [
                 {
                     "id": "left_result",
-                    "inputs": {"input": {"from_run": "outside", "output": "result"}},
+                    "inputs": {"input": {"from": "run.outside.result"}},
                 }
             ],
         },
@@ -588,6 +617,63 @@ def test_task_child_input_can_link_to_top_level_named_run(config):
     assert binding.run is plan.goals[-1]
 
 
+def test_task_declared_path_supplies_fixed_child_input(config, tmp_path):
+    producer = _make_step("fixed-path-producer")
+    consumer = _make_step("fixed-path-consumer", [producer])
+    input_name = producer.spec.outputs[0].name
+    selected_path = tmp_path / "selected.txt"
+    selected_path.write_text("selected")
+    task_type = type(
+        "_FixedPathTask",
+        (Task,),
+        {
+            "name": "fixed-path-task",
+            "description": "Uses a declared input file.",
+            "runs": (
+                RunSpec("consumer", consumer, inputs={input_name: selected_path}),
+            ),
+        },
+    )
+    task = task_type()
+    config["runs"] = [{"task": task.name}]
+
+    plan = build_plan(
+        [],
+        config,
+        _registry={producer.name: producer, consumer.name: consumer},
+        _tasks={task.name: task},
+    )
+
+    assert _scheduled_run_ids(plan) == ["runs.1.consumer"]
+    assert plan.goals[0].input_paths()[input_name] == selected_path
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"from": "run.outside.result"},
+        {"path": "/tmp/alternate-result.txt"},
+    ],
+)
+def test_task_declared_input_cannot_be_overridden(config, selection):
+    task, source, consumer = _make_named_task()
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {
+            "task": task.name,
+            "runs": [{"id": "left_result", "inputs": {"input": selection}}],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="cannot override task-declared input"):
+        build_plan(
+            [],
+            config,
+            _registry={source.name: source, consumer.name: consumer},
+            _tasks={task.name: task},
+        )
+
+
 def test_top_level_run_can_link_to_named_task_child(config):
     task, source, consumer = _make_named_task()
     config["source"] = {"mode": "shared"}
@@ -595,9 +681,7 @@ def test_top_level_run_can_link_to_named_task_child(config):
         {
             "step": consumer.name,
             "id": "outside-consumer",
-            "inputs": {
-                "input": {"from_run": "analysis.right_source", "output": "result"}
-            },
+            "inputs": {"input": {"from": "run.analysis.right_source.result"}},
         },
         {"task": task.name, "id": "analysis"},
     ]
@@ -612,6 +696,58 @@ def test_top_level_run_can_link_to_named_task_child(config):
     binding = plan.goals[0].inputs[0].source
     assert isinstance(binding, StepRunOutput)
     assert binding.run.run_id == "runs.analysis.right_source"
+
+
+@pytest.mark.parametrize("export", [False, True])
+def test_from_reference_resolves_public_task_output_declared_later(config, export):
+    task, source, consumer = _make_named_task()
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"input": {"from": "run.analysis.left"}},
+        },
+        {"task": task.name, "id": "analysis"},
+    ]
+
+    build = build_export_plan if export else build_plan
+    plan = build(
+        [],
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: task},
+    )
+
+    selected = plan.goals[0].inputs[0].source
+    assert isinstance(selected, StepRunOutput)
+    assert selected.run is plan.goals[3]  # analysis.left_source
+    assert selected.output.name == "result"
+
+
+def test_task_run_input_accepts_from_reference(config):
+    task, source, consumer = _make_named_task(open_left_input=True)
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {
+            "task": task.name,
+            "runs": [
+                {
+                    "id": "left_result",
+                    "inputs": {"input": {"from": "run.left_source.result"}},
+                }
+            ],
+        }
+    ]
+
+    plan = build_plan(
+        [],
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: task},
+    )
+    selected = plan.goals[0].inputs[0].source
+    assert isinstance(selected, StepRunOutput)
+    assert selected.run is plan.goals[2]
 
 
 @pytest.mark.parametrize(
@@ -658,7 +794,7 @@ def test_named_run_input_link_resolves_forward_reference_before_consumer(config)
     config["runs"] = [
         {
             "step": consumer.name,
-            "inputs": {"result": {"from_run": "alternate", "output": "result"}},
+            "inputs": {"result": {"from": "run.alternate.result"}},
         },
         {
             "id": "alternate",
@@ -754,7 +890,7 @@ def test_typed_input_accepts_compatible_named_producer(config):
         {"id": "source", "step": producer.name},
         {
             "step": consumer.name,
-            "inputs": {"reference": {"from_run": "source", "output": "reference"}},
+            "inputs": {"reference": {"from": "run.source.reference"}},
         },
     ]
 
@@ -773,7 +909,7 @@ def test_typed_input_rejects_incompatible_named_producer(config):
         {"id": "compressed", "step": producer.name},
         {
             "step": consumer.name,
-            "inputs": {"reference": {"from_run": "compressed", "output": "reference"}},
+            "inputs": {"reference": {"from": "run.compressed.reference"}},
         },
     ]
 
@@ -802,7 +938,7 @@ def test_typed_input_requires_explicit_source(config):
             [
                 {
                     "step": "consumer",
-                    "inputs": {"result": {"from_run": "missing", "output": "result"}},
+                    "inputs": {"result": {"from": "run.missing.result"}},
                 }
             ],
             "unknown named run",
@@ -812,7 +948,7 @@ def test_typed_input_requires_explicit_source(config):
                 {"id": "source", "step": "producer"},
                 {
                     "step": "consumer",
-                    "inputs": {"result": {"from_run": "source", "output": "missing"}},
+                    "inputs": {"result": {"from": "run.source.missing"}},
                 },
             ],
             "has no output",
@@ -850,7 +986,7 @@ def test_configured_run_links_reject_cycles(config):
         {
             "id": "loop",
             "step": step.name,
-            "inputs": {"input": {"from_run": "loop", "output": "result"}},
+            "inputs": {"input": {"from": "run.loop.result"}},
         }
     ]
 

@@ -24,7 +24,7 @@ CSV or JSON outputs after it and return their values from
 
 Use ``StepSpec.compatible_with`` only when the analysis is biologically
 restricted, for example
-``compatible_with={"antisense.mechanism": ["rnase-h1"]}``. Omit it for an
+``compatible_with={"parameters.antisense.mechanism": ["rnase-h1"]}``. Omit it for an
 analysis that applies regardless of modality, mechanism, or chemistry.
 
 Most steps need no custom validation. Override ``validate_parameters`` only
@@ -63,13 +63,15 @@ class ExampleAnalysis(PerUnitAnalysis):
 
     def analyze_unit(self, site: Site) -> list[dict[str, Scalar]]:
         # Add per-site analysis code here.
-        return [{
-            "site_id": site.id,
-            "target_matches": sum(
-                target_site.sequence == site.sequence
-                for target_site in self.target.sites
-            ),
-        }]
+        return [
+            {
+                "site_id": site.id,
+                "target_matches": sum(
+                    target_site.sequence == site.sequence
+                    for target_site in self.target.sites
+                ),
+            }
+        ]
 
 
 class ExampleAnalysisStep(AnalysisStep):
@@ -107,21 +109,21 @@ class ExampleAnalysisStep(AnalysisStep):
                 "{target_region}_example.csv"
             ),
             fields={
-                "assembly": TemplateField("genome.assembly_id"),
+                "assembly": TemplateField("parameters.genome.assembly_id"),
                 "source": TemplateField(
-                    "genome.source",
+                    "parameters.genome.source",
                     default="ensembl",
                 ),
-                "release": TemplateField("genome.ensembl_release"),
+                "release": TemplateField("parameters.genome.ensembl_release"),
                 "target_name": TemplateField.first_of(
-                    "target.target_id",
-                    "target.target_name",
+                    "parameters.target.target_id",
+                    "parameters.target.target_name",
                 ),
-                "k": TemplateField("target.k"),
-                "sites_region": TemplateField("target.region"),
+                "k": TemplateField("parameters.target.k"),
+                "sites_region": TemplateField("parameters.target.region"),
                 "target_region": InputConfigField(
                     "target",
-                    "target.region",
+                    "parameters.target.region",
                 ),
             },
         ),

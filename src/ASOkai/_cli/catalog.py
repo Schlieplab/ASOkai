@@ -174,15 +174,16 @@ def _config_hint_for_param(param: Any) -> str:
     return f"  {doc}" if doc else ""
 
 
-def _describe_step_config_keys(step) -> None:
-    """Print the configurable keys of a step."""
-    config_params = [param for param in step.spec.params if param.config]
-    if not config_params:
+def _describe_step_parameters(step) -> None:
+    """Print run parameters and their optional configuration keys."""
+    if not step.spec.params:
         return
 
-    click.echo("Config keys :")
-    for param in config_params:
-        click.echo(f"  --config {param.config:<32}" f"{_config_hint_for_param(param)}")
+    click.echo("Run parameters:")
+    for param in step.spec.params:
+        click.echo(f"  --param {param.name}=VALUE{_config_hint_for_param(param)}")
+        if param.config:
+            click.echo(f"    config key: {param.config}")
 
 
 def _describe_step_input_configuration(step) -> None:
@@ -193,10 +194,10 @@ def _describe_step_input_configuration(step) -> None:
     click.echo("Input configuration (optional):")
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
-        click.echo(f"  --config {configuration_path}.path_override  existing file")
+        click.echo(f"  {configuration_path}.path_override  existing file")
         for name in file_input.configurable_parameters:
             click.echo(
-                f"  --config {configuration_path}.parameters.{name}  "
+                f"  {configuration_path}.parameters.{name}  "
                 "separate producer-run value"
             )
 
@@ -204,7 +205,7 @@ def _describe_step_input_configuration(step) -> None:
 def _describe_step(step) -> tuple[list[str], str]:
     """Print step details and return its dependency summary."""
     click.echo(f"Type        : {_step_type_label(step)}")
-    _describe_step_config_keys(step)
+    _describe_step_parameters(step)
     _describe_step_input_configuration(step)
     return step.dependencies, "Dependencies"
 

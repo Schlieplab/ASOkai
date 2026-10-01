@@ -13,56 +13,57 @@ from pathlib import Path
 
 import click
 
-from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
+from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 
 from .options import (
     CONTEXT_SETTINGS,
     DEFAULT_CONFIG,
-    parse_config_overrides,
     verbose_option,
 )
+from .run_selection import OrderedRunCommand, resolved_runs
 
 
-def _collect_runnables(
-    step_names: tuple[str, ...],
-    task_names: tuple[str, ...],
-    workflow_name: str | None,
-    catalog: PipelineCatalog,
-) -> list[Runnable]:
-    """Resolve CLI selections to registered runnable objects."""
-    runnables: list[Runnable] = []
-    for name in step_names:
-        if name not in catalog.steps:
-            raise click.BadParameter(
-                f"Unknown step '{name}'.",
-                param_hint="--step",
-            )
-        runnables.append(catalog.steps[name])
-
-    for name in task_names:
-        if name not in catalog.tasks:
-            raise click.BadParameter(
-                f"Unknown task '{name}'.",
-                param_hint="--task",
-            )
-        runnables.append(catalog.tasks[name])
-
-    if workflow_name:
-        if workflow_name not in catalog.workflows:
-            raise click.BadParameter(
-                f"Unknown workflow '{workflow_name}'.",
-                param_hint="--workflow",
-            )
-        runnables.append(catalog.workflows[workflow_name])
-
-    return runnables
+def _run_selection_options(command):
+    """Add per-run options to both execution commands."""
+    for option, help_text in (
+        ("--id", "ID for the preceding step or task."),
+        ("--param", "Parameter NAME=VALUE for the current run."),
+        ("--from-run", "Input INPUT=RUN_ID.OUTPUT for the current run."),
+        ("--input-path", "Input INPUT=PATH for the current run."),
+        ("--child", "Declared child ID of the preceding task."),
+    ):
+        command = click.option(
+            option,
+            multiple=True,
+            metavar="VALUE",
+            expose_value=False,
+            help=help_text,
+        )(command)
+    return command
 
 
-@click.command("run", context_settings=CONTEXT_SETTINGS)
+def _configured_cli_runs(
+    ctx: click.Context, config: dict, catalog: PipelineCatalog
+) -> None:
+    """Feed CLI and YAML selections through the same run normalization path."""
+    selections = ctx.meta["asokai_ordered_runs"]
+    if selections and "runs" in config:
+        raise click.UsageError(
+            "Select runs in the configuration or with --step/--task/--workflow, not both."
+        )
+    if selections:
+        config["runs"] = resolved_runs(selections, catalog)
+    elif "runs" not in config:
+        raise click.UsageError(
+            "Select at least one runnable with --step, --task, or --workflow."
+        )
+
+
+@click.command("run", context_settings=CONTEXT_SETTINGS, cls=OrderedRunCommand)
 @verbose_option
+@_run_selection_options
 @click.option(
     "-c",
     "--configfile",
@@ -75,22 +76,22 @@ def _collect_runnables(
 )
 @click.option(
     "--step",
-    "step_names",
     multiple=True,
+    expose_value=False,
     metavar="NAME",
     help="Step to run. Repeat the option to select multiple steps.",
 )
 @click.option(
     "--task",
-    "task_names",
     multiple=True,
+    expose_value=False,
     metavar="NAME",
     help="Task to run. Repeat the option to select multiple tasks.",
 )
 @click.option(
     "--workflow",
-    "workflow_name",
     default=None,
+    expose_value=False,
     metavar="NAME",
     help="Workflow to run.",
 )
@@ -117,46 +118,24 @@ def _collect_runnables(
     show_default=True,
     help="CWL executor backend.",
 )
-@click.option(
-    "--config",
-    "config_overrides",
-    multiple=True,
-    metavar="KEY=VALUE",
-    help="Override a config value. Repeat the option for multiple values.",
-)
 @click.pass_context
 def run_command(
     ctx: click.Context,
     config_path: Path,
-    step_names: tuple[str, ...],
-    task_names: tuple[str, ...],
-    workflow_name: str | None,
     force: bool,
     dry_run: bool,
     non_recursive: bool,
     executor_name: str,
-    config_overrides: tuple[str, ...],
 ) -> None:
     """Run selected steps, tasks, or a workflow."""
     try:
         catalog = get_pipeline_catalog()
         config = cfg.load(config_path)
-        overrides = parse_config_overrides(config_overrides)
-        cfg.apply_overrides(config, overrides)
-        runnables = _collect_runnables(
-            step_names,
-            task_names,
-            workflow_name,
-            catalog,
-        )
-        if not runnables and "runs" not in config:
-            raise click.UsageError(
-                "Select at least one runnable with --step, --task, or --workflow."
-            )
+        _configured_cli_runs(ctx, config, catalog)
 
         verbose = bool(ctx.obj and ctx.obj.get("verbose", False))
         runner.run_all(
-            runnables,
+            [],
             config,
             force=force,
             dry_run=dry_run,
@@ -173,8 +152,9 @@ def run_command(
         raise click.ClickException(str(error)) from error
 
 
-@click.command("export", context_settings=CONTEXT_SETTINGS)
+@click.command("export", context_settings=CONTEXT_SETTINGS, cls=OrderedRunCommand)
 @verbose_option
+@_run_selection_options
 @click.option(
     "-c",
     "--configfile",
@@ -187,22 +167,22 @@ def run_command(
 )
 @click.option(
     "--step",
-    "step_names",
     multiple=True,
+    expose_value=False,
     metavar="NAME",
     help="Step to export. Repeat the option to select multiple steps.",
 )
 @click.option(
     "--task",
-    "task_names",
     multiple=True,
+    expose_value=False,
     metavar="NAME",
     help="Task to export. Repeat the option to select multiple tasks.",
 )
 @click.option(
     "--workflow",
-    "workflow_name",
     default=None,
+    expose_value=False,
     metavar="NAME",
     help="Workflow to export.",
 )
@@ -228,42 +208,22 @@ def run_command(
     show_default=True,
     help="CWL executor backend documented in the export README.",
 )
-@click.option(
-    "--config",
-    "config_overrides",
-    multiple=True,
-    metavar="KEY=VALUE",
-    help="Override a config value. Repeat the option for multiple values.",
-)
+@click.pass_context
 def export_command(
+    ctx: click.Context,
     config_path: Path,
-    step_names: tuple[str, ...],
-    task_names: tuple[str, ...],
-    workflow_name: str | None,
     recursive: bool,
     outdir: Path | None,
     executor_name: str,
-    config_overrides: tuple[str, ...],
 ) -> None:
     """Export selected pipeline units as a runnable CWL bundle."""
     try:
         catalog = get_pipeline_catalog()
         config = cfg.load(config_path)
-        overrides = parse_config_overrides(config_overrides)
-        cfg.apply_overrides(config, overrides)
-        runnables = _collect_runnables(
-            step_names,
-            task_names,
-            workflow_name,
-            catalog,
-        )
-        if not runnables and "runs" not in config:
-            raise click.UsageError(
-                "Select at least one runnable with --step, --task, or --workflow."
-            )
+        _configured_cli_runs(ctx, config, catalog)
 
         export_directory = runner.export_all(
-            runnables,
+            [],
             config,
             recursive=recursive,
             outdir=outdir,

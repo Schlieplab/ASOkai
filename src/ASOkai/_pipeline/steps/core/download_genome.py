@@ -6,6 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Definition of the download-genome pipeline step.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,21 +25,22 @@ from ASOkai._pipeline.contracts.paths import (
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.core.base import CoreStep
 
-
 logger = logging.getLogger(__name__)
 
 
 _GENOME_PATH_FIELDS = {
-    "assembly": TemplateField("genome.assembly_id"),
-    "source": TemplateField("genome.source"),
-    "release": TemplateField("genome.ensembl_release"),
-    "species": TemplateField("genome.species"),
+    "assembly": TemplateField("parameters.genome.assembly_id"),
+    "source": TemplateField("parameters.genome.source"),
+    "release": TemplateField("parameters.genome.ensembl_release"),
+    "species": TemplateField("parameters.genome.species"),
 }
 
 
 class DownloadGenomeStep(CoreStep):
     name = "download-genome"
-    description = "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
+    description = (
+        "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
+    )
     dna_output = FileOutput(
         "dna",
         file_type=FastaFile(gzip=True),
@@ -94,26 +96,26 @@ class DownloadGenomeStep(CoreStep):
             ScalarParam(
                 "assembly",
                 str,
-                config="genome.assembly_id",
+                config="parameters.genome.assembly_id",
                 doc="Assembly ID (e.g. GRCh38).",
             ),
             ScalarParam(
                 "release",
                 int,
-                config="genome.ensembl_release",
+                config="parameters.genome.ensembl_release",
                 doc="Ensembl release number (e.g. 114).",
             ),
             ScalarParam(
                 "source",
                 Literal["ensembl"],
-                config="genome.source",
+                config="parameters.genome.source",
                 doc="Genome data source.",
                 default="ensembl",
             ),
             ScalarParam(
                 "species",
                 str,
-                config="genome.species",
+                config="parameters.genome.species",
                 doc="Species name (e.g. Homo_sapiens).",
             ),
         ],
@@ -144,8 +146,7 @@ class DownloadGenomeStep(CoreStep):
                 downloaded = Path(paths[name])
             except KeyError as error:
                 raise RuntimeError(
-                    f"Genome downloader did not return required output "
-                    f"{name!r}."
+                    f"Genome downloader did not return required output " f"{name!r}."
                 ) from error
             if downloaded.resolve() != output.resolve():
                 raise RuntimeError(

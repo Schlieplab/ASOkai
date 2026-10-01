@@ -231,7 +231,7 @@ def test_named_task_runs_reject_invalid_local_links(failure, message):
         RunSpec(
             "source" if failure == "duplicate" else "consumer",
             consumer,
-            inputs={input_name: {"from_run": source_id, "output": output_name}},
+            inputs={input_name: {"from": f"run.{source_id}.{output_name}"}},
         ),
     )
     task_type = type(

@@ -6,6 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Definition of the intrinsic-features analysis step.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
@@ -23,8 +24,7 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 class IntrinsicFeaturesStep(AnalysisStep):
     name = "intrinsic-features"
     description = (
-        "Computes nucleotide composition and CpG features for each "
-        "target site."
+        "Computes nucleotide composition and CpG features for each " "target site."
     )
     analysis_cls = IntrinsicFeaturesAnalysis
     target_gene_input = FileInput(
@@ -52,18 +52,18 @@ class IntrinsicFeaturesStep(AnalysisStep):
             "analysis/intrinsic/"
             "{target}_k{k}_{region}_intrinsic.csv",
             fields={
-                "assembly": TemplateField("genome.assembly_id"),
+                "assembly": TemplateField("parameters.genome.assembly_id"),
                 "source": TemplateField(
-                    "genome.source",
+                    "parameters.genome.source",
                     default="ensembl",
                 ),
-                "release": TemplateField("genome.ensembl_release"),
+                "release": TemplateField("parameters.genome.ensembl_release"),
                 "target": TemplateField.first_of(
-                    "target.target_id",
-                    "target.target_name",
+                    "parameters.target.target_id",
+                    "parameters.target.target_name",
                 ),
-                "k": TemplateField("target.k"),
-                "region": TemplateField("target.region"),
+                "k": TemplateField("parameters.target.k"),
+                "region": TemplateField("parameters.target.region"),
             },
         ),
         doc="Intrinsic features per target site.",

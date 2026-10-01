@@ -36,7 +36,6 @@ from ASOkai._pipeline.contracts.json_schema import (
 from ASOkai._pipeline.contracts.execution import StepRunOutput
 from ASOkai._pipeline.plan import build_export_plan
 
-
 ROOT = Path(__file__).parents[2]
 
 
@@ -53,9 +52,9 @@ CORE_SCHEMA = cast(
 EXAMPLE_CONFIG = _load_yaml(ROOT / "examples/config.example.yaml")
 TEMPLATE_STEP = cast(
     type[AnalysisStep],
-    runpy.run_path(
-        str(ROOT / "examples/contributor_steps/analysis_step.py")
-    )["ExampleAnalysisStep"],
+    runpy.run_path(str(ROOT / "examples/contributor_steps/analysis_step.py"))[
+        "ExampleAnalysisStep"
+    ],
 )()
 BUILTIN_STEPS = tuple(pipeline_catalog._BUILTIN_STEPS)
 CONTRIBUTOR_STEPS = (*BUILTIN_STEPS, TEMPLATE_STEP)
@@ -91,9 +90,7 @@ def _step_name(step: Step) -> str:
 
 def test_example_config_supports_every_contributor_step() -> None:
     errors = json_schema_errors(CORE_SCHEMA, EXAMPLE_CONFIG)
-    assert not errors, (
-        "Invalid examples/config.example.yaml:\n- " + "\n- ".join(errors)
-    )
+    assert not errors, "Invalid examples/config.example.yaml:\n- " + "\n- ".join(errors)
     config_module.validate_step_config(EXAMPLE_CONFIG, CONTRIBUTOR_STEPS)
 
 
@@ -154,18 +151,15 @@ def test_target_context_example_can_select_an_alternate_target_region() -> None:
     )
     example_run = plan.goals[0]
     bindings = {
-        binding.file_input.name: binding.source
-        for binding in example_run.inputs
+        binding.file_input.name: binding.source for binding in example_run.inputs
     }
 
     assert isinstance(bindings["sites"], StepRunOutput)
     assert isinstance(bindings["target"], StepRunOutput)
     assert bindings["sites"].run.run_id == "create-target-gene"
-    assert bindings["target"].run.run_id == (
-        "example-analysis.create-target-gene"
-    )
-    assert bindings["sites"].run.config["target"]["region"] == "pre-mrna"
-    assert bindings["target"].run.config["target"]["region"] == "exonic"
+    assert bindings["target"].run.run_id == ("example-analysis.create-target-gene")
+    assert bindings["sites"].run.config["parameters"]["target"]["region"] == "pre-mrna"
+    assert bindings["target"].run.config["parameters"]["target"]["region"] == "exonic"
     assert example_run.output_paths()["analysis"].name == (
         "ENSG00000133703_k16_pre-mrna_against_exonic_example.csv"
     )

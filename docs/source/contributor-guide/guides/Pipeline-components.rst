@@ -36,7 +36,8 @@ Component hierarchy
 
 ``Task``
    A named CLI-level collection of steps. It may declare named step
-   invocations and optional links; existing tasks may expose ``steps``.
+   invocations, fixed links, and public output names; older tasks may expose
+   ``steps``.
 
 ``Workflow``
    A named collection exposing a non-empty sequence of runnable components.
@@ -121,66 +122,67 @@ runtime consumes ``args.n_threads``.
 Configuring runs in YAML
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-A config file can select ordered step or task runs with ``runs``. Each step
-entry may supply ``parameters`` using names from its ``StepSpec.params``.
-Omitted values use the shared configuration and then declared defaults. For
-example, with ``target.region: pre-mrna`` in the shared configuration::
+A config file selects ordered runs below the root ``runs`` key. Shared
+fallbacks live below root ``parameters``; ``resources`` and the optional
+output-reuse ``validation`` setting are also root keys. For example::
 
-   runs:
-     - step: create-target-gene
-     - step: create-target-gene
-       parameters:
-         region: exonic
-
-These entries request two runs of the same step with different regions. The
-planner shares equivalent runs and dependencies where possible. Distinct runs
-must resolve to different output paths; a collision is reported during planning.
-A step run can have a stable ``id`` so another run can select its output, even
-when the producer is listed later in the file::
-
-   runs:
-     - step: intrinsic-features
-       inputs:
-         target_gene:
-          from_run: gene
-           output: target_gene
-     - step: create-target-gene
-       id: gene
-
-An input can instead select an existing path::
-
+   datadir: ./data
+   parameters:
+     genome:
+       assembly_id: GRCh38
+       ensembl_release: 114
+       source: ensembl
+       species: Homo_sapiens
+     target:
+       target_name: KRAS
+       k: 16
+       region: pre-mrna
+     antisense:
+       modality: aso
+       mechanism: rnase-h1
+       design:
+         type: unmodified
+   resources:
+     default:
+       n_threads: 2
+       memory_mb: 4096
+   validation:
+     existing_outputs: signature
    runs:
      - step: intrinsic-features
        inputs:
          target_gene:
-           path: /path/to/target_gene.json
-
-Relative input paths are resolved from the current working directory, like
-the existing ``path_override`` configuration. A per-run input selection
-takes precedence over the shared input configuration for that input. The
-planner validates external files for ``run``; ``export`` permits paths that
-will be supplied later. A task entry selects its declared steps::
-
-   runs:
+           from: run.analysis.target_gene
      - task: instantiate-target-gene
+       id: analysis
 
-Task entries may supply parameters shared by their child steps, and ``runs``
-entries keyed by child ID for specific overrides. Invoke
-``ASOkai run --configfile config.yaml`` or ``ASOkai export --configfile
-config.yaml`` to use the file's ``runs`` without CLI selections. ``--config
-KEY=VALUE`` still changes shared fallback values. A file with ``runs`` cannot
-also be used with ``--step``, ``--task``, or ``--workflow`` selections.
+``analysis`` names the task selection. The task declares a public
+``target_gene`` output, so the step can refer to it even though the task is
+listed later. An ``id`` is needed only when another run refers to it. A
+selected step run's output can be referenced with
+``from: run.RUN_ID.OUTPUT_NAME``. To
+use an existing file, replace the ``from`` mapping with ``path:
+/path/to/target_gene.json``. Relative paths resolve from the current working
+directory. A selected run may override its declared scalar parameters using
+its own ``parameters`` mapping; a task selection applies matching names to
+its children. Fixed values in a task declaration cannot be replaced. Distinct
+runs must resolve to distinct output paths, or planning reports a collision.
+
+Invoke ``ASOkai run --configfile config.yaml`` or ``ASOkai export
+--configfile config.yaml`` to use these selections. A file with ``runs`` cannot
+also use CLI ``--step``, ``--task``, or ``--workflow`` selections. Shared
+``genome``, ``target``, and ``antisense`` settings belong under ``parameters``.
 
 Composing task runs
 ~~~~~~~~~~~~~~~~~~~
 
 Declare ``runs`` on a ``Task`` as ``RunSpec`` objects. Each specification has
 a local ``run_id`` and a Step instance, plus optional ``parameters`` and
-``inputs``. An input's ``from_run`` names its producer, even if it is declared
-later::
+``inputs``. A ``FromRun`` value names a local child and its declared output,
+even if the producer is declared later::
 
    from ASOkai.Plugins import (
-       CreateTargetGeneStep, IntrinsicFeaturesStep, RunSpec, Task,
+       CreateTargetGeneStep, IntrinsicFeaturesStep, FromRun, RunSpec, Task,
    )
 
    class TargetAnalysisTask(Task):
@@ -191,7 +193,7 @@ later::
                "features",
                IntrinsicFeaturesStep(),
                inputs={
-                   "target_gene": {"from_run": "gene", "output": "target_gene"}
+                   "target_gene": FromRun("gene", "target_gene")
                },
            ),
            RunSpec(
@@ -199,8 +201,14 @@ later::
                CreateTargetGeneStep(),
            ),
        )
+       outputs = {"target_gene": FromRun("gene", "target_gene")}
 
-The planner schedules ``gene`` before ``features``. A task can also declare
+For a fixed input file, use ``Path("/data/target_gene.json")`` instead of
+``FromRun(...)``. In YAML, use ``path: /data/target_gene.json``.
+
+The planner schedules ``gene`` before ``features``. The ``outputs`` mapping
+exposes a stable name to callers; it does not rename the child step's output.
+A task can also declare
 the same step more than once, using local IDs to distinguish the runs::
 
    class CompareRegionsTask(Task):
@@ -212,6 +220,7 @@ the same step more than once, using local IDs to distinguish the runs::
            RunSpec("transcriptomic", CreateTargetGeneStep(),
                    parameters={"region": "transcriptomic"}),
        )
+       outputs = {"target_gene": FromRun("exonic", "target_gene")}
 
 Once registered, this task can receive a task-wide parameter and an override
 for one declared child run::
@@ -230,14 +239,60 @@ for one declared child run::
 its own ``parameters`` entry takes precedence. Values declared in a task's
 ``RunSpec.parameters``, such as each child's ``region`` above, are fixed:
 task-wide parameters cannot replace them, and an attempted child override is
-rejected. Nested ``runs`` must name IDs
-already declared by the task and can also override their ``inputs``. A link
-inside a task uses a local child ID such as ``gene``. Outside the task, a
-named child's output can be selected with ``from_run: comparison.exonic``. Omit
-``inputs`` when no explicit link is needed. Each distinct run must have a
-distinct output destination. Older tasks with ``steps`` remain valid. The
-planner converts YAML and CLI selections into ``RunSpec`` objects, then
-resolves them into concrete ``StepRun`` objects.
+rejected. Nested ``runs`` must name IDs already declared by the task. They
+can supply inputs left open by its ``RunSpec`` declarations, but cannot replace
+a task-declared input link. Thus the ``features`` to ``gene`` link above is
+part of the task's wiring. A link inside a task uses a local child ID such as
+``gene``. Outside the task, its public output can be selected with
+``from: run.comparison.target_gene`` when the task declares that alias. Omit
+``inputs`` when no explicit link is
+needed. Each distinct run must have a distinct output destination. Older
+tasks with ``steps`` remain valid. The planner converts YAML and CLI
+selections into ``RunSpec`` objects, then resolves them into concrete
+``StepRun`` objects.
+
+How an input source is chosen
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An ``inputs`` entry on a selected step run chooses either ``from:`` (a named
+run's output) or ``path:`` (an existing file). A task can fix a child's input
+in its ``RunSpec.inputs`` declaration. If it does, a nested ``runs`` override
+for that input is rejected; otherwise the nested override may supply the
+child's ``from:`` or ``path:`` source. A task selection has no separate
+``inputs`` mapping.
+
+If the input has no run-level source, the configured
+``steps.STEP.inputs.INPUT.path_override`` is used when present. Otherwise,
+``FileInput.source`` identifies the step's default producer output. An input
+with neither a supplied path nor a producer fails planning. Scalar
+``parameters`` determine how a producer run executes and where its output
+belongs; they do not identify a producer run by themselves. The planner
+reuses a valid existing producer output or schedules that producer before
+the consumer. With ``--non-recursive``, a missing dependency causes an error
+instead of being scheduled.
+
+Configuring runs on the command line
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CLI selections use the same ordered run declarations and validation as YAML.
+Use a shared config file without ``runs`` and put each override after the step
+or task it belongs to::
+
+   ASOkai run --configfile common.yaml \
+     --step create-target-gene --id reference-gene --param region=pre-mrna \
+     --step generate-aso-candidates --id candidates \
+       --from-run target_gene=reference-gene.target_gene \
+     --task compare-regions --id comparison --param k=21 \
+       --child transcriptomic --param k=18
+
+``--id`` names the preceding step or task. ``--param NAME=VALUE`` applies to
+that selection, or to the child named by the most recent ``--child``. Values
+use YAML scalar syntax, so ``k=21`` is an integer. Use ``--from-run
+INPUT=RUN_ID.OUTPUT`` for a named producer and ``--input-path INPUT=PATH`` for
+an existing file. These options configure the current step or task child;
+``--child`` names an ID already declared in the task. A new ``--step`` or
+``--task`` starts the next top-level run. ``--workflow`` expands its members
+at its position in the CLI sequence. ``export`` accepts the same run options.
 
 File contracts
 ~~~~~~~~~~~~~~

@@ -29,17 +29,15 @@ from ASOkai.Plugins import CoreStep, Step
 def config(tmp_path: Path) -> dict:
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {"k": 16},
-        "resources": {
-            "build-genome-kmer-index": {
-                "n_threads": 6,
-            }
+        "resources": {"build-genome-kmer-index": {"n_threads": 6}},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"k": 16},
         },
     }
 
@@ -65,7 +63,7 @@ def test_step_contract(step: BuildGenomeKmerIndexStep) -> None:
     assert step.dependencies == ["download-genome"]
     assert step.dna_input.source is DownloadGenomeStep.dna_output
     assert isinstance(step.kmer_index_output.file_type, KffFile)
-    assert step.config_map == {"k": "target.k"}
+    assert step.config_map == {"k": "parameters.target.k"}
     assert step.supports_multiple_threads is True
 
 
@@ -74,9 +72,7 @@ def test_output_path_is_genome_scoped(
     config: dict,
     tmp_path: Path,
 ) -> None:
-    output = _run(step, config, tmp_path / "dna.fa.gz").output_paths()[
-        "kmer_index"
-    ]
+    output = _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmer_index"]
 
     assert output == (
         tmp_path
@@ -100,9 +96,7 @@ def test_cwl_spec_exposes_runtime_resources(
     )
 
     assert set(doc["inputs"]) == {"k", "dna", "n_threads"}
-    assert doc["inputs"]["n_threads"]["inputBinding"] == {
-        "prefix": "--n-threads"
-    }
+    assert doc["inputs"]["n_threads"]["inputBinding"] == {"prefix": "--n-threads"}
     assert {
         "prefix": "--kmer-index-output",
         "valueFrom": "GRCh38.k16.kff",
@@ -114,13 +108,9 @@ def test_generated_workflow_passes_configured_resources(
     config: dict,
     tmp_path: Path,
 ) -> None:
-    generated = generate_cwl_bundle(
-        [_run(step, config, tmp_path / "dna.fa.gz")]
-    )
+    generated = generate_cwl_bundle([_run(step, config, tmp_path / "dna.fa.gz")])
     workflow = yaml.safe_load(generated.run_cwl)
-    tool = yaml.safe_load(
-        generated.step_cwls["build-genome-kmer-index.cwl"]
-    )
+    tool = yaml.safe_load(generated.step_cwls["build-genome-kmer-index.cwl"])
 
     step_inputs = workflow["steps"]["step_build_genome_kmer_index"]["in"]
     assert step_inputs["n_threads"] == {"default": 6}
@@ -165,10 +155,14 @@ def test_run_cli_builds_one_kff_with_configured_resources(
 
     result = BuildGenomeKmerIndexStep().run_cli(
         [
-            "--k", "16",
-            "--dna", str(dna),
-            "--n-threads", "6",
-            "--kmer-index-output", str(output),
+            "--k",
+            "16",
+            "--dna",
+            str(dna),
+            "--n-threads",
+            "6",
+            "--kmer-index-output",
+            str(output),
         ]
     )
 
@@ -193,7 +187,7 @@ def test_config_rejects_k_above_kmc_limit(
     step: BuildGenomeKmerIndexStep,
     config: dict,
 ) -> None:
-    config["target"]["k"] = 257
+    config["parameters"]["target"]["k"] = 257
 
     with pytest.raises(ValueError, match=r"k must be between 1 and 256"):
         cfg.validate_step_config(config, [step], validate_input_files=False)

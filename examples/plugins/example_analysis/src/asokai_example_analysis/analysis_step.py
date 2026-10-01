@@ -11,7 +11,7 @@ outputs can follow it and receive values from ``additional_output_values``.
 
 Use ``StepSpec.compatible_with`` only when the analysis is biologically
 restricted, for example
-``compatible_with={"antisense.mechanism": ["rnase-h1"]}``. Omit it for an
+``compatible_with={"parameters.antisense.mechanism": ["rnase-h1"]}``. Omit it for an
 analysis that applies regardless of modality, mechanism, or chemistry.
 
 Most steps need no custom validation. Override ``validate_parameters`` only
@@ -51,11 +51,13 @@ class ExampleAnalysis(PerUnitAnalysis):
 
     def analyze_unit(self, site: Site) -> list[dict[str, Types.Scalar]]:
         sequence_length = len(site.sequence)
-        return [{
-            "site_id": site.id,
-            "sequence_length": sequence_length,
-            "passes_minimum": sequence_length >= self.minimum_length,
-        }]
+        return [
+            {
+                "site_id": site.id,
+                "sequence_length": sequence_length,
+                "passes_minimum": sequence_length >= self.minimum_length,
+            }
+        ]
 
 
 class ExampleAnalysisStep(AnalysisStep):
@@ -84,20 +86,20 @@ class ExampleAnalysisStep(AnalysisStep):
             "analysis/example/"
             "{target}_k{k}_{region}_min{minimum_length}_sequence_lengths.csv",
             fields={
-                "assembly": TemplateField("genome.assembly_id"),
+                "assembly": TemplateField("parameters.genome.assembly_id"),
                 "source": TemplateField(
-                    "genome.source",
+                    "parameters.genome.source",
                     default="ensembl",
                 ),
-                "release": TemplateField("genome.ensembl_release"),
+                "release": TemplateField("parameters.genome.ensembl_release"),
                 "target": TemplateField.first_of(
-                    "target.target_id",
-                    "target.target_name",
+                    "parameters.target.target_id",
+                    "parameters.target.target_name",
                 ),
-                "k": TemplateField("target.k"),
-                "region": TemplateField("target.region"),
+                "k": TemplateField("parameters.target.k"),
+                "region": TemplateField("parameters.target.region"),
                 "minimum_length": TemplateField(
-                    "example_analysis.minimum_length"
+                    "parameters.example_analysis.minimum_length"
                 ),
             },
         ),
@@ -108,7 +110,7 @@ class ExampleAnalysisStep(AnalysisStep):
             ScalarParam(
                 "minimum_length",
                 int,
-                config="example_analysis.minimum_length",
+                config="parameters.example_analysis.minimum_length",
             ),
         ],
         inputs=[target_gene_input],

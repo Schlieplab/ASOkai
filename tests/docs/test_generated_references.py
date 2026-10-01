@@ -77,16 +77,13 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     }
 
     assert fields["datadir"].requirement == "Required"
-    assert (
-        fields["validation.existing_outputs"].requirement
-        == "Default: signature"
-    )
-    assert fields["target.region"].constraints == (
+    assert fields["validation.existing_outputs"].requirement == "Default: signature"
+    assert fields["parameters.target.region"].constraints == (
         "one of: exonic, pre-mrna, transcriptomic"
     )
     assert fields["resources.intrinsic-features.n_threads"].value_type == "integer"
-    assert fields["target.target_id"].requirement == (
-        "Exactly one of target_id, target_name is required when target is configured"
+    assert fields["parameters.target.target_id"].requirement == (
+        "Exactly one of target_id, target_name is required when parameters.target is configured"
     )
 
 
@@ -119,8 +116,7 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
             if isinstance(step, step_type) and step.listed
         ]
         generated_targets = [
-            link["reftarget"]
-            for link in generated_list.findall(addnodes.pending_xref)
+            link["reftarget"] for link in generated_list.findall(addnodes.pending_xref)
         ]
         assert generated_targets == expected_targets
 
@@ -136,14 +132,8 @@ def test_generated_references_track_their_content_sources(tmp_path) -> None:
     )
 
     assert str(explicit_source) in dependencies
-    assert any(
-        path.endswith("contract_docs/rendering.py")
-        for path in dependencies
-    )
-    assert any(
-        path.endswith("Targets/_target_gene.py")
-        for path in dependencies
-    )
+    assert any(path.endswith("contract_docs/rendering.py") for path in dependencies)
+    assert any(path.endswith("Targets/_target_gene.py") for path in dependencies)
 
 
 @pytest.mark.parametrize("kind", ["task", "workflow"])
@@ -151,21 +141,15 @@ def test_every_built_in_runnable_has_generated_documentation(kind: str) -> None:
     for runnable in get_built_in_runnables(kind):
         assert get_built_in_runnable(kind, runnable.name) is runnable
         assert build_runnable_reference(runnable, kind)
-        assert (
-            ROOT / f"docs/source/{kind}s/{runnable.name}.rst"
-        ).is_file()
+        assert (ROOT / f"docs/source/{kind}s/{runnable.name}.rst").is_file()
 
 
 @pytest.mark.parametrize("kind", ["task", "workflow"])
 def test_runnable_indexes_are_generated_from_the_registry(kind: str) -> None:
     runnable_list = build_runnable_list(kind)
     assert [
-        link["reftarget"]
-        for link in runnable_list.findall(addnodes.pending_xref)
-    ] == [
-        f"/{kind}s/{runnable.name}"
-        for runnable in get_built_in_runnables(kind)
-    ]
+        link["reftarget"] for link in runnable_list.findall(addnodes.pending_xref)
+    ] == [f"/{kind}s/{runnable.name}" for runnable in get_built_in_runnables(kind)]
 
 
 def test_task_reference_links_to_its_steps() -> None:
@@ -229,22 +213,20 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
     }
 
     assert fields["datadir"].requirement == "Required"
-    assert fields["target.k"].requirement == (
+    assert fields["parameters.target.k"].requirement == (
         "Required to determine the output path"
     )
-    assert fields[
-        "steps.intrinsic-features.inputs.target_gene.path_override"
-    ].requirement == "Optional path override"
+    assert (
+        fields["steps.intrinsic-features.inputs.target_gene.path_override"].requirement
+        == "Optional path override"
+    )
     assert fields["resources.intrinsic-features.n_threads"].requirement == (
         "Overrides resources.default"
     )
-    assert fields["resources.default.n_threads"].requirement == (
-        "Built-in fallback: 1"
-    )
-    assert "antisense.design.gap_length" not in fields
+    assert fields["resources.default.n_threads"].requirement == ("Built-in fallback: 1")
+    assert "parameters.antisense.design.gap_length" not in fields
     assert collect_step_schema_rules(step, _config_schema()) == [
-        "exactly one of these config values is required: "
-        "target.target_id, target.target_name"
+        "exactly one of these config values is required: " "target_id, target_name"
     ]
 
 
@@ -279,20 +261,17 @@ def test_step_reference_documents_configurable_producer_runs() -> None:
     assert f"{input_path}.parameters.region" in reference
     assert f"Producer parameter: {input_path}.parameters.region" in reference
     assert (
-        "producer parameters or a path override for an input, never both"
-        in reference
+        "producer parameters or a path override for an input, never both" in reference
     )
 
 
 def test_single_thread_step_omits_thread_count() -> None:
     step = get_built_in_step("download-genome")
     fields = {
-        field.path
-        for field in collect_step_config_fields(step, _config_schema())
+        field.path for field in collect_step_config_fields(step, _config_schema())
     }
     reference = "\n".join(
-        node.astext()
-        for node in build_step_reference(step, _config_schema())
+        node.astext() for node in build_step_reference(step, _config_schema())
     )
 
     assert "resources.default.n_threads" not in fields
@@ -335,17 +314,13 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     assert "datadir" not in sections["Parameters"].astext()
     assert input_path in sections["Inputs"].astext()
     assert "config.yaml" in sections["Inputs"].astext()
-    override_examples = list(
-        sections["Inputs"].findall(nodes.literal_block)
-    )
+    override_examples = list(sections["Inputs"].findall(nodes.literal_block))
     assert len(override_examples) == 1
     assert yaml.safe_load(override_examples[0].astext()) == {
         "steps": {
             "intrinsic-features": {
                 "inputs": {
-                    "target_gene": {
-                        "path_override": "/path/to/target_gene.json"
-                    }
+                    "target_gene": {"path_override": "/path/to/target_gene.json"}
                 }
             }
         }
@@ -409,7 +384,7 @@ def test_step_reference_renders_only_declared_applicability() -> None:
         description = "Example step with an explicit biological restriction."
         spec = StepSpec(
             compatible_with={
-                "antisense.mechanism": ["rnase-h1"],
+                "parameters.antisense.mechanism": ["rnase-h1"],
             }
         )
 
@@ -424,7 +399,7 @@ def test_step_reference_renders_only_declared_applicability() -> None:
     }
 
     assert "asokai-step-applicability" in table_classes
-    assert "antisense.mechanism" in reference
+    assert "parameters.antisense.mechanism" in reference
     assert "rnase-h1" in reference
 
 
@@ -433,7 +408,7 @@ def test_aso_candidate_generation_declares_its_modality() -> None:
     generated_nodes = build_step_reference(step, _config_schema())
     reference = "\n".join(node.astext() for node in generated_nodes)
 
-    assert step.spec.compatible_with == {"antisense.modality": ("aso",)}
+    assert step.spec.compatible_with == {"parameters.antisense.modality": ("aso",)}
     assert "Applicability" in reference
 
 
@@ -445,13 +420,13 @@ def test_candidate_generation_documents_conditional_design_fields() -> None:
     }
     rules = collect_step_schema_rules(step, _config_schema())
 
-    assert fields["antisense.design.type"].requirement == "Required"
+    assert fields["parameters.antisense.design.type"].requirement == "Required"
     for field_name in (
         "left_wing_length",
         "gap_length",
         "right_wing_length",
     ):
-        field = fields[f"antisense.design.{field_name}"]
+        field = fields[f"parameters.antisense.design.{field_name}"]
         assert field.requirement == "Optional"
         assert "Required for a gapmer design" in field.description
         assert field.constraints == "minimum: 1"
@@ -459,9 +434,7 @@ def test_candidate_generation_documents_conditional_design_fields() -> None:
         "A gapmer design requires left_wing_length, gap_length, and "
         "right_wing_length."
     ) in rules
-    assert (
-        "An unmodified design must not define gapmer segment lengths."
-    ) in rules
+    assert ("An unmodified design must not define gapmer segment lengths.") in rules
 
 
 def test_candidate_generation_separates_design_parameters() -> None:
@@ -477,29 +450,34 @@ def test_candidate_generation_separates_design_parameters() -> None:
     gapmer_design = sections["Gapmer design"]
     unmodified_design = sections["Unmodified design"]
 
-    assert "antisense.design.type" not in common_parameters
+    assert "parameters.antisense.design.type" not in common_parameters
     assert yaml.safe_load(
         next(gapmer_design.findall(nodes.literal_block)).astext()
     ) == {
-        "antisense": {
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "antisense": {
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                }
             }
         }
     }
     assert yaml.safe_load(
         next(unmodified_design.findall(nodes.literal_block)).astext()
-    ) == {"antisense": {"design": {"type": "unmodified"}}}
+    ) == {"parameters": {"antisense": {"design": {"type": "unmodified"}}}}
     for field_name in (
         "left_wing_length",
         "gap_length",
         "right_wing_length",
     ):
-        assert f"antisense.design.{field_name}" in gapmer_design.astext()
-        assert f"antisense.design.{field_name}" not in unmodified_design.astext()
+        assert f"parameters.antisense.design.{field_name}" in gapmer_design.astext()
+        assert (
+            f"parameters.antisense.design.{field_name}"
+            not in unmodified_design.astext()
+        )
 
     parameters = sections["Parameters"].astext()
     assert "A gapmer design requires" not in parameters
@@ -519,9 +497,10 @@ def test_json_file_contract_maps_to_its_serializable_class() -> None:
         Gapmer,
         siRNA,
     )
-    assert candidate_step.therapeutics_output.file_type.value_type == list[
-        AntisenseTherapeutic
-    ]
+    assert (
+        candidate_step.therapeutics_output.file_type.value_type
+        == list[AntisenseTherapeutic]
+    )
 
 
 def test_class_json_contract_owns_only_its_direct_fields() -> None:
@@ -558,9 +537,7 @@ def test_nested_classes_own_their_json_details() -> None:
         refdoc="api/modules/Antisense",
     )
     aso_fields = next(
-        table.astext()
-        for node in aso_contract
-        for table in node.findall(nodes.table)
+        table.astext() for node in aso_contract for table in node.findall(nodes.table)
     )
     gapmer_fields = next(
         table.astext()

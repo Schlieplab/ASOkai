@@ -213,6 +213,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "KffFile",
         "OutputPathTemplate",
         "Runnable",
+        "FromRun",
         "RunSpec",
         "ScalarParam",
         "Step",
@@ -446,7 +447,9 @@ def test_analysis_plugin_contract_is_validated(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="concrete PerUnitAnalysis or BatchAnalysis subclass"):
+    with pytest.raises(
+        ValueError, match="concrete PerUnitAnalysis or BatchAnalysis subclass"
+    ):
         pipeline_catalog.get_steps()
 
 

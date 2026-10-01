@@ -8,6 +8,7 @@ License: LGPL-3.0-or-later
 """
 
 import logging
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -55,8 +56,7 @@ def test_cli_logging_prefixes_every_non_empty_line_with_context(caplog):
         rendered = formatter.format(record)
 
     assert rendered == (
-        "[workflow:standard] First line\n\n"
-        "[workflow:standard] Second line"
+        "[workflow:standard] First line\n\n" "[workflow:standard] Second line"
     )
 
 
@@ -109,7 +109,7 @@ def test_internal_cwl_commands_are_not_listed_in_help():
     assert "publish-outputs" not in result.output
 
 
-def test_run_help_uses_configfile_and_config_override_options():
+def test_run_help_uses_configfile_and_scoped_run_options():
     runner = CliRunner()
 
     result = runner.invoke(main, ["run", "--help"])
@@ -120,7 +120,8 @@ def test_run_help_uses_configfile_and_config_override_options():
     assert "--configfile, --config-file FILE" in short_result.output
     assert "--configfile, --config-file FILE" in result.output
     assert "--executor [toil|cwltool]" in result.output
-    assert "--config KEY=VALUE" in result.output
+    assert "--param VALUE" in result.output
+    assert "--config KEY=VALUE" not in result.output
     assert "--non-recursive" in result.output
     assert "--recursive" not in result.output
     assert "--set" not in result.output
@@ -134,6 +135,8 @@ def test_export_help_uses_explicit_recursive_option():
     assert result.exit_code == 0
     assert "--recursive" in result.output
     assert "--non-recursive" not in result.output
+    assert "--param VALUE" in result.output
+    assert "--config KEY=VALUE" not in result.output
 
 
 def test_public_subcommands_accept_short_help():
@@ -191,9 +194,7 @@ def test_verbose_catalog_reveals_internal_steps(monkeypatch):
     public = runner.invoke(main, ["list", "steps"])
     verbose = runner.invoke(main, ["list", "-v", "steps"])
     hidden = runner.invoke(main, ["describe", "step", "download-genome"])
-    described = runner.invoke(
-        main, ["describe", "-v", "step", "download-genome"]
-    )
+    described = runner.invoke(main, ["describe", "-v", "step", "download-genome"])
 
     assert public.exit_code == verbose.exit_code == described.exit_code == 0
     assert "download-genome" not in public.output
@@ -212,11 +213,14 @@ def test_describe_step_create_target_gene_shows_details():
     assert result.exit_code == 0
     assert "Name        : create-target-gene" in result.output
     assert "Type        : Core" in result.output
-    assert "Config keys :" in result.output
-    assert "--config target.target_id" in result.output
-    assert "--config target.region" in result.output
+    assert "Run parameters:" in result.output
+    assert "--param target_id=VALUE" in result.output
+    assert "--param region=VALUE" in result.output
+    assert "config key: parameters.target.target_id" in result.output
+    assert "config key: parameters.target.region" in result.output
     assert "Input configuration (optional):" in result.output
-    assert "--config steps.create-target-gene.inputs.dna.path_override" in result.output
+    assert "steps.create-target-gene.inputs.dna.path_override" in result.output
+    assert "--config " not in result.output
     assert "Dependencies: download-genome" in result.output
 
 
@@ -277,42 +281,21 @@ def test_verbose_describe_step_shows_dependency_tree():
 
     assert result.exit_code == 0
     assert "Type        : Analysis" in result.output
-    assert (
-        "Description : [Per site] Computes nucleotide composition" in result.output
-    )
+    assert "Description : [Per site] Computes nucleotide composition" in result.output
     assert "Dependencies:" in result.output
     assert "`-- create-target-gene" in result.output
     assert "`-- download-genome" in result.output
 
 
-def test_run_config_accepts_repeated_flags(monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(
-        "ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {"target": {"k": 16}}
-    )
-    monkeypatch.setattr(
-        "ASOkai._cli.execution.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(config=config),
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(
+@pytest.mark.parametrize("command", ["run", "export"])
+def test_execution_commands_reject_removed_global_config_option(command):
+    result = CliRunner().invoke(
         main,
-        [
-            "run",
-            "--step",
-            "download-genome",
-            "--config",
-            "target.k=20",
-            "--config",
-            "target.region=exonic",
-        ],
+        [command, "--step", "download-genome", "--config", "parameters.target.k=20"],
     )
 
-    assert result.exit_code == 0
-    assert captured["config"]["target"]["k"] == 20
-    assert captured["config"]["target"]["region"] == "exonic"
+    assert result.exit_code != 0
+    assert "No such option: --config" in result.output
 
 
 def test_run_requires_explicit_runnable_selection():
@@ -351,10 +334,11 @@ def test_run_dry_run_reads_configured_runs_from_yaml(tmp_path, caplog):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         f"datadir: {tmp_path}\n"
-        "genome:\n"
-        "  assembly_id: GRCh38\n"
-        "  ensembl_release: 114\n"
-        "  species: Homo_sapiens\n"
+        "parameters:\n"
+        "  genome:\n"
+        "    assembly_id: GRCh38\n"
+        "    ensembl_release: 114\n"
+        "    species: Homo_sapiens\n"
         "runs:\n"
         "  - step: download-genome\n"
     )
@@ -369,6 +353,39 @@ def test_run_dry_run_reads_configured_runs_from_yaml(tmp_path, caplog):
     assert any("download-genome" in record.message for record in caplog.records)
 
 
+def test_run_dry_run_resolves_cli_run_through_yaml_planner(tmp_path, caplog):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        f"datadir: {tmp_path}\n"
+        "parameters:\n"
+        "  genome:\n"
+        "    assembly_id: GRCh38\n"
+        "    ensembl_release: 114\n"
+        "    species: Homo_sapiens\n",
+        encoding="utf-8",
+    )
+
+    caplog.set_level(logging.INFO)
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            "--configfile",
+            str(config_file),
+            "--step",
+            "download-genome",
+            "--id",
+            "genome",
+            "--param",
+            "release=115",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert any("download-genome" in record.message for record in caplog.records)
+
+
 def test_run_workflow_selects_standard_explicitly(monkeypatch):
     captured = {}
 
@@ -377,6 +394,7 @@ def test_run_workflow_selects_standard_explicitly(monkeypatch):
         "ASOkai._cli.execution.runner.run_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
+            config=config,
             **kwargs,
         ),
     )
@@ -385,7 +403,12 @@ def test_run_workflow_selects_standard_explicitly(monkeypatch):
     result = runner.invoke(main, ["run", "--workflow", "standard"])
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == ["standard"]
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [
+        {"task": "instantiate-target-gene"},
+        {"step": "generate-aso-candidates"},
+        {"step": "intrinsic-features"},
+    ]
     assert captured["executor"].__class__.__name__ == "CwlToolExecutor"
 
 
@@ -395,7 +418,9 @@ def test_run_steps_accepts_repeated_flags(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables, config=config
+        ),
     )
 
     runner = CliRunner()
@@ -411,9 +436,10 @@ def test_run_steps_accepts_repeated_flags(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == [
-        "download-genome",
-        "create-target-gene",
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [
+        {"step": "download-genome"},
+        {"step": "create-target-gene"},
     ]
 
 
@@ -423,7 +449,9 @@ def test_run_resolves_task_selection(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
-        lambda runnables, config, **kwargs: captured.update(runnables=runnables),
+        lambda runnables, config, **kwargs: captured.update(
+            runnables=runnables, config=config
+        ),
     )
 
     runner = CliRunner()
@@ -433,7 +461,164 @@ def test_run_resolves_task_selection(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == ["instantiate-target-gene"]
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [{"task": "instantiate-target-gene"}]
+
+
+@pytest.mark.parametrize("command", ["run", "export"])
+def test_cli_run_options_match_ordered_yaml_declarations(
+    monkeypatch, tmp_path, command
+):
+    captured = {}
+    catalog = SimpleNamespace(
+        steps={"create-target-gene": object(), "generate-aso-candidates": object()},
+        tasks={"compare-regions": object()},
+        workflows={},
+        config_schema_paths={},
+    )
+    monkeypatch.setattr("ASOkai._cli.execution.get_pipeline_catalog", lambda: catalog)
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path: {"datadir": str(tmp_path), "parameters": {"target": {"k": 16}}},
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda runnables, config, **_kwargs: captured.update(
+            runnables=runnables, config=config
+        ),
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.export_all",
+        lambda runnables, config, **_kwargs: captured.update(
+            runnables=runnables, config=config
+        )
+        or tmp_path / "export",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            command,
+            "--step",
+            "create-target-gene",
+            "--id",
+            "reference-gene",
+            "--param",
+            "region=pre-mrna",
+            "--step",
+            "generate-aso-candidates",
+            "--id",
+            "candidates",
+            "--from-run",
+            "target_gene=reference-gene.target_gene",
+            "--task",
+            "compare-regions",
+            "--id",
+            "comparison",
+            "--param",
+            "k=21",
+            "--child",
+            "transcriptomic",
+            "--param",
+            "k=18",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["runnables"] == []
+    assert captured["config"]["parameters"]["target"] == {"k": 16}
+    assert captured["config"]["runs"] == [
+        {
+            "step": "create-target-gene",
+            "id": "reference-gene",
+            "parameters": {"region": "pre-mrna"},
+        },
+        {
+            "step": "generate-aso-candidates",
+            "id": "candidates",
+            "inputs": {"target_gene": {"from": "run.reference-gene.target_gene"}},
+        },
+        {
+            "task": "compare-regions",
+            "id": "comparison",
+            "parameters": {"k": 21},
+            "runs": [{"id": "transcriptomic", "parameters": {"k": 18}}],
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--param", "k=21"], "must follow --step or --task"),
+        (
+            ["--task", "instantiate-target-gene", "--from-run", "dna=gene.dna"],
+            "requires --child",
+        ),
+        (["--step", "download-genome", "--child", "gene"], "must follow a task"),
+        (
+            ["--step", "download-genome", "--param", "k=21", "--param", "k=18"],
+            "Duplicate --param",
+        ),
+    ],
+)
+def test_cli_rejects_misplaced_run_options(args, message):
+    result = CliRunner().invoke(main, ["run", *args])
+
+    assert result.exit_code != 0
+    assert message in result.output
+
+
+def test_cli_preserves_mixed_selection_order_and_file_input(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda _runnables, config, **_kwargs: captured.update(config=config),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            "--task",
+            "instantiate-target-gene",
+            "--param",
+            "k=21",
+            "--step",
+            "create-target-gene",
+            "--id",
+            "custom",
+            "--input-path",
+            f"dna={tmp_path / 'genome.fa'}",
+            "--step",
+            "download-genome",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "parameters" not in captured["config"]
+    assert captured["config"]["runs"] == [
+        {"task": "instantiate-target-gene", "parameters": {"k": 21}},
+        {
+            "step": "create-target-gene",
+            "id": "custom",
+            "inputs": {"dna": {"path": str(tmp_path / "genome.fa")}},
+        },
+        {"step": "download-genome"},
+    ]
+
+
+def test_cli_rejects_selection_alongside_configured_runs(monkeypatch):
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path: {"runs": [{"step": "download-genome"}]},
+    )
+
+    result = CliRunner().invoke(main, ["run", "--step", "create-target-gene"])
+
+    assert result.exit_code != 0
+    assert "not both" in result.output
 
 
 def test_run_uses_toil_executor_when_requested(monkeypatch):
@@ -506,9 +691,10 @@ def test_export_steps_uses_outdir_and_runner_name(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == [
-        "download-genome",
-        "create-target-gene",
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [
+        {"step": "download-genome"},
+        {"step": "create-target-gene"},
     ]
     assert captured["outdir"] == tmp_path / "exports"
     assert captured["runner_name"] == "toil-cwl-runner"
@@ -526,6 +712,7 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
         "ASOkai._cli.execution.runner.export_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
+            config=config,
             **kwargs,
         )
         or tmp_path / "data" / "jobs" / "asokai-export-1",
@@ -535,7 +722,12 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
     result = runner.invoke(main, ["export", "--workflow", "standard"])
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == ["standard"]
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [
+        {"task": "instantiate-target-gene"},
+        {"step": "generate-aso-candidates"},
+        {"step": "intrinsic-features"},
+    ]
     assert captured["outdir"] is None
     assert captured["recursive"] is False
 
@@ -572,6 +764,7 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
         "ASOkai._cli.execution.runner.export_all",
         lambda runnables, config, **kwargs: captured.update(
             runnables=runnables,
+            config=config,
             **kwargs,
         )
         or tmp_path / "data" / "jobs" / "asokai-export-1",
@@ -581,7 +774,8 @@ def test_export_tasks_resolves_task_selection(monkeypatch, tmp_path):
     result = runner.invoke(main, ["export", "--task", "instantiate-target-gene"])
 
     assert result.exit_code == 0
-    assert [r.name for r in captured["runnables"]] == ["instantiate-target-gene"]
+    assert captured["runnables"] == []
+    assert captured["config"]["runs"] == [{"task": "instantiate-target-gene"}]
 
 
 def test_export_accepts_configured_runs_without_cli_selection(monkeypatch, tmp_path):
@@ -624,7 +818,7 @@ def test_run_rejects_unknown_runnables(option, name, kind):
     assert f"Unknown {kind} '{name}'." in result.output
 
 
-def test_run_config_rejects_malformed_override(monkeypatch):
+def test_run_param_rejects_malformed_override(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {})
 
     runner = CliRunner()
@@ -634,16 +828,16 @@ def test_run_config_rejects_malformed_override(monkeypatch):
             "run",
             "--step",
             "download-genome",
-            "--config",
-            "target.k",
+            "--param",
+            "k",
         ],
     )
 
     assert result.exit_code != 0
-    assert "KEY=VALUE format" in result.output
+    assert "Expected NAME=VALUE" in result.output
 
 
-def test_run_config_reports_invalid_yaml_value(monkeypatch):
+def test_run_param_reports_invalid_yaml_value(monkeypatch):
     monkeypatch.setattr("ASOkai._cli.execution.cfg.load", lambda _path: {})
 
     result = CliRunner().invoke(
@@ -652,20 +846,20 @@ def test_run_config_reports_invalid_yaml_value(monkeypatch):
             "run",
             "--step",
             "download-genome",
-            "--config",
-            "target.k=[",
+            "--param",
+            "k=[",
         ],
     )
 
     assert result.exit_code != 0
-    assert "Invalid value for --config" in result.output
-    assert "invalid YAML value" in result.output
+    assert "Invalid value for --param" in result.output
+    assert "Invalid YAML value" in result.output
 
 
-def test_run_applies_overrides_before_runner_validation(monkeypatch, tmp_path):
+def test_run_keeps_shared_config_when_selecting_cli_runs(monkeypatch, tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        "datadir: .\n" "genome:\n" "  source: ''\n",
+        "datadir: .\n" "parameters:\n" "  genome:\n" "    source: ''\n",
         encoding="utf-8",
     )
     captured = {}
@@ -682,13 +876,12 @@ def test_run_applies_overrides_before_runner_validation(monkeypatch, tmp_path):
             "download-genome",
             "--configfile",
             str(config_path),
-            "--config",
-            "genome.source=ensembl",
         ],
     )
 
     assert result.exit_code == 0
-    assert captured["config"]["genome"]["source"] == "ensembl"
+    assert captured["config"]["parameters"]["genome"]["source"] == ""
+    assert captured["config"]["runs"] == [{"step": "download-genome"}]
 
 
 def test_run_displays_configuration_errors_without_traceback(monkeypatch):
@@ -698,7 +891,9 @@ def test_run_displays_configuration_errors_without_traceback(monkeypatch):
     )
 
     def reject_config(*args, **kwargs):
-        raise ValueError("Invalid configuration:\n- $.target.k: 0 is less than 1")
+        raise ValueError(
+            "Invalid configuration:\n- $.parameters.target.k: 0 is less than 1"
+        )
 
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
@@ -713,7 +908,7 @@ def test_run_displays_configuration_errors_without_traceback(monkeypatch):
 
     assert result.exit_code != 0
     assert "Error: Invalid configuration:" in result.output
-    assert "$.target.k" in result.output
+    assert "$.parameters.target.k" in result.output
     assert "Traceback" not in result.output
 
 
@@ -751,7 +946,9 @@ def test_export_displays_configuration_errors_without_traceback(monkeypatch):
     )
 
     def reject_config(*args, **kwargs):
-        raise ValueError("Invalid configuration:\n- $.target.region: invalid")
+        raise ValueError(
+            "Invalid configuration:\n- $.parameters.target.region: invalid"
+        )
 
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.export_all",
@@ -766,15 +963,16 @@ def test_export_displays_configuration_errors_without_traceback(monkeypatch):
 
     assert result.exit_code != 0
     assert "Error: Invalid configuration:" in result.output
-    assert "$.target.region" in result.output
+    assert "$.parameters.target.region" in result.output
     assert "Traceback" not in result.output
 
 
-def test_run_config_preserves_yaml_scalar_types(monkeypatch):
+def test_run_param_preserves_yaml_scalar_types(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(
-        "ASOkai._cli.execution.cfg.load", lambda _path, **_kwargs: {"target": {}}
+        "ASOkai._cli.execution.cfg.load",
+        lambda _path, **_kwargs: {"parameters": {"target": {}}},
     )
     monkeypatch.setattr(
         "ASOkai._cli.execution.runner.run_all",
@@ -787,20 +985,23 @@ def test_run_config_preserves_yaml_scalar_types(monkeypatch):
         [
             "run",
             "--step",
-            "download-genome",
-            "--config",
-            "target.k=20",
-            "--config",
-            "target.flag=true",
-            "--config",
-            "target.name=null",
+            "create-target-gene",
+            "--param",
+            "k=20",
+            "--param",
+            "flag=true",
+            "--param",
+            "name=null",
         ],
     )
 
     assert result.exit_code == 0
-    assert captured["config"]["target"]["k"] == 20
-    assert captured["config"]["target"]["flag"] is True
-    assert captured["config"]["target"]["name"] is None
+    assert captured["config"]["runs"] == [
+        {
+            "step": "create-target-gene",
+            "parameters": {"k": 20, "flag": True, "name": None},
+        }
+    ]
 
 
 def test_step_command_dispatches_to_builtin_step(monkeypatch):

@@ -34,25 +34,23 @@ def _write_target_gene(path, target) -> None:
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
@@ -81,25 +79,23 @@ def test_step_contract_and_dependency(step):
     assert step.name == "generate-aso-candidates"
     assert step.dependencies == ["create-target-gene"]
     assert (
-        step.spec.input("target_gene").source
-        is CreateTargetGeneStep.target_gene_output
+        step.spec.input("target_gene").source is CreateTargetGeneStep.target_gene_output
     )
     assert isinstance(step.spec.input("target_gene"), FileInput)
     assert isinstance(GenerateASOCandidatesStep.target_gene_input.file_type, JsonFile)
     assert (
-        GenerateASOCandidatesStep.target_gene_input.file_type.value_type
-        is TargetGene
+        GenerateASOCandidatesStep.target_gene_input.file_type.value_type is TargetGene
     )
 
 
 def test_config_and_input_mapping(step):
     assert step.config_map == {
-        "k": "target.k",
-        "design": "antisense.design.type",
-        "left_wing_length": "antisense.design.left_wing_length",
-        "gap_length": "antisense.design.gap_length",
-        "right_wing_length": "antisense.design.right_wing_length",
-        "mechanism": "antisense.mechanism",
+        "k": "parameters.target.k",
+        "design": "parameters.antisense.design.type",
+        "left_wing_length": "parameters.antisense.design.left_wing_length",
+        "gap_length": "parameters.antisense.design.gap_length",
+        "right_wing_length": "parameters.antisense.design.right_wing_length",
+        "mechanism": "parameters.antisense.mechanism",
     }
     assert step.target_gene_input.configuration_path(step.name) == (
         "steps.generate-aso-candidates.inputs.target_gene"
@@ -133,14 +129,13 @@ def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
 
 
 def test_output_path_uses_supplied_target_name(step, config, tmp_path):
-    config["target"]["target_name"] = "KRAS"
-    del config["target"]["target_id"]
+    config["parameters"]["target"]["target_name"] = "KRAS"
+    del config["parameters"]["target"]["target_id"]
 
     paths = _run(step, config, tmp_path).output_paths()
 
     assert paths["therapeutics"].name == (
-        "KRAS_k16_pre-mrna_aso_gapmer_l3_g10_r3_"
-        "rnase-h1_therapeutics.json"
+        "KRAS_k16_pre-mrna_aso_gapmer_l3_g10_r3_" "rnase-h1_therapeutics.json"
     )
     assert paths["bindings"].name == (
         "KRAS_k16_pre-mrna_aso_gapmer_l3_g10_r3_rnase-h1_bindings.json"
@@ -149,7 +144,7 @@ def test_output_path_uses_supplied_target_name(step, config, tmp_path):
 
 
 def test_output_path_supports_unmodified_asos(step, config, tmp_path):
-    config["antisense"]["design"] = {"type": "unmodified"}
+    config["parameters"]["antisense"]["design"] = {"type": "unmodified"}
 
     paths = _run(step, config, tmp_path).output_paths()
 
@@ -165,7 +160,7 @@ def test_output_path_supports_unmodified_asos(step, config, tmp_path):
 
 def test_output_path_identifies_the_gapmer_layout(step, config, tmp_path):
     first = _run(step, config, tmp_path).output_paths()["therapeutics"]
-    config["antisense"]["design"].update(
+    config["parameters"]["antisense"]["design"].update(
         {
             "left_wing_length": 4,
             "gap_length": 8,
@@ -199,8 +194,7 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
         "therapeutics.json"
     )
     assert document["outputs"]["bindings"]["outputBinding"]["glob"] == (
-        "ENSG00000133703_k16_pre-mrna_aso_gapmer_l3_g10_r3_"
-        "rnase-h1_bindings.json"
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_l3_g10_r3_" "rnase-h1_bindings.json"
     )
 
 
@@ -303,40 +297,44 @@ def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
 
     result = GenerateASOCandidatesStep().run_cli(
         [
-            "--k", "16",
-            "--design", "gapmer",
-            "--left-wing-length", "3",
-            "--gap-length", "10",
-            "--right-wing-length", "3",
-            "--mechanism", "rnase-h1",
-            "--target-gene", str(target_input),
-            "--therapeutics-output", str(therapeutics_output),
-            "--bindings-output", str(bindings_output),
+            "--k",
+            "16",
+            "--design",
+            "gapmer",
+            "--left-wing-length",
+            "3",
+            "--gap-length",
+            "10",
+            "--right-wing-length",
+            "3",
+            "--mechanism",
+            "rnase-h1",
+            "--target-gene",
+            str(target_input),
+            "--therapeutics-output",
+            str(therapeutics_output),
+            "--bindings-output",
+            str(bindings_output),
         ]
     )
 
     therapeutic_document = json.loads(therapeutics_output.read_text())
     expected_bindings = [
-        (item["id"], site.id)
-        for item, site in zip(therapeutic_document["root"], sites)
+        (item["id"], site.id) for item, site in zip(therapeutic_document["root"], sites)
     ]
     assert result == 0
     assert list(therapeutic_document["objects"]) == ["MechanismOfAction"]
-    assert [
-        item["mechanism"] for item in therapeutic_document["root"]
-    ] == [{"$ref": "#/objects/MechanismOfAction"}] * 2
-    assert [
-        item["id"] for item in therapeutic_document["root"]
-    ] == [therapeutic_id for therapeutic_id, _ in expected_bindings]
+    assert [item["mechanism"] for item in therapeutic_document["root"]] == [
+        {"$ref": "#/objects/MechanismOfAction"}
+    ] * 2
+    assert [item["id"] for item in therapeutic_document["root"]] == [
+        therapeutic_id for therapeutic_id, _ in expected_bindings
+    ]
 
-    therapeutics = (
-        GenerateASOCandidatesStep.therapeutics_output.file_type.read(
-            therapeutics_output
-        )
+    therapeutics = GenerateASOCandidatesStep.therapeutics_output.file_type.read(
+        therapeutics_output
     )
-    bindings = GenerateASOCandidatesStep.bindings_output.file_type.read(
-        bindings_output
-    )
+    bindings = GenerateASOCandidatesStep.bindings_output.file_type.read(bindings_output)
     assert therapeutics[0].mechanism is therapeutics[1].mechanism
     assert [
         (binding.first_id, binding.second_id) for binding in bindings
@@ -555,6 +553,6 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
                 "--bindings-output",
                 str(tmp_path / "bindings.json"),
             ]
-    )
+        )
     assert error.value.code == 2
     assert "does not match the TargetGene schema" in capsys.readouterr().err

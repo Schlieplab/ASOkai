@@ -27,12 +27,18 @@ from ASOkai._pipeline.contracts.execution import (
 )
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
-from ASOkai._pipeline.contracts.run_spec import RunSpec
+from ASOkai._pipeline.contracts.run_spec import (
+    RunInput,
+    FromRun,
+    RunSpec,
+    parse_run_input,
+)
 from ASOkai._pipeline.output_receipts import reusable_output_paths
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.tasks.base import (
     Task,
     validate_task_parameter_contract,
+    validate_task_outputs,
     validate_task_runs,
 )
 
@@ -40,18 +46,10 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class _RunOutputReference:
-    """An input link to the output of a named run."""
-
-    request_id: str
-    output_name: str
-
-
-@dataclass(frozen=True)
 class _ExplicitInput:
     """An input selection and its declaration location."""
 
-    source: Path | _RunOutputReference
+    source: RunInput
     location: str
 
 
@@ -291,7 +289,7 @@ class _PlanBuilder:
                     source=explicit.source,
                     selection_path=f"{explicit.location}.path",
                 )
-            producer_request = self.requests[explicit.source.request_id]
+            producer_request = self.requests[explicit.source.run_id]
             try:
                 output = producer_request.step.spec.output(explicit.source.output_name)
             except KeyError as error:
@@ -577,21 +575,16 @@ class _PlanBuilder:
                 if isinstance(source, Path):
                     input_selections[name] = _ExplicitInput(source, location)
                     continue
-                if not isinstance(source, Mapping) or set(source) != {
-                    "from_run",
-                    "output",
-                }:
+                if not isinstance(source, FromRun):
                     raise TypeError(
-                        f"{location} must specify a path or from_run and output."
+                        f"{location} must specify a path or from reference."
                     )
-                producer_id = source["from_run"]
+                producer_id = source.run_id
                 if type(producer_id) is not str or producer_id not in available_ids:
                     raise ValueError(
-                        f"{location}.from_run: unknown named run '{producer_id}'."
+                        f"{location}.from: unknown named run '{producer_id}'."
                     )
-                input_selections[name] = _ExplicitInput(
-                    _RunOutputReference(producer_id, source["output"]), location
-                )
+                input_selections[name] = _ExplicitInput(source, location)
             self._reserve_request(
                 spec.run_id,
                 spec.step,
@@ -645,11 +638,11 @@ class _PlanBuilder:
 def _normalized_inputs(
     step: Step,
     declarations: Mapping[str, Any],
-    named_run_ids: Mapping[str, str],
+    named_outputs: Mapping[str, FromRun],
     location_prefix: str,
-) -> dict[str, Path | dict[str, str]]:
+) -> dict[str, RunInput]:
     """Qualify declared input links for one selected step run."""
-    selections: dict[str, Path | dict[str, str]] = {}
+    selections: dict[str, RunInput] = {}
     declared_inputs = {file_input.name for file_input in step.spec.inputs}
     for name, declaration in declarations.items():
         location = f"{location_prefix}.inputs.{name}"
@@ -657,14 +650,19 @@ def _normalized_inputs(
             raise ValueError(
                 f"{location}: step '{step.name}' has no input with this name."
             )
-        if "path" in declaration:
-            selections[name] = Path(declaration["path"]).resolve()
+        source = parse_run_input(declaration)
+        if isinstance(source, Path):
+            selections[name] = source
             continue
-        run_id = declaration["from_run"]
-        request_id = named_run_ids.get(run_id)
-        if request_id is None:
-            raise ValueError(f"{location}.from_run: unknown named run '{run_id}'.")
-        selections[name] = {"from_run": request_id, "output": declaration["output"]}
+        resolved = named_outputs.get(f"{source.run_id}.{source.output_name}")
+        if resolved is None:
+            if any(key.startswith(f"{source.run_id}.") for key in named_outputs):
+                raise ValueError(
+                    f"{location}.from: run '{source.run_id}' has no output "
+                    f"'{source.output_name}'."
+                )
+            raise ValueError(f"{location}.from: unknown named run '{source.run_id}'.")
+        selections[name] = resolved
     return selections
 
 
@@ -699,7 +697,7 @@ def _task_run_specs(
     prefix: str | None,
     parameters: Mapping[str, Any] | None = None,
     run_overrides: Sequence[Mapping[str, Any]] = (),
-    global_run_ids: Mapping[str, str] | None = None,
+    global_outputs: Mapping[str, FromRun] | None = None,
     *,
     location: str | None = None,
 ) -> list[RunSpec]:
@@ -742,8 +740,14 @@ def _task_run_specs(
             raise ValueError(f"{child_location}.id: duplicate task run '{child_id}'.")
         overrides_by_id[child_id] = (override, child_location)
 
-    available_ids = dict(global_run_ids or {})
-    available_ids.update(named_run_ids)
+    local_outputs = {
+        f"{run.run_id}.{output.name}": FromRun(
+            named_run_ids[run.run_id], output.name
+        )
+        for run in runs
+        for output in run.step.spec.outputs
+    }
+    available_outputs = {**(global_outputs or {}), **local_outputs}
     result: list[RunSpec] = []
     for run in runs:
         override, child_location = overrides_by_id.get(
@@ -781,12 +785,22 @@ def _task_run_specs(
         inputs = _normalized_inputs(
             run.step,
             run.inputs,
-            named_run_ids,
+            local_outputs,
             f"task[{task.name}].runs[{run.run_id}]",
         )
+        fixed_inputs = set(override.get("inputs", {})) & run.inputs.keys()
+        if fixed_inputs:
+            names = ", ".join(sorted(fixed_inputs))
+            raise ValueError(
+                f"{child_location}.inputs cannot override task-declared "
+                f"input(s): {names}."
+            )
         inputs.update(
             _normalized_inputs(
-                run.step, override.get("inputs", {}), available_ids, child_location
+                run.step,
+                override.get("inputs", {}),
+                available_outputs,
+                child_location,
             )
         )
         result.append(
@@ -835,6 +849,7 @@ def _validated_run_specs(
                 "not both."
             )
         named_run_ids: dict[str, str] = {}
+        named_outputs: dict[str, FromRun] = {}
         selection_ids: set[str] = set()
         for index, declaration in enumerate(config["runs"]):
             if "id" not in declaration:
@@ -845,6 +860,15 @@ def _validated_run_specs(
             selection_ids.add(name)
             if "step" in declaration:
                 named_run_ids[name] = f"runs.{name}"
+                step = registered_steps.get(declaration["step"])
+                if step is None:
+                    raise ValueError(
+                        f"$.runs[{index}].step: unknown step '{declaration['step']}'."
+                    )
+                for output in step.spec.outputs:
+                    named_outputs[f"{name}.{output.name}"] = FromRun(
+                        named_run_ids[name], output.name
+                    )
                 continue
             task_name = declaration["task"]
             if registered_tasks is None:
@@ -855,9 +879,24 @@ def _validated_run_specs(
             if task is None:
                 raise ValueError(f"$.runs[{index}].task: unknown task '{task_name}'.")
             if hasattr(task, "runs"):
-                for child in validate_task_runs(task):
+                task_runs = validate_task_runs(task)
+                for child in task_runs:
                     named_run_ids[f"{name}.{child.run_id}"] = (
                         f"runs.{name}.{child.run_id}"
+                    )
+                    for output in child.step.spec.outputs:
+                        named_outputs[f"{name}.{child.run_id}.{output.name}"] = (
+                            FromRun(
+                                named_run_ids[f"{name}.{child.run_id}"],
+                                output.name,
+                            )
+                        )
+                for alias, reference in validate_task_outputs(
+                    task, {child.run_id: child for child in task_runs}
+                ).items():
+                    named_outputs[f"{name}.{alias}"] = FromRun(
+                        named_run_ids[f"{name}.{reference.run_id}"],
+                        reference.output_name,
                     )
 
         for index, declaration in enumerate(config["runs"]):
@@ -878,7 +917,7 @@ def _validated_run_specs(
                         inputs=_normalized_inputs(
                             step,
                             declaration.get("inputs", {}),
-                            named_run_ids,
+                            named_outputs,
                             f"$.runs[{index}]",
                         ),
                         location=f"$.runs[{index}]",
@@ -900,7 +939,7 @@ def _validated_run_specs(
                     f"runs.{declaration.get('id', index + 1)}",
                     declaration.get("parameters", {}),
                     declaration.get("runs", ()),
-                    named_run_ids,
+                    named_outputs,
                     location=f"$.runs[{index}]",
                 )
             )

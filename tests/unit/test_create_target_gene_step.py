@@ -6,6 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Tests for CreateTargetGeneStep.
 License: LGPL-3.0-or-later
 """
+
 import json
 
 from Bio.Seq import Seq
@@ -23,15 +24,13 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id":   "ENSG00000133703",
-            "k":           16,
-            "region":      "pre-mrna",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
         },
     }
 
@@ -80,8 +79,14 @@ def test_output_paths_structure(step, config, tmp_path):
 def test_output_paths_uses_target_name_fallback(step, tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38", "ensembl_release": 114, "species": "Homo_sapiens"},
-        "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
+        },
     }
     paths = _run(step, config, tmp_path).output_paths()
     expected = (
@@ -98,7 +103,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
 
 def test_output_path_identifies_the_genome_release(step, config, tmp_path):
     first = _run(step, config, tmp_path).output_paths()["target_gene"]
-    config["genome"]["ensembl_release"] = 115
+    config["parameters"]["genome"]["ensembl_release"] = 115
     second = _run(step, config, tmp_path).output_paths()["target_gene"]
 
     assert first != second
@@ -180,16 +185,26 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
 
     result = CreateTargetGeneStep().run_cli(
         [
-            "--target-name", "KRAS",
-            "--k", "16",
-            "--region", "pre-mrna",
-            "--dna", str(tmp_path / "dna.fa.gz"),
-            "--cdna", str(tmp_path / "cdna.fa.gz"),
-            "--annotation", str(tmp_path / "annotation.gtf.gz"),
-            "--db", str(tmp_path / "annotation.gtf.db"),
-            "--assembly", "GRCh38",
-            "--species", "Homo_sapiens",
-            "--target-gene-output", str(output),
+            "--target-name",
+            "KRAS",
+            "--k",
+            "16",
+            "--region",
+            "pre-mrna",
+            "--dna",
+            str(tmp_path / "dna.fa.gz"),
+            "--cdna",
+            str(tmp_path / "cdna.fa.gz"),
+            "--annotation",
+            str(tmp_path / "annotation.gtf.gz"),
+            "--db",
+            str(tmp_path / "annotation.gtf.db"),
+            "--assembly",
+            "GRCh38",
+            "--species",
+            "Homo_sapiens",
+            "--target-gene-output",
+            str(output),
         ]
     )
 

@@ -37,10 +37,11 @@ def sample_config(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "datadir: ./data\n"
-        "genome:\n"
-        "  assembly_id: GRCh38\n"
-        "  ensembl_release: 114\n"
-        "  species: Homo_sapiens\n"
+        "parameters:\n"
+        "  genome:\n"
+        "    assembly_id: GRCh38\n"
+        "    ensembl_release: 114\n"
+        "    species: Homo_sapiens\n"
     )
     return config_file
 
@@ -48,7 +49,7 @@ def sample_config(tmp_path):
 def test_load_reads_a_yaml_mapping(sample_config):
     config = cfg.load(sample_config)
     assert config["datadir"] == "./data"
-    assert config["genome"]["assembly_id"] == "GRCh38"
+    assert config["parameters"]["genome"]["assembly_id"] == "GRCh38"
 
 
 @pytest.mark.parametrize(
@@ -70,11 +71,16 @@ def test_load_reads_a_yaml_mapping(sample_config):
         [
             {
                 "step": "download-genome",
+                "inputs": {"reference": {"from_run": "named", "output": "reference"}},
+            }
+        ],
+        [
+            {
+                "step": "download-genome",
                 "inputs": {
                     "reference": {
                         "path": "a.fa",
-                        "from_run": "named",
-                        "output": "reference",
+                        "from": "run.named.reference",
                     }
                 },
             }
@@ -108,9 +114,7 @@ def test_config_schema_accepts_task_and_child_run_overrides(tmp_path):
                         {
                             "id": "gene",
                             "parameters": {"region": "exonic"},
-                            "inputs": {
-                                "source": {"from_run": "reference", "output": "result"}
-                            },
+                            "inputs": {"source": {"from": "run.reference.result"}},
                         }
                     ],
                 }
@@ -118,6 +122,43 @@ def test_config_schema_accepts_task_and_child_run_overrides(tmp_path):
         },
         plugin_schema_paths={},
     )
+
+
+def test_config_schema_accepts_shared_parameters_and_from_inputs(tmp_path):
+    cfg.validate_config_schema(
+        {
+            "datadir": str(tmp_path),
+            "parameters": {
+                "genome": {
+                    "assembly_id": "GRCh38",
+                    "ensembl_release": 114,
+                    "species": "Homo_sapiens",
+                },
+                "target": {"target_name": "KRAS", "k": 21},
+            },
+            "validation": {"existing_outputs": "signature"},
+            "resources": {"default": {"n_threads": 2}},
+            "runs": [
+                {"step": "create-target-gene", "id": "gene"},
+                {
+                    "step": "intrinsic-features",
+                    "inputs": {"target_gene": {"from": "run.gene.target_gene"}},
+                },
+            ],
+        },
+        plugin_schema_paths={},
+    )
+
+
+def test_config_schema_rejects_legacy_root_parameter_group(tmp_path):
+    with pytest.raises(ValueError, match="move this group under parameters.target"):
+        cfg.validate_config_schema(
+            {
+                "datadir": str(tmp_path),
+                "target": {"target_name": "KRAS"},
+            },
+            plugin_schema_paths={},
+        )
 
 
 @pytest.mark.parametrize("content", ["", "- one\n- two\n"])
@@ -161,26 +202,26 @@ def test_resolve_top_level(sample_config):
 
 def test_resolve_nested(sample_config):
     config = cfg.load(sample_config)
-    assert cfg.resolve(config, "genome.assembly_id") == "GRCh38"
-    assert cfg.resolve(config, "genome.ensembl_release") == 114
+    assert cfg.resolve(config, "parameters.genome.assembly_id") == "GRCh38"
+    assert cfg.resolve(config, "parameters.genome.ensembl_release") == 114
 
 
 def test_resolve_missing_key(sample_config):
     config = cfg.load(sample_config)
-    with pytest.raises(KeyError, match="genome.nonexistent"):
-        cfg.resolve(config, "genome.nonexistent")
+    with pytest.raises(KeyError, match="parameters.genome.nonexistent"):
+        cfg.resolve(config, "parameters.genome.nonexistent")
 
 
 def test_apply_overrides(sample_config):
     config = cfg.load(sample_config)
-    cfg.apply_overrides(config, {"genome.ensembl_release": 115})
-    assert config["genome"]["ensembl_release"] == 115
+    cfg.apply_overrides(config, {"parameters.genome.ensembl_release": 115})
+    assert config["parameters"]["genome"]["ensembl_release"] == 115
 
 
 def test_apply_overrides_new_key(sample_config):
     config = cfg.load(sample_config)
-    cfg.apply_overrides(config, {"genome.new_key": "value"})
-    assert config["genome"]["new_key"] == "value"
+    cfg.apply_overrides(config, {"parameters.genome.new_key": "value"})
+    assert config["parameters"]["genome"]["new_key"] == "value"
 
 
 def test_apply_overrides_rejects_scalar_parent(sample_config):
@@ -189,13 +230,15 @@ def test_apply_overrides_rejects_scalar_parent(sample_config):
     with pytest.raises(ValueError, match="cannot descend.*assembly_id"):
         cfg.apply_overrides(
             config,
-            {"genome.assembly_id.version": 2},
+            {"parameters.genome.assembly_id.version": 2},
         )
 
 
 def test_schema_validation_is_separate_from_loading(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("datadir: ./data\n" "genome:\n" "  source: ''\n")
+    path.write_text(
+        "datadir: ./data\n" "parameters:\n" "  genome:\n" "    source: ''\n"
+    )
 
     config = cfg.load(path)
 
@@ -229,10 +272,12 @@ def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
     cfg.validate_config_schema(
         {
             "datadir": str(tmp_path),
-            "antisense": {
-                "modality": "sirna",
-                "mechanism": "risc",
-                "design": {"type": "custom"},
+            "parameters": {
+                "antisense": {
+                    "modality": "sirna",
+                    "mechanism": "risc",
+                    "design": {"type": "custom"},
+                }
             },
         }
     )
@@ -241,21 +286,19 @@ def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
 def test_selected_step_rejects_an_unsupported_design(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {"type": "custom"},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {"type": "custom"},
+            },
         },
     }
 
@@ -272,21 +315,19 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
 def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {"type": "unmodified"},
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {"type": "unmodified"},
+            },
         },
     }
 
@@ -300,16 +341,14 @@ def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
 def test_aso_step_rejects_a_different_modality(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "sirna",
-            "mechanism": "rnase-h1",
-            "design": {"type": "unmodified"},
+        "parameters": {
+            "genome": {"assembly_id": "GRCh38"},
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "sirna",
+                "mechanism": "rnase-h1",
+                "design": {"type": "unmodified"},
+            },
         },
     }
 
@@ -450,19 +489,21 @@ def test_validate_step_config_requires_selected_step_parameters(tmp_path):
         )
 
     message = str(raised.value)
-    assert "$.genome.assembly_id" in message
-    assert "$.genome.ensembl_release" in message
-    assert "$.genome.species" in message
-    assert "$.genome.source" not in message
+    assert "$.parameters.genome.assembly_id" in message
+    assert "$.parameters.genome.ensembl_release" in message
+    assert "$.parameters.genome.species" in message
+    assert "$.parameters.genome.source" not in message
 
 
 def test_config_schema_reports_all_errors(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "",
-            "ensembl_release": 0,
-            "species": "Homo_sapiens",
+        "parameters": {
+            "genome": {
+                "assembly_id": "",
+                "ensembl_release": 0,
+                "species": "Homo_sapiens",
+            }
         },
     }
 
@@ -470,8 +511,8 @@ def test_config_schema_reports_all_errors(tmp_path):
         cfg.validate_config_schema(config)
 
     message = str(raised.value)
-    assert "$.genome.assembly_id" in message
-    assert "$.genome.ensembl_release" in message
+    assert "$.parameters.genome.assembly_id" in message
+    assert "$.parameters.genome.ensembl_release" in message
 
 
 def test_config_schema_requires_one_target_identifier(
@@ -479,20 +520,19 @@ def test_config_schema_requires_one_target_identifier(
 ):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "k": 16,
-            "region": "pre-mrna",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "species": "Homo_sapiens",
+            },
+            "target": {"k": 16, "region": "pre-mrna"},
         },
     }
 
     with pytest.raises(
         ValueError,
-        match=r"exactly one.*target.target_id, target.target_name",
+        match=r"exactly one.*target_id, target_name",
     ):
         cfg.validate_config_schema(config)
 
@@ -500,15 +540,12 @@ def test_config_schema_requires_one_target_identifier(
 def test_config_schema_rejects_two_target_identifiers(tmp_path):
     with pytest.raises(
         ValueError,
-        match=r"exactly one.*target.target_id, target.target_name",
+        match=r"exactly one.*target_id, target_name",
     ):
         cfg.validate_config_schema(
             {
                 "datadir": str(tmp_path),
-                "target": {
-                    "target_id": "ENSG1",
-                    "target_name": "KRAS",
-                },
+                "parameters": {"target": {"target_id": "ENSG1", "target_name": "KRAS"}},
             }
         )
 
@@ -523,13 +560,15 @@ def test_config_schema_rejects_invalid_gapmer_segment_lengths(field, value):
         cfg.validate_config_schema(
             {
                 "datadir": ".",
-                "antisense": {
-                    "design": {
-                        "type": "gapmer",
-                        "left_wing_length": 3,
-                        "gap_length": 10,
-                        "right_wing_length": 3,
-                        field: value,
+                "parameters": {
+                    "antisense": {
+                        "design": {
+                            "type": "gapmer",
+                            "left_wing_length": 3,
+                            "gap_length": 10,
+                            "right_wing_length": 3,
+                            field: value,
+                        }
                     }
                 },
             }
@@ -551,10 +590,7 @@ def test_config_schema_requires_every_gapmer_segment_length(missing_field):
 
     with pytest.raises(ValueError, match=rf"antisense.design.*{missing_field}"):
         cfg.validate_config_schema(
-            {
-                "datadir": ".",
-                "antisense": {"design": design},
-            }
+            {"datadir": ".", "parameters": {"antisense": {"design": design}}}
         )
 
 
@@ -563,11 +599,8 @@ def test_config_schema_rejects_gapmer_lengths_for_unmodified_aso():
         cfg.validate_config_schema(
             {
                 "datadir": ".",
-                "antisense": {
-                    "design": {
-                        "type": "unmodified",
-                        "gap_length": 10,
-                    }
+                "parameters": {
+                    "antisense": {"design": {"type": "unmodified", "gap_length": 10}}
                 },
             }
         )
@@ -578,20 +611,18 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
 ):
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
-        "target": {
-            "target_id": "ENSG1",
-            "k": 18,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {"assembly_id": "GRCh38"},
+            "target": {"target_id": "ENSG1", "k": 18, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
@@ -624,29 +655,23 @@ def test_validate_step_config_rejects_invalid_override_path(
         override.mkdir()
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
         "steps": {
             "generate-aso-candidates": {
-                "inputs": {
-                    "target_gene": {
-                        "path_override": str(override),
-                    },
-                },
-            },
+                "inputs": {"target_gene": {"path_override": str(override)}}
+            }
         },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {"assembly_id": "GRCh38"},
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
@@ -663,27 +688,23 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
     override.write_text("{not-json")
     config = {
         "datadir": str(tmp_path),
-        "genome": {"assembly_id": "GRCh38"},
-        "target": {
-            "target_id": "ENSG1",
-            "k": 16,
-            "region": "pre-mrna",
-        },
         "steps": {
             "generate-aso-candidates": {
-                "inputs": {
-                    "target_gene": {"path_override": str(override)},
-                },
-            },
+                "inputs": {"target_gene": {"path_override": str(override)}}
+            }
         },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {"assembly_id": "GRCh38"},
+            "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
@@ -737,10 +758,12 @@ def test_validate_step_config_rejects_datadir_file(tmp_path):
         cfg.validate_step_config(
             {
                 "datadir": str(datadir),
-                "genome": {
-                    "assembly_id": "GRCh38",
-                    "ensembl_release": 114,
-                    "species": "Homo_sapiens",
+                "parameters": {
+                    "genome": {
+                        "assembly_id": "GRCh38",
+                        "ensembl_release": 114,
+                        "species": "Homo_sapiens",
+                    }
                 },
             },
             [DownloadGenomeStep()],

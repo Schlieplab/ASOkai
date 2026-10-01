@@ -40,11 +40,13 @@ from ASOkai._pipeline.workflows.standard import StandardWorkflow
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            }
         },
     }
 
@@ -108,8 +110,10 @@ def test_runner_skips_execution_when_outputs_exist(config, tmp_path, caplog):
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
         result = _run_download(config)
         mock_run.assert_not_called()
-    assert caplog.records[-1].getMessage().startswith(
-        "[run] Nothing to run; all outputs already exist"
+    assert (
+        caplog.records[-1]
+        .getMessage()
+        .startswith("[run] Nothing to run; all outputs already exist")
     )
     assert set(result) == {
         "download-genome.dna",
@@ -134,7 +138,9 @@ def test_dry_run_returns_outputs_without_executing(config):
 
 
 def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
     caplog.set_level(logging.INFO)
 
     _run_download(config, force=True, executor=executor)
@@ -152,12 +158,8 @@ def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
     inputs = yaml.safe_load(job_path.read_text())
     assert inputs["download-genome.assembly"] == "GRCh38"
     paths = _step_run(DownloadGenomeStep(), config).output_paths()
-    assert all(paths[name].exists() for name in (
-        "dna", "cdna", "annotation", "db"
-    ))
-    assert "[run] Running 1 step" in [
-        record.getMessage() for record in caplog.records
-    ]
+    assert all(paths[name].exists() for name in ("dna", "cdna", "annotation", "db"))
+    assert "[run] Running 1 step" in [record.getMessage() for record in caplog.records]
     completion = caplog.records[-1].getMessage()
     assert completion.startswith("[run] Completed successfully")
     assert "\n\n[run] Outputs:" in completion
@@ -185,17 +187,21 @@ def test_runner_records_producer_validation_without_revalidating_publication(
 ):
     run = _step_run(DownloadGenomeStep(), config)
 
-    with patch.object(
-        StepRun,
-        "require_output_files",
-        return_value=run.output_paths(),
-    ) as require_outputs, patch.object(
-        StepRun,
-        "validate_output_files",
-    ) as validate_outputs, patch.object(
-        runner,
-        "record_validated_outputs",
-    ) as record_outputs:
+    with (
+        patch.object(
+            StepRun,
+            "require_output_files",
+            return_value=run.output_paths(),
+        ) as require_outputs,
+        patch.object(
+            StepRun,
+            "validate_output_files",
+        ) as validate_outputs,
+        patch.object(
+            runner,
+            "record_validated_outputs",
+        ) as record_outputs,
+    ):
         runner._record_published_outputs((run,))
 
     require_outputs.assert_called_once_with()
@@ -204,8 +210,10 @@ def test_runner_records_producer_validation_without_revalidating_publication(
 
 
 def test_runner_rejects_unsupported_download_source(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
-    config["genome"]["source"] = "ucsc"
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
+    config["parameters"]["genome"]["source"] = "ucsc"
 
     with pytest.raises(ValueError, match=r"genome.source.*ensembl"):
         _run_download(
@@ -299,32 +307,31 @@ def test_non_recursive_run_rejects_missing_dependency(config, monkeypatch):
 def workflow_config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "design": {
-                "type": "gapmer",
-                "left_wing_length": 3,
-                "gap_length": 10,
-                "right_wing_length": 3,
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": "aso",
+                "mechanism": "rnase-h1",
+                "design": {
+                    "type": "gapmer",
+                    "left_wing_length": 3,
+                    "gap_length": 10,
+                    "right_wing_length": 3,
+                },
             },
         },
     }
 
 
 def test_multiple_selected_steps_share_one_run_report_context(
-    workflow_config, caplog,
+    workflow_config,
+    caplog,
 ):
     caplog.set_level(logging.INFO)
     executor = _materializing_executor(
@@ -347,11 +354,7 @@ def test_multiple_selected_steps_share_one_run_report_context(
     assert "[run] Outputs:" in completion
     assert "download-genome.dna" in completion
     assert "create-target-gene.target_gene" in completion
-    assert all(
-        line.startswith("[run] ")
-        for line in completion.splitlines()
-        if line
-    )
+    assert all(line.startswith("[run] ") for line in completion.splitlines() if line)
 
 
 def test_workflow_dry_run_reports_resources_without_executing(
@@ -378,10 +381,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     )
     assert "[run] Dry run: 4 steps would execute:" in report
     assert "[run]   4. intrinsic-features" in report
-    assert (
-        "[run]      Resources:\n"
-        "[run]        threads: 4"
-    ) in report
+    assert ("[run]      Resources:\n" "[run]        threads: 4") in report
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):
@@ -412,8 +412,8 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert (export_dir / "run.cwl").exists()
     assert (export_dir / "publish.cwl").exists()
     assert (export_dir / "output-layout.yml").exists()
-    assert (export_dir / "steps" / "download-genome.cwl").exists()
-    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    assert (export_dir / "steps" / "instantiate-target-gene.genome.cwl").exists()
+    assert (export_dir / "steps" / "instantiate-target-gene.gene.cwl").exists()
     assert (export_dir / "job.yml").exists()
     assert (export_dir / "README.md").exists()
     assert "class: Workflow" in (export_dir / "run.cwl").read_text()
@@ -424,10 +424,10 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert "Alternative runner" not in readme
 
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["download-genome.assembly"] == "GRCh38"
-    assert job["download-genome.release"] == 114
-    assert job["create-target-gene.target_id"] == "ENSG00000133703"
-    assert "create-target-gene.target_gene_output" not in job
+    assert job["instantiate-target-gene.genome.assembly"] == "GRCh38"
+    assert job["instantiate-target-gene.genome.release"] == 114
+    assert job["instantiate-target-gene.gene.target_id"] == "ENSG00000133703"
+    assert "instantiate-target-gene.gene.target_gene_output" not in job
 
 
 def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_path):
@@ -491,7 +491,7 @@ def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
         "runs": [
             {
                 "step": consumer.name,
-                "inputs": {"input": {"from_run": "source", "output": "result"}},
+                "inputs": {"input": {"from": "run.source.result"}},
             },
             {"id": "source", "step": source.name},
         ],
@@ -623,9 +623,7 @@ def test_export_does_not_require_input_override_to_exist(
     )
 
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["create-target-gene.dna"]["path"] == str(
-        missing_override.resolve()
-    )
+    assert job["create-target-gene.dna"]["path"] == str(missing_override.resolve())
 
 
 def test_task_dry_run_returns_requested_outputs(workflow_config):
@@ -639,13 +637,13 @@ def test_task_dry_run_returns_requested_outputs(workflow_config):
     )
 
     assert set(result) == {
-        "download-genome.dna",
-        "download-genome.cdna",
-        "download-genome.annotation",
-        "download-genome.db",
-        "create-target-gene.target_gene",
+        "instantiate-target-gene.genome.dna",
+        "instantiate-target-gene.genome.cdna",
+        "instantiate-target-gene.genome.annotation",
+        "instantiate-target-gene.genome.db",
+        "instantiate-target-gene.gene.target_gene",
     }
-    assert result["create-target-gene.target_gene"] == (
+    assert result["instantiate-target-gene.gene.target_gene"] == (
         Path(workflow_config["datadir"])
         / "GRCh38"
         / "ensembl"
@@ -681,9 +679,7 @@ def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
     )
 
     assert result == {
-        "create-target-gene.target_gene": plan.goals[0].output_paths()[
-            "target_gene"
-        ]
+        "create-target-gene.target_gene": plan.goals[0].output_paths()["target_gene"]
     }
     executor.run.assert_not_called()
 
@@ -699,25 +695,21 @@ def test_dry_run_groups_parameters_and_qualified_inputs(workflow_config, caplog)
     )
 
     report = caplog.records[-1].getMessage()
-    assert report.startswith(
-        "[run] Dry run: 2 steps would execute:"
-    )
+    assert report.startswith("[run] Dry run: 2 steps would execute:")
     assert (
-        "\n[run]   1. download-genome\n"
+        "\n[run]   1. instantiate-target-gene.genome (download-genome)\n"
         "[run]      Parameters:"
     ) in report
     assert "[run]        assembly: GRCh38" in report
     assert "target_name" not in report
     assert (
-        "\n[run]   2. create-target-gene\n"
+        "\n[run]   2. instantiate-target-gene.gene (create-target-gene)\n"
         "[run]      Parameters:"
     ) in report
     assert "[run]      Inputs:" in report
     assert (
-        "[run]        dna        "
-        "<- download-genome.dna"
+        "[run]        dna        " "<- instantiate-target-gene.genome.dna"
     ) in report
     assert (
-        "[run]        annotation "
-        "<- download-genome.annotation"
+        "[run]        annotation " "<- instantiate-target-gene.genome.annotation"
     ) in report

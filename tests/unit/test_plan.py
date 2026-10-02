@@ -697,6 +697,40 @@ def test_top_level_run_can_link_to_named_task_child(config):
     assert binding.run.run_id == "runs.analysis.right_source"
 
 
+def test_task_without_public_outputs_allows_child_output_links(config):
+    task_with_outputs, source, consumer = _make_named_task()
+    task_type = type(
+        "_TaskWithoutPublicOutputs",
+        (Task,),
+        {
+            "name": "task-without-public-outputs",
+            "description": "Exposes only child run outputs.",
+            "runs": getattr(task_with_outputs, "runs"),
+        },
+    )
+    task = task_type()
+    config["source"] = {"mode": "shared"}
+    config["runs"] = [
+        {"task": task.name, "id": "analysis"},
+        {
+            "step": consumer.name,
+            "inputs": {"input": {"from": "run.analysis.right_source.result"}},
+        },
+    ]
+
+    plan = build_plan(
+        [],
+        config,
+        _registry={source.name: source, consumer.name: consumer},
+        _tasks={task.name: task},
+    )
+
+    assert not hasattr(task, "outputs")
+    selected = plan.goals[-1].inputs[0].source
+    assert isinstance(selected, StepRunOutput)
+    assert selected.run.run_id == "runs.analysis.right_source"
+
+
 @pytest.mark.parametrize("export", [False, True])
 def test_from_reference_resolves_public_task_output_declared_later(config, export):
     task, source, consumer = _make_named_task()

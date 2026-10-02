@@ -16,6 +16,12 @@ interface.
 
 .. toctree::
    :maxdepth: 2
+   :caption: Analyses
+
+   analyses/index
+
+.. toctree::
+   :maxdepth: 2
    :caption: Pipeline Reference
 
    steps/index

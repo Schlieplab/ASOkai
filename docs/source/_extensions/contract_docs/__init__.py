@@ -24,8 +24,10 @@ from .steps import (
     build_step_reference,
 )
 from .runnables import (
+    ASOkaiAnalysisList,
     ASOkaiRunnableList,
     ASOkaiRunnableReference,
+    build_analysis_list,
     build_runnable_list,
     build_runnable_reference,
     get_built_in_runnable,
@@ -33,10 +35,12 @@ from .runnables import (
 )
 
 __all__ = [
+    "ASOkaiAnalysisList",
     "ASOkaiRunnableList",
     "ASOkaiRunnableReference",
     "ASOkaiStepList",
     "ASOkaiStepReference",
+    "build_analysis_list",
     "build_runnable_list",
     "build_runnable_reference",
     "build_step_list",
@@ -53,6 +57,7 @@ __all__ = [
 
 def setup(app):
     """Register ASOkai's generated reference directives with Sphinx."""
+    app.add_directive("asokai-analysis-list", ASOkaiAnalysisList)
     app.add_directive("asokai-runnable-list", ASOkaiRunnableList)
     app.add_directive("asokai-runnable-reference", ASOkaiRunnableReference)
     app.add_directive("asokai-step-list", ASOkaiStepList)

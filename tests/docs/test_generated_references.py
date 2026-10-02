@@ -26,6 +26,7 @@ sys.path.insert(
 )
 
 from contract_docs import (  # noqa: E402
+    build_analysis_list,
     build_runnable_list,
     build_runnable_reference,
     build_step_list,
@@ -50,6 +51,9 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
 from ASOkai._pipeline.steps.utils.base import UtilityStep  # noqa: E402
+from ASOkai._pipeline.tasks.index_target_gene import (  # noqa: E402
+    IndexTargetGeneTask,
+)
 from ASOkai.Antisense import (  # noqa: E402
     ASO,
     AntisenseTherapeutic,
@@ -119,6 +123,29 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
             link["reftarget"] for link in generated_list.findall(addnodes.pending_xref)
         ]
         assert generated_targets == expected_targets
+
+
+def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
+    from ASOkai._pipeline import catalog
+
+    class ExampleAnalysisTask(IndexTargetGeneTask):
+        name = "example-analysis-task"
+        description = "Example composed analysis."
+        category = "analysis"
+
+    monkeypatch.setattr(
+        catalog,
+        "_BUILTIN_TASKS",
+        (*catalog._BUILTIN_TASKS, ExampleAnalysisTask()),
+    )
+    index = build_analysis_list()
+    targets = [
+        link["reftarget"] for link in index.findall(addnodes.pending_xref)
+    ]
+
+    assert "/steps/intrinsic-features" in targets
+    assert "/tasks/example-analysis-task" in targets
+    assert "/tasks/index-target-gene" not in targets
 
 
 def test_generated_references_track_their_content_sources(tmp_path) -> None:

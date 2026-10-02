@@ -104,6 +104,32 @@ def build_runnable_list(kind: str, *, refdoc: str = "") -> nodes.bullet_list:
     return result
 
 
+def build_analysis_list(*, refdoc: str = "") -> nodes.bullet_list:
+    """List built-in analysis steps and explicitly categorized analysis tasks."""
+    from ASOkai._pipeline.catalog import _BUILTIN_STEPS, _BUILTIN_TASKS
+    from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+
+    analyses: list[Any] = [
+        step
+        for step in _BUILTIN_STEPS
+        if isinstance(step, AnalysisStep) and step.listed
+    ]
+    analyses.extend(
+        task
+        for task in _BUILTIN_TASKS
+        if getattr(task, "category", None) == "analysis"
+    )
+    result = nodes.bullet_list()
+    for runnable in sorted(analyses, key=lambda item: item.name):
+        item = nodes.list_item()
+        paragraph = nodes.paragraph()
+        paragraph += _runnable_link(runnable, refdoc=refdoc)
+        paragraph += nodes.Text(f" ({_runnable_kind(runnable)}) — {runnable.description}")
+        item += paragraph
+        result += item
+    return result
+
+
 def _identity(kind: str) -> nodes.field_list:
     identity = nodes.field_list()
     field = nodes.field()
@@ -269,6 +295,18 @@ class ASOkaiRunnableList(SphinxDirective):
             ]
         except ValueError as error:
             raise self.error(str(error)) from error
+        note_reference_dependencies(
+            self.env,
+            _runnable_documentation_sources(),
+        )
+        return result
+
+
+class ASOkaiAnalysisList(SphinxDirective):
+    """Render one index of built-in analysis steps and analysis tasks."""
+
+    def run(self) -> list[nodes.Node]:
+        result: list[nodes.Node] = [build_analysis_list(refdoc=self.env.docname)]
         note_reference_dependencies(
             self.env,
             _runnable_documentation_sources(),

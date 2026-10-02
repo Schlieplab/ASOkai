@@ -20,7 +20,9 @@ Analysis steps
 --------------
 
 Analysis steps calculate properties of pipeline data and write typed result
-tables. Built-in analysis steps are listed below.
+tables. Built-in analysis steps are listed below. The :doc:`Analyses index
+<../analyses/index>` also includes tasks that compose an analysis from multiple
+steps.
 
 .. asokai-step-list:: analysis
    :descriptions:

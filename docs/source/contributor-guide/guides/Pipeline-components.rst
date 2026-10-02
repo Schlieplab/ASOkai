@@ -208,8 +208,10 @@ For a fixed input file, use ``Path("/data/target_gene.json")`` instead of
 
 The planner schedules ``gene`` before ``features``. The ``outputs`` mapping
 exposes a stable name to callers; it does not rename the child step's output.
-A task can also declare
-the same step more than once, using local IDs to distinguish the runs::
+The mapping is optional. A task may omit ``outputs`` and let callers refer to
+its child runs directly. A built-in task with ``category = "analysis"`` also
+appears in the Analyses documentation index. A task can also declare the same
+step more than once, using local IDs to distinguish the runs::
 
    class CompareRegionsTask(Task):
        name = "compare-regions"
@@ -246,13 +248,15 @@ destinations differ. Nested ``runs`` must name IDs already declared by the task.
 can supply inputs left open by its ``RunSpec`` declarations, but cannot replace
 a task-declared input link. Thus the ``features`` to ``gene`` link above is
 part of the task's wiring. A link inside a task uses a local child ID such as
-``gene``. Outside the task, its public output can be selected with
-``from: run.comparison.target_gene`` when the task declares that alias. Omit
-``inputs`` when no explicit link is
-needed. Each distinct run must have a distinct output destination. Older
-tasks with ``steps`` remain valid. The planner converts YAML and CLI
-selections into ``RunSpec`` objects, then resolves them into concrete
-``StepRun`` objects.
+``gene``. Outside a named task selection, callers can use a public alias such
+as ``from: run.comparison.target_gene`` or address a child output directly,
+such as ``from: run.comparison.transcriptomic.target_gene``. The latter uses
+the task selection ID, child run ID, and child output name, and works even
+when the task does not expose that output through ``Task.outputs``. Omit
+``inputs`` when no explicit link is needed. Each distinct run must have a
+distinct output destination. Older tasks with ``steps`` remain valid. The
+planner converts YAML and CLI selections into ``RunSpec`` objects, then
+resolves them into concrete ``StepRun`` objects.
 
 How an input source is chosen
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

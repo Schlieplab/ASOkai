@@ -184,14 +184,14 @@ properties:
         type: object
         additionalProperties: false
         properties:
-          assembly_id:
+          assembly:
             type: string
             minLength: 1
             description: Genome assembly ID, such as GRCh38.
-          ensembl_release:
+          release:
             type: integer
             minimum: 1
-            description: Ensembl release number.
+            description: Genome data release number (currently Ensembl).
           source:
             const: ensembl
             default: ensembl

@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 
 _ASO_PATH_FIELDS = {
-    "assembly": TemplateField("parameters.genome.assembly_id"),
+    "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source", default="ensembl"),
-    "release": TemplateField("parameters.genome.ensembl_release"),
+    "release": TemplateField("parameters.genome.release"),
     "target": TemplateField.first_of(
         "parameters.target.target_id",
         "parameters.target.target_name",

@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 _GENOME_PATH_FIELDS = {
-    "assembly": TemplateField("parameters.genome.assembly_id"),
+    "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source"),
-    "release": TemplateField("parameters.genome.ensembl_release"),
+    "release": TemplateField("parameters.genome.release"),
     "species": TemplateField("parameters.genome.species"),
 }
 
@@ -96,14 +96,14 @@ class DownloadGenomeStep(CoreStep):
             ScalarParam(
                 "assembly",
                 str,
-                config="parameters.genome.assembly_id",
+                config="parameters.genome.assembly",
                 doc="Assembly ID (e.g. GRCh38).",
             ),
             ScalarParam(
                 "release",
                 int,
-                config="parameters.genome.ensembl_release",
-                doc="Ensembl release number (e.g. 114).",
+                config="parameters.genome.release",
+                doc="Genome data release number (e.g. Ensembl 114).",
             ),
             ScalarParam(
                 "source",

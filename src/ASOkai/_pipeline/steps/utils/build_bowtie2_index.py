@@ -45,13 +45,13 @@ class BuildBowtie2IndexStep(UtilityStep):
             "large{large}.packed{packed}",
             fields={
                 "assembly": TemplateField(
-                    "parameters.genome.assembly_id", default="external"
+                    "parameters.genome.assembly", default="external"
                 ),
                 "source": TemplateField(
                     "parameters.genome.source", default="user"
                 ),
                 "release": TemplateField(
-                    "parameters.genome.ensembl_release", default="na"
+                    "parameters.genome.release", default="na"
                 ),
                 "offrate": TemplateField(
                     "parameters.bowtie2.offrate", default="auto"

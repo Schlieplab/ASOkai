@@ -33,8 +33,8 @@ def config(tmp_path: Path) -> dict:
         "resources": {"build-kmer-index": {"n_threads": 6}},
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },
@@ -129,9 +129,9 @@ def test_output_name_changes_with_kmc_options(
 @pytest.mark.parametrize(
     ("missing_field", "config_path"),
     [
-        ("assembly_id", "parameters.genome.assembly_id"),
+        ("assembly", "parameters.genome.assembly"),
         ("source", "parameters.genome.source"),
-        ("ensembl_release", "parameters.genome.ensembl_release"),
+        ("release", "parameters.genome.release"),
     ],
 )
 def test_planning_rejects_missing_genome_identity(
@@ -146,9 +146,9 @@ def test_planning_rejects_missing_genome_identity(
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
+                "assembly": "GRCh38",
                 "source": "ensembl",
-                "ensembl_release": 114,
+                "release": 114,
             }
         },
         "runs": [
@@ -174,9 +174,9 @@ def test_named_download_links_directly_to_kmer_builder(
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
+                "assembly": "GRCh38",
                 "source": "ensembl",
-                "ensembl_release": 114,
+                "release": 114,
                 "species": "Homo_sapiens",
             }
         },

@@ -255,8 +255,8 @@ def workflow_config(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },
@@ -325,8 +325,8 @@ def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },

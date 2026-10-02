@@ -26,8 +26,8 @@ def config(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "species": "Homo_sapiens",
             },
             "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
@@ -81,8 +81,8 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "species": "Homo_sapiens",
             },
             "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
@@ -103,7 +103,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
 
 def test_output_path_identifies_the_genome_release(step, config, tmp_path):
     first = _run(step, config, tmp_path).output_paths()["target_gene"]
-    config["parameters"]["genome"]["ensembl_release"] = 115
+    config["parameters"]["genome"]["release"] = 115
     second = _run(step, config, tmp_path).output_paths()["target_gene"]
 
     assert first != second

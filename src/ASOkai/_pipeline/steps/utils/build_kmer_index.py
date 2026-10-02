@@ -106,9 +106,9 @@ _KMC_OPTIONS = (
 )
 
 _KMC_PATH_FIELDS = {
-    "assembly": TemplateField("parameters.genome.assembly_id"),
+    "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source"),
-    "release": TemplateField("parameters.genome.ensembl_release"),
+    "release": TemplateField("parameters.genome.release"),
     "k": TemplateField("parameters.target.k"),
     **{
         param.name: TemplateField(

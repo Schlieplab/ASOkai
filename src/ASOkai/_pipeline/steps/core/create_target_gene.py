@@ -40,12 +40,12 @@ class CreateTargetGeneStep(CoreStep):
             "{assembly}/{source}/{release}/targets/{target}/"
             "{target}_k{k}_{region}.json",
             fields={
-                "assembly": TemplateField("parameters.genome.assembly_id"),
+                "assembly": TemplateField("parameters.genome.assembly"),
                 "source": TemplateField(
                     "parameters.genome.source",
                     default="ensembl",
                 ),
-                "release": TemplateField("parameters.genome.ensembl_release"),
+                "release": TemplateField("parameters.genome.release"),
                 "target": TemplateField.first_of(
                     "parameters.target.target_id",
                     "parameters.target.target_name",
@@ -85,7 +85,7 @@ class CreateTargetGeneStep(CoreStep):
             ScalarParam(
                 "assembly",
                 str,
-                config="parameters.genome.assembly_id",
+                config="parameters.genome.assembly",
                 doc="Assembly ID (e.g. GRCh38).",
             ),
             ScalarParam(

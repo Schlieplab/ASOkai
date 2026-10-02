@@ -72,7 +72,7 @@ def resolve(config: Mapping[str, Any], dotted_key: str) -> Any:
     Resolve a dotted key against a config dict.
 
     Example:
-        resolve(config, "parameters.genome.assembly_id")
+        resolve(config, "parameters.genome.assembly")
     """
     keys = _dotted_key_parts(dotted_key)
 
@@ -97,7 +97,7 @@ def apply_overrides(config: dict, overrides: dict[str, Any]) -> dict:
     Apply dotted-key overrides to config in-place.
 
     Overrides use dotted keys, e.g.:
-        {"parameters.genome.ensembl_release": 115} updates that shared value.
+        {"parameters.genome.release": 115} updates that shared value.
     """
     for dotted_key, value in overrides.items():
         keys = _dotted_key_parts(dotted_key)

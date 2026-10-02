@@ -129,8 +129,8 @@ output-reuse ``validation`` setting are also root keys. For example::
    datadir: ./data
    parameters:
      genome:
-       assembly_id: GRCh38
-       ensembl_release: 114
+       assembly: GRCh38
+       release: 114
        source: ensembl
        species: Homo_sapiens
      target:

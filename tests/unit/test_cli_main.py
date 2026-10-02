@@ -343,8 +343,8 @@ def test_run_dry_run_reads_configured_runs_from_yaml(tmp_path, caplog):
         f"datadir: {tmp_path}\n"
         "parameters:\n"
         "  genome:\n"
-        "    assembly_id: GRCh38\n"
-        "    ensembl_release: 114\n"
+        "    assembly: GRCh38\n"
+        "    release: 114\n"
         "    species: Homo_sapiens\n"
         "runs:\n"
         "  - step: download-genome\n"
@@ -366,8 +366,8 @@ def test_run_dry_run_resolves_cli_run_through_yaml_planner(tmp_path, caplog):
         f"datadir: {tmp_path}\n"
         "parameters:\n"
         "  genome:\n"
-        "    assembly_id: GRCh38\n"
-        "    ensembl_release: 114\n"
+        "    assembly: GRCh38\n"
+        "    release: 114\n"
         "    species: Homo_sapiens\n",
         encoding="utf-8",
     )

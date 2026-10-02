@@ -39,8 +39,8 @@ def sample_config(tmp_path):
         "datadir: ./data\n"
         "parameters:\n"
         "  genome:\n"
-        "    assembly_id: GRCh38\n"
-        "    ensembl_release: 114\n"
+        "    assembly: GRCh38\n"
+        "    release: 114\n"
         "    species: Homo_sapiens\n"
     )
     return config_file
@@ -49,7 +49,7 @@ def sample_config(tmp_path):
 def test_load_reads_a_yaml_mapping(sample_config):
     config = cfg.load(sample_config)
     assert config["datadir"] == "./data"
-    assert config["parameters"]["genome"]["assembly_id"] == "GRCh38"
+    assert config["parameters"]["genome"]["assembly"] == "GRCh38"
 
 
 @pytest.mark.parametrize(
@@ -130,8 +130,8 @@ def test_config_schema_accepts_shared_parameters_and_from_inputs(tmp_path):
             "datadir": str(tmp_path),
             "parameters": {
                 "genome": {
-                    "assembly_id": "GRCh38",
-                    "ensembl_release": 114,
+                    "assembly": "GRCh38",
+                    "release": 114,
                     "species": "Homo_sapiens",
                 },
                 "target": {"target_name": "KRAS", "k": 21},
@@ -202,8 +202,8 @@ def test_resolve_top_level(sample_config):
 
 def test_resolve_nested(sample_config):
     config = cfg.load(sample_config)
-    assert cfg.resolve(config, "parameters.genome.assembly_id") == "GRCh38"
-    assert cfg.resolve(config, "parameters.genome.ensembl_release") == 114
+    assert cfg.resolve(config, "parameters.genome.assembly") == "GRCh38"
+    assert cfg.resolve(config, "parameters.genome.release") == 114
 
 
 def test_resolve_missing_key(sample_config):
@@ -214,8 +214,8 @@ def test_resolve_missing_key(sample_config):
 
 def test_apply_overrides(sample_config):
     config = cfg.load(sample_config)
-    cfg.apply_overrides(config, {"parameters.genome.ensembl_release": 115})
-    assert config["parameters"]["genome"]["ensembl_release"] == 115
+    cfg.apply_overrides(config, {"parameters.genome.release": 115})
+    assert config["parameters"]["genome"]["release"] == 115
 
 
 def test_apply_overrides_new_key(sample_config):
@@ -227,10 +227,10 @@ def test_apply_overrides_new_key(sample_config):
 def test_apply_overrides_rejects_scalar_parent(sample_config):
     config = cfg.load(sample_config)
 
-    with pytest.raises(ValueError, match="cannot descend.*assembly_id"):
+    with pytest.raises(ValueError, match="cannot descend.*assembly"):
         cfg.apply_overrides(
             config,
-            {"parameters.genome.assembly_id.version": 2},
+            {"parameters.genome.assembly.version": 2},
         )
 
 
@@ -288,8 +288,8 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },
@@ -317,8 +317,8 @@ def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },
@@ -342,7 +342,7 @@ def test_aso_step_rejects_a_different_modality(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "parameters": {
-            "genome": {"assembly_id": "GRCh38"},
+            "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
                 "modality": "sirna",
@@ -489,8 +489,8 @@ def test_validate_step_config_requires_selected_step_parameters(tmp_path):
         )
 
     message = str(raised.value)
-    assert "$.parameters.genome.assembly_id" in message
-    assert "$.parameters.genome.ensembl_release" in message
+    assert "$.parameters.genome.assembly" in message
+    assert "$.parameters.genome.release" in message
     assert "$.parameters.genome.species" in message
     assert "$.parameters.genome.source" not in message
 
@@ -500,8 +500,8 @@ def test_config_schema_reports_all_errors(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "",
-                "ensembl_release": 0,
+                "assembly": "",
+                "release": 0,
                 "species": "Homo_sapiens",
             }
         },
@@ -511,8 +511,27 @@ def test_config_schema_reports_all_errors(tmp_path):
         cfg.validate_config_schema(config)
 
     message = str(raised.value)
-    assert "$.parameters.genome.assembly_id" in message
-    assert "$.parameters.genome.ensembl_release" in message
+    assert "$.parameters.genome.assembly" in message
+    assert "$.parameters.genome.release" in message
+
+
+def test_config_schema_rejects_old_genome_field_names(tmp_path):
+    config = {
+        "datadir": str(tmp_path),
+        "parameters": {
+            "genome": {
+                "assembly_id": "GRCh38",
+                "ensembl_release": 114,
+            }
+        },
+    }
+
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(config)
+
+    message = str(raised.value)
+    assert "assembly_id" in message
+    assert "ensembl_release" in message
 
 
 def test_config_schema_requires_one_target_identifier(
@@ -522,8 +541,8 @@ def test_config_schema_requires_one_target_identifier(
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "species": "Homo_sapiens",
             },
             "target": {"k": 16, "region": "pre-mrna"},
@@ -612,7 +631,7 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
     config = {
         "datadir": str(tmp_path),
         "parameters": {
-            "genome": {"assembly_id": "GRCh38"},
+            "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 18, "region": "pre-mrna"},
             "antisense": {
                 "modality": "aso",
@@ -661,7 +680,7 @@ def test_validate_step_config_rejects_invalid_override_path(
             }
         },
         "parameters": {
-            "genome": {"assembly_id": "GRCh38"},
+            "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
                 "modality": "aso",
@@ -694,7 +713,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
             }
         },
         "parameters": {
-            "genome": {"assembly_id": "GRCh38"},
+            "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
                 "modality": "aso",
@@ -742,8 +761,8 @@ def test_validate_step_config_rejects_datadir_file(tmp_path):
                 "datadir": str(datadir),
                 "parameters": {
                     "genome": {
-                        "assembly_id": "GRCh38",
-                        "ensembl_release": 114,
+                        "assembly": "GRCh38",
+                        "release": 114,
                         "species": "Homo_sapiens",
                     }
                 },

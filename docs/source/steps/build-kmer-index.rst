@@ -5,17 +5,17 @@ Build k-mer index
 
 Supply a plain or gzip-compressed FASTA file as ``reference``. The step builds
 one KFF index using the configured k-mer length and KMC options. Configure
-``parameters.genome.assembly_id``, ``parameters.genome.source``, and
-``parameters.genome.ensembl_release`` to place the index under its genome
+``parameters.genome.assembly``, ``parameters.genome.source``, and
+``parameters.genome.release`` to place the index under its genome
 directory. Link the step to a named genome download when the FASTA needs to be
 created::
 
    datadir: /path/to/data
    parameters:
      genome:
-       assembly_id: GRCh38
+       assembly: GRCh38
        source: ensembl
-       ensembl_release: 114
+       release: 114
        species: Homo_sapiens
    runs:
      - step: download-genome

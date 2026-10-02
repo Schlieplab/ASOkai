@@ -22,8 +22,8 @@ Add the plugin setting to the ASOkai configuration:
 datadir: ./data
 parameters:
   genome:
-    assembly_id: GRCh38
-    ensembl_release: 114
+    assembly: GRCh38
+    release: 114
     source: ensembl
     species: Homo_sapiens
   target:

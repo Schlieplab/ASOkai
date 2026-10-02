@@ -104,8 +104,8 @@ def test_registered_step_executes_validates_and_publishes_output(
         "resources": {"default": {"n_threads": 1, "memory_mb": 4096}},
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "source": "ensembl",
                 "species": "Homo_sapiens",
             },

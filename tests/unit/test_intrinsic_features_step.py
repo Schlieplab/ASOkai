@@ -27,8 +27,8 @@ def config(tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "species": "Homo_sapiens",
             },
             "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
@@ -101,8 +101,8 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         "datadir": str(tmp_path),
         "parameters": {
             "genome": {
-                "assembly_id": "GRCh38",
-                "ensembl_release": 114,
+                "assembly": "GRCh38",
+                "release": 114,
                 "species": "Homo_sapiens",
             },
             "target": {"target_name": "KRAS", "k": 16, "region": "pre-mrna"},
@@ -125,7 +125,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
 
 def test_output_path_distinguishes_genome_releases(step, config, tmp_path):
     release_114 = _run(step, config, tmp_path).output_paths()
-    config["parameters"]["genome"]["ensembl_release"] = 115
+    config["parameters"]["genome"]["release"] = 115
     release_115 = _run(step, config, tmp_path).output_paths()
 
     assert release_114 != release_115

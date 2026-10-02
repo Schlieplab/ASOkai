@@ -24,6 +24,7 @@ class TargetGeneToFastaStep(UtilityStep):
 
     name = "target-gene-to-fasta"
     description = "Converts a target-gene JSON file to a plain FASTA reference."
+    listed = False
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,

@@ -124,6 +124,18 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
         ]
         assert generated_targets == expected_targets
 
+    assert "/steps/target-gene-to-fasta" not in [
+        link["reftarget"] for link in utility_list.findall(addnodes.pending_xref)
+    ]
+
+
+def test_internal_step_reference_remains_available() -> None:
+    step = get_built_in_step("target-gene-to-fasta")
+    reference = build_step_reference(step, _config_schema())
+
+    assert step.listed is False
+    assert "Internal step" in "\n".join(node.astext() for node in reference)
+
 
 def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
     from ASOkai._pipeline import catalog

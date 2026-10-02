@@ -269,6 +269,8 @@ def _step_kind(step: Any) -> str:
     from ASOkai._pipeline.steps.core.base import CoreStep
     from ASOkai._pipeline.steps.utils.base import UtilityStep
 
+    if not step.listed:
+        return "Internal step"
     if isinstance(step, AnalysisStep):
         return "Analysis step"
     if isinstance(step, CoreStep):

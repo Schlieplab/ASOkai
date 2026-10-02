@@ -163,15 +163,21 @@ def test_list_commands_show_registered_units():
     assert "create-target-gene" in steps.output
     assert "generate-aso-candidates" in steps.output
     assert "intrinsic-features" in steps.output
+    assert "target-gene-to-fasta" not in steps.output
     assert "[Per site] Computes nucleotide composition" in steps.output
 
     assert tasks.exit_code == 0
     assert "instantiate-target-gene" in tasks.output
+    assert "index-target-gene" in tasks.output
     assert "Downloads genome data" in tasks.output
 
     assert workflows.exit_code == 0
     assert "standard" in workflows.output
     assert "Standard pipeline" in workflows.output
+
+    verbose_steps = runner.invoke(main, ["list", "-v", "steps"])
+    assert verbose_steps.exit_code == 0
+    assert "target-gene-to-fasta" in verbose_steps.output
 
 
 def test_verbose_catalog_reveals_internal_steps(monkeypatch):

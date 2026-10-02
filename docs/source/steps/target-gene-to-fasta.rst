@@ -1,7 +1,11 @@
+:orphan:
+
 Target gene to FASTA
 ====================
 
 .. asokai-step-reference:: target-gene-to-fasta
+
+This internal step is used by ``index-target-gene``.
 
 The FASTA contains one record for the target gene's full 5′ to 3′ sequence.
 By default, the input comes from ``create-target-gene``. Select an existing

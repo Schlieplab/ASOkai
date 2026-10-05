@@ -73,16 +73,24 @@ parameters:
 
 ### Configuration
 
-The CLI reads `./config.yaml` by default. Use `--configfile` to select another
-file. For a CLI-selected step or task, place `--param NAME=VALUE` after its
-selection to override a parameter for that run:
+The CLI reads `./config.yaml` when present, including for CLI-selected runs.
+Use `--configfile` to select another file. For a CLI-only run, use `--no-config`;
+if no `config.yaml` exists, CLI selections also work without that flag. Both
+cases use `./data` as the data directory. A file containing `runs` cannot be
+combined with CLI selections.
+Place `--param PATH=VALUE` before the first selection to set a shared parameter;
+omit the `parameters.` prefix. Place `--param NAME=VALUE` after a step or task
+to override a parameter for that run:
 
 ```bash
-ASOkai run --step create-target-gene --param region=transcriptomic
+ASOkai run --no-config --param genome.assembly=GRCh39 --param genome.release=115 \
+  --param genome.species=Homo_sapiens --step create-target-gene \
+  --param target_id=ENSG00000133703 --param k=20 \
+  --param region=transcriptomic
 ```
 
-Run `ASOkai describe step NAME` to see the configuration keys and input
-overrides accepted by a step.
+Run `ASOkai describe step NAME` to see its parameters, inputs, and outputs.
+Add `-v` to see configuration keys, input override options, and output paths.
 
 Single-node resource requests are configured under `resources`:
 

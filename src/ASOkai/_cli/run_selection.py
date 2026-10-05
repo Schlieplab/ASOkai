@@ -38,10 +38,11 @@ def _assignment(value: str, option: str) -> tuple[str, str]:
 
 def parse_ordered_runs(
     args: list[str], ignored_value_options: set[str]
-) -> list[dict[str, Any]]:
-    """Keep selection and scoped override order before Click groups repeated options."""
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Keep shared and scoped override order before Click groups repeated options."""
     if "--help" in args or "-h" in args:
-        return []
+        return {}, []
+    shared_parameters: dict[str, Any] = {}
     runs: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     child: dict[str, Any] | None = None
@@ -72,7 +73,28 @@ def parse_ordered_runs(
             child = None
             continue
         if current is None:
-            raise click.UsageError(f"{option} must follow --step or --task.")
+            if option != "--param":
+                raise click.UsageError(f"{option} must follow --step or --task.")
+            name, raw = _assignment(value, option)
+            if (
+                "." not in name
+                or name.startswith("parameters.")
+                or any(not part.strip() for part in name.split("."))
+            ):
+                raise click.BadParameter(
+                    "Before a selection, use a shared parameter path such as "
+                    "genome.assembly=GRCh38 (without 'parameters.').",
+                    param_hint=option,
+                )
+            if name in shared_parameters:
+                raise click.UsageError(f"Duplicate --param for '{name}'.")
+            try:
+                shared_parameters[name] = yaml.safe_load(raw)
+            except yaml.YAMLError as error:
+                raise click.BadParameter(
+                    f"Invalid YAML value: {error}", param_hint=option
+                ) from error
+            continue
         if option == "--id":
             if child is not None or current.get("workflow") is not None:
                 raise click.UsageError("--id must follow a top-level step or task.")
@@ -118,7 +140,7 @@ def parse_ordered_runs(
                     "Expected INPUT=RUN_ID.OUTPUT.", param_hint=option
                 )
             inputs[name] = {"from": f"run.{run_id}.{output}"}
-    return runs
+    return shared_parameters, runs
 
 
 class OrderedRunCommand(click.Command):
@@ -131,9 +153,9 @@ class OrderedRunCommand(click.Command):
             if isinstance(parameter, click.Option) and not parameter.is_flag
             for option in parameter.opts
         } - _RUN_VALUE_OPTIONS
-        ctx.meta["asokai_ordered_runs"] = parse_ordered_runs(
-            args, ignored_value_options
-        )
+        shared_parameters, runs = parse_ordered_runs(args, ignored_value_options)
+        ctx.meta["asokai_shared_parameters"] = shared_parameters
+        ctx.meta["asokai_ordered_runs"] = runs
         return super().parse_args(ctx, args)
 
 

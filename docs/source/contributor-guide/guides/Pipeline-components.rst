@@ -296,19 +296,28 @@ Configuring runs on the command line
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 CLI selections use the same ordered run declarations and validation as YAML.
-Use a shared config file without ``runs`` and put each override after the step
-or task it belongs to::
+The CLI reads ``./config.yaml`` when present, including for CLI-selected runs.
+Use ``--configfile`` to select another file. For a CLI-only run, use
+``--no-config``; if no default file exists, CLI selections also work without
+that flag. Both cases use ``./data`` as the data directory. A file containing
+``runs`` cannot be combined with CLI selections. Put shared parameter overrides
+before the first selection and run-specific overrides after the step or task
+they belong to::
 
    ASOkai run --configfile common.yaml \
+     --param genome.assembly=GRCh39 \
      --step create-target-gene --id reference-gene --param region=pre-mrna \
      --step generate-aso-candidates --id candidates \
        --from-run target_gene=reference-gene.target_gene \
      --task compare-regions --id comparison --param k=21 \
        --child transcriptomic --param k=18
 
-``--id`` names the preceding step or task. ``--param NAME=VALUE`` applies to
-that selection, or to the child named by the most recent ``--child``. Values
-use YAML scalar syntax, so ``k=21`` is an integer. Use ``--from-run
+``--id`` names the preceding step or task. Before the first selection,
+``--param PATH=VALUE`` sets a shared parameter such as ``genome.assembly``;
+the ``parameters.`` prefix is omitted. After a selection, ``--param NAME=VALUE``
+applies to that run, or to the child named by the most recent ``--child``.
+Run-specific values take precedence over shared values. Values use YAML scalar
+syntax, so ``k=21`` is an integer. Use ``--from-run
 INPUT=RUN_ID.OUTPUT`` for a named producer and ``--input-path INPUT=PATH`` for
 an existing file. These options configure the current step or task child;
 ``--child`` names an ID already declared in the task. A new ``--step`` or

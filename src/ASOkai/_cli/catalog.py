@@ -21,8 +21,13 @@ from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
+from ASOkai._pipeline.tasks.base import validate_task_outputs
 
-from .options import CONTEXT_SETTINGS, catalog_verbose_option
+from .options import (
+    CONTEXT_SETTINGS,
+    catalog_verbose_option,
+    describe_verbose_option,
+)
 
 
 def _step_category_path(step: object) -> tuple[str, ...]:
@@ -174,43 +179,120 @@ def _config_hint_for_param(param: Any) -> str:
     return f"  {doc}" if doc else ""
 
 
-def _describe_step_parameters(step) -> None:
-    """Print run parameters and their optional configuration keys."""
+def _describe_step_parameters(step, *, verbose: bool) -> None:
+    """Print run parameters, with shared configuration keys when requested."""
     if not step.spec.params:
         return
 
     click.echo("Run parameters:")
     for param in step.spec.params:
         click.echo(f"  --param {param.name}=VALUE{_config_hint_for_param(param)}")
-        if param.config:
+        if verbose and param.config:
             click.echo(f"    config key: {param.config}")
 
 
-def _describe_step_input_configuration(step) -> None:
-    """Print optional configuration paths for the step's file inputs."""
+def _describe_step_inputs(step, *, verbose: bool) -> None:
+    """Print file inputs and explain selection only in the detailed view."""
     if not step.spec.inputs:
+        click.echo("Inputs: (none)")
         return
 
-    click.echo("Input configuration (optional):")
+    click.echo("Inputs:")
     for file_input in step.spec.inputs:
-        configuration_path = file_input.configuration_path(step.name)
-        click.echo(f"  {configuration_path}.path_override  existing file")
+        source = file_input.source
+        origin = (
+            f"  from {source.producer}.{source.name} by default"
+            if source is not None
+            else "  supply a file or link a run"
+        )
+        click.echo(
+            f"  {file_input.name:<20} {file_input.file_type.format_name}{origin}"
+        )
+        if verbose:
+            if file_input.doc:
+                click.echo(f"    {file_input.doc}")
+            click.echo(
+                f"    CLI: --input-path {file_input.name}=PATH or "
+                f"--from-run {file_input.name}=RUN_ID.OUTPUT"
+            )
+            click.echo(
+                "    Existing file in config.yaml: "
+                f"{file_input.configuration_path(step.name)}.path_override"
+            )
 
 
-def _describe_step(step) -> tuple[list[str], str]:
+def _describe_step_outputs(step, *, verbose: bool) -> None:
+    """Print declared output ports and their destinations when requested."""
+    if not step.spec.outputs:
+        click.echo("Outputs: (none)")
+        return
+
+    click.echo("Outputs:")
+    for output in step.spec.outputs:
+        click.echo(f"  {output.name:<20} {output.file_type.format_name}")
+        if verbose:
+            if output.doc:
+                click.echo(f"    {output.doc}")
+            click.echo(f"    Under datadir: {output.destination.template}")
+
+
+def _describe_step(step, *, verbose: bool) -> tuple[list[str], str]:
     """Print step details and return its dependency summary."""
     click.echo(f"Type        : {_step_type_label(step)}")
-    _describe_step_parameters(step)
-    _describe_step_input_configuration(step)
+    _describe_step_parameters(step, verbose=verbose)
+    _describe_step_inputs(step, verbose=verbose)
+    _describe_step_outputs(step, verbose=verbose)
     return step.dependencies, "Dependencies"
 
 
-def _describe_task(task) -> tuple[list[str], str]:
-    """Print task details and return its step summary."""
+def _describe_task(task, *, verbose: bool) -> None:
+    """Print child steps, open inputs, and exposed task outputs."""
     step_names = [step.name for step in task.steps]
     click.echo(f"Steps       : {', '.join(step_names)}")
+    runs = getattr(task, "runs", ())
+    open_inputs = [
+        (run.run_id, file_input)
+        for run in runs
+        for file_input in run.step.spec.inputs
+        if file_input.name not in run.inputs
+    ]
+    if open_inputs:
+        click.echo("Inputs:")
+        for run_id, file_input in open_inputs:
+            qualified_name = f"{run_id}.{file_input.name}"
+            source = file_input.source
+            origin = (
+                f"  from {source.producer}.{source.name} by default"
+                if source is not None
+                else "  supply a file or link a run"
+            )
+            details = f"{file_input.file_type.format_name}{origin}"
+            click.echo(f"  {qualified_name:<24} {details}")
+            if verbose:
+                click.echo(
+                    f"    CLI: --child {run_id} --input-path {file_input.name}=PATH"
+                )
+    else:
+        click.echo("Inputs: (none at task boundary)")
+    outputs = validate_task_outputs(task) if runs else {}
+    runs_by_id = {run.run_id: run for run in runs}
+    if outputs:
+        click.echo("Outputs:")
+        for name, reference in outputs.items():
+            output = runs_by_id[reference.run_id].step.spec.output(
+                reference.output_name
+            )
+            click.echo(
+                f"  {name:<20} {output.file_type.format_name} "
+                f"from {reference.run_id}.{reference.output_name}"
+            )
+    else:
+        click.echo("Outputs: (none exposed; use a child run output)")
+    if verbose and runs:
+        click.echo("Child runs:")
+        for run in runs:
+            click.echo(f"  {run.run_id:<20} {run.step.name}")
     click.echo("CWL         : (CLI collection; export creates run.cwl)")
-    return step_names, "Steps"
 
 
 def _describe_workflow(workflow) -> tuple[list[str], str]:
@@ -240,7 +322,7 @@ def _describe_dependencies(
 
 
 @click.command("describe", context_settings=CONTEXT_SETTINGS)
-@catalog_verbose_option
+@describe_verbose_option
 @click.argument(
     "unit",
     type=click.Choice(["step", "task", "workflow"]),
@@ -273,13 +355,19 @@ def describe_command(
     click.echo(f"Name        : {pipeline_unit.name}")
     click.echo(f"Description : {_display_description(pipeline_unit)}")
 
+    if unit == "task":
+        _describe_task(
+            pipeline_unit,
+            verbose=ctx.obj.get("verbose", False),
+        )
+        return
     if unit == "step":
-        dependencies, label = _describe_step(pipeline_unit)
-    elif unit == "task":
-        dependencies, label = _describe_task(pipeline_unit)
+        dependencies, label = _describe_step(
+            pipeline_unit,
+            verbose=ctx.obj.get("verbose", False),
+        )
     else:
         dependencies, label = _describe_workflow(pipeline_unit)
-
     _describe_dependencies(
         label,
         dependencies,

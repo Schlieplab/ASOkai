@@ -76,5 +76,15 @@ catalog_verbose_option = click.option(
     is_eager=True,
     expose_value=False,
     callback=_set_verbose,
-    help="Enable debug logging and show internal steps.",
+    help="Show internal steps and enable debug logging.",
+)
+
+describe_verbose_option = click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_set_verbose,
+    help="Show configuration keys, file details, dependency trees, and internal steps.",
 )

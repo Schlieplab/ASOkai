@@ -8,6 +8,7 @@ License: LGPL-3.0-or-later
 """
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -121,6 +122,8 @@ def test_run_help_uses_configfile_and_scoped_run_options():
     assert "--configfile, --config-file FILE" in result.output
     assert "--executor [toil|cwltool]" in result.output
     assert "--param VALUE" in result.output
+    assert "shared PATH=VALUE" in result.output
+    assert "--no-config" in result.output
     assert "--config KEY=VALUE" not in result.output
     assert "--non-recursive" in result.output
     assert "--recursive" not in result.output
@@ -136,6 +139,8 @@ def test_export_help_uses_explicit_recursive_option():
     assert "--recursive" in result.output
     assert "--non-recursive" not in result.output
     assert "--param VALUE" in result.output
+    assert "shared PATH=VALUE" in result.output
+    assert "--no-config" in result.output
     assert "--config KEY=VALUE" not in result.output
 
 
@@ -222,12 +227,41 @@ def test_describe_step_create_target_gene_shows_details():
     assert "Run parameters:" in result.output
     assert "--param target_id=VALUE" in result.output
     assert "--param region=VALUE" in result.output
-    assert "config key: parameters.target.target_id" in result.output
-    assert "config key: parameters.target.region" in result.output
-    assert "Input configuration (optional):" in result.output
-    assert "steps.create-target-gene.inputs.dna.path_override" in result.output
+    assert "Inputs:" in result.output
+    assert "dna" in result.output
+    assert "from download-genome.dna by default" in result.output
+    assert "Outputs:" in result.output
+    assert "target_gene          JSON" in result.output
+    assert "Input configuration (optional)" not in result.output
+    assert "path_override" not in result.output
     assert "--config " not in result.output
     assert "Dependencies: download-genome" in result.output
+
+    verbose = runner.invoke(main, ["describe", "-v", "step", "create-target-gene"])
+    assert verbose.exit_code == 0
+    assert "config key: parameters.target.target_id" in verbose.output
+    assert "config key: parameters.target.region" in verbose.output
+    assert "--input-path dna=PATH" in verbose.output
+    assert "steps.create-target-gene.inputs.dna.path_override" in verbose.output
+    assert "Existing file in config.yaml:" in verbose.output
+    assert "Under datadir:" in verbose.output
+    assert "{target}_k{k}_{region}.json" in verbose.output
+
+
+def test_describe_step_without_default_input_explains_file_selection():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "step", "build-kmc-index"])
+    verbose = runner.invoke(main, ["describe", "-v", "step", "build-kmc-index"])
+
+    assert result.exit_code == verbose.exit_code == 0
+    assert "reference" in result.output
+    assert "supply a file or link a run" in result.output
+    assert "kmc_index" in result.output
+    assert "KFF k-mer index" in result.output
+    assert "--from-run reference=RUN_ID.OUTPUT" in verbose.output
+    assert "--input-path reference=PATH" in verbose.output
+    assert "steps.build-kmc-index.inputs.reference.path_override" in verbose.output
 
 
 def test_describe_step_uses_stepspec_not_step_argparse(monkeypatch):
@@ -256,8 +290,28 @@ def test_describe_task_expands_step_names():
     assert result.exit_code == 0
     assert "Name        : instantiate-target-gene" in result.output
     assert "Steps       : download-genome, create-target-gene" in result.output
+    assert "Inputs: (none at task boundary)" in result.output
+    assert "Outputs:" in result.output
+    assert "target_gene" in result.output
+    assert "gene.target_gene" in result.output
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
-    assert "Steps: download-genome, create-target-gene" in result.output
+    assert "Steps: download-genome, create-target-gene" not in result.output
+
+
+def test_verbose_describe_task_shows_open_inputs_and_child_ids():
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["describe", "-v", "task", "index-target-gene"])
+
+    assert result.exit_code == 0
+    assert "fasta.target_gene" in result.output
+    assert "from create-target-gene.target_gene by default" in result.output
+    assert "--child fasta --input-path target_gene=PATH" in result.output
+    assert "Outputs:" in result.output
+    assert "fasta.fasta" in result.output
+    assert "index.index" in result.output
+    assert "Child runs:" in result.output
+    assert "build-bowtie2-index" in result.output
 
 
 def test_describe_workflow_shows_members_and_expanded_steps():
@@ -506,6 +560,8 @@ def test_cli_run_options_match_ordered_yaml_declarations(
         main,
         [
             command,
+            "--configfile",
+            str(tmp_path / "common.yaml"),
             "--step",
             "create-target-gene",
             "--id",
@@ -557,7 +613,8 @@ def test_cli_run_options_match_ordered_yaml_declarations(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--param", "k=21"], "must follow --step or --task"),
+        (["--param", "k=21"], "shared parameter path"),
+        (["--id", "gene"], "must follow --step or --task"),
         (
             ["--task", "instantiate-target-gene", "--from-run", "dna=gene.dna"],
             "requires --child",
@@ -574,6 +631,196 @@ def test_cli_rejects_misplaced_run_options(args, message):
 
     assert result.exit_code != 0
     assert message in result.output
+
+
+@pytest.mark.parametrize("command", ["run", "export"])
+def test_cli_only_selection_uses_shared_and_scoped_parameters(
+    monkeypatch, tmp_path, command
+):
+    captured = {}
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda _runnables, config, **_kwargs: captured.update(config=config),
+    )
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.export_all",
+        lambda _runnables, config, **_kwargs: captured.update(config=config)
+        or tmp_path / "export",
+    )
+
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        # Explicit CLI-only mode ignores an existing default config file.
+        Path("config.yaml").write_text(
+            "runs:\n  - step: download-genome\n", encoding="utf-8"
+        )
+        result = CliRunner().invoke(
+            main,
+            [
+                command,
+                "--no-config",
+                "--param",
+                "genome.assembly=GRCh39",
+                "--param",
+                "genome.release=115",
+                "--step",
+                "create-target-gene",
+                "--param",
+                "target_id=ENSG00000133703",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["config"] == {
+        "datadir": "./data",
+        "parameters": {"genome": {"assembly": "GRCh39", "release": 115}},
+        "runs": [
+            {
+                "step": "create-target-gene",
+                "parameters": {"target_id": "ENSG00000133703"},
+            }
+        ],
+    }
+
+
+def test_shared_cli_parameter_overrides_config_and_scoped_parameter(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"datadir: {tmp_path}\n"
+        "parameters:\n"
+        "  genome:\n"
+        "    assembly: GRCh38\n"
+        "  target:\n"
+        "    region: exonic\n",
+        encoding="utf-8",
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "ASOkai._cli.execution.runner.run_all",
+        lambda _runnables, config, **_kwargs: captured.update(config=config),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            "--configfile",
+            str(config_path),
+            "--param",
+            "genome.assembly=GRCh39",
+            "--param",
+            "target.region=pre-mrna",
+            "--step",
+            "create-target-gene",
+            "--param",
+            "region=transcriptomic",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["config"]["parameters"] == {
+        "genome": {"assembly": "GRCh39"},
+        "target": {"region": "pre-mrna"},
+    }
+    assert captured["config"]["runs"] == [
+        {"step": "create-target-gene", "parameters": {"region": "transcriptomic"}}
+    ]
+
+
+def test_cli_only_dry_run_passes_shared_values_to_implicit_producer(tmp_path, caplog):
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(
+            main,
+            [
+                "run",
+                "--dry-run",
+                "--param",
+                "genome.assembly=GRCh39",
+                "--param",
+                "genome.release=115",
+                "--param",
+                "genome.species=Homo_sapiens",
+                "--step",
+                "create-target-gene",
+                "--param",
+                "target_id=ENSG00000133703",
+                "--param",
+                "k=20",
+                "--param",
+                "region=transcriptomic",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    plan_log = "\n".join(record.message for record in caplog.records)
+    assert "download-genome" in plan_log
+    assert "assembly: GRCh39" in plan_log
+    assert "release: 115" in plan_log
+    assert "runs.1 (create-target-gene)" in plan_log
+
+
+def test_cli_step_selection_reads_default_config_for_implicit_producers(
+    tmp_path, caplog
+):
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        Path("config.yaml").write_text(
+            "datadir: ./data\n"
+            "parameters:\n"
+            "  genome:\n"
+            "    assembly: GRCh38\n"
+            "    release: 114\n"
+            "    species: Homo_sapiens\n"
+            "  target:\n"
+            "    target_id: ENSG00000133703\n"
+            "    k: 16\n"
+            "    region: pre-mrna\n",
+            encoding="utf-8",
+        )
+        result = CliRunner().invoke(
+            main, ["run", "--step", "intrinsic-features", "--dry-run"]
+        )
+
+    assert result.exit_code == 0, result.output
+    plan_log = "\n".join(record.message for record in caplog.records)
+    assert "Dry run: 3 steps would execute" in plan_log
+    assert "download-genome" in plan_log
+    assert "create-target-gene" in plan_log
+    assert "intrinsic-features" in plan_log
+    assert "assembly: GRCh38" in plan_log
+
+
+def test_no_config_rejects_explicit_configfile(tmp_path):
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            "--no-config",
+            "--configfile",
+            str(tmp_path / "config.yaml"),
+            "--step",
+            "download-genome",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--no-config cannot be combined with --configfile" in result.output
+
+
+def test_explicit_missing_configfile_is_not_treated_as_cli_only(tmp_path):
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            "--configfile",
+            str(tmp_path / "missing.yaml"),
+            "--step",
+            "download-genome",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "missing.yaml" in result.output
 
 
 def test_cli_preserves_mixed_selection_order_and_file_input(monkeypatch, tmp_path):
@@ -622,7 +869,10 @@ def test_cli_rejects_selection_alongside_configured_runs(monkeypatch):
         lambda _path: {"runs": [{"step": "download-genome"}]},
     )
 
-    result = CliRunner().invoke(main, ["run", "--step", "create-target-gene"])
+    result = CliRunner().invoke(
+        main,
+        ["run", "--configfile", "config.yaml", "--step", "create-target-gene"],
+    )
 
     assert result.exit_code != 0
     assert "not both" in result.output

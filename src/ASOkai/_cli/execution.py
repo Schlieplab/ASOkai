@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 
 from ASOkai._pipeline import config as cfg
 from ASOkai._pipeline import runner
@@ -29,7 +30,11 @@ def _run_selection_options(command):
     """Add per-run options to both execution commands."""
     for option, help_text in (
         ("--id", "ID for the preceding step or task."),
-        ("--param", "Parameter NAME=VALUE for the current run."),
+        (
+            "--param",
+            "Before a selection: shared PATH=VALUE (e.g. genome.assembly=GRCh38); "
+            "after a selection: run parameter NAME=VALUE.",
+        ),
         ("--from-run", "Input INPUT=RUN_ID.OUTPUT for the current run."),
         ("--input-path", "Input INPUT=PATH for the current run."),
         ("--child", "Declared child ID of the preceding task."),
@@ -48,6 +53,13 @@ def _configured_cli_runs(
     ctx: click.Context, config: dict, catalog: PipelineCatalog
 ) -> None:
     """Feed CLI and YAML selections through the same run normalization path."""
+    cfg.apply_overrides(
+        config,
+        {
+            f"parameters.{name}": value
+            for name, value in ctx.meta["asokai_shared_parameters"].items()
+        },
+    )
     selections = ctx.meta["asokai_ordered_runs"]
     if selections and "runs" in config:
         raise click.UsageError(
@@ -61,6 +73,26 @@ def _configured_cli_runs(
         )
 
 
+def _load_execution_config(
+    ctx: click.Context, config_path: Path, *, no_config: bool
+) -> dict:
+    """Use the available default file unless CLI-only mode was requested."""
+    if no_config:
+        if ctx.get_parameter_source("config_path") is not ParameterSource.DEFAULT:
+            raise click.UsageError("--no-config cannot be combined with --configfile.")
+        return {"datadir": "./data"}
+    try:
+        return cfg.load(config_path)
+    except FileNotFoundError:
+        if ctx.get_parameter_source("config_path") is not ParameterSource.DEFAULT:
+            raise
+        if not ctx.meta["asokai_ordered_runs"]:
+            raise click.UsageError(
+                "Select at least one runnable with --step, --task, or --workflow."
+            ) from None
+        return {"datadir": "./data"}
+
+
 @click.command("run", context_settings=CONTEXT_SETTINGS, cls=OrderedRunCommand)
 @verbose_option
 @_run_selection_options
@@ -69,10 +101,15 @@ def _configured_cli_runs(
     "--configfile",
     "--config-file",
     "config_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(dir_okay=False, path_type=Path),
     default=DEFAULT_CONFIG,
     show_default=True,
-    help="Path to config.yaml.",
+    help="Configuration file; defaults to config.yaml when present.",
+)
+@click.option(
+    "--no-config",
+    is_flag=True,
+    help="Ignore config.yaml and use only CLI selections and parameters.",
 )
 @click.option(
     "--step",
@@ -122,6 +159,7 @@ def _configured_cli_runs(
 def run_command(
     ctx: click.Context,
     config_path: Path,
+    no_config: bool,
     force: bool,
     dry_run: bool,
     non_recursive: bool,
@@ -130,7 +168,7 @@ def run_command(
     """Run selected steps, tasks, or a workflow."""
     try:
         catalog = get_pipeline_catalog()
-        config = cfg.load(config_path)
+        config = _load_execution_config(ctx, config_path, no_config=no_config)
         _configured_cli_runs(ctx, config, catalog)
 
         verbose = bool(ctx.obj and ctx.obj.get("verbose", False))
@@ -160,10 +198,15 @@ def run_command(
     "--configfile",
     "--config-file",
     "config_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(dir_okay=False, path_type=Path),
     default=DEFAULT_CONFIG,
     show_default=True,
-    help="Path to config.yaml.",
+    help="Configuration file; defaults to config.yaml when present.",
+)
+@click.option(
+    "--no-config",
+    is_flag=True,
+    help="Ignore config.yaml and use only CLI selections and parameters.",
 )
 @click.option(
     "--step",
@@ -212,6 +255,7 @@ def run_command(
 def export_command(
     ctx: click.Context,
     config_path: Path,
+    no_config: bool,
     recursive: bool,
     outdir: Path | None,
     executor_name: str,
@@ -219,7 +263,7 @@ def export_command(
     """Export selected pipeline units as a runnable CWL bundle."""
     try:
         catalog = get_pipeline_catalog()
-        config = cfg.load(config_path)
+        config = _load_execution_config(ctx, config_path, no_config=no_config)
         _configured_cli_runs(ctx, config, catalog)
 
         export_directory = runner.export_all(

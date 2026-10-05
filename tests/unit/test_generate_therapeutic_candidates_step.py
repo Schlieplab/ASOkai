@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Filename: tests/unit/test_generate_aso_candidates_step.py
+Filename: tests/unit/test_generate_therapeutic_candidates_step.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Tests for GenerateASOCandidatesStep.
+Description: Tests for GenerateTherapeuticCandidatesStep.
 License: LGPL-3.0-or-later
 """
 
@@ -21,8 +21,8 @@ from ASOkai._cwl.generation import StepCwlGenerator
 from ASOkai.Plugins import CoreStep, FileInput, JsonFile, Step
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
-from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-    GenerateASOCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 
 
@@ -57,8 +57,8 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def step() -> GenerateASOCandidatesStep:
-    return GenerateASOCandidatesStep()
+def step() -> GenerateTherapeuticCandidatesStep:
+    return GenerateTherapeuticCandidatesStep()
 
 
 def _run(step, config, tmp_path):
@@ -76,21 +76,22 @@ def _run(step, config, tmp_path):
 def test_step_contract_and_dependency(step):
     assert isinstance(step, Step)
     assert isinstance(step, CoreStep)
-    assert step.name == "generate-aso-candidates"
+    assert step.name == "generate-therapeutic-candidates"
     assert step.dependencies == ["create-target-gene"]
     assert (
         step.spec.input("target_gene").source is CreateTargetGeneStep.target_gene_output
     )
     assert isinstance(step.spec.input("target_gene"), FileInput)
-    assert isinstance(GenerateASOCandidatesStep.target_gene_input.file_type, JsonFile)
+    assert isinstance(GenerateTherapeuticCandidatesStep.target_gene_input.file_type, JsonFile)
     assert (
-        GenerateASOCandidatesStep.target_gene_input.file_type.value_type is TargetGene
+        GenerateTherapeuticCandidatesStep.target_gene_input.file_type.value_type is TargetGene
     )
 
 
 def test_config_and_input_mapping(step):
     assert step.config_map == {
         "k": "parameters.target.k",
+        "modality": "parameters.antisense.modality",
         "design": "parameters.antisense.design.type",
         "left_wing_length": "parameters.antisense.design.left_wing_length",
         "gap_length": "parameters.antisense.design.gap_length",
@@ -98,7 +99,7 @@ def test_config_and_input_mapping(step):
         "mechanism": "parameters.antisense.mechanism",
     }
     assert step.target_gene_input.configuration_path(step.name) == (
-        "steps.generate-aso-candidates.inputs.target_gene"
+        "steps.generate-therapeutic-candidates.inputs.target_gene"
     )
 
 
@@ -213,9 +214,10 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
         "step",
         "--run-id",
         run.run_id,
-        "generate-aso-candidates",
+        "generate-therapeutic-candidates",
     ]
     assert document["inputs"]["design"]["type"]["type"] == "enum"
+    assert document["inputs"]["modality"]["type"]["type"] == "enum"
     assert document["inputs"]["mechanism"]["type"] == "string"
     assert document["inputs"]["left_wing_length"]["type"] == "int?"
     assert document["inputs"]["gap_length"]["type"] == "int?"
@@ -254,10 +256,12 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     bindings_output = tmp_path / "nested" / "bindings.json"
 
     caplog.set_level(logging.INFO)
-    result = GenerateASOCandidatesStep().run_cli(
+    result = GenerateTherapeuticCandidatesStep().run_cli(
         [
             "--k",
             "16",
+            "--modality",
+            "aso",
             "--design",
             "gapmer",
             "--left-wing-length",
@@ -327,10 +331,12 @@ def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = GenerateASOCandidatesStep().run_cli(
+    result = GenerateTherapeuticCandidatesStep().run_cli(
         [
             "--k",
             "16",
+            "--modality",
+            "aso",
             "--design",
             "gapmer",
             "--left-wing-length",
@@ -363,10 +369,10 @@ def test_run_cli_shares_mechanism_across_sites_and_keeps_bindings(tmp_path):
         therapeutic_id for therapeutic_id, _ in expected_bindings
     ]
 
-    therapeutics = GenerateASOCandidatesStep.therapeutics_output.file_type.read(
+    therapeutics = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type.read(
         therapeutics_output
     )
-    bindings = GenerateASOCandidatesStep.bindings_output.file_type.read(bindings_output)
+    bindings = GenerateTherapeuticCandidatesStep.bindings_output.file_type.read(bindings_output)
     assert therapeutics[0].mechanism is therapeutics[1].mechanism
     assert [
         (binding.first_id, binding.second_id) for binding in bindings
@@ -394,10 +400,12 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = GenerateASOCandidatesStep().run_cli(
+    result = GenerateTherapeuticCandidatesStep().run_cli(
         [
             "--k",
             "4",
+            "--modality",
+            "aso",
             "--design",
             "unmodified",
             "--mechanism",
@@ -416,7 +424,7 @@ def test_run_cli_generates_unmodified_asos_without_gapmer_lengths(tmp_path):
     assert result == 0
     assert therapeutic["__class__"] == "ASO"
     assert therapeutic["id"] == "aso:mcustom-mechanism-s4x1b"
-    restored = GenerateASOCandidatesStep.therapeutics_output.file_type.read(
+    restored = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type.read(
         therapeutics_output
     )
     assert restored[0].mechanism.id == "custom-mechanism"
@@ -443,10 +451,12 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
     therapeutics_output = tmp_path / "therapeutics.json"
     bindings_output = tmp_path / "bindings.json"
 
-    result = GenerateASOCandidatesStep().run_cli(
+    result = GenerateTherapeuticCandidatesStep().run_cli(
         [
             "--k",
             "16",
+            "--modality",
+            "aso",
             "--design",
             "unmodified",
             "--mechanism",
@@ -536,10 +546,12 @@ def test_run_cli_rejects_invalid_design_layout_before_writing_outputs(
     output_dir = tmp_path / "outputs"
 
     with pytest.raises(SystemExit) as error:
-        GenerateASOCandidatesStep().run_cli(
+        GenerateTherapeuticCandidatesStep().run_cli(
             [
                 "--k",
                 "16",
+                "--modality",
+                "aso",
                 *design_arguments,
                 "--mechanism",
                 "rnase-h1",
@@ -557,6 +569,54 @@ def test_run_cli_rejects_invalid_design_layout_before_writing_outputs(
     assert not output_dir.exists()
 
 
+def test_run_cli_rejects_sirna_before_writing_output(tmp_path, capsys):
+    target_input = tmp_path / "target.json"
+    _write_target_gene(
+        target_input,
+        TargetGene(
+            id="ENSG00000133703",
+            name="KRAS",
+            chr="12",
+            start=1,
+            end=16,
+            strand="+",
+            sequence=Seq("A" * 16),
+            sites={},
+        ),
+    )
+    with pytest.raises(SystemExit) as error:
+        GenerateTherapeuticCandidatesStep().run_cli(
+            [
+                "--k",
+                "16",
+                "--modality",
+                "sirna",
+                "--design",
+                "unmodified",
+                "--mechanism",
+                "risc",
+                "--target-gene",
+                str(target_input),
+                "--therapeutics-output",
+                str(tmp_path / "therapeutics.json"),
+                "--bindings-output",
+                str(tmp_path / "bindings.json"),
+            ]
+        )
+
+    assert error.value.code == 2
+    assert "siRNA candidate generation is not implemented" in capsys.readouterr().err
+    assert not (tmp_path / "therapeutics.json").exists()
+
+
+def test_sirna_validation_is_not_implemented(step):
+    with pytest.raises(
+        NotImplementedError,
+        match="siRNA candidate generation is not implemented",
+    ):
+        step.validate_parameters({"modality": "sirna"})
+
+
 def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
     target_input = tmp_path / "target.json"
     target_input.write_text(
@@ -570,10 +630,12 @@ def test_run_cli_rejects_target_file_with_wrong_type(tmp_path, capsys):
     )
 
     with pytest.raises(SystemExit) as error:
-        GenerateASOCandidatesStep().run_cli(
+        GenerateTherapeuticCandidatesStep().run_cli(
             [
                 "--k",
                 "16",
+                "--modality",
+                "aso",
                 "--design",
                 "unmodified",
                 "--mechanism",

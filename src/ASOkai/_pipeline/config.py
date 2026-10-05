@@ -183,7 +183,7 @@ def _resolve_step_parameters(
     if not errors:
         try:
             step.validate_parameters(values)
-        except ValueError as error:
+        except (NotImplementedError, ValueError) as error:
             errors.append(f"Step '{step.name}' parameters: {error}")
     return values, errors
 

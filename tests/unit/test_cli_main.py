@@ -166,7 +166,7 @@ def test_list_commands_show_registered_units():
     assert "download-genome" in steps.output
     assert "Downloads genome DNA" in steps.output
     assert "create-target-gene" in steps.output
-    assert "generate-aso-candidates" in steps.output
+    assert "generate-therapeutic-candidates" in steps.output
     assert "compute-intrinsic-features" in steps.output
     assert "target-gene-to-fasta" not in steps.output
     assert "[Per site] Computes nucleotide composition" in steps.output
@@ -322,13 +322,13 @@ def test_describe_workflow_shows_members_and_expanded_steps():
     assert result.exit_code == 0
     assert "Name        : standard" in result.output
     assert (
-        "Members     : instantiate-target-gene, generate-aso-candidates, "
+        "Members     : instantiate-target-gene, generate-therapeutic-candidates, "
         "compute-intrinsic-features" in result.output
     )
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert (
         "Steps (expanded): download-genome, create-target-gene, "
-        "generate-aso-candidates, compute-intrinsic-features" in result.output
+        "generate-therapeutic-candidates, compute-intrinsic-features" in result.output
     )
 
 
@@ -467,7 +467,7 @@ def test_run_workflow_selects_standard_explicitly(monkeypatch):
     assert captured["runnables"] == []
     assert captured["config"]["runs"] == [
         {"task": "instantiate-target-gene", "id": "instantiate-target-gene"},
-        {"step": "generate-aso-candidates", "id": "generate-aso-candidates"},
+        {"step": "generate-therapeutic-candidates", "id": "generate-therapeutic-candidates"},
         {"step": "compute-intrinsic-features", "id": "compute-intrinsic-features"},
     ]
     assert captured["executor"].__class__.__name__ == "CwlToolExecutor"
@@ -567,8 +567,8 @@ def test_cli_run_options_match_ordered_yaml_declarations(
 ):
     from ASOkai._pipeline.contracts.run_spec import RunSpec
     from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-        GenerateASOCandidatesStep,
+    from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+        GenerateTherapeuticCandidatesStep,
     )
 
     captured = {}
@@ -576,7 +576,7 @@ def test_cli_run_options_match_ordered_yaml_declarations(
     catalog = SimpleNamespace(
         steps={
             "create-target-gene": target_step,
-            "generate-aso-candidates": GenerateASOCandidatesStep(),
+            "generate-therapeutic-candidates": GenerateTherapeuticCandidatesStep(),
         },
         tasks={
             "compare-regions": SimpleNamespace(
@@ -618,7 +618,7 @@ def test_cli_run_options_match_ordered_yaml_declarations(
             "--param",
             "target.region=pre-mrna",
             "--step",
-            "generate-aso-candidates",
+            "generate-therapeutic-candidates",
             "--id",
             "candidates",
             "--from-run",
@@ -646,7 +646,7 @@ def test_cli_run_options_match_ordered_yaml_declarations(
             "parameters": {"region": "pre-mrna"},
         },
         {
-            "step": "generate-aso-candidates",
+            "step": "generate-therapeutic-candidates",
             "id": "candidates",
             "inputs": {"target_gene": {"from": "run.reference-gene.target_gene"}},
         },
@@ -1116,7 +1116,7 @@ def test_export_workflow_defaults_outdir_to_none_for_runner(monkeypatch, tmp_pat
     assert captured["runnables"] == []
     assert captured["config"]["runs"] == [
         {"task": "instantiate-target-gene", "id": "instantiate-target-gene"},
-        {"step": "generate-aso-candidates", "id": "generate-aso-candidates"},
+        {"step": "generate-therapeutic-candidates", "id": "generate-therapeutic-candidates"},
         {"step": "compute-intrinsic-features", "id": "compute-intrinsic-features"},
     ]
     assert captured["outdir"] is None

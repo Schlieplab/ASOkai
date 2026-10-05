@@ -14,8 +14,8 @@ from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
-from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-    GenerateASOCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 
@@ -29,6 +29,6 @@ class StandardWorkflow:
     )
     members: tuple[Runnable, ...] = (
         InstantiateTargetGeneTask(),
-        GenerateASOCandidatesStep(),
+        GenerateTherapeuticCandidatesStep(),
         IntrinsicFeaturesStep(),
     )

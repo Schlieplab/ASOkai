@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/core/generate_aso_candidates.py
+Filename: src/ASOkai/_pipeline/steps/core/generate_therapeutic_candidates.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Definition of the ASO-candidate generation step.
+Description: Definition of the therapeutic-candidate generation step.
 License: LGPL-3.0-or-later
 """
 
@@ -27,7 +27,7 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 logger = logging.getLogger(__name__)
 
 
-_ASO_PATH_FIELDS = {
+_THERAPEUTIC_PATH_FIELDS = {
     "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source", default="ensembl"),
     "release": TemplateField("parameters.genome.release"),
@@ -37,6 +37,7 @@ _ASO_PATH_FIELDS = {
     ),
     "k": TemplateField("parameters.target.k"),
     "region": TemplateField("parameters.target.region"),
+    "modality": TemplateField("parameters.antisense.modality"),
     "design": TemplateField("parameters.antisense.design.type"),
     "left": TemplateField(
         "parameters.antisense.design.left_wing_length",
@@ -54,9 +55,9 @@ _ASO_PATH_FIELDS = {
 }
 
 
-class GenerateASOCandidatesStep(CoreStep):
-    name = "generate-aso-candidates"
-    description = "Generates ASO candidates for target sites."
+class GenerateTherapeuticCandidatesStep(CoreStep):
+    name = "generate-therapeutic-candidates"
+    description = "Generates therapeutic candidates for target sites."
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
@@ -67,22 +68,22 @@ class GenerateASOCandidatesStep(CoreStep):
         file_type=JsonFile(list[AntisenseTherapeutic]),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_aso_{design}_"
+            "{target}_k{k}_{region}_{modality}_{design}_"
             "l{left}_g{gap}_r{right}_{mechanism}_"
             "therapeutics.json",
-            fields=_ASO_PATH_FIELDS,
+            fields=_THERAPEUTIC_PATH_FIELDS,
         ),
-        doc="Serialized ASO candidates.",
+        doc="Serialized therapeutic candidates.",
     )
     bindings_output = FileOutput(
         "bindings",
         file_type=JsonFile(list[Binding]),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/targets/{target}/antisense/"
-            "{target}_k{k}_{region}_aso_{design}_"
+            "{target}_k{k}_{region}_{modality}_{design}_"
             "l{left}_g{gap}_r{right}_{mechanism}_"
             "bindings.json",
-            fields=_ASO_PATH_FIELDS,
+            fields=_THERAPEUTIC_PATH_FIELDS,
         ),
         doc=(
             "Serialized relationships between therapeutic IDs and input "
@@ -93,6 +94,11 @@ class GenerateASOCandidatesStep(CoreStep):
         requirements={"WorkReuse": {"enableReuse": True}},
         params=[
             ScalarParam("k", int, config="parameters.target.k"),
+            ScalarParam(
+                "modality",
+                Literal["aso", "sirna"],
+                config="parameters.antisense.modality",
+            ),
             ScalarParam(
                 "design",
                 Literal["unmodified", "gapmer"],
@@ -124,11 +130,12 @@ class GenerateASOCandidatesStep(CoreStep):
         ],
         inputs=[target_gene_input],
         outputs=[therapeutics_output, bindings_output],
-        compatible_with={"parameters.antisense.modality": ["aso"]},
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
-        """Require segment lengths appropriate for the selected ASO design."""
+        """Reject unsupported modalities and validate ASO design lengths."""
+        if values.get("modality") == "sirna":
+            raise NotImplementedError("siRNA candidate generation is not implemented")
         mechanism_id = values.get("mechanism")
         if not isinstance(mechanism_id, str) or not mechanism_id.strip():
             raise ValueError("mechanism must be a non-empty string")
@@ -169,7 +176,9 @@ class GenerateASOCandidatesStep(CoreStep):
             )
 
     def run_from_args(self, args) -> int:
-        """Generate and serialize ASO candidates and their bindings."""
+        """Generate and serialize therapeutic candidates and their bindings."""
+        if args.modality != "aso":
+            raise NotImplementedError("siRNA candidate generation is not implemented")
         from ASOkai.Antisense import (
             ASOCandidateGenerator,
             GapmerCandidateGenerator,

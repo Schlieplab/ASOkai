@@ -40,8 +40,8 @@ from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-    GenerateASOCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
@@ -63,7 +63,7 @@ __all__ = [
     "FileOutput",
     "FileType",
     "FastaFile",
-    "GenerateASOCandidatesStep",
+    "GenerateTherapeuticCandidatesStep",
     "IntrinsicFeaturesStep",
     "InputConfigField",
     "IndexTargetGeneTask",

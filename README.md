@@ -135,7 +135,7 @@ ASOkai run --task instantiate-target-gene
 ASOkai run --workflow standard
 
 # Run multiple selected units
-ASOkai run --step generate-aso-candidates --step compute-intrinsic-features
+ASOkai run --step generate-therapeutic-candidates --step compute-intrinsic-features
 
 # Export the selected goals as a CWL job bundle without executing them
 ASOkai export --workflow standard

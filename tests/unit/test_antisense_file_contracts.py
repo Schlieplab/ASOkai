@@ -26,8 +26,8 @@ from ASOkai.Antisense import (
 )
 from ASOkai.Biochemistry import Chemistry, MechanismOfAction
 from ASOkai.Plugins import JsonFile
-from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-    GenerateASOCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 
 
@@ -85,9 +85,9 @@ def _site_binding() -> Binding:
 
 def test_step_declares_typed_antisense_collections():
     therapeutics_file = (
-        GenerateASOCandidatesStep.therapeutics_output.file_type
+        GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
     )
-    bindings_file = GenerateASOCandidatesStep.bindings_output.file_type
+    bindings_file = GenerateTherapeuticCandidatesStep.bindings_output.file_type
 
     assert isinstance(therapeutics_file, JsonFile)
     assert isinstance(bindings_file, JsonFile)
@@ -96,7 +96,7 @@ def test_step_declares_typed_antisense_collections():
 
 
 def _assert_therapeutic_roundtrip(therapeutic: AntisenseTherapeutic) -> None:
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([therapeutic]))
 
@@ -113,7 +113,7 @@ def test_aso_collection_roundtrip_reconstructs_domain_values(aso):
 
 def test_gapmer_collection_roundtrip_reconstructs_domain_values(gapmer):
     _assert_therapeutic_roundtrip(gapmer)
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([gapmer]))
 
@@ -122,7 +122,7 @@ def test_gapmer_collection_roundtrip_reconstructs_domain_values(gapmer):
 
 def test_sirna_collection_roundtrip_reconstructs_domain_values(sirna):
     _assert_therapeutic_roundtrip(sirna)
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([sirna]))
 
@@ -140,7 +140,7 @@ def test_optional_chemistry_survives_graph_roundtrip():
             Seq("TGCA"), chemistry=Chemistry("pna")
         ),
     )
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([therapeutic]))[0]
 
@@ -155,7 +155,7 @@ def test_shared_strand_chemistry_remains_one_object_after_graph_roundtrip():
         Oligonucleotide(Seq("ACGT"), chemistry=chemistry),
         Oligonucleotide(Seq("TGCA"), chemistry=chemistry),
     )
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     restored = file_type.loads(file_type.dumps([therapeutic]))[0]
 
@@ -167,7 +167,7 @@ def test_therapeutic_collection_rejects_mismatched_stored_id(
     request, therapeutic_name,
 ):
     therapeutic = request.getfixturevalue(therapeutic_name)
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([therapeutic]))
     document["root"][0]["id"] = "unrelated-id"
 
@@ -176,7 +176,7 @@ def test_therapeutic_collection_rejects_mismatched_stored_id(
 
 
 def test_binding_collection_roundtrip_reconstructs_domain_values():
-    file_type = GenerateASOCandidatesStep.bindings_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.bindings_output.file_type
     binding = _site_binding()
 
     restored = file_type.loads(file_type.dumps([binding]))
@@ -196,7 +196,7 @@ def test_therapeutic_collection_preserves_one_shared_mechanism():
         ASO(sequence=Seq("ACGT"), mechanism=mechanism),
         ASO(sequence=Seq("CGTA"), mechanism=mechanism),
     ]
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
 
     document = json.loads(file_type.dumps(therapeutics))
 
@@ -218,7 +218,7 @@ def test_therapeutic_collection_preserves_one_shared_mechanism():
 
 
 def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
     document = json.loads(file_type.dumps([gapmer]))
     document["root"][0]["gap_length"] = 1
 
@@ -227,7 +227,7 @@ def test_gapmer_collection_rejects_a_layout_length_mismatch(gapmer):
 
 
 def test_binding_collection_rejects_invalid_ids():
-    file_type = GenerateASOCandidatesStep.bindings_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.bindings_output.file_type
     document = json.loads(file_type.dumps([_site_binding()]))
     document["root"][0]["second_id"] = []
 
@@ -236,6 +236,6 @@ def test_binding_collection_rejects_invalid_ids():
 
 
 def test_typed_collection_schema_rejects_the_wrong_item_type():
-    file_type = GenerateASOCandidatesStep.therapeutics_output.file_type
+    file_type = GenerateTherapeuticCandidatesStep.therapeutics_output.file_type
     with pytest.raises(ValueError, match=r"\$.root\[0\]"):
         file_type.dumps(cast(Any, [_site_binding()]))

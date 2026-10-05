@@ -239,7 +239,7 @@ def test_workflow_reference_links_members_and_expanded_steps() -> None:
         "/tasks/instantiate-target-gene",
         "/steps/download-genome",
         "/steps/create-target-gene",
-        "/steps/generate-aso-candidates",
+        "/steps/generate-therapeutic-candidates",
         "/steps/compute-intrinsic-features",
     }
 
@@ -439,17 +439,19 @@ def test_step_reference_renders_only_declared_applicability() -> None:
     assert "rnase-h1" in reference
 
 
-def test_aso_candidate_generation_declares_its_modality() -> None:
-    step = get_built_in_step("generate-aso-candidates")
+def test_therapeutic_candidate_generation_declares_its_modality() -> None:
+    step = get_built_in_step("generate-therapeutic-candidates")
     generated_nodes = build_step_reference(step, _config_schema())
     reference = "\n".join(node.astext() for node in generated_nodes)
 
-    assert step.spec.compatible_with == {"parameters.antisense.modality": ("aso",)}
-    assert "Applicability" in reference
+    assert step.spec.compatible_with == {}
+    assert "parameters.antisense.modality" in reference
+    modality = next(param for param in step.spec.params if param.name == "modality")
+    assert modality.inferred_cwl_type()["symbols"] == ["aso", "sirna"]
 
 
 def test_candidate_generation_documents_conditional_design_fields() -> None:
-    step = get_built_in_step("generate-aso-candidates")
+    step = get_built_in_step("generate-therapeutic-candidates")
     fields = {
         field.path: field
         for field in collect_step_config_fields(step, _config_schema())
@@ -474,7 +476,7 @@ def test_candidate_generation_documents_conditional_design_fields() -> None:
 
 
 def test_candidate_generation_separates_design_parameters() -> None:
-    step = get_built_in_step("generate-aso-candidates")
+    step = get_built_in_step("generate-therapeutic-candidates")
     generated_nodes = build_step_reference(step, _config_schema())
     sections = {
         generated_section[0].astext(): generated_section
@@ -523,7 +525,7 @@ def test_candidate_generation_separates_design_parameters() -> None:
 
 def test_json_file_contract_maps_to_its_serializable_class() -> None:
     target_step = get_built_in_step("create-target-gene")
-    candidate_step = get_built_in_step("generate-aso-candidates")
+    candidate_step = get_built_in_step("generate-therapeutic-candidates")
 
     assert json_contract_types(target_step.target_gene_output.file_type) == (
         TargetGene,

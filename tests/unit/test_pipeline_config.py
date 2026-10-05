@@ -27,8 +27,8 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 )
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.core.generate_aso_candidates import (
-    GenerateASOCandidatesStep,
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 
 
@@ -308,7 +308,7 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
     ):
         cfg.validate_step_config(
             config,
-            [GenerateASOCandidatesStep()],
+            [GenerateTherapeuticCandidatesStep()],
         )
 
 
@@ -334,11 +334,11 @@ def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
     cfg.validate_config_schema(config)
     cfg.validate_step_config(
         config,
-        [GenerateASOCandidatesStep()],
+        [GenerateTherapeuticCandidatesStep()],
     )
 
 
-def test_aso_step_rejects_a_different_modality(tmp_path):
+def test_therapeutic_step_reports_sirna_not_implemented(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "parameters": {
@@ -354,9 +354,9 @@ def test_aso_step_rejects_a_different_modality(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match=r"antisense.modality.*incompatible.*generate-aso-candidates",
+        match=r"siRNA candidate generation is not implemented",
     ):
-        cfg.validate_step_config(config, [GenerateASOCandidatesStep()])
+        cfg.validate_step_config(config, [GenerateTherapeuticCandidatesStep()])
 
 
 def test_config_schema_allows_plugin_namespaces(tmp_path):
@@ -649,11 +649,11 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
     cfg.validate_config_schema(config)
     with pytest.raises(
         ValueError,
-        match=r"generate-aso-candidates.*target-site length \(18\)",
+        match=r"generate-therapeutic-candidates.*target-site length \(18\)",
     ):
         cfg.validate_step_config(
             config,
-            [GenerateASOCandidatesStep()],
+            [GenerateTherapeuticCandidatesStep()],
         )
 
 
@@ -675,7 +675,7 @@ def test_validate_step_config_rejects_invalid_override_path(
     config = {
         "datadir": str(tmp_path),
         "steps": {
-            "generate-aso-candidates": {
+            "generate-therapeutic-candidates": {
                 "inputs": {"target_gene": {"path_override": str(override)}}
             }
         },
@@ -698,7 +698,7 @@ def test_validate_step_config_rejects_invalid_override_path(
     with pytest.raises(ValueError, match=message):
         cfg.validate_step_config(
             config,
-            [GenerateASOCandidatesStep()],
+            [GenerateTherapeuticCandidatesStep()],
         )
 
 
@@ -708,7 +708,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "steps": {
-            "generate-aso-candidates": {
+            "generate-therapeutic-candidates": {
                 "inputs": {"target_gene": {"path_override": str(override)}}
             }
         },
@@ -731,7 +731,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
     with pytest.raises(ValueError, match="Invalid JSON"):
         cfg.validate_step_config(
             config,
-            [GenerateASOCandidatesStep()],
+            [GenerateTherapeuticCandidatesStep()],
         )
 
 

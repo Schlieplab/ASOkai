@@ -269,7 +269,7 @@ class Step(Runnable):
         }
         try:
             self.validate_parameters(parameter_values)
-        except ValueError as error:
+        except (NotImplementedError, ValueError) as error:
             parser.error(str(error))
         self.prepare_output_directories(args)
         exit_code = self.run_from_args(args)

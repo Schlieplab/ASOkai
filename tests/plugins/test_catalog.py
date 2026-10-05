@@ -206,7 +206,7 @@ def test_step_authoring_contracts_are_public() -> None:
         "FileType",
         "FastaFile",
         "UtilityStep",
-        "GenerateASOCandidatesStep",
+        "GenerateTherapeuticCandidatesStep",
         "IntrinsicFeaturesStep",
         "InputConfigField",
         "IndexTargetGeneTask",

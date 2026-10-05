@@ -307,7 +307,7 @@ they belong to::
    ASOkai run --configfile common.yaml \
      --param genome.assembly=GRCh39 \
      --step create-target-gene --id reference-gene --param target.region=pre-mrna \
-     --step generate-aso-candidates --id candidates \
+     --step generate-therapeutic-candidates --id candidates \
        --from-run target_gene=reference-gene.target_gene \
      --task compare-regions --id comparison --param target.k=21 \
        --child transcriptomic --param target.k=18

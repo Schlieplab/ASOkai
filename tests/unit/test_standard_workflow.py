@@ -29,7 +29,7 @@ def test_standard_workflow_declaration(workflow):
     assert all(isinstance(member, Step) for member in workflow.members[1:])
     assert [m.name for m in workflow.members] == [
         "instantiate-target-gene",
-        "generate-aso-candidates",
+        "generate-therapeutic-candidates",
         "compute-intrinsic-features",
     ]
 
@@ -45,6 +45,6 @@ def test_flattens_to_explicit_step_names(workflow):
     assert [s.name for s in expand_runnable_steps(workflow)] == [
         "download-genome",
         "create-target-gene",
-        "generate-aso-candidates",
+        "generate-therapeutic-candidates",
         "compute-intrinsic-features",
     ]

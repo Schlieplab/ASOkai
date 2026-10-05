@@ -21,8 +21,10 @@ from ASOkai.Plugins import (
     JsonFile,
     ScalarParam,
     StepSpec,
+    TableAnalysisStep,
 )
 from ASOkai.Types import AnalysisUnitType, Scalar
+from ASOkai._pipeline.validation import validate_component
 
 
 class FakeAnalysis(PerUnitAnalysis):
@@ -40,7 +42,30 @@ class FakeAnalysis(PerUnitAnalysis):
         return [{"site_id": unit, "value": self.value}]
 
 
-class FakeAnalysisStep(AnalysisStep):
+class TextAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
+
+    def analyze_unit(self, unit: str) -> list[str]:
+        return [unit.upper()]
+
+
+class JsonAnalysisStep(AnalysisStep):
+    name = "json-analysis"
+    description = "Write non-tabular analysis results."
+    analysis_cls = TextAnalysis
+    json_output = FileOutput(
+        "json", destination="results.json", file_type=JsonFile()
+    )
+    spec = StepSpec(outputs=[json_output])
+
+    def analysis_units(self, args):
+        return ["site-1", "site-2"]
+
+    def write_results(self, args, analysis, results):
+        self.json_output.write(args.json_output, {"values": results})
+
+
+class FakeAnalysisStep(TableAnalysisStep):
     name = "fake-analysis"
     description = "Fake analysis."
     analysis_cls = FakeAnalysis
@@ -63,7 +88,8 @@ class MissingAnalysisClassStep(FakeAnalysisStep):
 
 
 class MissingAnalysisUnitsStep(FakeAnalysisStep):
-    analysis_units = AnalysisStep.analysis_units
+    def analysis_units(self, args):
+        return AnalysisStep.analysis_units(self, args)
 
 
 class EmptyAnalysisStep(FakeAnalysisStep):
@@ -116,7 +142,7 @@ class MultiOutputAnalysisStep(FakeAnalysisStep):
             ],
             self.summary_output: {
                 "site_count": len(results),
-                "thread_count": analysis.last_thread_count,
+                "thread_count": getattr(analysis, "last_thread_count"),
             },
         }
 
@@ -152,7 +178,7 @@ class PairAnalysis(PerUnitAnalysis):
         ]
 
 
-class PairAnalysisStep(AnalysisStep):
+class PairAnalysisStep(TableAnalysisStep):
     name = "pair-analysis"
     description = "Two complete binding rows per site."
     analysis_cls = PairAnalysis
@@ -223,6 +249,18 @@ def test_analysis_step_writes_complete_rows_and_passes_allocated_threads(tmp_pat
         {"site_id": "site-1", "value": 7}
     ]
     assert FakeAnalysis.last_thread_count == 3
+
+
+def test_analysis_step_can_write_non_tabular_results(tmp_path):
+    step = JsonAnalysisStep()
+    validate_component("step", step)
+    output = tmp_path / "results.json"
+    args = Namespace(json_output=output, n_threads=2)
+
+    assert step.run_from_args(args) == 0
+    assert step.json_output.file_type.read(output) == {
+        "values": ["SITE-1", "SITE-2"]
+    }
 
 
 def test_analysis_step_writes_header_for_empty_results(tmp_path):

@@ -6,7 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Copyable starting point for an ASOkai analysis and pipeline step.
 License: LGPL-3.0-or-later
 
-To add an analysis step:
+To add a table analysis step:
 
 1. Copy this file and replace the example analysis, names, and declarations.
 2. Add any new configuration fields to
@@ -18,7 +18,7 @@ To add an analysis step:
 The declared ``StepSpec`` is the step's schema; no second contributor schema is
 needed.
 
-The first declared output is the primary analysis CSV. A step may declare more
+The first declared output is the primary analysis CSV. A table step may declare more
 CSV or JSON outputs after it and return their values from
 ``additional_output_values``.
 
@@ -46,7 +46,7 @@ from ASOkai._pipeline.contracts.paths import (
     TemplateField,
 )
 from ASOkai._pipeline.contracts.step_spec import StepSpec
-from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.analysis.table.base import TableAnalysisStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
@@ -74,7 +74,7 @@ class ExampleAnalysis(PerUnitAnalysis):
         ]
 
 
-class ExampleAnalysisStep(AnalysisStep):
+class ExampleAnalysisStep(TableAnalysisStep):
     """Replace the example names and declarations for the new step."""
 
     name = "example-analysis"

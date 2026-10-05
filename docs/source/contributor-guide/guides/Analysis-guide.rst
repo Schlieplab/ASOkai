@@ -4,8 +4,8 @@ Adding an analysis step
 An analysis contribution has two parts:
 
 1. an analysis class containing the scientific calculation; and
-2. an ``AnalysisStep`` describing how that calculation participates in the
-   pipeline.
+2. a ``TableAnalysisStep`` describing how that calculation produces a CSV
+   table in the pipeline.
 
 The step declaration supplies the command-line interface, configuration
 mapping, file validation, dependencies, output paths, and generated
@@ -34,13 +34,14 @@ needs the entire collection at once. Declare ``analysis_unit_type`` as ``site``,
 therapeutic-site pair; search queries remain internal values.
 
 ``Analysis`` defines execution over units without fixing the result type
-or the number of values returned per unit. The ``AnalysisStep`` convention
-below requires CSV-compatible rows for its primary output.
+or the number of values returned per unit. ``AnalysisStep`` runs the
+calculation and delegates writing to ``write_results``.
+``TableAnalysisStep`` supplies the CSV convention used below.
 
 Provide required scientific context, such as a target or genome, through the
 concrete analysis constructor. Units are passed to ``run(units)``.
 Implement ``analyze_unit(unit)`` for a per-unit analysis. When used with
-``AnalysisStep``, it returns zero or more complete row dictionaries, each
+``TableAnalysisStep``, it returns zero or more complete row dictionaries, each
 including its index columns. The inherited
 ``run(units, n_threads=...)`` uses shared-memory worker threads and preserves
 input order. Parallel implementations must treat shared context and units
@@ -53,7 +54,7 @@ site when the CSV index identifies each binding uniquely.
 Declare the pipeline contract
 -----------------------------
 
-An analysis step inherits from ``AnalysisStep`` and declares ``name``,
+An analysis table step inherits from ``TableAnalysisStep`` and declares ``name``,
 ``description``, ``analysis_cls``, and ``spec``. A built-in step imports each
 contract from its owning ``ASOkai._pipeline`` module, as shown in the template.
 An independently installed plugin imports the public equivalents from
@@ -81,13 +82,13 @@ rules apply unchanged to analysis steps.
 Analysis outputs
 ~~~~~~~~~~~~~~~~
 
-The first output of an ``AnalysisStep`` is its primary CSV table. Analyses
-used with that step return row dictionaries with every declared index and data
-column.
+The first output of a ``TableAnalysisStep`` is its primary CSV table. Analyses
+used with that step return row dictionaries with every declared index column
+and at least one declared data column. Data columns may be selected for a run.
 The CSV contract writes a header and validates column names, order, scalar
-types, and unique index values, including composite indexes.
+types, consistent rows, and unique index values, including composite indexes.
 
-An analysis step may declare additional CSV or JSON outputs after its primary
+An analysis table step may declare additional CSV or JSON outputs after its primary
 output. When it does, implement ``additional_output_values`` and return a
 mapping from each additional ``FileOutput`` object to the value that should be
 written. The base class validates and serializes those values.
@@ -107,7 +108,9 @@ configured thread count to its ``run`` method, and writes every declared
 output. All analysis steps expose the standard ``--n-threads`` option.
 
 There is no contributor-defined ``main`` function, input-loading hook,
-metadata payload, or output-writing hook in the standard analysis-step flow.
+metadata payload, or output-writing hook for a ``TableAnalysisStep``.
+For another output format, inherit from ``AnalysisStep`` and implement
+``write_results(args, analysis, results)``.
 
 Configuration and validation
 ----------------------------

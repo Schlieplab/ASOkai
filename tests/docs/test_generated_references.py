@@ -363,14 +363,14 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     }
     assert (
         "{assembly}/{source}/{release}/targets/{target}/"
-        "analysis/intrinsic/{target}_k{k}_{region}_intrinsic.csv"
+        "analysis/intrinsic/{target}_k{k}_{region}_intrinsic_{features}.csv"
     ) in reference
     assert "Producer output: create-target-gene.target_gene" in reference
     assert "Path override: " + input_path in reference
     assert (
         "GRCh38/ensembl/114/targets/"
         "ENSG00000133703/analysis/intrinsic/"
-        "ENSG00000133703_k16_pre-mrna_intrinsic.csv" in reference
+        "ENSG00000133703_k16_pre-mrna_intrinsic_all.csv" in reference
     )
 
     links = [

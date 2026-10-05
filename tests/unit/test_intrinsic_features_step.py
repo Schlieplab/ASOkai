@@ -76,8 +76,10 @@ def test_declares_intrinsic_analysis_contract(step):
     }
 
 
-def test_output_path_configuration_is_not_a_runtime_parameter(step):
-    assert step.config_map == {}
+def test_features_are_a_runtime_parameter(step):
+    assert step.config_map == {
+        "features": "parameters.analysis.intrinsic_features.features"
+    }
 
 
 def test_output_paths_structure(step, config, tmp_path):
@@ -91,7 +93,7 @@ def test_output_paths_structure(step, config, tmp_path):
         / "ENSG00000133703"
         / "analysis"
         / "intrinsic"
-        / "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
+        / "ENSG00000133703_k16_pre-mrna_intrinsic_all.csv"
     )
     assert paths["intrinsic_features"] == expected
 
@@ -118,7 +120,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         / "KRAS"
         / "analysis"
         / "intrinsic"
-        / "KRAS_k16_pre-mrna_intrinsic.csv"
+        / "KRAS_k16_pre-mrna_intrinsic_all.csv"
     )
     assert paths["intrinsic_features"] == expected
 
@@ -137,17 +139,43 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     run = _run(step, config, tmp_path)
     doc = yaml.safe_load(StepCwlGenerator().render(run))
 
-    assert set(doc["inputs"]) == {"target_gene", "n_threads"}
+    assert set(doc["inputs"]) == {"target_gene", "features", "n_threads"}
     assert doc["inputs"]["target_gene"]["type"] == "File"
     assert "intrinsic_features_output" not in doc["inputs"]
     assert "intrinsic_features_filename" not in doc["inputs"]
     assert {
         "prefix": "--intrinsic-features-output",
-        "valueFrom": "ENSG00000133703_k16_pre-mrna_intrinsic.csv",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna_intrinsic_all.csv",
     } in doc["arguments"]
     assert doc["outputs"]["intrinsic_features"]["outputBinding"]["glob"] == (
-        "ENSG00000133703_k16_pre-mrna_intrinsic.csv"
+        "ENSG00000133703_k16_pre-mrna_intrinsic_all.csv"
     )
+
+
+def test_selected_features_have_a_distinct_output_path(step, config, tmp_path):
+    selected = StepRun(
+        step.name,
+        step,
+        config,
+        inputs=(StepInputBinding(step.target_gene_input, tmp_path / "target.json"),),
+        parameters={"features": "GC_content,CpG_count"},
+    )
+
+    path = selected.output_paths()["intrinsic_features"]
+    assert path.name.endswith("_intrinsic_GC_content,CpG_count.csv")
+    assert selected.parameters["features"] == "GC_content,CpG_count"
+
+
+@pytest.mark.parametrize("features", ["", "GC_content,", "unknown", "GC_content,GC_content"])
+def test_rejects_invalid_feature_selection(step, config, tmp_path, features):
+    with pytest.raises(ValueError, match="features|CSV"):
+        StepRun(
+            step.name,
+            step,
+            config,
+            inputs=(StepInputBinding(step.target_gene_input, tmp_path / "target.json"),),
+            parameters={"features": features},
+        )
 
 
 def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
@@ -193,4 +221,39 @@ def test_run_cli_writes_site_keyed_results_as_csv_rows(tmp_path):
             "T_content": 0.25,
             "CpG_content": 0.25,
         }
+    ]
+
+
+def test_run_cli_writes_only_selected_feature_columns(tmp_path):
+    site = TranscriptSite(
+        id="site-1",
+        loci=[TranscriptLocus("transcript-1", 0, 4)],
+        sequence=Seq("GCGT"),
+    )
+    target = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=4,
+        strand="+",
+        sequence=Seq("GCGT"),
+        sites={site.id: site},
+    )
+    target_input = tmp_path / "target.json"
+    CreateTargetGeneStep.target_gene_output.write(target_input, target)
+    output = tmp_path / "selected.csv"
+
+    result = IntrinsicFeaturesStep().run_cli(
+        [
+            "--target-gene", str(target_input),
+            "--intrinsic-features-output", str(output),
+            "--features", "GC_content,CpG_count",
+        ]
+    )
+
+    assert result == 0
+    assert output.read_text() == "site_id,GC_content,CpG_count\nsite-1,0.75,1\n"
+    assert IntrinsicFeaturesStep.intrinsic_features_output.file_type.read(output) == [
+        {"site_id": "site-1", "GC_content": 0.75, "CpG_count": 1}
     ]

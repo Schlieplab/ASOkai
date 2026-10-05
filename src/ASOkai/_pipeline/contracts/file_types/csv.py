@@ -28,7 +28,7 @@ CsvTable: TypeAlias = Sequence[CsvRow]
 
 @dataclass(frozen=True, init=False)
 class CsvFile(FileType):
-    """A CSV table with explicitly typed index and data columns."""
+    """A CSV table with typed index columns and selectable data columns."""
 
     index: Mapping[str, type[str | int | float | bool]]
     columns: Mapping[str, type[str | int | float | bool]]
@@ -97,7 +97,7 @@ class CsvFile(FileType):
         fieldnames: Sequence[str],
         *,
         source: str,
-    ) -> None:
+    ) -> dict[str, type[str | int | float | bool]]:
         """Validate the names and order of a parsed CSV header."""
         actual = tuple(fieldnames)
         duplicates = sorted(
@@ -109,12 +109,15 @@ class CsvFile(FileType):
                 f"{', '.join(duplicates)}."
             )
 
-        expected = tuple(self.field_types)
-        if actual != expected:
+        field_types = self.field_types
+        selected = set(actual) - set(self.index)
+        expected = (*self.index, *(name for name in self.columns if name in selected))
+        if actual != expected or not selected:
             raise ValueError(
                 f"CSV from {source} has columns {actual!r}; "
                 f"expected {expected!r}."
             )
+        return {name: field_types[name] for name in actual}
 
     @staticmethod
     def _decode_cell(
@@ -223,7 +226,7 @@ class CsvFile(FileType):
         reader = csv.DictReader(io.StringIO(content, newline=""))
         if reader.fieldnames is None:
             raise ValueError(f"CSV from {source} must contain a header row.")
-        self._validate_header(reader.fieldnames, source=source)
+        field_types = self._validate_header(reader.fieldnames, source=source)
 
         rows: list[dict[str, Scalar]] = []
         for row_number, row in enumerate(reader, start=2):
@@ -244,7 +247,7 @@ class CsvFile(FileType):
                         row_number=row_number,
                         column_name=name,
                     )
-                    for name, value_type in self.field_types.items()
+                    for name, value_type in field_types.items()
                 }
             )
         self._validate_index_values(
@@ -260,6 +263,19 @@ class CsvFile(FileType):
             raise TypeError("CsvFile requires a sequence of row mappings.")
         rows = list(value)
         field_types = self.field_types
+        if rows:
+            selected = set(rows[0]) - set(self.index)
+            field_types = {
+                name: value_type
+                for name, value_type in field_types.items()
+                if name in self.index or name in selected
+            }
+            if not selected:
+                missing = ", ".join(self.columns)
+                raise ValueError(
+                    "CSV row 1 has inconsistent columns "
+                    f"(missing: {missing}; unexpected: none)."
+                )
         expected = set(field_types)
         normalized_rows: list[dict[str, Scalar]] = []
         encoded_rows: list[dict[str, str]] = []

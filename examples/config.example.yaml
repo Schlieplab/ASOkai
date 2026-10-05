@@ -24,6 +24,9 @@ parameters:
       gap_length: 10
       right_wing_length: 3
     # For unmodified DNA ASOs, use design: {type: unmodified} instead.
+  # analysis:
+  #   intrinsic_features:
+  #     features: GC_content,CpG_count  # default: all
 
 # How to check generated outputs before reusing them. "signature" is the default;
 # "contract" fully validates each existing output instead.

@@ -25,6 +25,7 @@ from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.analysis.table.base import TableAnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.validation import (
@@ -53,7 +54,7 @@ class MissingRunMethodStep(Step):
     spec = StepSpec()
 
 
-class JsonPrimaryOutputStep(AnalysisStep):
+class JsonPrimaryOutputStep(TableAnalysisStep):
     name = "json-primary-output"
     description = "Declares JSON as its primary analysis output."
     analysis_cls = ExampleAnalysis
@@ -65,7 +66,19 @@ class JsonPrimaryOutputStep(AnalysisStep):
     spec = StepSpec(outputs=[result_output])
 
 
-class MissingAdditionalOutputValuesStep(AnalysisStep):
+class MissingAnalysisWriterStep(AnalysisStep):
+    name = "missing-analysis-writer"
+    description = "Does not write its analysis results."
+    analysis_cls = ExampleAnalysis
+    result_output = FileOutput(
+        "result",
+        destination="result.json",
+        file_type=JsonFile(),
+    )
+    spec = StepSpec(outputs=[result_output])
+
+
+class MissingAdditionalOutputValuesStep(TableAnalysisStep):
     name = "missing-additional-output-values"
     description = "Does not provide its additional output value."
     analysis_cls = ExampleAnalysis
@@ -354,6 +367,7 @@ def test_step_component_must_declare_an_output():
     ("step", "message"),
     [
         (JsonPrimaryOutputStep(), "first output must use CsvFile"),
+        (MissingAnalysisWriterStep(), "must implement write_results"),
         (
             MissingAdditionalOutputValuesStep(),
             "must implement additional_output_values",

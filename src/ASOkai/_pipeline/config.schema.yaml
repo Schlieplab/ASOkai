@@ -145,6 +145,21 @@ properties:
     type: object
     description: Shared scalar settings used as fallbacks for selected runs.
     properties:
+      analysis:
+        type: object
+        additionalProperties: false
+        properties:
+          intrinsic_features:
+            type: object
+            additionalProperties: false
+            properties:
+              features:
+                type: string
+                minLength: 1
+                default: all
+                description: >-
+                  Comma-separated intrinsic feature columns, or 'all' for every
+                  supported feature.
       bowtie2:
         type: object
         additionalProperties: false

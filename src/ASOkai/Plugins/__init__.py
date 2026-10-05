@@ -28,6 +28,7 @@ from ASOkai._pipeline.contracts.run_spec import FromRun, RunSpec
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.base import Runnable
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.analysis.table.base import TableAnalysisStep
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "StandardWorkflow",
     "Task",
     "TargetGeneToFastaStep",
+    "TableAnalysisStep",
     "TemplateField",
     "UtilityStep",
     "Workflow",

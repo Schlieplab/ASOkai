@@ -31,8 +31,12 @@ Component hierarchy
    FASTA. Tasks can connect utility inputs to particular producers.
 
 ``AnalysisStep``
-   A step that runs an ``ASOkai.Analysis.Analysis`` subclass. Its shared
-   implementation writes a primary CSV output and optional later outputs.
+   A step that runs an ``ASOkai.Analysis.Analysis`` subclass and delegates
+   result writing to ``write_results``.
+
+``TableAnalysisStep``
+   An ``AnalysisStep`` that writes a primary typed CSV table and optional
+   later outputs.
 
 ``Task``
    A named CLI-level collection of steps. It may declare named step
@@ -55,9 +59,9 @@ Analysis execution models
 ``PerUnitAnalysis`` collects zero or more values per unit in input order,
 optionally using worker threads. ``BatchAnalysis`` passes the whole unit
 collection and thread budget to one backend call. Neither base class fixes
-the result type or the number of results per unit. ``AnalysisStep`` adds
-the current CSV output convention; ``CsvFile`` validates its declared
-columns and unique index values.
+the result type or the number of results per unit. ``AnalysisStep`` runs
+either model; ``TableAnalysisStep`` adds the CSV output convention.
+``CsvFile`` validates its declared columns and unique index values.
 
 .. _pipeline-step-specification:
 
@@ -327,8 +331,9 @@ The file type owns serialization and validation:
 
 ``CsvFile``
    A table contract with ordered index and data columns. Every column declares
-   one scalar type. Reading and writing validate the header, scalar values,
-   and index uniqueness.
+   one scalar type. A table contains every index column and a non-empty subset
+   of its declared data columns. Reading and writing validate the header,
+   scalar values, consistent rows, and index uniqueness.
 
 ``KffFile``
    A binary K-mer File Format contract. Validation first checks the opening
@@ -469,20 +474,20 @@ both data and receipt files.
 Analysis-step lifecycle
 -----------------------
 
-An ``AnalysisStep`` adds a convention for tabular analysis results:
+An ``AnalysisStep`` uses ``analysis_kwargs(args)`` for constructor context,
+``analysis_units(args)`` for units, and passes ``n_threads`` to the
+analysis. It then calls ``write_results(args, analysis, results)`` to write
+the declared outputs. ``TableAnalysisStep`` implements that hook with a
+tabular convention:
 
 1. its first output is the primary typed CSV;
-2. ``analysis_kwargs(args)`` returns constructor context and
-   ``analysis_units(args)`` supplies analysis units;
-3. the base class passes ``n_threads`` to the analysis and runs it;
-4. analyses return complete rows, including every index column;
-5. optional later outputs receive values from
+2. analyses return complete rows, including every index column;
+3. optional later outputs receive values from
    ``additional_output_values``; and
-6. every value is written through its declared file contract.
+4. every value is written through its declared file contract.
 
-This keeps ordinary analysis contributions declarative. Custom execution is
-appropriate for a ``CoreStep``; it should not be introduced into an analysis
-step merely to parse inputs or write results.
+This keeps table contributions declarative. Other analysis results can be
+written by implementing ``write_results`` on an ``AnalysisStep`` subclass.
 
 .. _pipeline-validation-boundaries:
 

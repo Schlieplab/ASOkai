@@ -248,6 +248,27 @@ def test_csv_file_roundtrip_preserves_declared_scalar_types(tmp_path):
     assert file_type.read(path) == rows
 
 
+def test_csv_file_validates_typed_column_subsets(tmp_path):
+    file_type = CsvFile(
+        index={"site_id": str},
+        columns={"score": float, "count": int},
+    )
+    path = tmp_path / "selected.csv"
+
+    file_type.write(path, [{"site_id": "site-1", "count": 2}])
+
+    assert file_type.read(path) == [{"site_id": "site-1", "count": 2}]
+    with pytest.raises(ValueError, match="expected"):
+        file_type.loads("site_id,count,score\nsite-1,2,0.5\n")
+    with pytest.raises(ValueError, match="expected"):
+        file_type.loads("site_id\nsite-1\n")
+    with pytest.raises(ValueError, match="inconsistent columns"):
+        file_type.dumps([
+            {"site_id": "site-1", "score": 0.5},
+            {"site_id": "site-2", "count": 2},
+        ])
+
+
 def test_csv_file_rejects_inconsistent_columns():
     file_type = CsvFile(
         index={"site_id": str},

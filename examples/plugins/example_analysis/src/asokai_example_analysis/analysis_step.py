@@ -6,7 +6,7 @@ Copyright: 2026, Alexander Schliep
 Description: Example external per-unit analysis and its pipeline declaration.
 License: LGPL-3.0-or-later
 
-The first declared output is the primary analysis CSV. Additional CSV or JSON
+The first declared output of a table analysis step is its primary CSV. Additional CSV or JSON
 outputs can follow it and receive values from ``additional_output_values``.
 
 Use ``StepSpec.compatible_with`` only when the analysis is biologically
@@ -24,7 +24,6 @@ from typing import ClassVar
 from ASOkai import Types
 from ASOkai.Analysis import PerUnitAnalysis
 from ASOkai.Plugins import (
-    AnalysisStep,
     CreateTargetGeneStep,
     CsvFile,
     FileInput,
@@ -32,6 +31,7 @@ from ASOkai.Plugins import (
     OutputPathTemplate,
     ScalarParam,
     StepSpec,
+    TableAnalysisStep,
     TemplateField,
 )
 from ASOkai.Sites import Site
@@ -60,7 +60,7 @@ class ExampleAnalysis(PerUnitAnalysis):
         ]
 
 
-class ExampleAnalysisStep(AnalysisStep):
+class ExampleAnalysisStep(TableAnalysisStep):
     """Declare how ASOkai configures and runs the example analysis."""
 
     name = "example-sequence-length"

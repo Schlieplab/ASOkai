@@ -18,6 +18,7 @@ from ASOkai.Types import AnalysisUnitType
 from ASOkai._pipeline.base import Runnable, is_valid_runnable_name
 from ASOkai._pipeline.contracts.file_types import CsvFile, FileType
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+from ASOkai._pipeline.steps.analysis.table.base import TableAnalysisStep
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.tasks.base import (
     Task,
@@ -81,6 +82,8 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
         instance.build_parser()
         if isinstance(instance, AnalysisStep):
             _validate_analysis_step(instance)
+            if isinstance(instance, TableAnalysisStep):
+                _validate_table_analysis_step(instance)
         return
 
     if kind == "task":
@@ -130,17 +133,24 @@ def _validate_analysis_step(step: AnalysisStep) -> None:
             "analysis_cls must declare analysis_unit_type as one of "
             f"{', '.join(repr(value) for value in allowed_unit_types)}."
         )
+    if type(step).write_results is AnalysisStep.write_results:
+        raise TypeError("analysis step must implement write_results().")
+
+
+def _validate_table_analysis_step(step: TableAnalysisStep) -> None:
+    """Validate the CSV and additional output contracts of a table step."""
     primary_output = step.spec.outputs[0]
     if not isinstance(primary_output.file_type, CsvFile):
-        raise TypeError("an analysis step's first output must use CsvFile.")
+        raise TypeError("a table analysis step's first output must use CsvFile.")
 
     additional_outputs = step.spec.outputs[1:]
     if (
         additional_outputs
-        and type(step).additional_output_values is AnalysisStep.additional_output_values
+        and type(step).additional_output_values
+        is TableAnalysisStep.additional_output_values
     ):
         raise TypeError(
-            "an analysis step with additional outputs must implement "
+            "a table analysis step with additional outputs must implement "
             "additional_output_values()."
         )
     for output in additional_outputs:

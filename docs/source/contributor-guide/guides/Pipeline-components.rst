@@ -32,7 +32,7 @@ Component hierarchy
 
 ``AnalysisStep``
    A step that runs an ``ASOkai.Analysis.Analysis`` subclass. Its shared
-   implementation owns analysis construction and result serialization.
+   implementation writes a primary CSV output and optional later outputs.
 
 ``Task``
    A named CLI-level collection of steps. It may declare named step
@@ -48,6 +48,16 @@ Task and workflow compositions are declarations: ASOkai reads their order but
 does not modify them. Built-ins therefore use tuples. Plugin components may
 use another sequence type, including a list, but should not mutate it after
 discovery.
+
+Analysis execution models
+-------------------------
+
+``PerUnitAnalysis`` collects zero or more values per unit in input order,
+optionally using worker threads. ``BatchAnalysis`` passes the whole unit
+collection and thread budget to one backend call. Neither base class fixes
+the result type or the number of results per unit. ``AnalysisStep`` adds
+the current CSV output convention; ``CsvFile`` validates its declared
+columns and unique index values.
 
 .. _pipeline-step-specification:
 

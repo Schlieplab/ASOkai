@@ -3,7 +3,7 @@
 Filename: src/ASOkai/Analysis/_base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Execution models for analyses.
+Description: Per-unit and batch execution models for analyses.
 License: LGPL-3.0-or-later
 """
 from abc import ABC, abstractmethod
@@ -11,22 +11,17 @@ from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
-from ..Types import AnalysisUnitType, Scalar
+from ASOkai.Types import AnalysisUnitType
 
 
 class Analysis(ABC):
-    """Base for analyses that return complete, CSV-compatible result rows."""
+    """Base for analyses that produce results from biological units."""
 
     analysis_unit_type: ClassVar[AnalysisUnitType | None] = None
 
     @abstractmethod
-    def run(
-        self,
-        units: Iterable[Any],
-        *,
-        n_threads: int = 1,
-    ) -> list[dict[str, Scalar]]:
-        """Analyze the supplied analysis units."""
+    def run(self, units: Iterable[Any], *, n_threads: int = 1) -> list[Any]:
+        """Analyze the supplied units and collect their results."""
         ...
 
 
@@ -37,13 +32,8 @@ class PerUnitAnalysis(Analysis):
     :meth:`run` is executing with more than one thread.
     """
 
-    def run(
-        self,
-        units: Iterable[Any],
-        *,
-        n_threads: int = 1,
-    ) -> list[dict[str, Scalar]]:
-        """Collect zero or more rows per unit in input order."""
+    def run(self, units: Iterable[Any], *, n_threads: int = 1) -> list[Any]:
+        """Collect zero or more results per unit in input order."""
         if type(n_threads) is not int or n_threads < 1:
             raise ValueError("n_threads must be a positive integer.")
         analysis_units = list(units)
@@ -51,26 +41,21 @@ class PerUnitAnalysis(Analysis):
             return []
         if n_threads == 1:
             results = map(self.analyze_unit, analysis_units)
-            return [row for unit_rows in results for row in unit_rows]
+            return [result for unit_results in results for result in unit_results]
         with ThreadPoolExecutor(max_workers=n_threads) as executor:
             results = executor.map(self.analyze_unit, analysis_units)
-            return [row for unit_rows in results for row in unit_rows]
+            return [result for unit_results in results for result in unit_results]
 
     @abstractmethod
-    def analyze_unit(self, unit: Any) -> Iterable[dict[str, Scalar]]:
-        """Return complete result rows for one analysis unit."""
+    def analyze_unit(self, unit: Any) -> Iterable[Any]:
+        """Return zero or more results for one analysis unit."""
         ...
 
 
 class BatchAnalysis(Analysis):
     """Pass the whole collection of units to one backend invocation."""
 
-    def run(
-        self,
-        units: Iterable[Any],
-        *,
-        n_threads: int = 1,
-    ) -> list[dict[str, Scalar]]:
+    def run(self, units: Iterable[Any], *, n_threads: int = 1) -> list[Any]:
         """Pass the collected units and thread count to the backend."""
         if type(n_threads) is not int or n_threads < 1:
             raise ValueError("n_threads must be a positive integer.")
@@ -78,10 +63,7 @@ class BatchAnalysis(Analysis):
 
     @abstractmethod
     def analyze_batch(
-        self,
-        units: list[Any],
-        *,
-        n_threads: int,
-    ) -> Iterable[dict[str, Scalar]]:
-        """Return complete rows using the supplied thread budget as needed."""
+        self, units: list[Any], *, n_threads: int
+    ) -> Iterable[Any]:
+        """Return results using the supplied thread budget as needed."""
         ...

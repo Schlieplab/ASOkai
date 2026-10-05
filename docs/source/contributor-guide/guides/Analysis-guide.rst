@@ -33,15 +33,22 @@ needs the entire collection at once. Declare ``analysis_unit_type`` as ``site``,
 ``therapeutic``, or ``binding``. A binding unit represents a
 therapeutic-site pair; search queries remain internal values.
 
+``Analysis`` defines execution over units without fixing the result type
+or the number of values returned per unit. The ``AnalysisStep`` convention
+below requires CSV-compatible rows for its primary output.
+
 Provide required scientific context, such as a target or genome, through the
 concrete analysis constructor. Units are passed to ``run(units)``.
-Implement ``analyze_unit(unit)`` for a per-unit analysis; it returns zero or
-more complete rows, each containing its index columns. The inherited
+Implement ``analyze_unit(unit)`` for a per-unit analysis. When used with
+``AnalysisStep``, it returns zero or more complete row dictionaries, each
+including its index columns. The inherited
 ``run(units, n_threads=...)`` uses shared-memory worker threads and preserves
 input order. Parallel implementations must treat shared context and units
 as read-only. A batch analysis implements
 ``analyze_batch(units, *, n_threads)``; it receives the configured thread
-count and controls its own parallelism.
+count and controls its own parallelism. A binding analysis can pass
+therapeutic-site pairs as its units, or return multiple binding rows for a
+site when the CSV index identifies each binding uniquely.
 
 Declare the pipeline contract
 -----------------------------
@@ -74,8 +81,9 @@ rules apply unchanged to analysis steps.
 Analysis outputs
 ~~~~~~~~~~~~~~~~
 
-The first output of an analysis step is its primary CSV table. Each row
-returned by ``Analysis.run`` supplies every declared index and data column.
+The first output of an ``AnalysisStep`` is its primary CSV table. Analyses
+used with that step return row dictionaries with every declared index and data
+column.
 The CSV contract writes a header and validates column names, order, scalar
 types, and unique index values, including composite indexes.
 

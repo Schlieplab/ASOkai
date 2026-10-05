@@ -52,7 +52,7 @@ class RecordingBatch(BatchAnalysis):
         return [{"total": sum(units)}]
 
 
-def test_per_unit_analysis_returns_complete_zero_or_many_rows_in_input_order():
+def test_per_unit_analysis_collects_zero_or_many_results_in_input_order():
     analysis = CountingAnalysis()
 
     assert isinstance(analysis, Analysis)
@@ -64,6 +64,17 @@ def test_per_unit_analysis_returns_complete_zero_or_many_rows_in_input_order():
     assert analysis.run(iter([0, 1, 2])) == expected
     assert analysis.run(iter([0, 1, 2]), n_threads=3) == expected
     assert analysis.run([], n_threads=2) == []
+
+
+class TextAnalysis(PerUnitAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
+
+    def analyze_unit(self, unit: int) -> list[str]:
+        return [f"{unit}:{index}" for index in range(unit)]
+
+
+def test_per_unit_analysis_can_return_non_table_results():
+    assert TextAnalysis().run([0, 2], n_threads=2) == ["2:0", "2:1"]
 
 
 @pytest.mark.parametrize("n_threads", [True, False, 0, -1, 1.5, "2"])
@@ -89,6 +100,19 @@ def test_batch_receives_the_whole_collection_once_including_empty_input():
     assert analysis.calls == [([1, 2, 3], 4)]
     assert analysis.run([]) == [{"total": 0}]
     assert analysis.calls == [([1, 2, 3], 4), ([], 1)]
+
+
+class TextBatch(BatchAnalysis):
+    analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
+
+    def analyze_batch(
+        self, units: list[int], *, n_threads: int
+    ) -> Iterable[str]:
+        return [f"{n_threads}:{','.join(map(str, units))}"]
+
+
+def test_batch_analysis_can_return_non_table_results():
+    assert TextBatch().run([1, 2], n_threads=3) == ["3:1,2"]
 
 
 @pytest.mark.parametrize("n_threads", [True, False, 0, -1, 1.5, "2"])

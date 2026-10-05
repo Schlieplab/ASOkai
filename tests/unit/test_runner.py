@@ -634,7 +634,7 @@ def test_export_does_not_require_input_override_to_exist(
     workflow_config["steps"] = {
         create.name: {
             "inputs": {
-                "dna": {"path_override": str(missing_override)},
+                "dna": {"path": str(missing_override)},
             },
         },
     }

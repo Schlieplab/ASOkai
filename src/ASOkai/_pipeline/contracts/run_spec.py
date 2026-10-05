@@ -62,7 +62,7 @@ def parse_run_input(value: RunInput | Mapping[str, Any]) -> RunInput:
         raise TypeError("Run input must specify a path or from reference.")
     if set(value) == {"path"}:
         path = value["path"]
-        if type(path) is not str or not path:
+        if type(path) is not str or not path.strip():
             raise ValueError("Run input path must be non-blank.")
         return Path(path).resolve()
     if set(value) == {"from"}:

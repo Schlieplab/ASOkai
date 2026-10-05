@@ -162,7 +162,7 @@ def test_step_run_uses_the_selected_producer_configuration(tmp_path):
     }
 
 
-def test_path_override_uses_main_config_not_the_filename(tmp_path):
+def test_path_uses_main_config_not_the_filename(tmp_path):
     selected_input = tmp_path / "filename-must-not-affect-output.json"
     run = StepRun(
         "input-configured-consumer",

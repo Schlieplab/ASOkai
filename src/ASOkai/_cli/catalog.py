@@ -218,8 +218,9 @@ def _describe_step_inputs(step, *, verbose: bool) -> None:
                 f"--from-run {file_input.name}=RUN_ID.OUTPUT"
             )
             click.echo(
-                "    Existing file in config.yaml: "
-                f"{file_input.configuration_path(step.name)}.path_override"
+                "    Shared config input: "
+                f"{file_input.configuration_path(step.name)} "
+                "with path: PATH or from: run.ID.OUTPUT"
             )
 
 

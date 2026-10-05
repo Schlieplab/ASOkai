@@ -12,12 +12,15 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from ASOkai._cwl.model import CwlToolArgument, CwlToolInput, CwlToolOutput
 from ASOkai._pipeline.contracts.file_types import FastaFile, FileType
 from ASOkai._pipeline.contracts.parameters import _flag_for_name
 from ASOkai._pipeline.contracts.paths import OutputPathTemplate
+
+if TYPE_CHECKING:
+    from ASOkai._pipeline.contracts.run_spec import RunInput
 
 
 @dataclass(frozen=True, init=False, eq=False)
@@ -225,43 +228,25 @@ class FileInput:
             raise TypeError(
                 f"Input configuration '{configuration_path}' must be a mapping."
             )
-        unexpected = set(value) - {"path_override"}
-        if unexpected:
-            names = ", ".join(sorted(str(name) for name in unexpected))
-            raise ValueError(
-                f"Input configuration '{configuration_path}' has unsupported "
-                f"field(s): {names}."
-            )
-        if "path_override" not in value:
-            raise ValueError(
-                f"Input configuration '{configuration_path}' must define "
-                "'path_override'."
-            )
         return value
 
-    def configured_path_override(
+    def configured_source(
         self,
         config: Mapping[str, Any],
         consumer_step_name: str,
-    ) -> Path | None:
-        """Return this input's configured path override, when present."""
+    ) -> RunInput | None:
+        """Return a configured path or named producer run, when present."""
+        from ASOkai._pipeline.contracts.run_spec import parse_run_input
+
         values = self._configured_values(config, consumer_step_name)
         if values is None:
             return None
-        value = values["path_override"]
-        if isinstance(value, str) and not value.strip():
-            raise ValueError(
-                f"Input path override "
-                f"'{self.configuration_path(consumer_step_name)}.path_override' "
-                "must be non-blank."
-            )
         try:
-            return Path(value).resolve()
-        except TypeError as error:
-            raise TypeError(
-                f"Input path override "
-                f"'{self.configuration_path(consumer_step_name)}.path_override' "
-                "must be a path."
+            return parse_run_input(values)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Input configuration '{self.configuration_path(consumer_step_name)}': "
+                f"{error}"
             ) from error
 
     def accepts_output(self, output: FileOutput) -> bool:

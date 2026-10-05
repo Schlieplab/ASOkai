@@ -402,15 +402,16 @@ def collect_step_config_fields(
         )
 
     for file_input in step.spec.inputs:
-        generic_path = "steps.<name>.inputs.<name>.path_override"
         configuration_path = file_input.configuration_path(step.name)
-        add(
-            replace(
-                all_fields[generic_path],
-                path=f"{configuration_path}.path_override",
-                requirement="Optional path override",
+        for source_name in ("path", "from"):
+            generic_path = f"steps.<name>.inputs.<name>.{source_name}"
+            add(
+                replace(
+                    all_fields[generic_path],
+                    path=f"{configuration_path}.{source_name}",
+                    requirement="Choose path or from",
+                )
             )
-        )
 
     from ASOkai._pipeline.config import (
         DEFAULT_STEP_RESOURCES,
@@ -454,7 +455,8 @@ def collect_step_schema_rules(
     )
     for file_input in step.spec.inputs:
         configuration_path = file_input.configuration_path(step.name)
-        paths.add(f"{configuration_path}.path_override")
+        paths.add(f"{configuration_path}.path")
+        paths.add(f"{configuration_path}.from")
     paths.update(step.spec.compatible_with)
     return [
         message

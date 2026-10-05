@@ -121,7 +121,8 @@ For a built-in step, add new configuration fields to
 represent the required value.
 
 The shared schema already defines named run ``parameters`` and ``inputs``
-selections, along with ``steps.<consumer>.inputs.<input>.path_override``.
+selections, along with shared ``steps.<consumer>.inputs.<input>`` entries
+containing ``path:`` or ``from:``.
 Parameter names and value types come from each step's ``ScalarParam``
 declarations.
 

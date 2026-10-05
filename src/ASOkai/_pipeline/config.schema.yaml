@@ -134,12 +134,17 @@ properties:
             type: object
             additionalProperties: false
             properties:
-              path_override:
+              path:
                 type: string
                 minLength: 1
-                description: Existing file used instead of the producer output.
-            required:
-              - path_override
+                description: Existing file supplied to the step input.
+              from:
+                type: string
+                pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
+                description: Named run output supplied to the step input.
+            oneOf:
+              - required: [path]
+              - required: [from]
 
   parameters:
     type: object

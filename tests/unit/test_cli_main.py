@@ -233,7 +233,7 @@ def test_describe_step_create_target_gene_shows_details():
     assert "Outputs:" in result.output
     assert "target_gene          JSON" in result.output
     assert "Input configuration (optional)" not in result.output
-    assert "path_override" not in result.output
+    assert "path" not in result.output
     assert "--config " not in result.output
     assert "Dependencies: download-genome" in result.output
 
@@ -242,8 +242,9 @@ def test_describe_step_create_target_gene_shows_details():
     assert "config key: parameters.target.target_id" in verbose.output
     assert "config key: parameters.target.region" in verbose.output
     assert "--input-path dna=PATH" in verbose.output
-    assert "steps.create-target-gene.inputs.dna.path_override" in verbose.output
-    assert "Existing file in config.yaml:" in verbose.output
+    assert "steps.create-target-gene.inputs.dna" in verbose.output
+    assert "Shared config input:" in verbose.output
+    assert "with path: PATH or from: run.ID.OUTPUT" in verbose.output
     assert "Under datadir:" in verbose.output
     assert "{target}_k{k}_{region}.json" in verbose.output
 
@@ -261,7 +262,8 @@ def test_describe_step_without_default_input_explains_file_selection():
     assert "KFF k-mer index" in result.output
     assert "--from-run reference=RUN_ID.OUTPUT" in verbose.output
     assert "--input-path reference=PATH" in verbose.output
-    assert "steps.build-kmc-index.inputs.reference.path_override" in verbose.output
+    assert "steps.build-kmc-index.inputs.reference" in verbose.output
+    assert "with path: PATH or from: run.ID.OUTPUT" in verbose.output
 
 
 def test_describe_step_uses_stepspec_not_step_argparse(monkeypatch):

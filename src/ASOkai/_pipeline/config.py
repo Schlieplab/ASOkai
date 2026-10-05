@@ -263,20 +263,20 @@ def validate_step_config(
                 continue
             configuration_path = file_input.configuration_path(step.name)
             try:
-                path_override = file_input.configured_path_override(
+                configured_source = file_input.configured_source(
                     config,
                     step.name,
                 )
             except (TypeError, ValueError) as error:
                 errors.append(f"$.{configuration_path}: {error}")
                 continue
-            if path_override is not None:
+            if isinstance(configured_source, Path):
                 if not validate_input_files:
                     continue
-                path_config = f"{configuration_path}.path_override"
+                path_config = f"{configuration_path}.path"
                 try:
                     validate_file_input_path(
-                        file_input, path_override, f"$.{path_config}"
+                        file_input, configured_source, f"$.{path_config}"
                     )
                 except (
                     OSError,

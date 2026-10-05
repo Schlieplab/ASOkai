@@ -54,7 +54,7 @@ class _ExplicitInput:
 
 @dataclass(frozen=True)
 class _RequestedInputSource:
-    """The path override or producer request found for one file input."""
+    """The path or producer request found for one file input."""
 
     file_input: FileInput
     source: Path | _RunRequest
@@ -141,6 +141,7 @@ class _PlanBuilder:
         force: bool,
         validate_input_files: bool = True,
         output_validation_mode: cfg.OutputValidationMode = "signature",
+        named_outputs: Mapping[str, FromRun] | None = None,
     ) -> None:
         self.main_config = main_config
         self.registered_steps = registered_steps
@@ -148,6 +149,7 @@ class _PlanBuilder:
         self.force_goal_runs = force
         self.validate_input_files = validate_input_files
         self.output_validation_mode = output_validation_mode
+        self.named_outputs = named_outputs or {}
         self.requests: dict[str, _RunRequest] = {}
         self.pending_request_ids: deque[str] = deque()
 
@@ -250,6 +252,21 @@ class _PlanBuilder:
     ) -> _RequestedInputSource:
         """Resolve one override or discover its producer request."""
         explicit = consumer_request.input_selections.get(file_input.name)
+        if explicit is None:
+            configured = file_input.configured_source(
+                consumer_request.config,
+                consumer_request.step.name,
+            )
+            if configured is not None:
+                if isinstance(configured, FromRun):
+                    configured = self.named_outputs.get(
+                        f"{configured.run_id}.{configured.output_name}",
+                        configured,
+                    )
+                explicit = _ExplicitInput(
+                    configured,
+                    f"$.{file_input.configuration_path(consumer_request.step.name)}",
+                )
         if explicit is not None:
             if isinstance(explicit.source, Path):
                 return _RequestedInputSource(
@@ -257,7 +274,12 @@ class _PlanBuilder:
                     source=explicit.source,
                     selection_path=f"{explicit.location}.path",
                 )
-            producer_request = self.requests[explicit.source.run_id]
+            producer_request = self.requests.get(explicit.source.run_id)
+            if producer_request is None:
+                raise ValueError(
+                    f"{explicit.location}.from: unknown named run "
+                    f"'{explicit.source.run_id}'."
+                )
             try:
                 output = producer_request.step.spec.output(explicit.source.output_name)
             except KeyError as error:
@@ -277,16 +299,6 @@ class _PlanBuilder:
                 source=producer_request,
                 output=output,
                 selection_path=explicit.location,
-            )
-
-        path_override = file_input.configured_path_override(
-            consumer_request.config,
-            consumer_request.step.name,
-        )
-        if path_override is not None:
-            return _RequestedInputSource(
-                file_input=file_input,
-                source=path_override,
             )
 
         if file_input.source is None:
@@ -785,7 +797,7 @@ def _validated_run_specs(
     registered_steps: dict[str, Step] | None,
     registered_tasks: Mapping[str, Task] | None,
     config_schema_paths: Mapping[str, Path] | None,
-) -> tuple[dict[str, Step], list[RunSpec]]:
+) -> tuple[dict[str, Step], list[RunSpec], dict[str, FromRun]]:
     """Normalize CLI or YAML selections into ordered step run specs."""
     if registered_steps is None:
         from ASOkai._pipeline.catalog import get_pipeline_catalog
@@ -903,21 +915,35 @@ def _validated_run_specs(
                     location=f"$.runs[{index}]",
                 )
             )
-        return registered_steps, run_specs
+        return registered_steps, run_specs, named_outputs
 
+    named_outputs: dict[str, FromRun] = {}
     seen_goal_ids: set[str] = set()
     for runnable in runnables:
         for member in flatten_workflow_members(runnable):
             if isinstance(member, Task):
                 requests = _task_run_specs(member, None)
+                if hasattr(member, "runs"):
+                    task_runs = validate_task_runs(member)
+                    for alias, reference in validate_task_outputs(
+                        member, {run.run_id: run for run in task_runs}
+                    ).items():
+                        named_outputs[f"{member.name}.{alias}"] = FromRun(
+                            f"{member.name}.{reference.run_id}",
+                            reference.output_name,
+                        )
             else:
                 requests = [RunSpec(member.name, member)]
             for request in requests:
+                for output in request.step.spec.outputs:
+                    named_outputs[f"{request.run_id}.{output.name}"] = FromRun(
+                        request.run_id, output.name
+                    )
                 if request.run_id in seen_goal_ids:
                     continue
                 seen_goal_ids.add(request.run_id)
                 run_specs.append(request)
-    return registered_steps, run_specs
+    return registered_steps, run_specs, named_outputs
 
 
 def build_plan(
@@ -931,7 +957,7 @@ def build_plan(
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve requested runnables into a dependency-complete execution plan."""
-    _registry, run_specs = _validated_run_specs(
+    _registry, run_specs, named_outputs = _validated_run_specs(
         runnables,
         config,
         _registry,
@@ -945,6 +971,7 @@ def build_plan(
         non_recursive=non_recursive,
         force=force,
         output_validation_mode=cfg.output_validation_mode(config),
+        named_outputs=named_outputs,
     )
     return builder.build(run_specs)
 
@@ -959,7 +986,7 @@ def build_export_plan(
     _config_schema_paths: Mapping[str, Path] | None = None,
 ) -> ExecutionPlan:
     """Resolve a file-system-independent plan for a CWL export bundle."""
-    _registry, run_specs = _validated_run_specs(
+    _registry, run_specs, named_outputs = _validated_run_specs(
         runnables,
         config,
         _registry,
@@ -972,5 +999,6 @@ def build_export_plan(
         non_recursive=False,
         force=True,
         validate_input_files=False,
+        named_outputs=named_outputs,
     )
     return builder.build_export(run_specs, recursive=recursive)

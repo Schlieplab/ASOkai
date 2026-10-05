@@ -315,7 +315,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     producer, consumer = _make_configurable_producer_and_consumer()
     registry = {producer.name: producer, consumer.name: consumer}
 
-    _, cli_specs = _validated_run_specs([producer], config, registry, None, None)
+    _, cli_specs, _ = _validated_run_specs([producer], config, registry, None, None)
     assert len(cli_specs) == 1
     assert isinstance(cli_specs[0], RunSpec)
     assert cli_specs[0].run_id == producer.name
@@ -328,7 +328,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
         },
         {"id": "source", "step": producer.name, "parameters": {"mode": "alt"}},
     ]
-    _, configured_specs = _validated_run_specs([], config, registry, None, None)
+    _, configured_specs, _ = _validated_run_specs([], config, registry, None, None)
     assert all(isinstance(spec, RunSpec) for spec in configured_specs)
     assert [spec.run_id for spec in configured_specs] == ["runs.1", "runs.source"]
     assert configured_specs[0].inputs == {
@@ -820,7 +820,7 @@ def test_named_run_input_link_resolves_forward_reference_before_consumer(config)
     config["steps"] = {
         consumer.name: {
             "inputs": {
-                "result": {"path_override": str(Path(config["datadir"]) / "missing")}
+                "result": {"path": str(Path(config["datadir"]) / "missing")}
             }
         }
     }
@@ -855,7 +855,7 @@ def test_configured_run_external_path_replaces_global_input(config, tmp_path):
     config["producer"] = {"mode": "main"}
     config["steps"] = {
         consumer.name: {
-            "inputs": {"result": {"path_override": str(tmp_path / "missing.txt")}}
+            "inputs": {"result": {"path": str(tmp_path / "missing.txt")}}
         }
     }
     config["runs"] = [
@@ -934,6 +934,78 @@ def test_typed_input_accepts_compatible_named_producer(config):
     source = plan.goals[1].inputs[0].source
     assert isinstance(source, StepRunOutput)
     assert source.run is plan.goals[0]
+
+
+def test_typed_input_accepts_shared_named_source(config):
+    producer, consumer = _make_fasta_producer_and_consumer()
+    config["runs"] = [
+        {"id": "source", "step": producer.name},
+        {"step": consumer.name},
+    ]
+    config["steps"] = {
+        consumer.name: {
+            "inputs": {"reference": {"from": "run.source.reference"}},
+        },
+    }
+
+    plan = build_plan(
+        [], config, _registry={producer.name: producer, consumer.name: consumer}
+    )
+
+    source = plan.goals[1].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run is plan.goals[0]
+
+
+def test_typed_input_accepts_shared_path(config, tmp_path):
+    _, consumer = _make_fasta_producer_and_consumer()
+    reference = tmp_path / "reference.fa"
+    reference.write_text(">reference\nACGT\n")
+    config["runs"] = [{"step": consumer.name}]
+    config["steps"] = {
+        consumer.name: {"inputs": {"reference": {"path": str(reference)}}},
+    }
+
+    plan = build_plan([], config, _registry={consumer.name: consumer})
+
+    assert plan.goals[0].inputs[0].source == reference.resolve()
+
+
+def test_shared_source_can_use_an_exposed_task_output(config):
+    task, source_step, child_consumer = _make_named_task()
+    consumer = _make_step("external-consumer", [source_step])
+    config["steps"] = {
+        consumer.name: {
+            "inputs": {"result": {"from": "run.linked-task.left"}},
+        },
+    }
+
+    plan = build_plan(
+        [task, consumer],
+        config,
+        _registry={
+            source_step.name: source_step,
+            child_consumer.name: child_consumer,
+            consumer.name: consumer,
+        },
+    )
+
+    source = plan.goals[-1].inputs[0].source
+    assert isinstance(source, StepRunOutput)
+    assert source.run.run_id == "linked-task.left_source"
+
+
+def test_shared_named_source_requires_a_selected_run(config):
+    _, consumer = _make_fasta_producer_and_consumer()
+    config["runs"] = [{"step": consumer.name}]
+    config["steps"] = {
+        consumer.name: {
+            "inputs": {"reference": {"from": "run.missing.reference"}},
+        },
+    }
+
+    with pytest.raises(ValueError, match="unknown named run 'missing'"):
+        build_plan([], config, _registry={consumer.name: consumer})
 
 
 def test_typed_input_rejects_incompatible_named_producer(config):
@@ -1455,7 +1527,7 @@ def test_file_override_bypasses_dependency(config, tmp_path):
     config["steps"] = {
         "goal": {
             "inputs": {
-                "dependency_out": {"path_override": str(override)},
+                "dependency_out": {"path": str(override)},
             },
         },
     }

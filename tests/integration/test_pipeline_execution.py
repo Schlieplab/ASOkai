@@ -98,7 +98,7 @@ def test_registered_step_executes_validates_and_publishes_output(
         "datadir": str(tmp_path),
         "steps": {
             "build-kmc-index": {
-                "inputs": {"reference": {"path_override": str(dna)}}
+                "inputs": {"reference": {"path": str(dna)}}
             }
         },
         "resources": {"default": {"n_threads": 1, "memory_mb": 4096}},

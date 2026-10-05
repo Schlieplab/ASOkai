@@ -138,7 +138,7 @@ def test_path_binding_is_resolved_as_input_override(tmp_path):
         "path": str(override.resolve()),
     }
     assert resolved["shared"].config_path == (
-        "steps.consumer.inputs.shared.path_override"
+        "steps.consumer.inputs.shared.path"
     )
 
 
@@ -288,7 +288,7 @@ def test_sequence_reuses_one_input_for_one_producer_output(tmp_path):
     }
 
 
-def test_sequence_keeps_path_overrides_qualified_by_consumer(tmp_path):
+def test_sequence_keeps_paths_qualified_by_consumer(tmp_path):
     config = {"datadir": str(tmp_path)}
     producer = _fake_step("producer", output_names=["result"])
     first = _fake_step(

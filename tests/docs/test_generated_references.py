@@ -256,8 +256,12 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
         "Required to determine the output path"
     )
     assert (
-        fields["steps.compute-intrinsic-features.inputs.target_gene.path_override"].requirement
-        == "Optional path override"
+        fields["steps.compute-intrinsic-features.inputs.target_gene.path"].requirement
+        == "Choose path or from"
+    )
+    assert (
+        fields["steps.compute-intrinsic-features.inputs.target_gene.from"].requirement
+        == "Choose path or from"
     )
     assert fields["resources.compute-intrinsic-features.n_threads"].requirement == (
         "Overrides resources.default"
@@ -296,7 +300,7 @@ def test_step_reference_documents_named_run_input_selection() -> None:
     )
     input_path = "steps.context-consumer.inputs.context_target"
 
-    assert f"{input_path}.path_override" in reference
+    assert f"{input_path}.path" in reference
     assert "A selected run can instead link a named output" in reference
     assert f"{input_path}.parameters.region" not in reference
 
@@ -331,7 +335,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         "--config-file ./config.yaml" in reference
     )
     assert "create-target-gene.target_gene" in reference
-    input_path = "steps.compute-intrinsic-features.inputs.target_gene.path_override"
+    input_path = "steps.compute-intrinsic-features.inputs.target_gene.path"
     assert input_path in reference
     sections = {
         node[0].astext(): node
@@ -356,7 +360,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         "steps": {
             "compute-intrinsic-features": {
                 "inputs": {
-                    "target_gene": {"path_override": "/path/to/target_gene.json"}
+                    "target_gene": {"path": "/path/to/target_gene.json"}
                 }
             }
         }
@@ -366,7 +370,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         "analysis/intrinsic/{target}_k{k}_{region}_intrinsic_{features}.csv"
     ) in reference
     assert "Producer output: create-target-gene.target_gene" in reference
-    assert "Path override: " + input_path in reference
+    assert "Shared config source: " + input_path in reference
     assert (
         "GRCh38/ensembl/114/targets/"
         "ENSG00000133703/analysis/intrinsic/"

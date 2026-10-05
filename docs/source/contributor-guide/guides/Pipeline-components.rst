@@ -282,10 +282,11 @@ for that input is rejected; otherwise the nested override may supply the
 child's ``from:`` or ``path:`` source. A task selection has no separate
 ``inputs`` mapping.
 
-If the input has no run-level source, the configured
-``steps.STEP.inputs.INPUT.path_override`` is used when present. Otherwise,
-``FileInput.source`` identifies the step's default producer output. An input
-with neither a supplied path nor a producer fails planning. Scalar
+If the input has no run-level source, shared configuration at
+``steps.STEP.inputs.INPUT`` can supply either ``path:`` or ``from:``.
+Otherwise, ``FileInput.source`` identifies the step's default producer
+output. An input with neither a supplied source nor a default producer
+fails planning. Scalar
 ``parameters`` determine how a producer run executes and where its output
 belongs; they do not identify a producer run by themselves. The planner
 reuses a valid existing producer output or schedules that producer before
@@ -363,8 +364,9 @@ producer, for example ``FileInput("reference", file_type=FastaFile())``.
 This input requires a selected path or producer run. Named producer outputs
 must match the declared file type, including FASTA compression. An input with
 a fixed source accepts named runs of that exact output. Every input also has
-a ``path_override`` configuration option that lets a user substitute an
-existing file. ASOkai validates external files before running them.
+a shared ``path:`` or ``from:`` configuration option. ``path:`` substitutes
+an existing file; ``from:`` links a named run. ASOkai validates external files
+before running them.
 
 .. _configuring-an-input-producer:
 
@@ -399,10 +401,10 @@ For an existing file, select ``path:`` on the consuming run::
          target:
            path: /path/to/target_gene.json
 
-``steps.example-analysis.inputs.target.path_override`` is also available in
-shared configuration.
+Shared configuration also accepts ``steps.example-analysis.inputs.target.path``
+or ``steps.example-analysis.inputs.target.from``.
 
-Without an explicit input selection or path override, a fixed-source input
+Without an explicit input selection or shared input source, a fixed-source input
 uses the producer's main configuration.
 
 Output destinations read configuration values through ``TemplateField``
@@ -463,7 +465,7 @@ run rather than only one file.
 
 ASOkai does not adopt existing outputs that have no receipt. It reruns the
 step, validates its newly produced outputs, publishes them, and creates the
-receipt only after successful execution. User-supplied ``path_override`` files
+receipt only after successful execution. User-supplied ``path`` files
 never receive receipts; they continue to receive their inherited
 file-contract validation directly.
 

@@ -43,7 +43,7 @@ PROJECT_ROOT = Path(__file__).parents[4]
 EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "examples/config.example.yaml"
 
 
-def _path_override_example(step: Any) -> nodes.literal_block:
+def _path_example(step: Any) -> nodes.literal_block:
     """Build a complete YAML path-override example for one step."""
     suffixes = {
         "application/json": ".json",
@@ -52,7 +52,7 @@ def _path_override_example(step: Any) -> nodes.literal_block:
     }
     inputs = {
         file_input.name: {
-            "path_override": (
+            "path": (
                 f"/path/to/{file_input.name}"
                 f"{suffixes.get(file_input.file_type.media_type, '')}"
             )
@@ -137,8 +137,8 @@ def _inputs_table(
         configuration_path = file_input.configuration_path(step.name)
         input_details.append(
             (
-                "Path override",
-                f"{configuration_path}.path_override",
+                "Shared config source",
+                f"{configuration_path}.path or {configuration_path}.from",
                 True,
             )
         )
@@ -755,7 +755,7 @@ def _inputs_section(step: Any, *, refdoc: str) -> nodes.section:
             ),
             _inputs_table(step, step.spec.inputs, refdoc=refdoc),
             nodes.paragraph(text="Example path-override configuration:"),
-            _path_override_example(step),
+            _path_example(step),
         ],
     )
 

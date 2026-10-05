@@ -11,6 +11,7 @@ import pytest
 
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.file_types import FastaFile
+from ASOkai._pipeline.contracts.run_spec import FromRun
 from ASOkai._pipeline.contracts.step_spec import StepSpec
 from ASOkai._pipeline.steps.base import Step
 
@@ -77,25 +78,25 @@ def test_file_output_cannot_be_shared_by_two_producer_steps():
             spec = StepSpec(outputs=[result_output])
 
 
-def test_file_input_reads_path_override(tmp_path):
+def test_file_input_reads_path(tmp_path):
     file_input = FileInput("target", source=ProducerStep.result_output)
-    path_override = tmp_path / "target.json"
+    path = tmp_path / "target.json"
 
     assert file_input.configuration_path("consumer") == (
         "steps.consumer.inputs.target"
     )
-    assert file_input.configured_path_override(
+    assert file_input.configured_source(
         {
             "steps": {
                 "consumer": {
                     "inputs": {
-                        "target": {"path_override": str(path_override)},
+                        "target": {"path": str(path)},
                     },
                 },
             },
         },
         "consumer",
-    ) == path_override.resolve()
+    ) == path.resolve()
 
 
 def test_file_input_rejects_removed_parameter_configuration():
@@ -110,8 +111,23 @@ def test_file_input_rejects_removed_parameter_configuration():
     }
 
     file_input = FileInput("target", source=ProducerStep.result_output)
-    with pytest.raises(ValueError, match="unsupported field.*parameters"):
-        file_input.configured_path_override(config, "consumer")
+    with pytest.raises(ValueError, match="only path or from"):
+        file_input.configured_source(config, "consumer")
+
+
+def test_file_input_reads_named_source_without_fixed_producer():
+    file_input = FileInput("reference", file_type=FastaFile())
+    configured = file_input.configured_source(
+        {
+            "steps": {
+                "consumer": {
+                    "inputs": {"reference": {"from": "run.reference.fasta"}},
+                },
+            },
+        },
+        "consumer",
+    )
+    assert configured == FromRun("reference", "fasta")
 
 
 def test_file_output_generates_its_cli_argument_and_cwl_output():

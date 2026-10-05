@@ -393,7 +393,7 @@ def test_configured_input_name_must_be_declared_by_step(tmp_path):
         "datadir": str(tmp_path),
         "steps": {
             "compute-intrinsic-features": {
-                "inputs": {"misspelled_input": {"path_override": "x"}},
+                "inputs": {"misspelled_input": {"path": "x"}},
             },
         },
     }
@@ -410,8 +410,10 @@ def test_configured_input_name_must_be_declared_by_step(tmp_path):
     [
         {},
         {"parameters": {}},
+        {"path_override": "target.json"},
+        {"path": "target.json", "from": "run.gene.target_gene"},
         {
-            "path_override": "target.json",
+            "path": "target.json",
             "parameters": {"region": "pre-mrna"},
         },
     ],
@@ -676,7 +678,7 @@ def test_validate_step_config_rejects_invalid_override_path(
         "datadir": str(tmp_path),
         "steps": {
             "generate-therapeutic-candidates": {
-                "inputs": {"target_gene": {"path_override": str(override)}}
+                "inputs": {"target_gene": {"path": str(override)}}
             }
         },
         "parameters": {
@@ -709,7 +711,7 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
         "datadir": str(tmp_path),
         "steps": {
             "generate-therapeutic-candidates": {
-                "inputs": {"target_gene": {"path_override": str(override)}}
+                "inputs": {"target_gene": {"path": str(override)}}
             }
         },
         "parameters": {

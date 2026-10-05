@@ -124,7 +124,7 @@ def test_step_contract_builds_from_example_config(step: Step) -> None:
     free_inputs = [item for item in step.spec.inputs if item.source is None]
     if free_inputs:
         config.setdefault("steps", {}).setdefault(step.name, {})["inputs"] = {
-            item.name: {"path_override": f"/tmp/{item.name}.fa"}
+            item.name: {"path": f"/tmp/{item.name}.fa"}
             for item in free_inputs
         }
     plan = build_export_plan(

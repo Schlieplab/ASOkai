@@ -10,6 +10,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 import shutil
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -18,6 +19,7 @@ from typing import Any, Mapping
 from ASOkai._cwl.model import CwlCommandLineToolSpec
 from ASOkai._pipeline.base import is_valid_runnable_name
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.paths import TemplateField
 from ASOkai._pipeline.steps.base import Step
 
 
@@ -33,6 +35,9 @@ class StepRun:
     config: Mapping[str, Any] = field(repr=False)
     inputs: tuple[StepInputBinding, ...] = ()
     parameters: Mapping[str, Any] = field(default_factory=dict)
+    config_values: Mapping[str, Any] = field(init=False, repr=False)
+    config_conflicts: Mapping[str, str] = field(init=False, repr=False)
+    external_input_config: Mapping[str, Any] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.run_id) is not str or not all(
@@ -89,19 +94,102 @@ class StepRun:
                     f"use the declaration from step '{self.step.name}'."
                 )
 
+        from ASOkai._pipeline import config as cfg
+
+        external_values: dict[str, Any] = {}
+        for parameter in self.step.spec.params:
+            if parameter.config is None:
+                continue
+            if parameter.name in self.parameters:
+                value = self.parameters[parameter.name]
+            else:
+                try:
+                    value = cfg.resolve_parameter_value(self.config, parameter)
+                except KeyError:
+                    continue
+            external_values[parameter.config] = value
+        external_input_config = cfg.apply_overrides(
+            deepcopy(dict(self.config)), external_values
+        )
+        inherited_values: dict[str, Any] = {}
+        inherited_from: dict[str, str] = {}
+        config_conflicts: dict[str, str] = {}
+        consumed_paths = {
+            parameter.config
+            for parameter in self.step.spec.params
+            if parameter.config is not None
+        }
+        consumed_paths.update(self.step.spec.compatible_with)
+        for output in self.step.spec.outputs:
+            for field_rule in output.destination.fields.values():
+                if isinstance(field_rule, TemplateField):
+                    consumed_paths.update(field_rule.config_paths())
+        for binding in inputs:
+            source = binding.source
+            if not isinstance(source, StepRunOutput):
+                continue
+            for path, origin in source.run.config_conflicts.items():
+                if path in consumed_paths:
+                    raise ValueError(
+                        f"Run '{self.run_id}' needs '{path}', but linked input "
+                        f"'{binding.file_input.name}' carries conflicting values "
+                        f"from {origin}."
+                    )
+                config_conflicts[path] = origin
+                inherited_values.pop(path, None)
+                inherited_from.pop(path, None)
+            for path, value in source.run.config_values.items():
+                if path in config_conflicts:
+                    continue
+                if path in inherited_values and (
+                    type(inherited_values[path]) is not type(value)
+                    or inherited_values[path] != value
+                ):
+                    if path in consumed_paths:
+                        raise ValueError(
+                            f"Run '{self.run_id}' receives conflicting values for "
+                            f"'{path}' from inputs '{inherited_from[path]}' and "
+                            f"'{binding.file_input.name}'."
+                        )
+                    config_conflicts[path] = (
+                        f"inputs '{inherited_from[path]}' and "
+                        f"'{binding.file_input.name}' of run '{self.run_id}'"
+                    )
+                    del inherited_values[path]
+                    del inherited_from[path]
+                    continue
+                inherited_values[path] = value
+                inherited_from[path] = binding.file_input.name
+
+        effective_config = cfg.apply_overrides(
+            deepcopy(dict(self.config)), inherited_values
+        )
         self.step._validate_standard_parameters()
         parameters = self.step.resolved_parameter_values(
-            self.config, self.parameters
+            effective_config, self.parameters
+        )
+        config_values = dict(inherited_values)
+        config_values.update(
+            {
+                parameter.config: parameters[parameter.name]
+                for parameter in self.step.spec.params
+                if parameter.config is not None
+            }
         )
         object.__setattr__(
             self,
             "config",
             MappingProxyType(
-                self.step._configuration_for_parameters(self.config, parameters)
+                self.step._configuration_for_parameters(effective_config, parameters)
             ),
         )
         object.__setattr__(self, "inputs", inputs)
         object.__setattr__(self, "parameters", MappingProxyType(parameters))
+        object.__setattr__(self, "config_values", MappingProxyType(config_values))
+        object.__setattr__(self, "config_conflicts", MappingProxyType(config_conflicts))
+        object.__setattr__(
+            self, "external_input_config", MappingProxyType(external_input_config)
+        )
 
     def output(self, output: FileOutput) -> StepRunOutput:
         """Return one output port qualified by this concrete run."""
@@ -126,7 +214,7 @@ class StepRun:
         for binding in self.inputs:
             source = binding.source
             configurations[binding.file_input.name] = (
-                self.config
+                self.external_input_config
                 if isinstance(source, Path)
                 else source.run.config
             )

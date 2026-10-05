@@ -194,11 +194,17 @@ class OutputPathTemplate:
             if isinstance(template_field, InputConfigField)
         }
 
-    def validate_configuration(self, config: Mapping[str, Any]) -> None:
-        """Validate template fields against the main configuration."""
+    def validate_configuration(
+        self,
+        config: Mapping[str, Any],
+        input_configurations: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> None:
+        """Validate fields against the selected inputs when available."""
         for template_field in self.fields.values():
             if isinstance(template_field, TemplateField):
                 template_field.resolve(config)
+            elif input_configurations is not None:
+                template_field.resolve(input_configurations)
             else:
                 TemplateField(template_field.config_path).resolve(config)
 

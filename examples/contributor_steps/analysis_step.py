@@ -119,7 +119,10 @@ class ExampleAnalysisStep(TableAnalysisStep):
                     "parameters.target.target_name",
                 ),
                 "k": TemplateField("parameters.target.k"),
-                "sites_region": TemplateField("parameters.target.region"),
+                "sites_region": InputConfigField(
+                    "sites",
+                    "parameters.target.region",
+                ),
                 "target_region": InputConfigField(
                     "target",
                     "parameters.target.region",

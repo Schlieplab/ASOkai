@@ -34,6 +34,7 @@ from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.utils import build_bowtie2_index
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
+from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
 from ASOkai._pipeline.tasks.base import validate_task_runs
@@ -81,7 +82,7 @@ def _fasta_run(config: dict, producer: StepRun) -> StepRun:
         inputs=(
             StepInputBinding(
                 step.target_gene_input,
-                producer.output(producer.step.target_gene_output),
+                producer.output(CreateTargetGeneStep.target_gene_output),
             ),
         ),
     )
@@ -127,6 +128,31 @@ def test_fasta_destination_keeps_stable_filename(
     }
     named = _fasta_run(name_config, _gene_run(name_config, tmp_path))
     assert named.output_paths() == fasta.output_paths()
+
+
+def test_target_parameter_flows_through_fasta_conversion_to_kmc(
+    config: dict, tmp_path: Path
+) -> None:
+    config["parameters"]["genome"]["source"] = "ensembl"
+    gene = _gene_run(config, tmp_path, k=18)
+    fasta = _fasta_run(config, gene)
+    kmc_step = BuildKMCIndexStep()
+    index = StepRun(
+        "index",
+        kmc_step,
+        config,
+        inputs=(
+            StepInputBinding(
+                kmc_step.reference_input,
+                fasta.output(TargetGeneToFastaStep.fasta_output),
+            ),
+        ),
+    )
+
+    assert config["parameters"]["target"]["k"] == 16
+    assert fasta.config["parameters"]["target"]["k"] == 18
+    assert index.parameters["k"] == 18
+    assert index.output_paths()["kmc_index"].name.startswith("index.k18.")
 
 
 def test_bowtie2_builder_names_options_and_forwards_them(
@@ -230,7 +256,7 @@ def test_gene_override_invalidates_downstream_index_receipt(
             inputs=(
                 StepInputBinding(
                     step.reference_input,
-                    fasta.output(fasta.step.fasta_output),
+                    fasta.output(TargetGeneToFastaStep.fasta_output),
                 ),
             ),
         )
@@ -250,7 +276,7 @@ def test_index_target_gene_task_wiring_and_registration() -> None:
     task = IndexTargetGeneTask()
     assert [run.run_id for run in validate_task_runs(task)] == ["fasta", "index"]
     assert (
-        task.runs[0].step.target_gene_input.source
+        task.runs[0].step.spec.input("target_gene").source
         is CreateTargetGeneStep.target_gene_output
     )
     assert set(task.outputs) == {"fasta", "index"}

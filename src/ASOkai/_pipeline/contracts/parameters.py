@@ -155,6 +155,13 @@ class ScalarParam:
         """Return this parameter's command-line flag."""
         return self.prefix or _flag_for_name(self.name)
 
+    @property
+    def selection_path(self) -> str:
+        """Return the public configuration path used by run selections."""
+        if self.config is None:
+            return self.name
+        return self.config.removeprefix("parameters.")
+
     def inferred_cwl_type(self) -> Any:
         """Return this parameter's CWL type."""
         return _cwl_type_for_annotation(self.annotation)

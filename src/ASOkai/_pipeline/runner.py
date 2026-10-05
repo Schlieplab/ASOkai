@@ -129,7 +129,7 @@ def _output_report_lines(plan: ExecutionPlan) -> list[str]:
     qualify_names = len(plan.goals) != 1
     outputs = [
         (
-            qualified_name
+            qualified_name.removeprefix("runs.")
             if qualify_names
             else qualified_name.rsplit(".", maxsplit=1)[-1],
             path,
@@ -148,8 +148,8 @@ def _log_dry_run_plan(plan: ExecutionPlan) -> None:
     lines = [f"Dry run: {count} {noun} would execute:"]
 
     for position, run in enumerate(plan.runs_to_execute, start=1):
-        label = run.run_id
-        if run.run_id != run.step.name:
+        label = run.run_id.removeprefix("runs.")
+        if label != run.step.name:
             label = f"{label} ({run.step.name})"
         lines.extend(("", f"  {position}. {label}"))
         resolved = resolve_run_inputs(

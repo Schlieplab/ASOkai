@@ -79,14 +79,14 @@ if no `config.yaml` exists, CLI selections also work without that flag. Both
 cases use `./data` as the data directory. A file containing `runs` cannot be
 combined with CLI selections.
 Place `--param PATH=VALUE` before the first selection to set a shared parameter;
-omit the `parameters.` prefix. Place `--param NAME=VALUE` after a step or task
-to override a parameter for that run:
+omit the `parameters.` prefix. Use the same path after a step or task to override
+that run's parameter:
 
 ```bash
 ASOkai run --no-config --param genome.assembly=GRCh39 --param genome.release=115 \
   --param genome.species=Homo_sapiens --step create-target-gene \
-  --param target_id=ENSG00000133703 --param k=20 \
-  --param region=transcriptomic
+  --param target.target_id=ENSG00000133703 --param target.k=20 \
+  --param target.region=transcriptomic
 ```
 
 Run `ASOkai describe step NAME` to see its parameters, inputs, and outputs.
@@ -99,7 +99,7 @@ resources:
   default:
     n_threads: 1
     memory_mb: 4096
-  intrinsic-features:
+  compute-intrinsic-features:
     n_threads: 4
 ```
 
@@ -135,16 +135,16 @@ ASOkai run --task instantiate-target-gene
 ASOkai run --workflow standard
 
 # Run multiple selected units
-ASOkai run --step generate-aso-candidates --step intrinsic-features
+ASOkai run --step generate-aso-candidates --step compute-intrinsic-features
 
 # Export the selected goals as a CWL job bundle without executing them
 ASOkai export --workflow standard
 
 # Include the complete producer closure in the exported bundle
-ASOkai export --step intrinsic-features --recursive
+ASOkai export --step compute-intrinsic-features --recursive
 
 # Require dependencies to exist instead of scheduling missing ones
-ASOkai run --step intrinsic-features --non-recursive
+ASOkai run --step compute-intrinsic-features --non-recursive
 ```
 
 ## Third-party software and licenses

@@ -101,19 +101,14 @@ def _request_matches_step_config(
 
 
 def _run_signature(
-    request: _RunRequest,
-    input_bindings: Sequence[StepInputBinding],
+    run: StepRun,
 ) -> _RunSignature:
-    """Return the result-affecting signature of one producer-ready request."""
+    """Return the result-affecting signature of a resolved run."""
     return _RunSignature(
-        step_name=request.step.name,
-        parameter_values=tuple(
-            request.step.resolved_parameter_values(
-                request.config, request.parameters
-            ).items()
-        ),
+        step_name=run.step.name,
+        parameter_values=tuple(run.parameters.items()),
         input_sources=tuple(
-            (binding.file_input.name, binding.source) for binding in input_bindings
+            (binding.file_input.name, binding.source) for binding in run.inputs
         ),
     )
 
@@ -339,6 +334,7 @@ class _PlanBuilder:
             validate_input_files=self.validate_input_files,
             parameters=run.parameters,
             skip_input_names=selected_inputs,
+            input_configurations=run.input_configurations(),
         )
         if self.validate_input_files:
             for binding in run.inputs:
@@ -416,16 +412,17 @@ class _PlanBuilder:
                     )
                 )
 
-            run_signature = _run_signature(request, input_bindings)
+            candidate = StepRun(
+                run_id=request.request_id,
+                step=request.step,
+                config=request.config,
+                inputs=tuple(input_bindings),
+                parameters=request.parameters,
+            )
+            run_signature = _run_signature(candidate)
             run = run_by_signature.get(run_signature)
             if run is None:
-                run = StepRun(
-                    run_id=request.request_id,
-                    step=request.step,
-                    config=request.config,
-                    inputs=tuple(input_bindings),
-                    parameters=request.parameters,
-                )
+                run = candidate
                 run_by_signature[run_signature] = run
                 producer_first_runs.append(run)
             run_by_request_id[request.request_id] = run
@@ -619,6 +616,9 @@ def _task_parameters(
         for parameter in run.step.spec.params:
             if parameter.name not in run.parameters:
                 declarations.setdefault(parameter.name, []).append(parameter)
+                path = parameter.selection_path
+                if path != parameter.name:
+                    declarations.setdefault(path, []).append(parameter)
     unknown = set(overrides) - declarations.keys()
     if unknown:
         names = ", ".join(sorted(str(name) for name in unknown))
@@ -630,6 +630,30 @@ def _task_parameters(
             except (TypeError, ValueError) as error:
                 raise ValueError(f"{location}.parameters.{name}: {error}") from error
     return dict(overrides)
+
+
+def _matching_task_parameters(
+    step: Step,
+    values: Mapping[str, Any],
+    fixed: Mapping[str, Any],
+    location: str,
+) -> dict[str, Any]:
+    """Apply task values to child parameters by exact path or legacy name."""
+    matched: dict[str, Any] = {}
+    for parameter in step.spec.params:
+        if parameter.name in fixed:
+            continue
+        path = parameter.selection_path
+        keys = (parameter.name,) if path == parameter.name else (parameter.name, path)
+        supplied = [key for key in keys if key in values]
+        if len(supplied) > 1:
+            raise ValueError(
+                f"{location}.parameters specifies '{parameter.name}' both "
+                "by name and configuration path."
+            )
+        if supplied:
+            matched[parameter.name] = values[supplied[0]]
+    return matched
 
 
 def _task_run_specs(
@@ -659,11 +683,9 @@ def _task_run_specs(
             RunSpec(
                 f"{prefix}.{step.name}" if prefix else step.name,
                 step,
-                parameters={
-                    name: value
-                    for name, value in values.items()
-                    if name in {param.name for param in step.spec.params}
-                },
+                parameters=_matching_task_parameters(
+                    step, values, {}, selection_location
+                ),
             )
             for step in task.steps
         ]
@@ -717,11 +739,9 @@ def _task_run_specs(
                 raise ValueError(
                     f"{child_location}.parameters.{name}: {error}"
                 ) from error
-        matching_values = {
-            name: value
-            for name, value in values.items()
-            if name in declared_parameters and name not in run.parameters
-        }
+        matching_values = _matching_task_parameters(
+            run.step, values, run.parameters, selection_location
+        )
         inputs = _normalized_inputs(
             run.step,
             run.inputs,

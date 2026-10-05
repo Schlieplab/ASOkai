@@ -3,7 +3,7 @@
 Filename: src/ASOkai/_pipeline/steps/analysis/intrinsic_features.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Definition of the intrinsic-features analysis step.
+Description: Definition of the compute-intrinsic-features analysis step.
 License: LGPL-3.0-or-later
 """
 
@@ -25,7 +25,7 @@ from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 
 
 class IntrinsicFeaturesStep(TableAnalysisStep):
-    name = "intrinsic-features"
+    name = "compute-intrinsic-features"
     description = (
         "Computes nucleotide composition and CpG features for each " "target site."
     )

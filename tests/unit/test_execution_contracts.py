@@ -14,10 +14,13 @@ import pytest
 from ASOkai.Plugins import (
     FileInput,
     FileOutput,
+    FileType,
     InputConfigField,
     OutputPathTemplate,
+    ScalarParam,
     Step,
     StepSpec,
+    TemplateField,
 )
 from ASOkai._pipeline.contracts.execution import (
     ExecutionPlan,
@@ -179,6 +182,97 @@ def test_path_override_uses_main_config_not_the_filename(tmp_path):
     assert run.output_paths() == {
         "summary": tmp_path / "summaries/main_summary.txt",
     }
+
+
+def test_external_input_keeps_shared_config_beside_scoped_producer(tmp_path):
+    producer_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "producer/{mode}.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
+    )
+
+    class ConfiguredProducer(Step):
+        name = "configured-producer"
+        description = ""
+        result_output = producer_output
+        spec = StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[producer_output],
+        )
+
+    selected_input = FileInput("result", source=producer_output)
+    file_input = FileInput("external", file_type=FileType())
+    result_output = FileOutput(
+        "summary",
+        destination=OutputPathTemplate(
+            "summaries/{mode}.txt",
+            fields={"mode": InputConfigField("external", "producer.mode")},
+        ),
+    )
+
+    class MixedConsumer(Step):
+        name = "mixed-consumer"
+        description = ""
+        result_input = selected_input
+        external_input = file_input
+        summary_output = result_output
+        spec = StepSpec(inputs=[selected_input, file_input], outputs=[result_output])
+
+    config = {"datadir": str(tmp_path), "producer": {"mode": "main"}}
+    producer = StepRun(
+        "configured-producer",
+        ConfiguredProducer(),
+        config,
+        parameters={"mode": "alternate"},
+    )
+    consumer = StepRun(
+        "mixed-consumer",
+        MixedConsumer(),
+        config,
+        inputs=(
+            StepInputBinding(selected_input, producer.output(producer_output)),
+            StepInputBinding(file_input, tmp_path / "external.txt"),
+        ),
+    )
+
+    assert consumer.config["producer"]["mode"] == "alternate"
+    assert consumer.input_configurations()["external"]["producer"]["mode"] == "main"
+    assert consumer.output_paths()["summary"] == tmp_path / "summaries/main.txt"
+
+
+def test_external_input_uses_consumer_parameter_default(tmp_path):
+    file_input = FileInput("external", file_type=FileType())
+    result_output = FileOutput(
+        "summary",
+        destination=OutputPathTemplate(
+            "summaries/{mode}.txt",
+            fields={"mode": InputConfigField("external", "producer.mode")},
+        ),
+    )
+
+    class DefaultedConsumer(Step):
+        name = "defaulted-consumer"
+        description = ""
+        external_input = file_input
+        summary_output = result_output
+        spec = StepSpec(
+            inputs=[file_input],
+            params=[
+                ScalarParam("mode", str, config="producer.mode", default="default")
+            ],
+            outputs=[result_output],
+        )
+
+    run = StepRun(
+        "defaulted-consumer",
+        DefaultedConsumer(),
+        {"datadir": str(tmp_path)},
+        inputs=(StepInputBinding(file_input, tmp_path / "external.txt"),),
+    )
+
+    assert run.output_paths()["summary"] == tmp_path / "summaries/default.txt"
 
 
 def test_step_run_validates_and_cleans_its_declared_outputs(tmp_path):

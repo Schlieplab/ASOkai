@@ -132,7 +132,8 @@ class CreateTargetGeneStep(CoreStep):
         from GenomeUtils.Genome import GenomeBuilder
         from ASOkai.Targets import create_target_gene
 
-        logger.info("Loading DNA FASTA from %s", args.dna)
+        logger.info("Loading DNA FASTA")
+        logger.debug("DNA FASTA input: %s", args.dna)
         builder = GenomeBuilder(
             id=args.assembly,
             species=args.species.replace("_", " "),
@@ -140,11 +141,13 @@ class CreateTargetGeneStep(CoreStep):
         )
         builder.with_dna_fasta(args.dna)
 
-        logger.info("Loading cDNA FASTA from %s", args.cdna)
+        logger.info("Loading cDNA FASTA")
+        logger.debug("cDNA FASTA input: %s", args.cdna)
         builder.with_cdna_fasta(args.cdna)
 
-        logger.info(
-            "Loading GTF annotations from %s using database %s",
+        logger.info("Loading GTF annotations")
+        logger.debug(
+            "GTF input: %s; annotation database: %s",
             args.annotation,
             args.db,
         )

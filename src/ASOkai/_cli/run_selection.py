@@ -9,13 +9,15 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 import click
 import yaml
 
 from ASOkai._pipeline.base import flatten_workflow_members
 from ASOkai._pipeline.catalog import PipelineCatalog
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.steps.base import Step
 
 _SELECTION_OPTIONS = {"--step": "step", "--task": "task", "--workflow": "workflow"}
@@ -34,6 +36,62 @@ def _assignment(value: str, option: str) -> tuple[str, str]:
     if not separator or not name or not assigned:
         raise click.BadParameter("Expected NAME=VALUE.", param_hint=option)
     return name, assigned
+
+
+def _scoped_parameters(
+    values: dict[str, Any], parameters: Sequence[ScalarParam]
+) -> dict[str, Any]:
+    names: dict[str, str] = {}
+    for parameter in parameters:
+        path = parameter.selection_path
+        previous = names.get(path)
+        if previous is not None and previous != parameter.name:
+            raise click.BadParameter(
+                f"Parameter path '{path}' is ambiguous between '{previous}' "
+                f"and '{parameter.name}'.",
+                param_hint="--param",
+            )
+        names[path] = parameter.name
+    unknown = set(values) - set(names)
+    if unknown:
+        raise click.BadParameter(
+            f"Unknown parameter path(s): {', '.join(sorted(unknown))}.",
+            param_hint="--param",
+        )
+    return {names[path]: value for path, value in values.items()}
+
+
+def _task_parameters(selection: dict[str, Any], task: Any) -> None:
+    """Resolve task-wide and child CLI paths to internal parameter names."""
+    task_runs: tuple[RunSpec, ...] = tuple(getattr(task, "runs", ()))
+    if task_runs:
+        available = [
+            parameter
+            for run in task_runs
+            for parameter in run.step.spec.params
+            if parameter.name not in run.parameters
+        ]
+    else:
+        available = [parameter for step in task.steps for parameter in step.spec.params]
+    if "parameters" in selection:
+        unknown = set(selection["parameters"]) - {
+            parameter.selection_path for parameter in available
+        }
+        if unknown:
+            raise click.BadParameter(
+                f"Unknown parameter path(s): {', '.join(sorted(unknown))}.",
+                param_hint="--param",
+            )
+    for child in selection.get("runs", ()):
+        run = next((run for run in task_runs if run.run_id == child["id"]), None)
+        if run is None:
+            raise click.BadParameter(
+                f"Unknown task child '{child['id']}'.", param_hint="--child"
+            )
+        if "parameters" in child:
+            child["parameters"] = _scoped_parameters(
+                child["parameters"], run.step.spec.params
+            )
 
 
 def parse_ordered_runs(
@@ -169,11 +227,16 @@ def resolved_runs(
             name = selection["step"]
             if name not in catalog.steps:
                 raise click.BadParameter(f"Unknown step '{name}'.", param_hint="--step")
+            if "parameters" in selection:
+                selection["parameters"] = _scoped_parameters(
+                    selection["parameters"], catalog.steps[name].spec.params
+                )
             runs.append(selection)
         elif "task" in selection:
             name = selection["task"]
             if name not in catalog.tasks:
                 raise click.BadParameter(f"Unknown task '{name}'.", param_hint="--task")
+            _task_parameters(selection, catalog.tasks[name])
             runs.append(selection)
         else:
             name = selection["workflow"]
@@ -185,4 +248,17 @@ def resolved_runs(
             for member in flatten_workflow_members(workflow):
                 kind = "step" if isinstance(member, Step) else "task"
                 runs.append({kind: member.name})
+    used_ids = {run["id"] for run in runs if "id" in run}
+    for run in runs:
+        if "id" in run:
+            continue
+        name = run.get("step", run.get("task"))
+        assert isinstance(name, str)
+        run_id = name
+        suffix = 2
+        while run_id in used_ids:
+            run_id = f"{name}-{suffix}"
+            suffix += 1
+        run["id"] = run_id
+        used_ids.add(run_id)
     return runs

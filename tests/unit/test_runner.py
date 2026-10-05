@@ -23,7 +23,11 @@ from ASOkai.Plugins import (
 )
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
-from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
+from ASOkai._pipeline.contracts.execution import (
+    ExecutionPlan,
+    StepInputBinding,
+    StepRun,
+)
 from ASOkai._pipeline.output_receipts import (
     receipt_path,
     record_validated_outputs,
@@ -135,6 +139,26 @@ def test_dry_run_returns_outputs_without_executing(config):
     assert "download-genome.dna" in result
     assert "download-genome.cdna" in result
     assert "download-genome.annotation" in result
+
+
+def test_output_report_uses_readable_run_names(config):
+    output = FileOutput("result", destination="result.txt")
+
+    class ReportStep(Step):
+        name = "report-step"
+        description = ""
+        result_output = output
+        spec = StepSpec(outputs=[output])
+
+    step = ReportStep()
+    first = StepRun("runs.testing", step, config)
+    second = StepRun("runs.report-step", step, config)
+    plan = ExecutionPlan(goals=(first, second), runs_to_execute=())
+
+    assert runner._output_report_lines(plan) == [
+        f"  testing.result    : {first.output_paths()['result']}",
+        f"  report-step.result: {second.output_paths()['result']}",
+    ]
 
 
 def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
@@ -362,7 +386,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     caplog,
 ):
     workflow_config["resources"] = {
-        "intrinsic-features": {"n_threads": 4},
+        "compute-intrinsic-features": {"n_threads": 4},
     }
     caplog.set_level(logging.INFO)
 
@@ -380,7 +404,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
         if record.getMessage().startswith("[run] Dry run:")
     )
     assert "[run] Dry run: 4 steps would execute:" in report
-    assert "[run]   4. intrinsic-features" in report
+    assert "[run]   4. compute-intrinsic-features" in report
     assert ("[run]      Resources:\n" "[run]        threads: 4") in report
 
 

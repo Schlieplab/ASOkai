@@ -54,7 +54,7 @@ def _run(step, config, tmp_path):
 
 
 def test_declares_intrinsic_analysis_contract(step):
-    assert step.name == "intrinsic-features"
+    assert step.name == "compute-intrinsic-features"
     assert step.analysis_cls is IntrinsicFeaturesAnalysis
     assert step.dependencies == ["create-target-gene"]
     assert (

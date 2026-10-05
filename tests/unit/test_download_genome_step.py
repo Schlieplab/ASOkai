@@ -69,7 +69,9 @@ def test_cwl_spec_generates_command_line_tool(run):
     doc = yaml.safe_load(StepCwlGenerator().render(run))
 
     assert doc["class"] == "CommandLineTool"
-    assert doc["baseCommand"] == ["ASOkai", "step", "download-genome"]
+    assert doc["baseCommand"] == [
+        "ASOkai", "step", "--run-id", run.run_id, "download-genome"
+    ]
     assert doc["requirements"]["NetworkAccess"]["networkAccess"] is True
     assert "outdir" not in doc["inputs"]
     assert "dna_output" not in doc["inputs"]

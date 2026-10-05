@@ -120,7 +120,9 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     assert isinstance(output.file_type, JsonFile)
     assert output.file_type.value_type is TargetGene
     assert doc["class"] == "CommandLineTool"
-    assert doc["baseCommand"] == ["ASOkai", "step", "create-target-gene"]
+    assert doc["baseCommand"] == [
+        "ASOkai", "step", "--run-id", run.run_id, "create-target-gene"
+    ]
     assert doc["inputs"]["k"]["type"] == "int"
     assert doc["inputs"]["region"]["type"]["type"] == "enum"
     assert "target_gene_output" not in doc["inputs"]

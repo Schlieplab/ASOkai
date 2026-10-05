@@ -141,7 +141,7 @@ def test_config_schema_accepts_shared_parameters_and_from_inputs(tmp_path):
             "runs": [
                 {"step": "create-target-gene", "id": "gene"},
                 {
-                    "step": "intrinsic-features",
+                    "step": "compute-intrinsic-features",
                     "inputs": {"target_gene": {"from": "run.gene.target_gene"}},
                 },
             ],
@@ -380,7 +380,7 @@ def test_configured_step_names_must_be_registered(tmp_path):
     with pytest.raises(ValueError) as raised:
         cfg.validate_configured_step_names(
             config,
-            {"intrinsic-features": IntrinsicFeaturesStep()},
+            {"compute-intrinsic-features": IntrinsicFeaturesStep()},
         )
 
     message = str(raised.value)
@@ -392,7 +392,7 @@ def test_configured_input_name_must_be_declared_by_step(tmp_path):
     config = {
         "datadir": str(tmp_path),
         "steps": {
-            "intrinsic-features": {
+            "compute-intrinsic-features": {
                 "inputs": {"misspelled_input": {"path_override": "x"}},
             },
         },
@@ -401,7 +401,7 @@ def test_configured_input_name_must_be_declared_by_step(tmp_path):
     with pytest.raises(ValueError, match="misspelled_input"):
         cfg.validate_configured_step_names(
             config,
-            {"intrinsic-features": IntrinsicFeaturesStep()},
+            {"compute-intrinsic-features": IntrinsicFeaturesStep()},
         )
 
 
@@ -420,12 +420,12 @@ def test_config_schema_rejects_invalid_step_input_configuration(
     tmp_path,
     input_configuration,
 ):
-    with pytest.raises(ValueError, match="intrinsic-features.*target_gene"):
+    with pytest.raises(ValueError, match="compute-intrinsic-features.*target_gene"):
         cfg.validate_config_schema(
             {
                 "datadir": str(tmp_path),
                 "steps": {
-                    "intrinsic-features": {
+                    "compute-intrinsic-features": {
                         "inputs": {
                             "target_gene": input_configuration,
                         },
@@ -877,7 +877,7 @@ def test_config_schema_rejects_invalid_resource_values(key, value):
         cfg.validate_config_schema(config)
 
 
-@pytest.mark.parametrize("section", ["default", "intrinsic-features"])
+@pytest.mark.parametrize("section", ["default", "compute-intrinsic-features"])
 @pytest.mark.parametrize("also_sets_threads", [False, True])
 def test_config_schema_explains_thread_setting_migration(section, also_sets_threads):
     resource_values = {"n_processes": 4}

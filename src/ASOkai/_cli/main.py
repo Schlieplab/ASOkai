@@ -97,13 +97,16 @@ def publish_outputs_command(
     context_settings={
         "ignore_unknown_options": True,
         "allow_extra_args": True,
+        "allow_interspersed_args": False,
     },
 )
+@click.option("--run-id", hidden=True)
 @click.argument("step_name")
 @click.pass_context
 def step_command(
     ctx: click.Context,
     step_name: str,
+    run_id: str | None,
 ) -> None:
     """Dispatch an internal step CLI for CWL and debugging."""
     try:
@@ -113,7 +116,8 @@ def step_command(
     if step is None:
         raise click.ClickException(f"Unknown step '{step_name}'.")
 
-    with log_context(f"step:{step.name}"):
+    label = run_id.removeprefix("runs.") if run_id else step.name
+    with log_context(f"step:{label}"):
         try:
             exit_code = step.run_cli(list(ctx.args))
         except SystemExit as error:

@@ -30,7 +30,7 @@ def test_standard_workflow_declaration(workflow):
     assert [m.name for m in workflow.members] == [
         "instantiate-target-gene",
         "generate-aso-candidates",
-        "intrinsic-features",
+        "compute-intrinsic-features",
     ]
 
 
@@ -46,5 +46,5 @@ def test_flattens_to_explicit_step_names(workflow):
         "download-genome",
         "create-target-gene",
         "generate-aso-candidates",
-        "intrinsic-features",
+        "compute-intrinsic-features",
     ]

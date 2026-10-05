@@ -74,7 +74,7 @@ def _config_schema() -> dict:
 
 
 def test_step_config_collects_nested_and_dynamic_fields() -> None:
-    step = get_built_in_step("intrinsic-features")
+    step = get_built_in_step("compute-intrinsic-features")
     fields = {
         field.path: field
         for field in collect_step_config_fields(step, _config_schema())
@@ -85,7 +85,7 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     assert fields["parameters.target.region"].constraints == (
         "one of: exonic, pre-mrna, transcriptomic"
     )
-    assert fields["resources.intrinsic-features.n_threads"].value_type == "integer"
+    assert fields["resources.compute-intrinsic-features.n_threads"].value_type == "integer"
     assert fields["parameters.target.target_id"].requirement == (
         "Exactly one of target_id, target_name is required when parameters.target is configured"
     )
@@ -155,7 +155,7 @@ def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
         link["reftarget"] for link in index.findall(addnodes.pending_xref)
     ]
 
-    assert "/steps/intrinsic-features" in targets
+    assert "/steps/compute-intrinsic-features" in targets
     assert "/tasks/example-analysis-task" in targets
     assert "/tasks/index-target-gene" not in targets
 
@@ -240,12 +240,12 @@ def test_workflow_reference_links_members_and_expanded_steps() -> None:
         "/steps/download-genome",
         "/steps/create-target-gene",
         "/steps/generate-aso-candidates",
-        "/steps/intrinsic-features",
+        "/steps/compute-intrinsic-features",
     }
 
 
 def test_step_config_contains_only_fields_used_by_that_step() -> None:
-    step = get_built_in_step("intrinsic-features")
+    step = get_built_in_step("compute-intrinsic-features")
     fields = {
         field.path: field
         for field in collect_step_config_fields(step, _config_schema())
@@ -256,10 +256,10 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
         "Required to determine the output path"
     )
     assert (
-        fields["steps.intrinsic-features.inputs.target_gene.path_override"].requirement
+        fields["steps.compute-intrinsic-features.inputs.target_gene.path_override"].requirement
         == "Optional path override"
     )
-    assert fields["resources.intrinsic-features.n_threads"].requirement == (
+    assert fields["resources.compute-intrinsic-features.n_threads"].requirement == (
         "Overrides resources.default"
     )
     assert fields["resources.default.n_threads"].requirement == ("Built-in fallback: 1")
@@ -318,20 +318,20 @@ def test_single_thread_step_omits_thread_count() -> None:
 
 
 def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
-    step = get_built_in_step("intrinsic-features")
+    step = get_built_in_step("compute-intrinsic-features")
     generated_nodes = build_step_reference(
         step,
         _config_schema(),
-        refdoc="steps/intrinsic-features",
+        refdoc="steps/compute-intrinsic-features",
     )
     reference = "\n".join(node.astext() for node in generated_nodes)
 
     assert (
-        "ASOkai run --step intrinsic-features "
+        "ASOkai run --step compute-intrinsic-features "
         "--config-file ./config.yaml" in reference
     )
     assert "create-target-gene.target_gene" in reference
-    input_path = "steps.intrinsic-features.inputs.target_gene.path_override"
+    input_path = "steps.compute-intrinsic-features.inputs.target_gene.path_override"
     assert input_path in reference
     sections = {
         node[0].astext(): node
@@ -354,7 +354,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
     assert len(override_examples) == 1
     assert yaml.safe_load(override_examples[0].astext()) == {
         "steps": {
-            "intrinsic-features": {
+            "compute-intrinsic-features": {
                 "inputs": {
                     "target_gene": {"path_override": "/path/to/target_gene.json"}
                 }
@@ -379,7 +379,7 @@ def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
         for descendant in node.findall(addnodes.pending_xref)
     ]
     assert any(
-        link["refdoc"] == "steps/intrinsic-features"
+        link["refdoc"] == "steps/compute-intrinsic-features"
         and link["reftarget"] == "/steps/create-target-gene"
         for link in links
     )
@@ -695,7 +695,7 @@ def test_opaque_outputs_use_human_readable_format_names() -> None:
 
 
 def test_analysis_output_preserves_index_and_column_order() -> None:
-    step = get_built_in_step("intrinsic-features")
+    step = get_built_in_step("compute-intrinsic-features")
     csv_file = step.spec.outputs[0].file_type
     assert isinstance(csv_file, CsvFile)
     generated_nodes = build_step_reference(step, _config_schema())

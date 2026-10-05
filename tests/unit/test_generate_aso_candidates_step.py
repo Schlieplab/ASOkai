@@ -102,6 +102,36 @@ def test_config_and_input_mapping(step):
     )
 
 
+def test_unscoped_k_follows_the_selected_target_gene(step, config, tmp_path):
+    config["parameters"]["antisense"]["design"]["gap_length"] = 12
+    producer_step = CreateTargetGeneStep()
+    producer = StepRun(
+        "gene",
+        producer_step,
+        config,
+        parameters={"k": 18},
+        inputs=tuple(
+            StepInputBinding(file_input, tmp_path / file_input.name)
+            for file_input in producer_step.spec.inputs
+        ),
+    )
+    consumer = StepRun(
+        "candidates",
+        step,
+        config,
+        inputs=(
+            StepInputBinding(
+                step.target_gene_input,
+                producer.output(CreateTargetGeneStep.target_gene_output),
+            ),
+        ),
+    )
+
+    assert config["parameters"]["target"]["k"] == 16
+    assert consumer.parameters["k"] == 18
+    assert "_k18_" in consumer.output_paths()["therapeutics"].name
+
+
 def test_output_path_identifies_the_candidate_design(step, config, tmp_path):
     paths = _run(step, config, tmp_path).output_paths()
     assert paths["therapeutics"] == (
@@ -181,6 +211,8 @@ def test_cwl_contains_scalar_configuration_and_file_io(step, config, tmp_path):
     assert document["baseCommand"] == [
         "ASOkai",
         "step",
+        "--run-id",
+        run.run_id,
         "generate-aso-candidates",
     ]
     assert document["inputs"]["design"]["type"]["type"] == "enum"

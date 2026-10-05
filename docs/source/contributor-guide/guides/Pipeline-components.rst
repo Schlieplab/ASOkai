@@ -163,7 +163,7 @@ output-reuse ``validation`` setting are also root keys. For example::
    validation:
      existing_outputs: signature
    runs:
-     - step: intrinsic-features
+     - step: compute-intrinsic-features
        inputs:
          target_gene:
            from: run.analysis.target_gene
@@ -306,18 +306,19 @@ they belong to::
 
    ASOkai run --configfile common.yaml \
      --param genome.assembly=GRCh39 \
-     --step create-target-gene --id reference-gene --param region=pre-mrna \
+     --step create-target-gene --id reference-gene --param target.region=pre-mrna \
      --step generate-aso-candidates --id candidates \
        --from-run target_gene=reference-gene.target_gene \
-     --task compare-regions --id comparison --param k=21 \
-       --child transcriptomic --param k=18
+     --task compare-regions --id comparison --param target.k=21 \
+       --child transcriptomic --param target.k=18
 
-``--id`` names the preceding step or task. Before the first selection,
+``--id`` names the preceding step or task. Unnamed CLI selections use the step
+or task name, with ``-2``, ``-3``, and so on for repeats. Before the first selection,
 ``--param PATH=VALUE`` sets a shared parameter such as ``genome.assembly``;
-the ``parameters.`` prefix is omitted. After a selection, ``--param NAME=VALUE``
+the ``parameters.`` prefix is omitted. After a selection, the same path form
 applies to that run, or to the child named by the most recent ``--child``.
 Run-specific values take precedence over shared values. Values use YAML scalar
-syntax, so ``k=21`` is an integer. Use ``--from-run
+syntax, so ``target.k=21`` is an integer. Use ``--from-run
 INPUT=RUN_ID.OUTPUT`` for a named producer and ``--input-path INPUT=PATH`` for
 an existing file. These options configure the current step or task child;
 ``--child`` names an ID already declared in the task. A new ``--step`` or
@@ -405,10 +406,13 @@ Without an explicit input selection or path override, a fixed-source input
 uses the producer's main configuration.
 
 Output destinations read configuration values through ``TemplateField``
-without requiring a runtime ``ScalarParam``. ``InputConfigField`` reads a
-value from the resolved producer configuration selected for one file input.
-For an existing path, where no producer run exists, it reads the consumer's
-main configuration.
+without requiring a runtime ``ScalarParam``. A run inherits resolved parameter
+values from linked producer runs before resolving its own parameters and output
+paths. If inputs disagree on a value the consumer needs, planning rejects the
+ambiguous mapping. ``InputConfigField`` selects a specific input's configuration
+when a step intentionally combines differently configured inputs. For an
+existing path, where no producer run exists, it reads the consumer's shared
+configuration plus that run's own parameter overrides and defaults.
 
 Output templates can include a step's own content-changing parameters so
 indexes built with different options have distinct destinations. Parameters

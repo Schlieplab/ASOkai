@@ -186,7 +186,9 @@ def _describe_step_parameters(step, *, verbose: bool) -> None:
 
     click.echo("Run parameters:")
     for param in step.spec.params:
-        click.echo(f"  --param {param.name}=VALUE{_config_hint_for_param(param)}")
+        click.echo(
+            f"  --param {param.selection_path}=VALUE{_config_hint_for_param(param)}"
+        )
         if verbose and param.config:
             click.echo(f"    config key: {param.config}")
 

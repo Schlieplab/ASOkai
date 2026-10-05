@@ -195,6 +195,7 @@ def validate_step_config(
     validate_input_files: bool = True,
     parameters: Mapping[str, Any] | None = None,
     skip_input_names: AbstractSet[str] = frozenset(),
+    input_configurations: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
     """Validate selected-step values, compatibility, paths, and input files."""
     errors: list[str] = []
@@ -291,7 +292,9 @@ def validate_step_config(
                 continue
             for output in step.spec.outputs:
                 try:
-                    output.destination.validate_configuration(output_config)
+                    output.destination.validate_configuration(
+                        output_config, input_configurations
+                    )
                 except (KeyError, TypeError, ValueError) as error:
                     errors.append(f"Step '{step.name}' output '{output.name}': {error}")
 

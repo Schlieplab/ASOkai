@@ -1030,6 +1030,7 @@ def test_configured_run_links_reject_cycles(config):
 def _make_configurable_producer_and_consumers(
     *consumer_names: str,
     input_names: tuple[str, ...] = ("result",),
+    uses_mode: bool = False,
 ) -> tuple[Step, list[Step]]:
     """Return consumers of a producer with a selectable mode parameter."""
     output = FileOutput(
@@ -1058,7 +1059,14 @@ def _make_configurable_producer_and_consumers(
     for consumer_name in consumer_names:
         consumer_output = FileOutput(
             f"{consumer_name}_out",
-            destination=f"{consumer_name}.txt",
+            destination=(
+                OutputPathTemplate(
+                    f"{consumer_name}/{{mode}}.txt",
+                    fields={"mode": TemplateField("producer.mode")},
+                )
+                if uses_mode
+                else f"{consumer_name}.txt"
+            ),
         )
         consumer_type = type(
             f"_{consumer_name.title()}ConsumerStep",
@@ -1497,9 +1505,9 @@ def test_named_producer_run_is_shared_by_two_consumers(config):
     assert first_source.run.parameters["mode"] == "alternate"
 
 
-def test_one_consumer_links_two_differently_configured_named_runs(config):
+def test_one_consumer_rejects_conflicting_input_parameters(config):
     producer, consumers = _make_configurable_producer_and_consumers(
-        "consumer", input_names=("first_result", "second_result")
+        "consumer", input_names=("first_result", "second_result"), uses_mode=True
     )
     consumer = consumers[0]
     config["producer"] = {"mode": "main"}
@@ -1515,18 +1523,187 @@ def test_one_consumer_links_two_differently_configured_named_runs(config):
         },
     ]
 
-    plan = build_plan(
+    with pytest.raises(ValueError, match="conflicting values.*producer.mode"):
+        build_plan(
+            [],
+            config,
+            _registry={producer.name: producer, consumer.name: consumer},
+        )
+
+
+def test_input_config_fields_use_each_selected_producer_without_shared_value(config):
+    producer, _ = _make_configurable_producer_and_consumers("unused")
+    output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "paired/{first}_{second}.txt",
+            fields={
+                "first": InputConfigField("first", "producer.mode"),
+                "second": InputConfigField("second", "producer.mode"),
+            },
+        ),
+    )
+
+    class PairStep(Step):
+        name = "pair"
+        description = ""
+        result_output = output
+        spec = StepSpec(
+            inputs=[
+                FileInput("first", source=producer.spec.outputs[0]),
+                FileInput("second", source=producer.spec.outputs[0]),
+            ],
+            outputs=[output],
+        )
+
+    consumer = PairStep()
+    config["runs"] = [
+        {"id": "one", "step": producer.name, "parameters": {"mode": "one"}},
+        {"id": "two", "step": producer.name, "parameters": {"mode": "two"}},
+        {
+            "step": consumer.name,
+            "inputs": {
+                "first": {"from": "run.one.result"},
+                "second": {"from": "run.two.result"},
+            },
+        },
+    ]
+
+    plan = build_export_plan(
         [],
         config,
+        recursive=True,
         _registry={producer.name: producer, consumer.name: consumer},
     )
 
-    assert _scheduled_run_ids(plan) == ["runs.one", "runs.two", "runs.3"]
-    assert [
-        binding.source.run.parameters["mode"]
-        for binding in plan.goals[2].inputs
-        if isinstance(binding.source, StepRunOutput)
-    ] == ["one", "two"]
+    assert plan.goals[2].output_paths()["result"] == (
+        Path(config["datadir"]) / "paired/one_two.txt"
+    )
+
+    downstream_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "downstream/{mode}.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
+    )
+
+    class DownstreamStep(Step):
+        name = "downstream"
+        description = ""
+        result_output = downstream_output
+        spec = StepSpec(
+            inputs=[FileInput("paired", source=output)],
+            outputs=[downstream_output],
+        )
+
+    downstream = DownstreamStep()
+    config["runs"][2]["id"] = "pair"
+    config["runs"].append(
+        {
+            "step": downstream.name,
+            "inputs": {"paired": {"from": "run.pair.result"}},
+        }
+    )
+
+    with pytest.raises(ValueError, match="needs 'producer.mode'.*conflicting values"):
+        build_export_plan(
+            [],
+            config,
+            recursive=True,
+            _registry={
+                producer.name: producer,
+                consumer.name: consumer,
+                downstream.name: downstream,
+            },
+        )
+
+
+def test_consumer_parameter_resolves_from_linked_producer_before_reuse(config):
+    producer, _ = _make_configurable_producer_and_consumers("unused")
+    output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "derived/{mode}.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
+    )
+
+    class DerivedStep(Step):
+        name = "derived"
+        description = ""
+        result_output = output
+        spec = StepSpec(
+            inputs=[FileInput("source", source=producer.spec.outputs[0])],
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[output],
+        )
+
+    consumer = DerivedStep()
+    config["runs"] = [
+        {"id": "source", "step": producer.name, "parameters": {"mode": "custom"}},
+        {
+            "step": consumer.name,
+            "inputs": {"source": {"from": "run.source.result"}},
+        },
+    ]
+
+    plan = build_export_plan(
+        [],
+        config,
+        recursive=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert plan.goals[1].parameters["mode"] == "custom"
+    assert plan.goals[1].output_paths()["result"] == (
+        Path(config["datadir"]) / "derived/custom.txt"
+    )
+
+
+def test_task_wide_parameter_path_targets_only_matching_children(config):
+    first = _make_parameter_step()
+    second_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "other/{mode}.txt",
+            fields={"mode": TemplateField("other.mode")},
+        ),
+    )
+
+    class OtherModeStep(Step):
+        name = "other-mode"
+        description = ""
+        result_output = second_output
+        spec = StepSpec(
+            params=[ScalarParam("mode", str, config="other.mode")],
+            outputs=[second_output],
+        )
+
+    second = OtherModeStep()
+
+    class PathTask(Task):
+        name = "path-task"
+        description = ""
+        runs = (RunSpec("first", first), RunSpec("second", second))
+
+    config["shared"] = {"mode": "base"}
+    config["other"] = {"mode": "other"}
+    config["runs"] = [
+        {"task": "path-task", "parameters": {"shared.mode": "selected"}}
+    ]
+
+    plan = build_export_plan(
+        [],
+        config,
+        recursive=True,
+        _registry={first.name: first, second.name: second},
+        _tasks={"path-task": PathTask()},
+    )
+
+    assert [run.parameters["mode"] for run in plan.goals] == [
+        "selected", "other"
+    ]
 
 
 def test_task_steps_are_requested_goals(config):

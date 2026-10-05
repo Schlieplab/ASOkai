@@ -480,14 +480,14 @@ def test_generate_cwl_keeps_single_thread_steps_at_one_core(workflow_config):
 
 def test_generate_cwl_configures_threads_for_analysis_steps(workflow_config):
     workflow_config["resources"] = {
-        "intrinsic-features": {"n_threads": 4, "memory_mb": 8192},
+        "compute-intrinsic-features": {"n_threads": 4, "memory_mb": 8192},
     }
 
     generated = _generate_bundle(
         [IntrinsicFeaturesStep()],
         workflow_config,
     )
-    intrinsic = yaml.safe_load(generated.step_cwls["intrinsic-features.cwl"])
+    intrinsic = yaml.safe_load(generated.step_cwls["compute-intrinsic-features.cwl"])
     workflow = yaml.safe_load(generated.run_cwl)
 
     assert intrinsic["requirements"]["ResourceRequirement"] == {
@@ -500,7 +500,7 @@ def test_generate_cwl_configures_threads_for_analysis_steps(workflow_config):
         "default": 1,
         "inputBinding": {"prefix": "--n-threads"},
     }
-    assert workflow["steps"]["step_intrinsic_features"]["in"]["n_threads"] == {
+    assert workflow["steps"]["step_compute_intrinsic_features"]["in"]["n_threads"] == {
         "default": 4,
     }
     assert "n_threads" not in workflow["inputs"]
@@ -591,6 +591,12 @@ def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
         "producer.cwl",
         "consumer.producer.cwl",
     }
+    assert yaml.safe_load(generated.step_cwls["producer.cwl"])["baseCommand"] == [
+        "ASOkai", "step", "--run-id", "producer", "producer"
+    ]
+    assert yaml.safe_load(generated.step_cwls["consumer.producer.cwl"])[
+        "baseCommand"
+    ] == ["ASOkai", "step", "--run-id", "consumer.producer", "producer"]
     assert document["inputs"] == {
         "producer.mode": "string",
         "consumer.producer.mode": "string",

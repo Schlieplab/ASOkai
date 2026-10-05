@@ -44,7 +44,7 @@ prefix so that it does not produce ``.kff.kff``.
 Pipeline integration
 --------------------
 
-The built-in ``build-kmer-index`` step creates one durable KFF index from a
+The built-in ``build-kmc-index`` step creates one durable KFF index from a
 supplied plain or gzip-compressed FASTA. Link its ``reference`` input to the
 ``dna`` output of a named ``download-genome`` run, or supply an existing FASTA
 path. Analyses can reuse the index and batch their query k-mers; short query

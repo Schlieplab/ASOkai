@@ -15,8 +15,8 @@ import pytest
 
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
 from ASOkai._pipeline.runner import run_all
-from ASOkai._pipeline.steps.utils.build_kmer_index import (
-    BuildKmerIndexStep,
+from ASOkai._pipeline.steps.utils.build_kmc_index import (
+    BuildKMCIndexStep,
 )
 
 
@@ -97,7 +97,7 @@ def test_registered_step_executes_validates_and_publishes_output(
     config = {
         "datadir": str(tmp_path),
         "steps": {
-            "build-kmer-index": {
+            "build-kmc-index": {
                 "inputs": {"reference": {"path_override": str(dna)}}
             }
         },
@@ -114,14 +114,14 @@ def test_registered_step_executes_validates_and_publishes_output(
     }
 
     outputs = run_all(
-        [BuildKmerIndexStep()],
+        [BuildKMCIndexStep()],
         config,
         force=True,
         executor=executor,
     )
 
     assert len(outputs) == 1
-    output = outputs["build-kmer-index.kmer_index"]
+    output = outputs["build-kmc-index.kmc_index"]
     assert output.parent == (
         tmp_path / "GRCh38" / "ensembl" / "114" / "indexes" / "kmc"
     )
@@ -134,5 +134,5 @@ def test_registered_step_executes_validates_and_publishes_output(
 
     job_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(job_dirs) == 1
-    step_cwl = job_dirs[0] / "steps" / "build-kmer-index.cwl"
+    step_cwl = job_dirs[0] / "steps" / "build-kmc-index.cwl"
     assert "baseCommand:\n- ASOkai\n- step" in step_cwl.read_text(encoding="utf-8")

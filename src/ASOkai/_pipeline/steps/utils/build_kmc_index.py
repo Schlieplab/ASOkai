@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/utils/build_kmer_index.py
+Filename: src/ASOkai/_pipeline/steps/utils/build_kmc_index.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
 Description: Reusable KMC index builder for a supplied FASTA reference.
@@ -120,19 +120,19 @@ _KMC_PATH_FIELDS = {
 }
 
 
-class BuildKmerIndexStep(UtilityStep):
+class BuildKMCIndexStep(UtilityStep):
     """Build one reusable KFF index from a supplied FASTA reference."""
 
-    name = "build-kmer-index"
-    description = "Builds a reusable KFF k-mer index from a FASTA reference."
+    name = "build-kmc-index"
+    description = "Builds a reusable KMC KFF index from a FASTA reference."
     supports_multiple_threads = True
     reference_input = FileInput(
         "reference",
         file_type=FastaFile(gzip=None),
         doc="Plain or gzip-compressed FASTA reference to count.",
     )
-    kmer_index_output = FileOutput(
-        "kmer_index",
+    kmc_index_output = FileOutput(
+        "kmc_index",
         file_type=KffFile(),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/indexes/kmc/"
@@ -155,7 +155,7 @@ class BuildKmerIndexStep(UtilityStep):
             *_KMC_OPTIONS,
         ],
         inputs=[reference_input],
-        outputs=[kmer_index_output],
+        outputs=[kmc_index_output],
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
@@ -180,7 +180,7 @@ class BuildKmerIndexStep(UtilityStep):
 
     def run_from_args(self, args) -> int:
         """Count reference k-mers and write one KFF index."""
-        output = Path(args.kmer_index_output)
+        output = Path(args.kmc_index_output)
         with TemporaryDirectory(
             prefix="asokai-kmc-",
             dir=Path.cwd(),

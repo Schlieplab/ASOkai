@@ -25,7 +25,7 @@ from ASOkai._pipeline.steps.core.generate_aso_candidates import (
     GenerateASOCandidatesStep,
 )
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
-from ASOkai._pipeline.steps.utils.build_kmer_index import BuildKmerIndexStep
+from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
@@ -44,7 +44,7 @@ from ASOkai._pipeline.validation import (
 # Built-in step registry
 _BUILTIN_STEPS: tuple[Step, ...] = (
     DownloadGenomeStep(),
-    BuildKmerIndexStep(),
+    BuildKMCIndexStep(),
     CreateTargetGeneStep(),
     TargetGeneToFastaStep(),
     BuildBowtie2IndexStep(),

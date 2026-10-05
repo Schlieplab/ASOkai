@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Filename: tests/unit/test_build_kmer_index_step.py
+Filename: tests/unit/test_build_kmc_index_step.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Description: Tests for BuildKmerIndexStep.
+Description: Tests for BuildKMCIndexStep.
 License: LGPL-3.0-or-later
 """
 
@@ -20,8 +20,8 @@ from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
 from ASOkai._pipeline.contracts.file_types import FastaFile, KffFile
 from ASOkai._pipeline.plan import build_plan
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
-from ASOkai._pipeline.steps.utils.build_kmer_index import (
-    BuildKmerIndexStep,
+from ASOkai._pipeline.steps.utils.build_kmc_index import (
+    BuildKMCIndexStep,
 )
 from ASOkai.Plugins import UtilityStep, Step
 
@@ -30,7 +30,7 @@ from ASOkai.Plugins import UtilityStep, Step
 def config(tmp_path: Path) -> dict:
     return {
         "datadir": str(tmp_path),
-        "resources": {"build-kmer-index": {"n_threads": 6}},
+        "resources": {"build-kmc-index": {"n_threads": 6}},
         "parameters": {
             "genome": {
                 "assembly": "GRCh38",
@@ -44,11 +44,11 @@ def config(tmp_path: Path) -> dict:
 
 
 @pytest.fixture
-def step() -> BuildKmerIndexStep:
-    return BuildKmerIndexStep()
+def step() -> BuildKMCIndexStep:
+    return BuildKMCIndexStep()
 
 
-def _run(step: BuildKmerIndexStep, config: dict, reference: Path) -> StepRun:
+def _run(step: BuildKMCIndexStep, config: dict, reference: Path) -> StepRun:
     return StepRun(
         step.name,
         step,
@@ -57,14 +57,14 @@ def _run(step: BuildKmerIndexStep, config: dict, reference: Path) -> StepRun:
     )
 
 
-def test_step_contract(step: BuildKmerIndexStep) -> None:
+def test_step_contract(step: BuildKMCIndexStep) -> None:
     assert isinstance(step, Step)
     assert isinstance(step, UtilityStep)
-    assert step.name == "build-kmer-index"
+    assert step.name == "build-kmc-index"
     assert step.dependencies == []
     assert step.reference_input.source is None
     assert step.reference_input.file_type == FastaFile(gzip=None)
-    assert isinstance(step.kmer_index_output.file_type, KffFile)
+    assert isinstance(step.kmc_index_output.file_type, KffFile)
     assert step.config_map == {
         "k": "parameters.target.k",
         **{
@@ -92,11 +92,11 @@ def test_step_contract(step: BuildKmerIndexStep) -> None:
 
 
 def test_output_path_uses_configured_scope(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     config: dict,
     tmp_path: Path,
 ) -> None:
-    output = _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmer_index"]
+    output = _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmc_index"]
 
     assert output.parent == (
         tmp_path / "GRCh38" / "ensembl" / "114" / "indexes" / "kmc"
@@ -108,22 +108,22 @@ def test_output_path_uses_configured_scope(
 
 
 def test_output_name_changes_with_kmc_options(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     config: dict,
     tmp_path: Path,
 ) -> None:
     dna = tmp_path / "dna.fa.gz"
-    original = _run(step, config, dna).output_paths()["kmer_index"]
+    original = _run(step, config, dna).output_paths()["kmc_index"]
     changed_option = StepRun(
         step.name,
         step,
         config,
         parameters={"ci": 2},
         inputs=(StepInputBinding(step.reference_input, dna),),
-    ).output_paths()["kmer_index"]
+    ).output_paths()["kmc_index"]
     assert original != changed_option
     assert ".ci2." in changed_option.name
-    assert original == _run(step, config, dna).output_paths()["kmer_index"]
+    assert original == _run(step, config, dna).output_paths()["kmc_index"]
 
 
 @pytest.mark.parametrize(
@@ -135,7 +135,7 @@ def test_output_name_changes_with_kmc_options(
     ],
 )
 def test_planning_rejects_missing_genome_identity(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     tmp_path: Path,
     missing_field: str,
     config_path: str,
@@ -153,7 +153,7 @@ def test_planning_rejects_missing_genome_identity(
         },
         "runs": [
             {
-                "step": "build-kmer-index",
+                "step": "build-kmc-index",
                 "parameters": {"k": 4},
                 "inputs": {"reference": {"path": str(reference)}},
             }
@@ -165,8 +165,8 @@ def test_planning_rejects_missing_genome_identity(
         build_plan([], config, _registry={step.name: step})
 
 
-def test_named_download_links_directly_to_kmer_builder(
-    step: BuildKmerIndexStep,
+def test_named_download_links_directly_to_kmc_builder(
+    step: BuildKMCIndexStep,
     tmp_path: Path,
 ) -> None:
     downloader = DownloadGenomeStep()
@@ -183,7 +183,7 @@ def test_named_download_links_directly_to_kmer_builder(
         "runs": [
             {"step": "download-genome", "id": "genome"},
             {
-                "step": "build-kmer-index",
+                "step": "build-kmc-index",
                 "id": "index",
                 "parameters": {"k": 16},
                 "inputs": {"reference": {"from": "run.genome.dna"}},
@@ -196,14 +196,14 @@ def test_named_download_links_directly_to_kmer_builder(
     )
     assert [run.step.name for run in plan.runs_to_execute] == [
         "download-genome",
-        "build-kmer-index",
+        "build-kmc-index",
     ]
     genome, index = plan.runs_to_execute
     assert index.input_paths()["reference"] == genome.output_paths()["dna"]
 
 
 def test_cwl_spec_exposes_runtime_resources(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     config: dict,
     tmp_path: Path,
 ) -> None:
@@ -218,24 +218,24 @@ def test_cwl_spec_exposes_runtime_resources(
     }
     assert doc["inputs"]["n_threads"]["inputBinding"] == {"prefix": "--n-threads"}
     filename = (
-        _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmer_index"].name
+        _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmc_index"].name
     )
     assert {
-        "prefix": "--kmer-index-output",
+        "prefix": "--kmc-index-output",
         "valueFrom": filename,
     } in doc["arguments"]
 
 
 def test_generated_workflow_passes_configured_resources(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     config: dict,
     tmp_path: Path,
 ) -> None:
     generated = generate_cwl_bundle([_run(step, config, tmp_path / "dna.fa.gz")])
     workflow = yaml.safe_load(generated.run_cwl)
-    tool = yaml.safe_load(generated.step_cwls["build-kmer-index.cwl"])
+    tool = yaml.safe_load(generated.step_cwls["build-kmc-index.cwl"])
 
-    step_inputs = workflow["steps"]["step_build_kmer_index"]["in"]
+    step_inputs = workflow["steps"]["step_build_kmc_index"]["in"]
     assert step_inputs["n_threads"] == {"default": 6}
     assert tool["requirements"]["ResourceRequirement"] == {
         "coresMin": 6,
@@ -248,7 +248,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
     tmp_path: Path,
 ) -> None:
     from ASOkai._pipeline.contracts.file_types import kff
-    from ASOkai._pipeline.steps.utils import build_kmer_index
+    from ASOkai._pipeline.steps.utils import build_kmc_index
 
     captured: dict = {}
 
@@ -270,13 +270,13 @@ def test_run_cli_builds_one_kff_with_configured_resources(
         def run(self, input_path, **kwargs):
             return None
 
-    monkeypatch.setattr(build_kmer_index, "KMC", FakeKMC)
+    monkeypatch.setattr(build_kmc_index, "KMC", FakeKMC)
     monkeypatch.setattr(kff.KMCTools, "Transform", FakeTransform)
     dna = tmp_path / "dna.fa.gz"
     dna.write_bytes(b"input")
     output = tmp_path / "output" / "genome.kff"
 
-    result = BuildKmerIndexStep().run_cli(
+    result = BuildKMCIndexStep().run_cli(
         [
             "--k",
             "16",
@@ -284,7 +284,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
             str(dna),
             "--n-threads",
             "6",
-            "--kmer-index-output",
+            "--kmc-index-output",
             str(output),
         ]
     )
@@ -323,7 +323,7 @@ def test_run_cli_forwards_selected_kmc_options(
     tmp_path: Path,
 ) -> None:
     from ASOkai._pipeline.contracts.file_types import kff
-    from ASOkai._pipeline.steps.utils import build_kmer_index
+    from ASOkai._pipeline.steps.utils import build_kmc_index
 
     captured: dict = {}
 
@@ -339,13 +339,13 @@ def test_run_cli_forwards_selected_kmc_options(
         def run(self, input_path, **kwargs):
             return None
 
-    monkeypatch.setattr(build_kmer_index, "KMC", FakeKMC)
+    monkeypatch.setattr(build_kmc_index, "KMC", FakeKMC)
     monkeypatch.setattr(kff.KMCTools, "Transform", FakeTransform)
     dna = tmp_path / "dna.fa.gz"
     dna.write_bytes(b"input")
     output = tmp_path / "index.kff"
 
-    result = BuildKmerIndexStep().run_cli(
+    result = BuildKMCIndexStep().run_cli(
         [
             "--k",
             "16",
@@ -374,7 +374,7 @@ def test_run_cli_forwards_selected_kmc_options(
             "--opt-out-size",
             "--reference",
             str(dna),
-            "--kmer-index-output",
+            "--kmc-index-output",
             str(output),
         ]
     )
@@ -415,7 +415,7 @@ def test_run_cli_forwards_selected_kmc_options(
 
 
 def test_config_rejects_k_above_kmc_limit(
-    step: BuildKmerIndexStep,
+    step: BuildKMCIndexStep,
     config: dict,
 ) -> None:
     config["parameters"]["target"]["k"] = 257

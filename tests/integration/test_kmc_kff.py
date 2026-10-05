@@ -17,7 +17,7 @@ import pytest
 
 from ASOkai.Utils import KMC, KMCTools
 from ASOkai._pipeline.contracts.file_types import KffFile
-from ASOkai._pipeline.steps.utils.build_kmer_index import BuildKmerIndexStep
+from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 
 
 @pytest.mark.integration
@@ -68,7 +68,7 @@ def test_generic_builder_accepts_plain_and_gzipped_fasta(
         fasta.write_text(">sequence\nACGTACGTACGTACGT\n", encoding="utf-8")
     output = tmp_path / "index.kff"
 
-    assert BuildKmerIndexStep().run_cli(
-        ["--reference", str(fasta), "--k", "5", "--kmer-index-output", str(output)]
+    assert BuildKMCIndexStep().run_cli(
+        ["--reference", str(fasta), "--k", "5", "--kmc-index-output", str(output)]
     ) == 0
     KffFile().validate(output)

@@ -34,6 +34,12 @@ _N_THREADS_PARAM = ScalarParam(
     default=1,
     doc="Number of worker threads allocated to this step.",
 )
+_MEMORY_MB_PARAM = ScalarParam(
+    "memory_mb",
+    int,
+    default=4096,
+    doc="Memory allocated to this step in mebibytes.",
+)
 
 
 class Step(Runnable):
@@ -41,13 +47,15 @@ class Step(Runnable):
 
     Core steps may set ``supports_multiple_threads`` only when their runtime
     consumes the automatically supplied ``args.n_threads`` value. Analysis
-    steps support it through their shared base class.
+    steps support it through their shared base class. Steps that use the memory
+    allocation may set ``consumes_memory_mb`` and read ``args.memory_mb``.
     """
 
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
     supports_multiple_threads: ClassVar[bool] = False
+    consumes_memory_mb: ClassVar[bool] = False
     listed: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -98,6 +106,10 @@ class Step(Runnable):
         if type(cls.supports_multiple_threads) is not bool:
             raise TypeError(
                 f"Step '{cls.name}' supports_multiple_threads must be a boolean."
+            )
+        if type(cls.consumes_memory_mb) is not bool:
+            raise TypeError(
+                f"Step '{cls.name}' consumes_memory_mb must be a boolean."
             )
         output_attributes = {
             attribute_name: value
@@ -162,6 +174,14 @@ class Step(Runnable):
                     f"Step '{self.name}' declares reserved standard parameter "
                     f"'{_N_THREADS_PARAM.name}'."
                 )
+            if self.consumes_memory_mb and (
+                param.name == _MEMORY_MB_PARAM.name
+                or param.cli_prefix == _MEMORY_MB_PARAM.cli_prefix
+            ):
+                raise ValueError(
+                    f"Step '{self.name}' declares reserved standard parameter "
+                    f"'{_MEMORY_MB_PARAM.name}'."
+                )
 
     def _cwl_spec(
         self,
@@ -176,10 +196,14 @@ class Step(Runnable):
             input_configurations,
             parameters=parameters,
         )
-        if not self.supports_multiple_threads:
+        resource_inputs = []
+        if self.supports_multiple_threads:
+            resource_inputs.append(_N_THREADS_PARAM.to_cwl_input())
+        if self.consumes_memory_mb:
+            resource_inputs.append(_MEMORY_MB_PARAM.to_cwl_input())
+        if not resource_inputs:
             return spec
-        n_threads_input = _N_THREADS_PARAM.to_cwl_input()
-        return replace(spec, inputs=[*spec.inputs, n_threads_input])
+        return replace(spec, inputs=[*spec.inputs, *resource_inputs])
 
     def build_parser(self, *, description: str | None = None):
         """Build an argparse parser from this step's parameter spec."""
@@ -187,6 +211,8 @@ class Step(Runnable):
         parser = self.spec.build_parser(description=description or self.description)
         if self.supports_multiple_threads:
             _N_THREADS_PARAM.add_to_parser(parser)
+        if self.consumes_memory_mb:
+            _MEMORY_MB_PARAM.add_to_parser(parser)
         return parser
 
     def prepare_output_directories(self, args: argparse.Namespace) -> None:
@@ -216,6 +242,9 @@ class Step(Runnable):
     def validate_parameters(self, values: Mapping[str, object]) -> None:
         """Validate relationships between resolved scalar parameters."""
 
+    def validate_resources(self, values: Mapping[str, object]) -> None:
+        """Validate resource settings consumed by this step."""
+
     def run_from_args(self, args: argparse.Namespace) -> int:
         """Execute the step using parsed arguments."""
         raise NotImplementedError(
@@ -229,6 +258,11 @@ class Step(Runnable):
         args = parser.parse_args(argv)
         if self.supports_multiple_threads and args.n_threads < 1:
             parser.error("--n-threads must be a positive integer")
+        if self.consumes_memory_mb:
+            try:
+                self.validate_resources({"memory_mb": args.memory_mb})
+            except ValueError as error:
+                parser.error(str(error))
         parameter_values = {
             parameter.name: getattr(args, parameter.name)
             for parameter in self.spec.params

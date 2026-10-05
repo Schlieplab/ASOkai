@@ -4,8 +4,9 @@ Build KMC index
 .. asokai-step-reference:: build-kmc-index
 
 Supply a plain or gzip-compressed FASTA file as ``reference``. The step builds
-one KFF index using the configured k-mer length and KMC options. Configure
-``parameters.genome.assembly``, ``parameters.genome.source``, and
+one KFF index using the configured k-mer length and KMC options. Set
+``resources.build-kmc-index.memory_mb`` to control KMC's memory limit.
+Configure ``parameters.genome.assembly``, ``parameters.genome.source``, and
 ``parameters.genome.release`` to place the index under its genome
 directory. Link the step to a named genome download when the FASTA needs to be
 created::

@@ -30,7 +30,7 @@ from ASOkai.Plugins import UtilityStep, Step
 def config(tmp_path: Path) -> dict:
     return {
         "datadir": str(tmp_path),
-        "resources": {"build-kmc-index": {"n_threads": 6}},
+        "resources": {"build-kmc-index": {"n_threads": 6, "memory_mb": 8192}},
         "parameters": {
             "genome": {
                 "assembly": "GRCh38",
@@ -70,7 +70,6 @@ def test_step_contract(step: BuildKMCIndexStep) -> None:
         **{
             name: f"parameters.kmc.{name}"
             for name in (
-                "m",
                 "f",
                 "sm",
                 "hc",
@@ -102,8 +101,8 @@ def test_output_path_uses_configured_scope(
         tmp_path / "GRCh38" / "ensembl" / "114" / "indexes" / "kmc"
     )
     assert output.name == (
-        "index.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
-        "bFalse.rFalse.nna.sfna.spna.srna.opt_out_sizeFalse.kff"
+        "index.k16.ffm.hcFalse.ci1.csna.cxna."
+        "bFalse.opt_out_sizeFalse.kff"
     )
 
 
@@ -124,6 +123,25 @@ def test_output_name_changes_with_kmc_options(
     assert original != changed_option
     assert ".ci2." in changed_option.name
     assert original == _run(step, config, dna).output_paths()["kmc_index"]
+
+
+def test_resource_and_counting_strategy_do_not_change_output_name(
+    step: BuildKMCIndexStep,
+    config: dict,
+    tmp_path: Path,
+) -> None:
+    dna = tmp_path / "dna.fa.gz"
+    original = _run(step, config, dna).output_paths()["kmc_index"]
+    config["resources"]["build-kmc-index"]["memory_mb"] = 16384
+    changed = StepRun(
+        step.name,
+        step,
+        config,
+        parameters={"sm": True, "p": 9, "r": True, "n": 32, "sf": 2, "sp": 3, "sr": 4},
+        inputs=(StepInputBinding(step.reference_input, dna),),
+    )
+
+    assert changed.output_paths()["kmc_index"] == original
 
 
 @pytest.mark.parametrize(
@@ -215,8 +233,12 @@ def test_cwl_spec_exposes_runtime_resources(
         *step.config_map,
         "reference",
         "n_threads",
+        "memory_mb",
     }
     assert doc["inputs"]["n_threads"]["inputBinding"] == {"prefix": "--n-threads"}
+    assert doc["inputs"]["memory_mb"]["inputBinding"] == {
+        "prefix": "--memory-mb"
+    }
     filename = (
         _run(step, config, tmp_path / "dna.fa.gz").output_paths()["kmc_index"].name
     )
@@ -237,9 +259,10 @@ def test_generated_workflow_passes_configured_resources(
 
     step_inputs = workflow["steps"]["step_build_kmc_index"]["in"]
     assert step_inputs["n_threads"] == {"default": 6}
+    assert step_inputs["memory_mb"] == {"default": 8192}
     assert tool["requirements"]["ResourceRequirement"] == {
         "coresMin": 6,
-        "ramMin": 4096,
+        "ramMin": 8192,
     }
 
 
@@ -284,6 +307,8 @@ def test_run_cli_builds_one_kff_with_configured_resources(
             str(dna),
             "--n-threads",
             "6",
+            "--memory-mb",
+            "5632",
             "--kmc-index-output",
             str(output),
         ]
@@ -294,7 +319,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
     assert captured["output_path"] == output
     assert captured["kwargs"] == {
         "k": 16,
-        "m": 4,
+        "m": 5,
         "f": "fm",
         "t": 6,
         "sm": False,
@@ -349,8 +374,8 @@ def test_run_cli_forwards_selected_kmc_options(
         [
             "--k",
             "16",
-            "--m",
-            "8",
+            "--memory-mb",
+            "8192",
             "--f",
             "fa",
             "--hc",
@@ -383,7 +408,6 @@ def test_run_cli_forwards_selected_kmc_options(
     assert {
         name: captured[name]
         for name in (
-            "m",
             "f",
             "hc",
             "p",
@@ -398,7 +422,6 @@ def test_run_cli_forwards_selected_kmc_options(
             "opt_out_size",
         )
     } == {
-        "m": 8,
         "f": "fa",
         "hc": True,
         "p": 9,
@@ -412,6 +435,7 @@ def test_run_cli_forwards_selected_kmc_options(
         "sr": 4,
         "opt_out_size": True,
     }
+    assert captured["m"] == 8
 
 
 def test_config_rejects_k_above_kmc_limit(
@@ -427,7 +451,6 @@ def test_config_rejects_k_above_kmc_limit(
 @pytest.mark.parametrize(
     ("options", "message"),
     [
-        ({"m": 1}, "m must be between 2 and 1024"),
         ({"p": 11}, "p must be between 5 and 11 and no greater than k"),
         ({"ci": 3, "cx": 2}, "ci must be no greater than cx"),
         ({"n": 0}, "n must be a positive integer"),
@@ -440,3 +463,18 @@ def test_config_rejects_invalid_kmc_options(step, config, options, message):
 
     with pytest.raises(ValueError, match=message):
         cfg.validate_step_config(config, [step], validate_input_files=False)
+
+
+@pytest.mark.parametrize("memory_mb", [1024, 1048577])
+def test_config_rejects_unsupported_kmc_memory(step, config, memory_mb):
+    config["resources"]["build-kmc-index"]["memory_mb"] = memory_mb
+
+    with pytest.raises(ValueError, match="memory_mb must be between 2048 and 1048576"):
+        cfg.validate_step_config(config, [step], validate_input_files=False)
+
+
+def test_config_rejects_old_kmc_memory_parameter(config):
+    config["parameters"]["kmc"] = {"m": 8}
+
+    with pytest.raises(ValueError, match="Additional properties are not allowed"):
+        cfg.validate_config_schema(config)

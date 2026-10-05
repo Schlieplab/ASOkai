@@ -220,6 +220,10 @@ def validate_step_config(
                         f"$.resources.{step.name}.{resource_name}: step "
                         f"'{step.name}' does not support this resource setting"
                     )
+        try:
+            step.validate_resources(step_resources(config, step))
+        except ValueError as error:
+            errors.append(f"$.resources.{step.name}: {error}")
         parameters_by_path = {
             parameter.config: parameter
             for parameter in step.spec.params

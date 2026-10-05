@@ -180,7 +180,6 @@ properties:
         additionalProperties: false
         description: KMC index options shared by index-builder runs.
         properties:
-          m: {type: integer, minimum: 2, maximum: 1024, description: Maximum RAM in GiB.}
           f: {enum: [fa, fm], description: FASTA input format.}
           sm: {type: boolean, description: Use strict memory mode.}
           hc: {type: boolean, description: Count homopolymer-compressed k-mers.}

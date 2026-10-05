@@ -23,9 +23,6 @@ from ASOkai._pipeline.steps.utils.base import UtilityStep
 
 _KMC_OPTIONS = (
     ScalarParam(
-        "m", int, config="parameters.kmc.m", default=4, doc="Maximum RAM in GiB."
-    ),
-    ScalarParam(
         "f",
         Literal["fa", "fm"],
         config="parameters.kmc.f",
@@ -105,6 +102,16 @@ _KMC_OPTIONS = (
     ),
 )
 
+_KMC_FILENAME_OPTIONS = {
+    "f",
+    "hc",
+    "ci",
+    "cs",
+    "cx",
+    "b",
+    "opt_out_size",
+}
+
 _KMC_PATH_FIELDS = {
     "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source"),
@@ -116,6 +123,7 @@ _KMC_PATH_FIELDS = {
             default="na" if param.default is None else param.default,
         )
         for param in _KMC_OPTIONS
+        if param.name in _KMC_FILENAME_OPTIONS
     },
 }
 
@@ -126,6 +134,7 @@ class BuildKMCIndexStep(UtilityStep):
     name = "build-kmc-index"
     description = "Builds a reusable KMC KFF index from a FASTA reference."
     supports_multiple_threads = True
+    consumes_memory_mb = True
     reference_input = FileInput(
         "reference",
         file_type=FastaFile(gzip=None),
@@ -136,9 +145,8 @@ class BuildKMCIndexStep(UtilityStep):
         file_type=KffFile(),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/indexes/kmc/"
-            "index.k{k}.m{m}.f{f}.sm{sm}.hc{hc}.p{p}.ci{ci}."
-            "cs{cs}.cx{cx}.b{b}.r{r}.n{n}.sf{sf}.sp{sp}.sr{sr}."
-            "opt_out_size{opt_out_size}.kff",
+            "index.k{k}.f{f}.hc{hc}.ci{ci}.cs{cs}.cx{cx}."
+            "b{b}.opt_out_size{opt_out_size}.kff",
             fields=_KMC_PATH_FIELDS,
         ),
         doc="Reference k-mer counts in KFF format.",
@@ -163,9 +171,6 @@ class BuildKMCIndexStep(UtilityStep):
         k = values.get("k")
         if type(k) is not int or not 1 <= k <= 256:
             raise ValueError("k must be between 1 and 256")
-        m = values.get("m")
-        if type(m) is not int or not 2 <= m <= 1024:
-            raise ValueError("m must be between 2 and 1024")
         p = values.get("p")
         if p is not None and (type(p) is not int or not 5 <= p <= 11 or p > k):
             raise ValueError("p must be between 5 and 11 and no greater than k")
@@ -177,6 +182,11 @@ class BuildKMCIndexStep(UtilityStep):
         cx = values.get("cx")
         if isinstance(ci, int) and isinstance(cx, int) and ci > cx:
             raise ValueError("ci must be no greater than cx")
+
+    def validate_resources(self, values: Mapping[str, object]) -> None:
+        memory_mb = values.get("memory_mb")
+        if type(memory_mb) is not int or not 2048 <= memory_mb <= 1048576:
+            raise ValueError("memory_mb must be between 2048 and 1048576 for KMC")
 
     def run_from_args(self, args) -> int:
         """Count reference k-mers and write one KFF index."""
@@ -190,7 +200,7 @@ class BuildKMCIndexStep(UtilityStep):
                 output,
                 working_directory,
                 k=args.k,
-                m=args.m,
+                m=args.memory_mb // 1024,
                 f=args.f,
                 t=args.n_threads,
                 sm=args.sm,

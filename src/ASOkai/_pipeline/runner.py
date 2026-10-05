@@ -196,11 +196,18 @@ def _log_dry_run_plan(plan: ExecutionPlan) -> None:
             lines.extend(
                 f"       {name:<{width}} {detail}" for name, detail in inputs
             )
+        resources = cfg.step_resources(run.config, run.step)
+        resource_lines = []
         if run.step.supports_multiple_threads:
-            threads = cfg.step_resources(run.config, run.step)[
-                cfg.RESOURCE_N_THREADS_KEY
-            ]
-            lines.extend(("     Resources:", f"       threads: {threads}"))
+            resource_lines.append(
+                f"       threads: {resources[cfg.RESOURCE_N_THREADS_KEY]}"
+            )
+        if run.step.consumes_memory_mb:
+            resource_lines.append(
+                f"       memory_mb: {resources[cfg.RESOURCE_MEMORY_KEY]}"
+            )
+        if resource_lines:
+            lines.extend(("     Resources:", *resource_lines))
 
     _log_info(("run",), "\n".join(lines))
 

@@ -126,8 +126,8 @@ def test_registered_step_executes_validates_and_publishes_output(
         tmp_path / "GRCh38" / "ensembl" / "114" / "indexes" / "kmc"
     )
     assert output.name == (
-        "index.k16.m4.ffm.smFalse.hcFalse.pna.ci1.csna.cxna."
-        "bFalse.rFalse.nna.sfna.spna.srna.opt_out_sizeFalse.kff"
+        "index.k16.ffm.hcFalse.ci1.csna.cxna."
+        "bFalse.opt_out_sizeFalse.kff"
     )
     assert output.read_bytes() == b"KFF\x01index-dataKFF"
     assert len(list((tmp_path / ".asokai" / "validation").glob("*.json"))) == 1

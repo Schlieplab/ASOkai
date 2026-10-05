@@ -366,7 +366,8 @@ def _parse_cwl_command(run, tmp_path, inputs=None):
     from cwltool.workflow import default_make_tool
 
     tool_path = tmp_path / "step.cwl"
-    tool_path.write_text(StepCwlGenerator().render(run))
+    generated = StepCwlGenerator().render(run)
+    tool_path.write_text(generated)
     tool = load_tool(
         str(tool_path), LoadingContext({"construct_tool_object": default_make_tool})
     )
@@ -378,7 +379,8 @@ def _parse_cwl_command(run, tmp_path, inputs=None):
         )
     )
     command = job.command_line
-    return run.step.build_parser().parse_args(command[3:])
+    base_command = yaml.safe_load(generated)["baseCommand"]
+    return run.step.build_parser().parse_args(command[len(base_command) :])
 
 
 @pytest.mark.parametrize(

@@ -255,6 +255,12 @@ class JobCwlGenerator(BaseCwlGenerator):
                         cfg.RESOURCE_N_THREADS_KEY
                     ]
                 }
+            if step.consumes_memory_mb:
+                in_map[cfg.RESOURCE_MEMORY_KEY] = {
+                    "default": cfg.step_resources(config, step)[
+                        cfg.RESOURCE_MEMORY_KEY
+                    ]
+                }
 
             for cwl_key in run.parameters:
                 in_map[cwl_key] = workflow_input_id(run, cwl_key)

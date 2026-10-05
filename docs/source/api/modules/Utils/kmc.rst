@@ -50,12 +50,17 @@ supplied plain or gzip-compressed FASTA. Link its ``reference`` input to the
 path. Analyses can reuse the index and batch their query k-mers; short query
 passes do not need separate persistent pipeline steps.
 
-The index builder accepts ``--param`` overrides for KMC's memory limit,
-FASTA format, strict-memory and homopolymer modes, signature length, count
-thresholds, canonicalization, RAM-only mode, bin count, per-stage thread
-counts, and output-size optimization. These options also have optional
-``parameters.kmc`` configuration keys. The output filename spells out the
-resolved options as key/value segments, such as ``.k16.m4.ffm.ci1.``. The
+The index builder converts ``resources.build-kmc-index.memory_mb`` (or the
+default memory resource) to KMC's integer ``-m`` setting by dividing by 1024
+and rounding down. ASOkai requires at least 2048 MiB for this step. The step
+accepts ``--param`` overrides for FASTA format, strict-memory and
+homopolymer modes, signature length, count thresholds, canonicalization,
+RAM-only mode, bin count, per-stage thread counts, and output-size
+optimization. Set ``parameters.kmc.sm`` to ``true`` if KMC must enforce its
+memory limit strictly. These options also have optional ``parameters.kmc``
+configuration keys. The output filename
+includes only options that affect input interpretation, retained counts, or
+KFF representation, as key/value segments such as ``.k16.ffm.ci1.``. The
 directory uses the configured genome assembly, source, and Ensembl release.
 These values are required when planning the builder; the step does not infer
 them from the FASTA.

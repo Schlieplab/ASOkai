@@ -13,6 +13,7 @@ from .bowtie2 import Bowtie2IndexDirectory
 from .fasta import FastaFile
 from .json import JsonFile
 from .kff import KffFile
+from .sam import SamFile
 
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "Bowtie2IndexDirectory",
     "JsonFile",
     "KffFile",
+    "SamFile",
 ]

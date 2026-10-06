@@ -15,6 +15,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Sequence
 
+from ASOkai._pipeline.steps.analysis.count_genomic_hits import CountGenomicHitsStep
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
@@ -26,8 +27,13 @@ from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
 )
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
+from ASOkai._pipeline.steps.utils.query_bowtie2 import QueryBowtie2Step
+from ASOkai._pipeline.steps.utils.treesearch_target_sites import (
+    TreesearchTargetSitesStep,
+)
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+from ASOkai._pipeline.tasks.repeated_sites import RepeatedSitesTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
@@ -45,13 +51,17 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
     BuildKMCIndexStep(),
     CreateTargetGeneStep(),
     BuildBowtie2IndexStep(),
+    TreesearchTargetSitesStep(),
+    QueryBowtie2Step(),
     GenerateTherapeuticCandidatesStep(),
     IntrinsicFeaturesStep(),
+    CountGenomicHitsStep(),
 )
 
 # Built-in task registry
 _BUILTIN_TASKS: tuple[Task, ...] = (
     InstantiateTargetGeneTask(),
+    RepeatedSitesTask(),
 )
 
 # Built-in workflow registry

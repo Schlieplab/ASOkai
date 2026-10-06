@@ -45,13 +45,21 @@ class StepCwlGenerator(BaseCwlGenerator):
         run: StepRun,
         *,
         resource_requirement: dict[str, int] | None = None,
+        verbose: bool = False,
     ) -> dict[str, Any]:
         step = run.step
         spec = run.cwl_spec()
         doc: dict[str, Any] = {
             "cwlVersion": self.cwl_version,
             "class": "CommandLineTool",
-            "baseCommand": ["ASOkai", "step", "--run-id", run.run_id, step.name],
+            "baseCommand": [
+                "ASOkai",
+                "step",
+                *(["--verbose"] if verbose else []),
+                "--run-id",
+                run.run_id,
+                step.name,
+            ],
             "doc": step.description,
         }
         requirements = deepcopy(spec.requirements)
@@ -76,11 +84,13 @@ class StepCwlGenerator(BaseCwlGenerator):
         *,
         shebang: bool = True,
         resource_requirement: dict[str, int] | None = None,
+        verbose: bool = False,
     ) -> str:
         text = self.dump(
             self.document(
                 run,
                 resource_requirement=resource_requirement,
+                verbose=verbose,
             )
         )
         if shebang:
@@ -249,10 +259,10 @@ class JobCwlGenerator(BaseCwlGenerator):
             config = dict(run.config)
             in_map: dict[str, str | dict] = {}
 
-            if step.supports_multiple_threads:
-                in_map[cfg.RESOURCE_N_THREADS_KEY] = {
+            if step.supports_multiple_workers:
+                in_map[cfg.RESOURCE_N_WORKERS_KEY] = {
                     "default": cfg.step_resources(config, step)[
-                        cfg.RESOURCE_N_THREADS_KEY
+                        cfg.RESOURCE_N_WORKERS_KEY
                     ]
                 }
             if step.consumes_memory_mb:
@@ -393,6 +403,8 @@ class GeneratedCwlBundle:
 
 def generate_cwl_bundle(
     runs: list[StepRun],
+    *,
+    verbose: bool = False,
 ) -> GeneratedCwlBundle:
     """Generate every CWL document required by a runnable bundle."""
     publication_plan = build_publication_plan(runs)
@@ -417,6 +429,7 @@ def generate_cwl_bundle(
         step_cwls[step_cwl_filename(run)] = step_generator.render(
             run,
             resource_requirement=resource_requirement,
+            verbose=verbose,
         )
 
     return GeneratedCwlBundle(

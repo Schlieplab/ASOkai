@@ -19,7 +19,7 @@ def test_cwl_resource_requirement_translates_supported_fields():
     config = {
         "resources": {
             step.name: {
-                "n_threads": 4,
+                "n_workers": 4,
                 "memory_mb": 8192,
             }
         }
@@ -53,7 +53,7 @@ def test_cwl_resource_requirement_prefers_configuration_to_authored_values():
     config = {
         "resources": {
             step.name: {
-                "n_threads": 4,
+                "n_workers": 4,
                 "memory_mb": 8192,
             }
         }

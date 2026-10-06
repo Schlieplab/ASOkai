@@ -113,7 +113,7 @@ def test_bowtie2_builder_names_options_and_forwards_them(
         [
             "--reference", str(reference),
             "--index-output", str(output),
-            "--n-threads", "2",
+            "--n-workers", "2",
             "--offrate", "3",
             "--packed",
         ]

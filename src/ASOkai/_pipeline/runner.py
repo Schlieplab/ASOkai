@@ -198,9 +198,9 @@ def _log_dry_run_plan(plan: ExecutionPlan) -> None:
             )
         resources = cfg.step_resources(run.config, run.step)
         resource_lines = []
-        if run.step.supports_multiple_threads:
+        if run.step.supports_multiple_workers:
             resource_lines.append(
-                f"       threads: {resources[cfg.RESOURCE_N_THREADS_KEY]}"
+                f"       workers: {resources[cfg.RESOURCE_N_WORKERS_KEY]}"
             )
         if run.step.consumes_memory_mb:
             resource_lines.append(
@@ -240,6 +240,7 @@ def run_plan(
 
     cwl_bundle = generate_cwl_bundle(
         list(plan.runs_to_execute),
+        verbose=getattr(executor, "verbose", False) is True,
     )
     inputs = resolve_run_sequence_inputs(
         plan.runs_to_execute,

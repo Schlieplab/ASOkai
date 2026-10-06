@@ -98,21 +98,16 @@ Single-node resource requests are configured under `resources`:
 ```yaml
 resources:
   default:
-    n_threads: 1
+    n_workers: 1
     memory_mb: 4096
   compute-intrinsic-features:
-    n_threads: 4
+    n_workers: 4
 ```
 
 Missing per-step settings inherit from `resources.default`. If the section is
-omitted, ASOkai uses 4096 MiB and one thread where multithreading is
-supported. A step without multithreading support requests one core and does
-not accept a step-level `n_threads` setting.
-
-For existing configurations, rename `resources.default.n_processes` and
-`resources.<step>.n_processes` to `n_threads`. Direct step invocations now use
-`--n-threads` in place of `--n-processes`. Python callers and plugins must use
-`n_threads` and the step capability flag `supports_multiple_threads`.
+omitted, ASOkai uses 4096 MiB and one worker where parallel execution is
+supported. A step without worker support requests one core and does
+not accept a step-level `n_workers` setting.
 
 ### Commands
 

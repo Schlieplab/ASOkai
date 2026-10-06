@@ -20,7 +20,7 @@ class AnalysisStep(Step):
     """Run an analysis and delegate result serialization to a subclass."""
 
     analysis_cls: ClassVar[type[Analysis] | None] = None
-    supports_multiple_threads = True
+    supports_multiple_workers = True
 
     def analysis_kwargs(self, args) -> dict[str, Any]:
         """Build concrete-analysis constructor arguments from parsed inputs."""
@@ -57,6 +57,6 @@ class AnalysisStep(Step):
         units = self.analysis_units(args)
         if not isinstance(analysis, (PerUnitAnalysis, BatchAnalysis)):
             raise TypeError("analysis_cls must use PerUnitAnalysis or BatchAnalysis.")
-        results = analysis.run(units, n_threads=args.n_threads)
+        results = analysis.run(units, n_workers=args.n_workers)
         self.write_results(args, analysis, results)
         return 0

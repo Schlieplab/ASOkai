@@ -28,11 +28,11 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec
 logger = logging.getLogger(__name__)
 
 
-_N_THREADS_PARAM = ScalarParam(
-    "n_threads",
+_N_WORKERS_PARAM = ScalarParam(
+    "n_workers",
     int,
     default=1,
-    doc="Number of worker threads allocated to this step.",
+    doc="Number of workers allocated to this step.",
 )
 _MEMORY_MB_PARAM = ScalarParam(
     "memory_mb",
@@ -45,8 +45,8 @@ _MEMORY_MB_PARAM = ScalarParam(
 class Step(Runnable):
     """Atomic pipeline unit backed by a generated CWL command-line tool.
 
-    Core steps may set ``supports_multiple_threads`` only when their runtime
-    consumes the automatically supplied ``args.n_threads`` value. Analysis
+    Core steps may set ``supports_multiple_workers`` only when their runtime
+    consumes the automatically supplied ``args.n_workers`` value. Analysis
     steps support it through their shared base class. Steps that use the memory
     allocation may set ``consumes_memory_mb`` and read ``args.memory_mb``.
     """
@@ -54,7 +54,7 @@ class Step(Runnable):
     name: ClassVar[str]
     description: ClassVar[str]
     spec: ClassVar[StepSpec]
-    supports_multiple_threads: ClassVar[bool] = False
+    supports_multiple_workers: ClassVar[bool] = False
     consumes_memory_mb: ClassVar[bool] = False
     listed: ClassVar[bool] = True
 
@@ -103,9 +103,9 @@ class Step(Runnable):
                 "with a letter or number and contains only letters, numbers, "
                 "hyphens, and underscores."
             )
-        if type(cls.supports_multiple_threads) is not bool:
+        if type(cls.supports_multiple_workers) is not bool:
             raise TypeError(
-                f"Step '{cls.name}' supports_multiple_threads must be a boolean."
+                f"Step '{cls.name}' supports_multiple_workers must be a boolean."
             )
         if type(cls.consumes_memory_mb) is not bool:
             raise TypeError(
@@ -167,12 +167,12 @@ class Step(Runnable):
     def _validate_standard_parameters(self) -> None:
         for param in (*self.spec.params, *self.spec.inputs):
             if (
-                param.name == _N_THREADS_PARAM.name
-                or param.cli_prefix == _N_THREADS_PARAM.cli_prefix
+                param.name == _N_WORKERS_PARAM.name
+                or param.cli_prefix == _N_WORKERS_PARAM.cli_prefix
             ):
                 raise ValueError(
                     f"Step '{self.name}' declares reserved standard parameter "
-                    f"'{_N_THREADS_PARAM.name}'."
+                    f"'{_N_WORKERS_PARAM.name}'."
                 )
             if self.consumes_memory_mb and (
                 param.name == _MEMORY_MB_PARAM.name
@@ -197,8 +197,8 @@ class Step(Runnable):
             parameters=parameters,
         )
         resource_inputs = []
-        if self.supports_multiple_threads:
-            resource_inputs.append(_N_THREADS_PARAM.to_cwl_input())
+        if self.supports_multiple_workers:
+            resource_inputs.append(_N_WORKERS_PARAM.to_cwl_input())
         if self.consumes_memory_mb:
             resource_inputs.append(_MEMORY_MB_PARAM.to_cwl_input())
         if not resource_inputs:
@@ -209,8 +209,8 @@ class Step(Runnable):
         """Build an argparse parser from this step's parameter spec."""
         self._validate_standard_parameters()
         parser = self.spec.build_parser(description=description or self.description)
-        if self.supports_multiple_threads:
-            _N_THREADS_PARAM.add_to_parser(parser)
+        if self.supports_multiple_workers:
+            _N_WORKERS_PARAM.add_to_parser(parser)
         if self.consumes_memory_mb:
             _MEMORY_MB_PARAM.add_to_parser(parser)
         return parser
@@ -256,8 +256,8 @@ class Step(Runnable):
         logger.info("Starting Step")
         parser = self.build_parser()
         args = parser.parse_args(argv)
-        if self.supports_multiple_threads and args.n_threads < 1:
-            parser.error("--n-threads must be a positive integer")
+        if self.supports_multiple_workers and args.n_workers < 1:
+            parser.error("--n-workers must be a positive integer")
         if self.consumes_memory_mb:
             try:
                 self.validate_resources({"memory_mb": args.memory_mb})

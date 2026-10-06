@@ -343,12 +343,12 @@ properties:
         type: object
         additionalProperties: false
         properties:
-          n_threads:
+          n_workers:
             type: integer
             minimum: 1
             description: >-
-              Default number of worker threads for steps that support
-              multithreading.
+              Default number of workers for steps that support parallel
+              execution.
           memory_mb:
             type: integer
             minimum: 1
@@ -357,12 +357,12 @@ properties:
       type: object
       additionalProperties: false
       properties:
-        n_threads:
+        n_workers:
           type: integer
           minimum: 1
           description: >-
-            Number of worker threads allocated to a step that supports
-            multithreading.
+            Number of workers allocated to a step that supports parallel
+            execution.
         memory_mb:
           type: integer
           minimum: 1

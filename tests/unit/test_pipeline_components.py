@@ -388,8 +388,8 @@ def test_analysis_component_requires_declared_unit_type(monkeypatch):
 
 def test_analysis_component_always_exposes_thread_count(monkeypatch):
     step = JsonPrimaryOutputStep()
-    monkeypatch.setattr(step, "supports_multiple_threads", False)
-    with pytest.raises(ValueError, match="n_threads resource"):
+    monkeypatch.setattr(step, "supports_multiple_workers", False)
+    with pytest.raises(ValueError, match="n_workers resource"):
         validate_component("step", step)
 
 

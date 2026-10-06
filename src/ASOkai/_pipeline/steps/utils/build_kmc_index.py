@@ -133,7 +133,7 @@ class BuildKMCIndexStep(UtilityStep):
 
     name = "build-kmc-index"
     description = "Builds a reusable KMC KFF index from a FASTA reference."
-    supports_multiple_threads = True
+    supports_multiple_workers = True
     consumes_memory_mb = True
     reference_input = FileInput(
         "reference",
@@ -202,7 +202,7 @@ class BuildKMCIndexStep(UtilityStep):
                 k=args.k,
                 m=args.memory_mb // 1024,
                 f=args.f,
-                t=args.n_threads,
+                t=args.n_workers,
                 sm=args.sm,
                 hc=args.hc,
                 p=args.p,

@@ -25,7 +25,7 @@ def cwl_resource_requirement(
     requirement = {
         "coresMin": authored_requirement.get(
             "coresMin",
-            cfg.DEFAULT_STEP_RESOURCES[cfg.RESOURCE_N_THREADS_KEY],
+            cfg.DEFAULT_STEP_RESOURCES[cfg.RESOURCE_N_WORKERS_KEY],
         ),
         "ramMin": authored_requirement.get(
             "ramMin",
@@ -33,9 +33,9 @@ def cwl_resource_requirement(
         ),
     }
     configured = cfg.step_resource_overrides(config, step.name)
-    if step.supports_multiple_threads:
+    if step.supports_multiple_workers:
         requirement["coresMin"] = cfg.step_resources(config, step)[
-            cfg.RESOURCE_N_THREADS_KEY
+            cfg.RESOURCE_N_WORKERS_KEY
         ]
     if cfg.RESOURCE_MEMORY_KEY in configured:
         requirement["ramMin"] = configured[cfg.RESOURCE_MEMORY_KEY]

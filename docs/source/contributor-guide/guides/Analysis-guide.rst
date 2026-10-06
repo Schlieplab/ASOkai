@@ -42,11 +42,14 @@ Provide required scientific context, such as a target or genome, through the
 concrete analysis constructor. Units are passed to ``run(units)``.
 Implement ``analyze_unit(unit)`` for a per-unit analysis. When used with
 ``TableAnalysisStep``, it returns zero or more complete row dictionaries, each
-including its index columns. The inherited
-``run(units, n_threads=...)`` uses shared-memory worker threads and preserves
-input order. Parallel implementations must treat shared context and units
-as read-only. A batch analysis implements
-``analyze_batch(units, *, n_threads)``; it receives the configured thread
+including its index columns. The inherited ``run(units, n_workers=...)``
+preserves input order. It uses worker threads by default; a subclass can set
+``uses_worker_processes = True`` to request forked processes on a suitable
+Linux parent. Other runtimes use threads. Process workers inherit the analysis
+and units without pickling them, but returned results must be picklable.
+Parallel implementations must treat shared context and units as read-only.
+A batch analysis implements
+``analyze_batch(units, *, n_workers)``; it receives the configured worker
 count and controls its own parallelism. A binding analysis can pass
 therapeutic-site pairs as its units, or return multiple binding rows for a
 site when the CSV index identifies each binding uniquely.
@@ -104,8 +107,8 @@ available as ``args.target_gene`` containing a ``TargetGene`` object; the
 contributor should not open or deserialize it again.
 
 The shared :ref:`analysis-step-lifecycle` constructs the analysis, passes the
-configured thread count to its ``run`` method, and writes every declared
-output. All analysis steps expose the standard ``--n-threads`` option.
+configured worker count to its ``run`` method, and writes every declared
+output. All analysis steps expose the standard ``--n-workers`` option.
 
 There is no contributor-defined ``main`` function, input-loading hook,
 metadata payload, or output-writing hook for a ``TableAnalysisStep``.

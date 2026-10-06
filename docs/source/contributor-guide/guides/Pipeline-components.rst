@@ -61,9 +61,9 @@ Analysis execution models
 -------------------------
 
 ``PerUnitAnalysis`` collects zero or more values per unit in input order,
-optionally using worker threads. ``BatchAnalysis`` passes the whole unit
-collection and thread budget to one backend call. Neither base class fixes
-the result type or the number of results per unit. ``AnalysisStep`` runs
+optionally using worker threads or processes. ``BatchAnalysis`` passes all
+units and the configured worker count to one backend call. Neither base class
+fixes the result type or the number of results per unit. ``AnalysisStep`` runs
 either model; ``TableAnalysisStep`` adds the CSV output convention.
 ``CsvFile`` validates its declared columns and unique index values.
 
@@ -130,12 +130,12 @@ If parameters share a global fallback path, their resolved values must agree;
 conflicting values are rejected because output templates use those
 configuration paths.
 
-Steps must not declare ``n_threads`` themselves. Every analysis step exposes
-the standard ``--n-threads`` argument, resolved from the shared resource
+Steps must not declare ``n_workers`` themselves. Every analysis step exposes
+the standard ``--n-workers`` argument, resolved from the shared resource
 configuration. Per-unit analyses use it for ASOkai's worker pool; batch
 analyses receive it in ``analyze_batch`` and manage their own parallelism.
-A core step opts in with ``supports_multiple_threads = True`` only when its
-runtime consumes ``args.n_threads``.
+A core step opts in with ``supports_multiple_workers = True`` only when its
+runtime consumes ``args.n_workers``.
 
 Configuring runs in YAML
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,7 +162,7 @@ output-reuse ``validation`` setting are also root keys. For example::
          type: unmodified
    resources:
      default:
-       n_threads: 2
+       n_workers: 2
        memory_mb: 4096
    validation:
      existing_outputs: signature
@@ -497,7 +497,7 @@ Analysis-step lifecycle
 -----------------------
 
 An ``AnalysisStep`` uses ``analysis_kwargs(args)`` for constructor context,
-``analysis_units(args)`` for units, and passes ``n_threads`` to the
+``analysis_units(args)`` for units, and passes ``n_workers`` to the
 analysis. It then calls ``write_results(args, analysis, results)`` to write
 the declared outputs. ``TableAnalysisStep`` implements that hook with a
 tabular convention:

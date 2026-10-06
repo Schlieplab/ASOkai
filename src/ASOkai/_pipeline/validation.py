@@ -116,8 +116,8 @@ def validate_component(kind: ComponentKind, instance: object) -> None:
 
 def _validate_analysis_step(step: AnalysisStep) -> None:
     """Validate assumptions made by the shared analysis execution flow."""
-    if not step.supports_multiple_threads:
-        raise ValueError("analysis steps must support the n_threads resource.")
+    if not step.supports_multiple_workers:
+        raise ValueError("analysis steps must support the n_workers resource.")
     analysis_class = step.analysis_cls
     if (
         not inspect.isclass(analysis_class)

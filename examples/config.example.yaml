@@ -35,10 +35,10 @@ validation:
 
 resources:
   default:
-    n_threads: 1
+    n_workers: 1
     memory_mb: 4096
   compute-intrinsic-features:
-    n_threads: 4
+    n_workers: 4
 
 # Select ordered runs here and invoke `ASOkai run --configfile config.yaml`.
 # A run needs an ID only if another run refers to it. Task outputs are the

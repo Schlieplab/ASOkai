@@ -101,7 +101,7 @@ def test_registered_step_executes_validates_and_publishes_output(
                 "inputs": {"reference": {"path": str(dna)}}
             }
         },
-        "resources": {"default": {"n_threads": 1, "memory_mb": 4096}},
+        "resources": {"default": {"n_workers": 1, "memory_mb": 4096}},
         "parameters": {
             "genome": {
                 "assembly": "GRCh38",

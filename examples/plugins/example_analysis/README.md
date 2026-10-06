@@ -34,7 +34,7 @@ parameters:
     minimum_length: 16
 resources:
   default:
-    n_threads: 1
+    n_workers: 1
     memory_mb: 4096
 validation:
   existing_outputs: signature

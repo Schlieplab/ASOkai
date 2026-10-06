@@ -18,7 +18,7 @@ from ASOkai._pipeline.catalog import get_steps
 
 from .catalog import describe_command, list_command
 from .execution import export_command, run_command
-from .options import CONTEXT_SETTINGS, configure_logging
+from .options import CONTEXT_SETTINGS, configure_logging, verbose_option
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -100,6 +100,7 @@ def publish_outputs_command(
         "allow_interspersed_args": False,
     },
 )
+@verbose_option
 @click.option("--run-id", hidden=True)
 @click.argument("step_name")
 @click.pass_context

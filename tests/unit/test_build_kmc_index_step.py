@@ -30,7 +30,7 @@ from ASOkai.Plugins import UtilityStep, Step
 def config(tmp_path: Path) -> dict:
     return {
         "datadir": str(tmp_path),
-        "resources": {"build-kmc-index": {"n_threads": 6, "memory_mb": 8192}},
+        "resources": {"build-kmc-index": {"n_workers": 6, "memory_mb": 8192}},
         "parameters": {
             "genome": {
                 "assembly": "GRCh38",
@@ -87,7 +87,7 @@ def test_step_contract(step: BuildKMCIndexStep) -> None:
             )
         },
     }
-    assert step.supports_multiple_threads is True
+    assert step.supports_multiple_workers is True
 
 
 def test_output_path_uses_configured_scope(
@@ -232,10 +232,10 @@ def test_cwl_spec_exposes_runtime_resources(
     assert set(doc["inputs"]) == {
         *step.config_map,
         "reference",
-        "n_threads",
+        "n_workers",
         "memory_mb",
     }
-    assert doc["inputs"]["n_threads"]["inputBinding"] == {"prefix": "--n-threads"}
+    assert doc["inputs"]["n_workers"]["inputBinding"] == {"prefix": "--n-workers"}
     assert doc["inputs"]["memory_mb"]["inputBinding"] == {
         "prefix": "--memory-mb"
     }
@@ -258,7 +258,7 @@ def test_generated_workflow_passes_configured_resources(
     tool = yaml.safe_load(generated.step_cwls["build-kmc-index.cwl"])
 
     step_inputs = workflow["steps"]["step_build_kmc_index"]["in"]
-    assert step_inputs["n_threads"] == {"default": 6}
+    assert step_inputs["n_workers"] == {"default": 6}
     assert step_inputs["memory_mb"] == {"default": 8192}
     assert tool["requirements"]["ResourceRequirement"] == {
         "coresMin": 6,
@@ -305,7 +305,7 @@ def test_run_cli_builds_one_kff_with_configured_resources(
             "16",
             "--reference",
             str(dna),
-            "--n-threads",
+            "--n-workers",
             "6",
             "--memory-mb",
             "5632",

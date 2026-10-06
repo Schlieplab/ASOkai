@@ -1485,6 +1485,31 @@ def test_step_command_dispatches_to_builtin_step(monkeypatch):
     assert active_log_contexts() == ()
 
 
+def test_step_command_verbose_enables_debug_logging(monkeypatch):
+    from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+
+    observed: dict[str, object] = {}
+
+    def fake_run_cli(self, argv: list[str] | None = None) -> int:
+        observed["debug"] = logging.getLogger().isEnabledFor(logging.DEBUG)
+        observed["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(DownloadGenomeStep, "run_cli", fake_run_cli)
+    root_logger = logging.getLogger()
+    previous_level = root_logger.level
+    try:
+        result = CliRunner().invoke(
+            main,
+            ["step", "--verbose", "download-genome", "--assembly", "GRCh38"],
+        )
+    finally:
+        root_logger.setLevel(previous_level)
+
+    assert result.exit_code == 0
+    assert observed == {"debug": True, "argv": ["--assembly", "GRCh38"]}
+
+
 def test_step_command_labels_logs_with_run_id(monkeypatch):
     from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 

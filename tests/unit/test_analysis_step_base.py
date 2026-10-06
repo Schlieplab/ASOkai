@@ -29,14 +29,14 @@ from ASOkai._pipeline.validation import validate_component
 
 class FakeAnalysis(PerUnitAnalysis):
     analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
-    last_thread_count = None
+    last_worker_count = None
 
     def __init__(self, value: int) -> None:
         self.value = value
 
-    def run(self, units, *, n_threads=1):
-        type(self).last_thread_count = n_threads
-        return super().run(units, n_threads=n_threads)
+    def run(self, units, *, n_workers=1):
+        type(self).last_worker_count = n_workers
+        return super().run(units, n_workers=n_workers)
 
     def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
         return [{"site_id": unit, "value": self.value}]
@@ -142,7 +142,7 @@ class MultiOutputAnalysisStep(FakeAnalysisStep):
             ],
             self.summary_output: {
                 "site_count": len(results),
-                "thread_count": getattr(analysis, "last_thread_count"),
+                "worker_count": getattr(analysis, "last_worker_count"),
             },
         }
 
@@ -211,16 +211,16 @@ class DuplicatePairStep(PairAnalysisStep):
 class RecordingBatch(BatchAnalysis):
     analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
     calls = 0
-    last_thread_count = None
+    last_worker_count = None
 
     def analyze_batch(
         self,
         units: list[str],
         *,
-        n_threads: int,
+        n_workers: int,
     ) -> Iterable[dict[str, Scalar]]:
         type(self).calls += 1
-        type(self).last_thread_count = n_threads
+        type(self).last_worker_count = n_workers
         return [{"site_id": unit, "value": len(units)} for unit in units]
 
 
@@ -237,25 +237,25 @@ def _args(tmp_path, **outputs):
         doubled_output=tmp_path / "doubled.csv",
         summary_output=tmp_path / "summary.json",
         value=7,
-        n_threads=3,
+        n_workers=3,
     )
 
 
-def test_analysis_step_writes_complete_rows_and_passes_allocated_threads(tmp_path):
+def test_analysis_step_writes_complete_rows_and_passes_allocated_workers(tmp_path):
     args = _args(tmp_path)
 
     assert FakeAnalysisStep().run_from_args(args) == 0
     assert FakeAnalysisStep.analysis_output.file_type.read(args.analysis_output) == [
         {"site_id": "site-1", "value": 7}
     ]
-    assert FakeAnalysis.last_thread_count == 3
+    assert FakeAnalysis.last_worker_count == 3
 
 
 def test_analysis_step_can_write_non_tabular_results(tmp_path):
     step = JsonAnalysisStep()
     validate_component("step", step)
     output = tmp_path / "results.json"
-    args = Namespace(json_output=output, n_threads=2)
+    args = Namespace(json_output=output, n_workers=2)
 
     assert step.run_from_args(args) == 0
     assert step.json_output.file_type.read(output) == {
@@ -297,7 +297,7 @@ def test_analysis_step_writes_multiple_outputs(tmp_path):
     ) == [{"site_id": "site-1", "double_value": 14}]
     assert MultiOutputAnalysisStep.summary_output.file_type.read(
         args.summary_output
-    ) == {"site_count": 1, "thread_count": 3}
+    ) == {"site_count": 1, "worker_count": 3}
 
 
 @pytest.mark.parametrize(
@@ -335,7 +335,7 @@ def test_csv_contract_rejects_duplicate_composite_index(tmp_path):
     assert not args.analysis_output.exists()
 
 
-def test_batch_step_passes_thread_count_to_backend_once(tmp_path):
+def test_batch_step_passes_worker_count_to_backend_once(tmp_path):
     args = _args(tmp_path)
     RecordingBatch.calls = 0
     assert BatchStep().run_from_args(args) == 0
@@ -343,5 +343,5 @@ def test_batch_step_passes_thread_count_to_backend_once(tmp_path):
     assert BatchStep.analysis_output.file_type.read(args.analysis_output) == [
         {"site_id": "site-1", "value": 1}
     ]
-    assert RecordingBatch.last_thread_count == 3
-    assert "--n-threads" in BatchStep().build_parser().format_help()
+    assert RecordingBatch.last_worker_count == 3
+    assert "--n-workers" in BatchStep().build_parser().format_help()

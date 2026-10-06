@@ -195,6 +195,21 @@ def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
     assert reusable_output_paths(completed_run) == paths
 
 
+def test_verbose_executor_enables_debug_logging_in_generated_steps(config):
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
+    executor.verbose = True
+
+    _run_download(config, force=True, executor=executor)
+
+    cwl_path = executor.run.call_args.args[0]
+    step_doc = yaml.safe_load(
+        (cwl_path.parent / "steps" / "download-genome.cwl").read_text()
+    )
+    assert "--verbose" in step_doc["baseCommand"]
+
+
 def test_runner_rejects_missing_published_outputs(config):
     executor = _materializing_executor("dna.fa.gz")
 
@@ -388,7 +403,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     caplog,
 ):
     workflow_config["resources"] = {
-        "compute-intrinsic-features": {"n_threads": 4},
+        "compute-intrinsic-features": {"n_workers": 4},
     }
     caplog.set_level(logging.INFO)
 
@@ -407,7 +422,7 @@ def test_workflow_dry_run_reports_resources_without_executing(
     )
     assert "[run] Dry run: 4 steps would execute:" in report
     assert "[run]   4. compute-intrinsic-features" in report
-    assert ("[run]      Resources:\n" "[run]        threads: 4") in report
+    assert ("[run]      Resources:\n" "[run]        workers: 4") in report
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):

@@ -85,7 +85,7 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     assert fields["parameters.target.region"].constraints == (
         "one of: exonic, pre-mrna, transcriptomic"
     )
-    assert fields["resources.compute-intrinsic-features.n_threads"].value_type == "integer"
+    assert fields["resources.compute-intrinsic-features.n_workers"].value_type == "integer"
     assert fields["parameters.target.target_id"].requirement == (
         "Exactly one of target_id, target_name is required when parameters.target is configured"
     )
@@ -280,10 +280,10 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
         fields["steps.compute-intrinsic-features.inputs.target_gene.from"].requirement
         == "Choose path or from"
     )
-    assert fields["resources.compute-intrinsic-features.n_threads"].requirement == (
+    assert fields["resources.compute-intrinsic-features.n_workers"].requirement == (
         "Overrides resources.default"
     )
-    assert fields["resources.default.n_threads"].requirement == ("Built-in fallback: 1")
+    assert fields["resources.default.n_workers"].requirement == ("Built-in fallback: 1")
     assert "parameters.antisense.design.gap_length" not in fields
     assert collect_step_schema_rules(step, _config_schema()) == [
         "exactly one of these config values is required: " "target_id, target_name"
@@ -331,9 +331,9 @@ def test_single_thread_step_omits_thread_count() -> None:
         node.astext() for node in build_step_reference(step, _config_schema())
     )
 
-    assert "resources.default.n_threads" not in fields
-    assert "resources.download-genome.n_threads" not in fields
-    assert "n_threads" not in reference
+    assert "resources.default.n_workers" not in fields
+    assert "resources.download-genome.n_workers" not in fields
+    assert "n_workers" not in reference
     assert "resources.default.memory_mb" in reference
     assert "resources.download-genome.memory_mb" in reference
 

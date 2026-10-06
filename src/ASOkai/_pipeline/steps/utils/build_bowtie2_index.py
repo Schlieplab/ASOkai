@@ -32,7 +32,7 @@ class BuildBowtie2IndexStep(UtilityStep):
 
     name = "build-bowtie2-index"
     description = "Builds a Bowtie 2 index directory from a FASTA reference."
-    supports_multiple_threads = True
+    supports_multiple_workers = True
     reference_input = FileInput(
         "reference", file_type=FastaFile(), doc="Plain FASTA reference to index."
     )
@@ -106,7 +106,7 @@ class BuildBowtie2IndexStep(UtilityStep):
         Bowtie2Build().run(
             args.reference,
             Bowtie2IndexDirectory.index_base(output),
-            threads=args.n_threads,
+            threads=args.n_workers,
             large_index=args.large_index,
             offrate=args.offrate,
             packed=args.packed,

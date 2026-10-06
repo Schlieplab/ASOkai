@@ -30,11 +30,11 @@ if TYPE_CHECKING:
     from ASOkai._pipeline.steps.base import Step
 
 
-RESOURCE_N_THREADS_KEY = "n_threads"
+RESOURCE_N_WORKERS_KEY = "n_workers"
 RESOURCE_MEMORY_KEY = "memory_mb"
 RESOURCE_DEFAULT_KEY = "default"
 DEFAULT_STEP_RESOURCES = {
-    RESOURCE_N_THREADS_KEY: 1,
+    RESOURCE_N_WORKERS_KEY: 1,
     RESOURCE_MEMORY_KEY: 4096,
 }
 _CONFIG_SCHEMA_PATH = Path(__file__).with_name("config.schema.yaml")
@@ -413,17 +413,6 @@ def validate_config_schema(
                     for name in sorted(old_groups)
                 ]
             )
-    resources = config.get("resources") if isinstance(config, Mapping) else None
-    if isinstance(resources, Mapping):
-        migration_errors = [
-            f"$.resources.{name}.n_processes: renamed to n_threads; "
-            f"use resources.{name}.n_threads instead"
-            for name, values in resources.items()
-            if isinstance(values, Mapping) and "n_processes" in values
-        ]
-        if migration_errors:
-            _raise_config_errors(migration_errors)
-
     errors = _schema_errors("ASOkai", _load_config_schema(), config)
 
     if plugin_schema_paths is None:
@@ -540,7 +529,7 @@ def step_resource_names(step: Step) -> tuple[str, ...]:
     return tuple(
         resource_name
         for resource_name in DEFAULT_STEP_RESOURCES
-        if (resource_name != RESOURCE_N_THREADS_KEY or step.supports_multiple_threads)
+        if (resource_name != RESOURCE_N_WORKERS_KEY or step.supports_multiple_workers)
     )
 
 

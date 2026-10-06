@@ -28,12 +28,7 @@ def test_binding_serializes_two_sequences_and_their_pairing():
         "__module__": "ASOkai.Antisense._binding",
         "first_sequence": "GCAT",
         "second_sequence": "ATGC",
-        "pairs": [
-            {"first_index": 0, "second_index": 3},
-            {"first_index": 1, "second_index": 2},
-            {"first_index": 2, "second_index": 1},
-            {"first_index": 3, "second_index": 0},
-        ],
+        "structure": "((((&))))",
         "first_id": "aso:1",
         "second_id": "site:1",
     }
@@ -42,11 +37,12 @@ def test_binding_serializes_two_sequences_and_their_pairing():
     assert reconstructed.second_sequence == binding.second_sequence
     assert reconstructed.first_id == binding.first_id
     assert reconstructed.second_id == binding.second_id
+    assert reconstructed.structure == binding.structure
     assert reconstructed.pairs == binding.pairs
 
 
 def test_binding_allows_unpaired_positions_and_mismatches():
-    binding = Binding(
+    binding = Binding.from_pairs(
         Seq("ACGTA"),
         Seq("ATCT"),
         [BasePair(0, 3), BasePair(2, 2), BasePair(3, 0)],
@@ -54,13 +50,43 @@ def test_binding_allows_unpaired_positions_and_mismatches():
 
     assert binding.first_id is None
     assert binding.second_id is None
+    assert binding.structure == "(.((.&).))"
     assert [pair.first_index for pair in binding.pairs] == [0, 2, 3]
     assert Binding.from_dict(binding.to_dict()).pairs == binding.pairs
 
 
+def test_binding_accepts_underscore_separator_and_normalizes_to_vienna_form():
+    binding = Binding(Seq("AAA"), Seq("TTT"), "(((_)))")
+
+    assert binding.structure == "(((&)))"
+    assert binding.pairs == (
+        BasePair(0, 2),
+        BasePair(1, 1),
+        BasePair(2, 0),
+    )
+
+
+@pytest.mark.parametrize(
+    "structure, message",
+    [
+        ("((()))", "separator"),
+        ("(((&))", "lengths"),
+        ("(((&)))&", "separator"),
+        ("(((.)))", "separator"),
+        ("((&))", "lengths"),
+        ("(((&)).", "unmatched"),
+        ("...&...", "at least one"),
+        ("(((&))x", "invalid"),
+    ],
+)
+def test_binding_rejects_invalid_structure(structure, message):
+    with pytest.raises(ValueError, match=message):
+        Binding(Seq("AAA"), Seq("TTT"), structure)
+
+
 def test_binding_cannot_be_changed_after_validation():
     input_pairs = [BasePair(0, 1), BasePair(1, 0)]
-    binding = Binding(Seq("AT"), Seq("AT"), input_pairs)
+    binding = Binding.from_pairs(Seq("AT"), Seq("AT"), input_pairs)
     input_pairs.clear()
 
     assert binding.pairs == (BasePair(0, 1), BasePair(1, 0))
@@ -80,7 +106,7 @@ def test_binding_requires_both_nonempty_endpoint_ids_or_neither(
     first_id, second_id
 ):
     with pytest.raises(ValueError, match="endpoint IDs"):
-        Binding(
+        Binding.from_pairs(
             Seq("A"),
             Seq("T"),
             [BasePair(0, 0)],
@@ -100,7 +126,7 @@ def test_binding_requires_both_nonempty_endpoint_ids_or_neither(
 )
 def test_binding_rejects_invalid_pairing(pairs, message):
     with pytest.raises(ValueError, match=message):
-        Binding(
+        Binding.from_pairs(
             Seq("ACGT"),
             Seq("TGCA"),
             pairs,

@@ -293,7 +293,7 @@ def test_run_cli_writes_therapeutics_and_bindings_separately(tmp_path, caplog):
     assert binding["first_id"] == therapeutic["id"]
     assert binding["second_id"] == "ENSG00000133703-S00001"
     assert binding["first_sequence"] == therapeutic["sequence"]
-    assert binding["pairs"][0] == {"first_index": 0, "second_index": 15}
+    assert binding["structure"] == "(" * 16 + "&" + ")" * 16
     assert caplog.messages == [
         "Starting Step",
         "Generating gapmer candidates for 1 target sites",

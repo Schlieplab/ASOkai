@@ -33,17 +33,17 @@ class BasePair:
 
 @dataclass(frozen=True, init=False)
 class Binding(Serializable):
-    """Two sequences and their antiparallel alignment.
+    """Two sequences and their antiparallel dot-bracket alignment.
 
-    Paired positions are ordered by increasing ``first_index`` and decreasing
-    ``second_index``. Unpaired positions allow overhangs and bulges. IDs link
-    independent bindings to their source records; an siRNA-owned binding has
-    no endpoint IDs.
+    ``structure`` uses ``(`` for paired positions on the first strand,
+    ``)`` for paired positions on the second, ``.`` for unpaired positions,
+    and ``&`` between strands. IDs link independent bindings to their source
+    records; an siRNA-owned binding has no endpoint IDs.
     """
 
     first_sequence: Seq
     second_sequence: Seq
-    pairs: tuple[BasePair, ...]
+    structure: str
     first_id: str | None
     second_id: str | None
 
@@ -51,17 +51,17 @@ class Binding(Serializable):
         self,
         first_sequence: Seq,
         second_sequence: Seq,
-        pairs: Sequence[BasePair],
+        structure: str,
         *,
         first_id: str | None = None,
         second_id: str | None = None,
     ):
-        """Store a pairing map for two 5'-to-3' sequences.
+        """Store a compact pairing structure for two 5'-to-3' sequences.
 
         Args:
             first_sequence: First sequence.
             second_sequence: Second sequence.
-            pairs: Aligned positions in antiparallel order.
+            structure: Two-strand dot-bracket structure.
             first_id: First source ID, if this binding is stored independently.
             second_id: Second source ID, if this binding is stored independently.
         """
@@ -78,8 +78,72 @@ class Binding(Serializable):
             or not second_id
         ):
             raise ValueError("Binding endpoint IDs must be non-empty strings.")
+        if not isinstance(structure, str):
+            raise TypeError("Binding structure must be a string.")
+        if "_" in structure:
+            if "&" in structure:
+                raise ValueError("Binding structure must have one strand separator.")
+            structure = structure.replace("_", "&")
+        self._parse_structure(structure, len(first_sequence), len(second_sequence))
+        object.__setattr__(self, "first_sequence", first_sequence)
+        object.__setattr__(self, "second_sequence", second_sequence)
+        object.__setattr__(self, "structure", structure)
+        object.__setattr__(self, "first_id", first_id)
+        object.__setattr__(self, "second_id", second_id)
+
+    @staticmethod
+    def _parse_structure(
+        structure: str, first_length: int, second_length: int
+    ) -> tuple[BasePair, ...]:
+        """Interpret an inter-strand dot-bracket structure as base pairs."""
+        if structure.count("&") != 1:
+            raise ValueError("Binding structure must have one strand separator.")
+        first, second = structure.split("&")
+        if len(first) != first_length or len(second) != second_length:
+            raise ValueError("Binding structure lengths must match the sequences.")
+        if any(char not in "(." for char in first) or any(
+            char not in ")." for char in second
+        ):
+            raise ValueError("Binding structure has invalid dot-bracket positions.")
+        open_indices = [index for index, char in enumerate(first) if char == "("]
+        pairs: list[BasePair] = []
+        for index, char in enumerate(second):
+            if char == ")":
+                if not open_indices:
+                    raise ValueError("Binding structure has unmatched base pairs.")
+                pairs.append(BasePair(open_indices.pop(), index))
+        if open_indices:
+            raise ValueError("Binding structure has unmatched base pairs.")
+        if not pairs:
+            raise ValueError("A binding requires at least one base pair.")
+        return tuple(sorted(pairs, key=lambda pair: pair.first_index))
+
+    @property
+    def pairs(self) -> tuple[BasePair, ...]:
+        """Interpret the compact structure as ordered antiparallel pairs."""
+        return self._parse_structure(
+            self.structure, len(self.first_sequence), len(self.second_sequence)
+        )
+
+    @classmethod
+    def from_pairs(
+        cls,
+        first_sequence: Seq,
+        second_sequence: Seq,
+        pairs: Sequence[BasePair],
+        *,
+        first_id: str | None = None,
+        second_id: str | None = None,
+    ) -> "Binding":
+        """Encode ordered antiparallel base-pair indices as dot-bracket."""
+        if not isinstance(first_sequence, Seq) or not first_sequence:
+            raise ValueError("Binding requires a non-empty first Seq.")
+        if not isinstance(second_sequence, Seq) or not second_sequence:
+            raise ValueError("Binding requires a non-empty second Seq.")
         if not isinstance(pairs, (list, tuple)) or not pairs:
             raise ValueError("A binding requires at least one base pair.")
+        first = ["."] * len(first_sequence)
+        second = ["."] * len(second_sequence)
         previous_first = -1
         previous_second = len(second_sequence)
         for pair in pairs:
@@ -95,31 +159,16 @@ class Binding(Serializable):
                 or pair.second_index >= previous_second
             ):
                 raise ValueError("Base pairs must follow antiparallel order.")
+            first[pair.first_index] = "("
+            second[pair.second_index] = ")"
             previous_first = pair.first_index
             previous_second = pair.second_index
-        object.__setattr__(self, "first_sequence", first_sequence)
-        object.__setattr__(self, "second_sequence", second_sequence)
-        object.__setattr__(self, "pairs", tuple(pairs))
-        object.__setattr__(self, "first_id", first_id)
-        object.__setattr__(self, "second_id", second_id)
-
-    @classmethod
-    def _serialized_field_types(cls) -> dict[str, object]:
-        """Expose the immutable pairing tuple as a JSON array."""
-        field_types = dict(super()._serialized_field_types())
-        field_types["pairs"] = list[BasePair]
-        return field_types
-
-    def _serialize_attribute(self, attribute_name, value, *, graph=None):
-        if attribute_name == "pairs":
-            return {
-                "pairs": [
-                    self._serialize_value(pair, graph=graph)
-                    for pair in value
-                ]
-            }
-        return super()._serialize_attribute(
-            attribute_name, value, graph=graph
+        return cls(
+            first_sequence,
+            second_sequence,
+            "".join(first) + "&" + "".join(second),
+            first_id=first_id,
+            second_id=second_id,
         )
 
     @classmethod
@@ -138,7 +187,7 @@ class Binding(Serializable):
         return cls(
             first_sequence,
             second_sequence,
-            [BasePair(index, length - index - 1) for index in range(length)],
+            "(" * length + "&" + ")" * length,
             first_id=first_id,
             second_id=second_id,
         )

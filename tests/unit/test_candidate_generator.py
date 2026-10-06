@@ -216,7 +216,7 @@ def test_design_id_distinguishes_layout_mechanism_and_sequence():
         antisense_strand=Oligonucleotide(Seq("ACGT")),
         sense_strand=Oligonucleotide(Seq("TGCA")),
         mechanism=mechanism,
-        binding=Binding(
+        binding=Binding.from_pairs(
             Seq("ACGT"),
             Seq("TGCA"),
             [BasePair(i, 3 - i) for i in range(4)],
@@ -226,7 +226,7 @@ def test_design_id_distinguishes_layout_mechanism_and_sequence():
         antisense_strand=Oligonucleotide(Seq("ACGT")),
         sense_strand=Oligonucleotide(Seq("AAAA")),
         mechanism=mechanism,
-        binding=Binding(
+        binding=Binding.from_pairs(
             Seq("ACGT"),
             Seq("AAAA"),
             [BasePair(i, 3 - i) for i in range(4)],

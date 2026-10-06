@@ -412,7 +412,7 @@ def _example_from_schema(schema: Mapping[str, Any]) -> Any:
 
             record_type = _serializable_type(schema)
             if record_type is Binding:
-                return Binding(
+                return Binding.from_pairs(
                     Seq("A"),
                     Seq("T"),
                     [BasePair(0, 0)],
@@ -433,7 +433,7 @@ def _example_from_schema(schema: Mapping[str, Any]) -> Any:
                 if issubclass(record_type, siRNA):
                     guide = Seq(record["antisense_strand"]["sequence"])
                     passenger = Seq(record["sense_strand"]["sequence"])
-                    record["binding"] = Binding(
+                    record["binding"] = Binding.from_pairs(
                         guide,
                         passenger,
                         [

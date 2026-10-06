@@ -63,7 +63,7 @@ def _make_sirna(guide: Oligonucleotide, passenger: Oligonucleotide) -> siRNA:
         antisense_strand=guide,
         sense_strand=passenger,
         mechanism=MechanismOfAction("rnase-h1"),
-        binding=Binding(
+        binding=Binding.from_pairs(
             guide.sequence,
             passenger.sequence,
             [

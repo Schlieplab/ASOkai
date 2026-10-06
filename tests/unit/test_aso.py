@@ -31,7 +31,7 @@ def make_sirna(
     guide: Oligonucleotide,
     passenger: Oligonucleotide,
 ) -> siRNA:
-    binding = Binding(
+    binding = Binding.from_pairs(
         guide.sequence,
         passenger.sequence,
         [
@@ -194,7 +194,7 @@ def test_sirna_rejects_a_binding_for_different_strands():
             antisense_strand=Oligonucleotide(Seq("ATGC")),
             sense_strand=Oligonucleotide(Seq("GCAT")),
             mechanism=make_mechanism(),
-            binding=Binding(
+            binding=Binding.from_pairs(
                 Seq("AAAA"),
                 Seq("GCAT"),
                 [BasePair(i, 3 - i) for i in range(4)],

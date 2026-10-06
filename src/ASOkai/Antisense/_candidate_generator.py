@@ -14,7 +14,7 @@ from ..Biochemistry import MechanismOfAction
 from ..Sites import Site
 from ._antisense_therapeutic import AntisenseTherapeutic
 from ._aso import ASO
-from ._binding import BasePair, Binding
+from ._binding import Binding
 from ._gapmer import Gapmer
 from ._oligonucleotide import Oligonucleotide
 from ._sirna import siRNA
@@ -116,14 +116,7 @@ class SiRNACandidateGenerator(AntisenseCandidateGenerator):
         """Return one complementary guide/passenger duplex for ``site``."""
         antisense = site.sequence.reverse_complement()
         sense = site.sequence
-        pairing = Binding(
-            antisense,
-            sense,
-            [
-                BasePair(index, len(sense) - index - 1)
-                for index in range(len(antisense))
-            ],
-        )
+        pairing = Binding.from_complementary_sequences(antisense, sense)
         return [
             siRNA(
                 antisense_strand=Oligonucleotide(

@@ -223,9 +223,12 @@ For a fixed input file, use ``Path("/data/target_gene.json")`` instead of
 The planner schedules ``gene`` before ``features``. The ``outputs`` mapping
 exposes a stable name to callers; it does not rename the child step's output.
 The mapping is optional. A task may omit ``outputs`` and let callers refer to
-its child runs directly. A built-in task with ``category = "analysis"`` also
-appears in the Analyses documentation index. A task can also declare the same
-step more than once, using local IDs to distinguish the runs::
+its child runs directly. Set ``category`` to ``"core"``, ``"analysis"``, or
+``"utils"`` to group the task in CLI listings. Built-in tasks use the same
+categories in the Tasks documentation index; built-in analysis tasks also
+appear in the Analyses index. Tasks without a category appear under Pipeline
+in the CLI. A task can declare
+the same step more than once, using local IDs to distinguish the runs::
 
    class CompareRegionsTask(Task):
        name = "compare-regions"

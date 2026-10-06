@@ -51,8 +51,8 @@ from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
 from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
 from ASOkai._pipeline.steps.utils.base import UtilityStep  # noqa: E402
-from ASOkai._pipeline.tasks.index_target_gene import (  # noqa: E402
-    IndexTargetGeneTask,
+from ASOkai._pipeline.tasks.instantiate_target_gene import (  # noqa: E402
+    InstantiateTargetGeneTask,
 )
 from ASOkai.Antisense import (  # noqa: E402
     ASO,
@@ -140,7 +140,7 @@ def test_internal_step_reference_remains_available() -> None:
 def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
     from ASOkai._pipeline import catalog
 
-    class ExampleAnalysisTask(IndexTargetGeneTask):
+    class ExampleAnalysisTask(InstantiateTargetGeneTask):
         name = "example-analysis-task"
         description = "Example composed analysis."
         category = "analysis"
@@ -157,7 +157,7 @@ def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
 
     assert "/steps/compute-intrinsic-features" in targets
     assert "/tasks/example-analysis-task" in targets
-    assert "/tasks/index-target-gene" not in targets
+    assert "/tasks/instantiate-target-gene" not in targets
 
 
 def test_generated_references_track_their_content_sources(tmp_path) -> None:
@@ -189,6 +189,22 @@ def test_runnable_indexes_are_generated_from_the_registry(kind: str) -> None:
     assert [
         link["reftarget"] for link in runnable_list.findall(addnodes.pending_xref)
     ] == [f"/{kind}s/{runnable.name}" for runnable in get_built_in_runnables(kind)]
+
+
+def test_task_index_groups_built_in_tasks_by_category() -> None:
+    core = build_runnable_list("task", category="core")
+    utility = build_runnable_list("task", category="utils")
+    analysis = build_runnable_list("task", category="analysis")
+
+    def targets(runnable_list):
+        return [
+            link["reftarget"]
+            for link in runnable_list.findall(addnodes.pending_xref)
+        ]
+
+    assert targets(core) == ["/tasks/instantiate-target-gene"]
+    assert targets(utility) == []
+    assert targets(analysis) == []
 
 
 def test_task_reference_links_to_its_steps() -> None:

@@ -21,6 +21,7 @@ class InstantiateTargetGeneTask(Task):
     __slots__ = ()
 
     name: ClassVar[str] = "instantiate-target-gene"
+    category: ClassVar[str] = "core"
     description: ClassVar[str] = (
         "Downloads genome data and creates the configured target gene."
     )

@@ -44,7 +44,6 @@ from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
     GenerateTherapeuticCandidatesStep,
 )
 from ASOkai._pipeline.tasks.base import Task
-from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
@@ -66,7 +65,6 @@ __all__ = [
     "GenerateTherapeuticCandidatesStep",
     "IntrinsicFeaturesStep",
     "InputConfigField",
-    "IndexTargetGeneTask",
     "InstantiateTargetGeneTask",
     "JsonFile",
     "KffFile",

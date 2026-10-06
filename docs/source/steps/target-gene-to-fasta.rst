@@ -5,7 +5,7 @@ Target gene to FASTA
 
 .. asokai-step-reference:: target-gene-to-fasta
 
-This internal step is used by ``index-target-gene``.
+This internal step converts a target-gene JSON file to a FASTA reference.
 
 The FASTA contains one record for the target gene's full 5′ to 3′ sequence.
 By default, the input comes from ``create-target-gene``. Select an existing

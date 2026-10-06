@@ -91,10 +91,20 @@ def _runnable_link(runnable: Any, *, refdoc: str) -> addnodes.pending_xref:
     )
 
 
-def build_runnable_list(kind: str, *, refdoc: str = "") -> nodes.bullet_list:
-    """Build a linked list of registered built-in tasks or workflows."""
+def build_runnable_list(
+    kind: str, *, category: str | None = None, refdoc: str = ""
+) -> nodes.bullet_list:
+    """Build a linked list of built-in tasks or workflows, optionally grouped."""
+    from ASOkai._pipeline.tasks.base import task_category
+
+    if category is not None and (
+        kind != "task" or category not in {"core", "analysis", "utils", "pipeline"}
+    ):
+        raise ValueError(f"Unknown {kind} category: {category!r}.")
     result = nodes.bullet_list()
     for runnable in get_built_in_runnables(kind):
+        if category is not None and task_category(runnable) != category:
+            continue
         item = nodes.list_item()
         paragraph = nodes.paragraph()
         paragraph += _runnable_link(runnable, refdoc=refdoc)
@@ -108,6 +118,7 @@ def build_analysis_list(*, refdoc: str = "") -> nodes.bullet_list:
     """List built-in analysis steps and explicitly categorized analysis tasks."""
     from ASOkai._pipeline.catalog import _BUILTIN_STEPS, _BUILTIN_TASKS
     from ASOkai._pipeline.steps.analysis.base import AnalysisStep
+    from ASOkai._pipeline.tasks.base import task_category
 
     analyses: list[Any] = [
         step
@@ -117,7 +128,7 @@ def build_analysis_list(*, refdoc: str = "") -> nodes.bullet_list:
     analyses.extend(
         task
         for task in _BUILTIN_TASKS
-        if getattr(task, "category", None) == "analysis"
+        if task_category(task) == "analysis"
     )
     result = nodes.bullet_list()
     for runnable in sorted(analyses, key=lambda item: item.name):
@@ -284,15 +295,21 @@ class ASOkaiRunnableList(SphinxDirective):
     """Render links to built-in tasks or workflows from the registry."""
 
     required_arguments = 1
+    optional_arguments = 1
 
     def run(self) -> list[nodes.Node]:
         try:
-            result: list[nodes.Node] = [
-                build_runnable_list(
-                    self.arguments[0],
-                    refdoc=self.env.docname,
-                )
-            ]
+            category = self.arguments[1] if len(self.arguments) > 1 else None
+            runnable_list = build_runnable_list(
+                self.arguments[0],
+                category=category,
+                refdoc=self.env.docname,
+            )
+            result: list[nodes.Node] = [runnable_list]
+            if category is not None and not len(runnable_list):
+                result = [
+                    nodes.paragraph(text="No built-in tasks in this category yet.")
+                ]
         except ValueError as error:
             raise self.error(str(error)) from error
         note_reference_dependencies(

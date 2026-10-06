@@ -15,13 +15,13 @@ from typing import Any
 import click
 
 from ASOkai.Analysis import PerUnitAnalysis
-from ASOkai._pipeline.base import expand_runnable_steps
+from ASOkai._pipeline.base import Runnable, expand_runnable_steps
 from ASOkai._pipeline.catalog import PipelineCatalog, get_pipeline_catalog
 from ASOkai._pipeline.steps.analysis.base import AnalysisStep
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
-from ASOkai._pipeline.tasks.base import validate_task_outputs
+from ASOkai._pipeline.tasks.base import task_category, validate_task_outputs
 
 from .options import (
     CONTEXT_SETTINGS,
@@ -76,15 +76,40 @@ def _display_description(pipeline_unit: object) -> str:
 @catalog_verbose_option
 @click.argument(
     "unit",
-    type=click.Choice(["steps", "tasks", "workflows"]),
+    type=click.Choice(["steps", "tasks", "analyses", "workflows"]),
 )
 @click.pass_context
 def list_command(ctx: click.Context, unit: str) -> None:
-    """List available steps, tasks, or workflows."""
+    """List available pipeline units, including steps and tasks for analyses."""
     try:
         catalog = get_pipeline_catalog()
     except ValueError as error:
         raise click.ClickException(str(error)) from error
+    if unit == "analyses":
+        analysis_rows: list[tuple[str, str, Runnable]] = [
+            (name, "step", step)
+            for name, step in catalog.steps.items()
+            if isinstance(step, AnalysisStep)
+            and (step.listed or ctx.obj.get("verbose", False))
+        ]
+        analysis_rows.extend(
+            (name, "task", task)
+            for name, task in catalog.tasks.items()
+            if task_category(task) == "analysis"
+        )
+        if not analysis_rows:
+            click.echo("No analyses available.")
+            return
+        name_width = max(len(name) for name, _, _ in analysis_rows) + 2
+        for name, kind, pipeline_unit in sorted(
+            analysis_rows, key=lambda row: (row[0], row[1])
+        ):
+            click.echo(
+                f"  {name:<{name_width}} ({kind}) "
+                f"{_display_description(pipeline_unit)}"
+            )
+        return
+
     registry = {
         "steps": catalog.steps,
         "tasks": catalog.tasks,
@@ -125,6 +150,27 @@ def list_command(ctx: click.Context, unit: str) -> None:
             for name, pipeline_unit in items:
                 click.echo(
                     f"  {name:<{name_width}} " f"{_display_description(pipeline_unit)}"
+                )
+        return
+
+    if unit == "tasks":
+        category_order = {"core": 0, "analysis": 1, "utils": 2, "pipeline": 3}
+        rows = sorted(
+            registry.items(),
+            key=lambda item: (
+                category_order[task_category(item[1])],
+                item[0],
+            ),
+        )
+        for index, (category, items) in enumerate(
+            groupby(rows, key=lambda item: task_category(item[1]))
+        ):
+            if index:
+                click.echo()
+            click.echo(category.capitalize())
+            for name, pipeline_unit in items:
+                click.echo(
+                    f"  {name:<{name_width}} {_display_description(pipeline_unit)}"
                 )
         return
 

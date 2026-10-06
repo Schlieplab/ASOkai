@@ -209,7 +209,6 @@ def test_step_authoring_contracts_are_public() -> None:
         "GenerateTherapeuticCandidatesStep",
         "IntrinsicFeaturesStep",
         "InputConfigField",
-        "IndexTargetGeneTask",
         "InstantiateTargetGeneTask",
         "JsonFile",
         "KffFile",

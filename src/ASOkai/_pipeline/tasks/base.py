@@ -27,6 +27,12 @@ class Task(Runnable, Protocol):
         return tuple(run.step for run in getattr(self, "runs", ()))
 
 
+def task_category(task: Task) -> str:
+    """Return a task's listing category, including legacy plugin tasks."""
+    category = getattr(task, "category", None)
+    return category if category in {"core", "analysis", "utils"} else "pipeline"
+
+
 def validate_task_parameter_contract(task: Task) -> None:
     """Reject the removed task parameter declaration API."""
     if getattr(task, "params", ()):

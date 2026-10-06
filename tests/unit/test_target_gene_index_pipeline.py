@@ -36,8 +36,6 @@ from ASOkai._pipeline.steps.utils import build_bowtie2_index
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
-from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
-from ASOkai._pipeline.tasks.base import validate_task_runs
 
 
 @pytest.fixture
@@ -272,55 +270,11 @@ def test_gene_override_invalidates_downstream_index_receipt(
     assert reusable_output_paths(second) is None
 
 
-def test_index_target_gene_task_wiring_and_registration() -> None:
-    task = IndexTargetGeneTask()
-    assert [run.run_id for run in validate_task_runs(task)] == ["fasta", "index"]
-    assert (
-        task.runs[0].step.spec.input("target_gene").source
-        is CreateTargetGeneStep.target_gene_output
-    )
-    assert set(task.outputs) == {"fasta", "index"}
-    assert catalog.get_pipeline_catalog().tasks[task.name].name == task.name
-    assert "build-bowtie2-index" in catalog.get_pipeline_catalog().steps
-    assert "target-gene-to-fasta" in catalog.get_pipeline_catalog().steps
-
-
-def test_index_target_gene_task_accepts_instantiation_output(
-    config: dict,
-) -> None:
-    config["runs"] = [
-        {"task": "instantiate-target-gene", "id": "gene"},
-        {
-            "task": "index-target-gene",
-            "id": "indexing",
-            "runs": [
-                {
-                    "id": "fasta",
-                    "inputs": {
-                        "target_gene": {"from": "run.gene.target_gene"}
-                    },
-                }
-            ],
-        },
-    ]
-    plan = build_plan([], config, _registry=catalog.get_pipeline_catalog().steps)
-    runs = {run.run_id: run for run in plan.runs_to_execute}
-    assert list(runs) == [
-        "runs.gene.genome",
-        "runs.gene.gene",
-        "runs.indexing.fasta",
-        "runs.indexing.index",
-    ]
-    assert runs["runs.indexing.fasta"].input_paths()["target_gene"] == runs[
-        "runs.gene.gene"
-    ].output_paths()["target_gene"]
-    index = runs["runs.indexing.index"]
-    assert index.input_paths()["reference"] == runs[
-        "runs.indexing.fasta"
-    ].output_paths()["fasta"]
-    assert index.output_paths()["index"].name.startswith(
-        "index.offrate"
-    )
+def test_conversion_and_builder_remain_registered_without_task() -> None:
+    pipeline_catalog = catalog.get_pipeline_catalog()
+    assert "index-target-gene" not in pipeline_catalog.tasks
+    assert "build-bowtie2-index" in pipeline_catalog.steps
+    assert "target-gene-to-fasta" in pipeline_catalog.steps
 
 
 def test_fasta_step_uses_default_target_gene_producer(config: dict) -> None:
@@ -334,95 +288,3 @@ def test_fasta_step_uses_default_target_gene_producer(config: dict) -> None:
     assert isinstance(source, StepRunOutput)
     assert source.run.step.name == "create-target-gene"
     assert source.run in plan.runs_to_execute
-
-
-def test_index_target_gene_uses_default_target_gene_producer(config: dict) -> None:
-    plan = build_plan(
-        [IndexTargetGeneTask()],
-        config,
-        _registry=catalog.get_pipeline_catalog().steps,
-    )
-
-    assert [run.step.name for run in plan.runs_to_execute] == [
-        "download-genome",
-        "create-target-gene",
-        "target-gene-to-fasta",
-        "build-bowtie2-index",
-    ]
-
-
-def test_index_target_gene_accepts_existing_file(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "supplied_target.json"
-    gene = TargetGene(
-        id="ENSG00000133703",
-        name="KRAS",
-        chr="12",
-        start=1,
-        end=4,
-        strand="+",
-        sequence=Seq("ACGT"),
-        sites={},
-    )
-    CreateTargetGeneStep.target_gene_output.write(path, gene)
-    config = {
-        "datadir": str(tmp_path),
-        "runs": [
-            {
-                "task": "index-target-gene",
-                "runs": [
-                    {"id": "fasta", "inputs": {"target_gene": {"path": str(path)}}}
-                ],
-            }
-        ],
-    }
-    plan = build_plan([], config, _registry=catalog.get_pipeline_catalog().steps)
-
-    assert [run.step.name for run in plan.runs_to_execute] == [
-        "target-gene-to-fasta",
-        "build-bowtie2-index",
-    ]
-    assert plan.runs_to_execute[0].input_paths()["target_gene"] == path
-
-
-def test_gene_child_override_keeps_index_destination(config: dict) -> None:
-    config["runs"] = [
-        {"task": "instantiate-target-gene", "id": "gene"},
-        {
-            "task": "index-target-gene",
-            "id": "indexing",
-            "runs": [
-                {
-                    "id": "fasta",
-                    "inputs": {
-                        "target_gene": {"from": "run.gene.target_gene"}
-                    },
-                }
-            ],
-        },
-    ]
-    original = build_plan([], config, _registry=catalog.get_pipeline_catalog().steps)
-    original_index = next(
-        run for run in original.runs_to_execute if run.run_id.endswith(".index")
-    )
-    config["runs"][0]["runs"] = [
-        {"id": "gene", "parameters": {"region": "exonic"}}
-    ]
-    plan = build_plan(
-        [],
-        config,
-        _registry=catalog.get_pipeline_catalog().steps,
-    )
-    index = next(
-        run for run in plan.runs_to_execute
-        if run.run_id.endswith(".index")
-    )
-    assert index.output_paths()["index"] == original_index.output_paths()["index"]
-    filename = index.output_paths()["index"].name
-    spec = index.cwl_spec()
-    assert spec.outputs[0].glob == filename
-    assert any(
-        argument.prefix == "--index-output" and argument.value_from == filename
-        for argument in spec.arguments
-    )

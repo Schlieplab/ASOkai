@@ -26,6 +26,7 @@ units:
 cp examples/config.example.yaml config.yaml
 ASOkai list steps
 ASOkai list tasks
+ASOkai list analyses
 ASOkai list workflows
 ```
 
@@ -122,6 +123,7 @@ plugins appear in the same commands:
 # List available units
 ASOkai list steps
 ASOkai list tasks
+ASOkai list analyses
 ASOkai list workflows
 
 # Describe one unit

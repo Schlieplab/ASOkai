@@ -28,7 +28,6 @@ from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexSt
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.tasks.base import Task
-from ASOkai._pipeline.tasks.index_target_gene import IndexTargetGeneTask
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
@@ -55,7 +54,6 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
 # Built-in task registry
 _BUILTIN_TASKS: tuple[Task, ...] = (
     InstantiateTargetGeneTask(),
-    IndexTargetGeneTask(),
 )
 
 # Built-in workflow registry

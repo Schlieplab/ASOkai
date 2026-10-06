@@ -3,6 +3,12 @@ Build KMC index
 
 .. asokai-step-reference:: build-kmc-index
 
+.. note::
+
+   This step invokes the third-party ``kmc`` and ``kmc_tools`` executables.
+   KMC is GPLv3-only software; ASOkai does not distribute or link against it.
+   Install the executables through the supplied Conda environment.
+
 Supply a plain or gzip-compressed FASTA file as ``reference``. The step builds
 one KFF index using the configured k-mer length and KMC options. Set
 ``resources.build-kmc-index.memory_mb`` to control KMC's memory limit.

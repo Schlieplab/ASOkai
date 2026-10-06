@@ -158,6 +158,7 @@ def test_list_commands_show_registered_units():
 
     steps = runner.invoke(main, ["list", "steps"])
     tasks = runner.invoke(main, ["list", "tasks"])
+    analyses = runner.invoke(main, ["list", "analyses"])
     workflows = runner.invoke(main, ["list", "workflows"])
 
     assert steps.exit_code == 0
@@ -172,9 +173,16 @@ def test_list_commands_show_registered_units():
     assert "[Per site] Computes nucleotide composition" in steps.output
 
     assert tasks.exit_code == 0
+    assert "Core\n" in tasks.output
     assert "instantiate-target-gene" in tasks.output
-    assert "index-target-gene" in tasks.output
+    assert "index-target-gene" not in tasks.output
     assert "Downloads genome data" in tasks.output
+
+    assert analyses.exit_code == 0
+    assert "compute-intrinsic-features" in analyses.output
+    assert "(step)" in analyses.output
+    assert "[Per site]" in analyses.output
+    assert "instantiate-target-gene" not in analyses.output
 
     assert workflows.exit_code == 0
     assert "standard" in workflows.output
@@ -183,6 +191,65 @@ def test_list_commands_show_registered_units():
     verbose_steps = runner.invoke(main, ["list", "-v", "steps"])
     assert verbose_steps.exit_code == 0
     assert "target-gene-to-fasta" in verbose_steps.output
+
+
+def test_list_analyses_includes_categorized_tasks_and_respects_hidden_steps(
+    monkeypatch,
+):
+    from dataclasses import replace
+
+    from ASOkai._pipeline.catalog import get_pipeline_catalog
+    from ASOkai._pipeline.contracts.run_spec import RunSpec
+    from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+        IntrinsicFeaturesStep,
+    )
+    from ASOkai._pipeline.tasks.base import Task
+
+    class ExampleAnalysisTask(Task):
+        name = "example-analysis-task"
+        description = "Combines analysis runs."
+        category = "analysis"
+        runs = (RunSpec("features", IntrinsicFeaturesStep()),)
+
+    class UncategorizedTask(Task):
+        name = "uncategorized-task"
+        description = "Example plugin task without a category."
+        runs = (RunSpec("features", IntrinsicFeaturesStep()),)
+
+    class InternalFeaturesStep(IntrinsicFeaturesStep):
+        listed = False
+
+    catalog = get_pipeline_catalog()
+    catalog = replace(
+        catalog,
+        steps={
+            **catalog.steps,
+            "compute-intrinsic-features": InternalFeaturesStep(),
+        },
+        tasks={
+            **catalog.tasks,
+            "example-analysis-task": ExampleAnalysisTask(),
+            "uncategorized-task": UncategorizedTask(),
+        },
+    )
+    monkeypatch.setattr("ASOkai._cli.catalog.get_pipeline_catalog", lambda: catalog)
+    runner = CliRunner()
+
+    public = runner.invoke(main, ["list", "analyses"])
+    verbose = runner.invoke(main, ["list", "-v", "analyses"])
+    tasks = runner.invoke(main, ["list", "tasks"])
+
+    assert public.exit_code == verbose.exit_code == 0
+    assert "example-analysis-task" in public.output
+    assert "(task)" in public.output
+    assert "compute-intrinsic-features" not in public.output
+    assert "compute-intrinsic-features" in verbose.output
+    assert "(step)" in verbose.output
+    assert tasks.exit_code == 0
+    assert "Analysis\n" in tasks.output
+    assert "example-analysis-task" in tasks.output
+    assert "Pipeline\n" in tasks.output
+    assert "uncategorized-task" in tasks.output
 
 
 def test_verbose_catalog_reveals_internal_steps(monkeypatch):
@@ -298,22 +365,6 @@ def test_describe_task_expands_step_names():
     assert "gene.target_gene" in result.output
     assert "CWL         : (CLI collection; export creates run.cwl)" in result.output
     assert "Steps: download-genome, create-target-gene" not in result.output
-
-
-def test_verbose_describe_task_shows_open_inputs_and_child_ids():
-    runner = CliRunner()
-
-    result = runner.invoke(main, ["describe", "-v", "task", "index-target-gene"])
-
-    assert result.exit_code == 0
-    assert "fasta.target_gene" in result.output
-    assert "from create-target-gene.target_gene by default" in result.output
-    assert "--child fasta --input-path target_gene=PATH" in result.output
-    assert "Outputs:" in result.output
-    assert "fasta.fasta" in result.output
-    assert "index.index" in result.output
-    assert "Child runs:" in result.output
-    assert "build-bowtie2-index" in result.output
 
 
 def test_describe_workflow_shows_members_and_expanded_steps():

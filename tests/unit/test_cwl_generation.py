@@ -367,6 +367,7 @@ def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_conf
         "step_download_genome/annotation",
         "step_download_genome/db",
         "step_create_target_gene/target_gene",
+        "step_create_target_gene/fasta",
     ]
     assert doc["steps"]["publish_outputs"]["in"]["files"]["linkMerge"] == (
         "merge_flattened"

@@ -26,7 +26,6 @@ from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
 )
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
-from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 from ASOkai._pipeline.workflows.base import Workflow
@@ -45,7 +44,6 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
     DownloadGenomeStep(),
     BuildKMCIndexStep(),
     CreateTargetGeneStep(),
-    TargetGeneToFastaStep(),
     BuildBowtie2IndexStep(),
     GenerateTherapeuticCandidatesStep(),
     IntrinsicFeaturesStep(),

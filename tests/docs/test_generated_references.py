@@ -107,6 +107,7 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
     core_list = build_step_list("core", include_descriptions=True)
     analysis_list = build_step_list("analysis")
     utility_list = build_step_list("utils")
+    internal_list = build_step_list("internal")
     built_in_steps = get_built_in_steps()
 
     for step_type, generated_list in (
@@ -124,17 +125,17 @@ def test_step_index_is_generated_from_the_built_in_registry() -> None:
         ]
         assert generated_targets == expected_targets
 
-    assert "/steps/target-gene-to-fasta" not in [
-        link["reftarget"] for link in utility_list.findall(addnodes.pending_xref)
+    assert [
+        link["reftarget"] for link in internal_list.findall(addnodes.pending_xref)
+    ] == [
+        f"/steps/{step.name}" for step in built_in_steps if not step.listed
     ]
 
 
-def test_internal_step_reference_remains_available() -> None:
-    step = get_built_in_step("target-gene-to-fasta")
-    reference = build_step_reference(step, _config_schema())
-
-    assert step.listed is False
-    assert "Internal step" in "\n".join(node.astext() for node in reference)
+def test_removed_conversion_step_is_not_registered() -> None:
+    assert "target-gene-to-fasta" not in {
+        step.name for step in get_built_in_steps()
+    }
 
 
 def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:

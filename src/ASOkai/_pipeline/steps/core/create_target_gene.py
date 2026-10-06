@@ -12,9 +12,13 @@ from __future__ import annotations
 import logging
 from typing import Mapping
 
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+from GenomeUtils.Genome import Genome
+
 from ASOkai.Targets import TargetGene
 from ASOkai.Types import TargetRegion
-from ASOkai._pipeline.contracts.file_types import JsonFile
+from ASOkai._pipeline.contracts.file_types import FastaFile, JsonFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.paths import (
@@ -28,10 +32,54 @@ from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 logger = logging.getLogger(__name__)
 
 
+def _fasta_records(
+    genome: Genome, target_gene: TargetGene, region: TargetRegion
+) -> list[SeqRecord]:
+    """Return the selected gene's full region sequences in a stable order."""
+    if region == "pre-mrna":
+        return [
+            SeqRecord(
+                target_gene.sequence,
+                id=target_gene.id,
+                description=target_gene.name,
+            )
+        ]
+
+    gene = genome.gene_by_id(target_gene.id)
+    if region == "exonic":
+        exons_by_locus = {exon.locus: exon for exon in gene.exons}
+        records = [
+            SeqRecord(
+                exons_by_locus[locus].sequence,
+                id=(
+                    f"{target_gene.id}:exon:{locus.chr}:"
+                    f"{locus.start}-{locus.end}:{locus.strand}"
+                ),
+                description=target_gene.name,
+            )
+            for locus in sorted(exons_by_locus)
+        ]
+    elif region == "transcriptomic":
+        records = [
+            SeqRecord(
+                transcript.sequence,
+                id=transcript.id,
+                description=target_gene.name,
+            )
+            for transcript in sorted(gene.transcripts, key=lambda item: item.id)
+        ]
+    else:
+        raise ValueError(f"Invalid target region: {region!r}.")
+
+    if not records:
+        raise ValueError(f"Target gene {target_gene.id!r} has no {region} sequences.")
+    return records
+
+
 class CreateTargetGeneStep(CoreStep):
     name = "create-target-gene"
     description = (
-        "Creates a target gene object from genome data and extracts target sites."
+        "Creates a target gene, extracts target sites, and writes a region FASTA."
     )
     target_gene_output = FileOutput(
         "target_gene",
@@ -55,6 +103,19 @@ class CreateTargetGeneStep(CoreStep):
             },
         ),
         doc="Serialized target gene object.",
+    )
+    fasta_output = FileOutput(
+        "fasta",
+        file_type=FastaFile(),
+        destination=OutputPathTemplate(
+            "{assembly}/{source}/{release}/targets/{target}/"
+            "{target}_k{k}_{region}.fa",
+            fields=target_gene_output.destination.fields,
+        ),
+        doc=(
+            "Full pre-mRNA sequence, distinct exon sequences, or spliced "
+            "transcript sequences according to the selected target region."
+        ),
     )
     spec = StepSpec(
         requirements={
@@ -117,7 +178,7 @@ class CreateTargetGeneStep(CoreStep):
                 doc="Reusable annotation database from download-genome.",
             ),
         ],
-        outputs=[target_gene_output],
+        outputs=[target_gene_output, fasta_output],
     )
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
@@ -170,6 +231,7 @@ class CreateTargetGeneStep(CoreStep):
             site_length=args.k,
             region=args.region,
         )
+        fasta_records = _fasta_records(genome, target_gene, args.region)
 
         logger.info(
             "Writing target gene to %s",
@@ -179,5 +241,8 @@ class CreateTargetGeneStep(CoreStep):
             args.target_gene_output,
             target_gene,
         )
+        logger.info("Writing target FASTA to %s", args.fasta_output)
+        with args.fasta_output.open("w", encoding="utf-8") as stream:
+            SeqIO.write(fasta_records, stream, "fasta")
 
         return 0

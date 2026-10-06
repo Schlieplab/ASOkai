@@ -13,3 +13,14 @@ Supply any plain FASTA reference. The index destination includes the Bowtie 2
 build options. In the default signature validation mode, its receipt records
 the selected FASTA input, so changing the reference causes a rebuild at the
 same destination.
+
+To index a target gene, name an ``instantiate-target-gene`` task run
+``target_gene`` and link ``reference`` to its ``fasta`` output::
+
+   runs:
+     - task: instantiate-target-gene
+       id: target_gene
+     - step: build-bowtie2-index
+       inputs:
+         reference:
+           from: run.target_gene.fasta

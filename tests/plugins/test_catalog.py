@@ -221,7 +221,6 @@ def test_step_authoring_contracts_are_public() -> None:
         "StepSpec",
         "StandardWorkflow",
         "Task",
-        "TargetGeneToFastaStep",
         "TableAnalysisStep",
         "TemplateField",
         "Workflow",

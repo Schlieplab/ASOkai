@@ -394,11 +394,7 @@ def describe_command(
         "workflow": catalog.workflows,
     }[unit]
     pipeline_unit = registry.get(name)
-    if pipeline_unit is None or (
-        unit == "step"
-        and not pipeline_unit.listed
-        and not ctx.obj.get("verbose", False)
-    ):
+    if pipeline_unit is None:
         raise click.ClickException(f"Unknown {unit} '{name}'.")
 
     click.echo(f"Name        : {pipeline_unit.name}")

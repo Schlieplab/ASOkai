@@ -17,6 +17,10 @@ Component hierarchy
    One atomic command-line operation. A step owns a ``StepSpec`` and the
    common parsing, output-path, CWL-generation, and execution lifecycle.
 
+Internal steps are registered ``Step`` instances with ``listed = False``.
+They remain available for explicit runs and descriptions; see
+:doc:`Internal steps <Internal-steps>` for their contributor-facing references.
+
 ``ExternalCommandStep``
    A step whose ``build_command(args)`` method returns an external executable
    and its arguments. The subprocess remains inside the common step lifecycle,

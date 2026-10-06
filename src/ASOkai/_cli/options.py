@@ -86,5 +86,5 @@ describe_verbose_option = click.option(
     is_eager=True,
     expose_value=False,
     callback=_set_verbose,
-    help="Show configuration keys, file details, dependency trees, and internal steps.",
+    help="Show configuration keys, file details, and dependency trees.",
 )

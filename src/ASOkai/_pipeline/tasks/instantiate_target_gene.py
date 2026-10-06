@@ -36,4 +36,7 @@ class InstantiateTargetGeneTask(Task):
             },
         ),
     )
-    outputs = {"target_gene": FromRun("gene", "target_gene")}
+    outputs = {
+        "target_gene": FromRun("gene", "target_gene"),
+        "fasta": FromRun("gene", "fasta"),
+    }

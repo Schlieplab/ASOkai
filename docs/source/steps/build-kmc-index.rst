@@ -36,3 +36,5 @@ created::
 
 If the FASTA already exists, select only ``build-kmc-index`` and supply its
 ``reference`` input with ``{path: /path/to/genome.fa}``.
+For a target gene, name an ``instantiate-target-gene`` task run ``target_gene``
+and link ``reference`` to ``run.target_gene.fasta`` instead.

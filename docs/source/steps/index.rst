@@ -5,8 +5,9 @@ Steps are independently runnable pipeline units with declared configuration,
 inputs, outputs, and dependencies. Each reference page documents one step's
 runtime contract.
 
-Use ``asokai list -v steps`` to include internal steps used by tasks.
-``asokai describe -v step <name>`` shows their details.
+Use ``asokai list -v steps`` to include internal steps.
+``asokai describe step <name>`` shows their details when named explicitly;
+add ``-v`` for configuration keys, file details, and dependency trees.
 
 Core steps
 ----------
@@ -30,8 +31,8 @@ steps.
 Utility steps
 -------------
 
-Utility steps perform reusable operations on supplied inputs. Tasks connect
-them to specific ASOkai data sources.
+Utility steps perform reusable operations on supplied inputs. Run selections
+or tasks can connect them to specific ASOkai data sources.
 
 .. asokai-step-list:: utils
    :descriptions:

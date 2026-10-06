@@ -286,6 +286,9 @@ def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
     from ASOkai._pipeline.steps.core.base import CoreStep
     from ASOkai._pipeline.steps.utils.base import UtilityStep
 
+    if step_kind == "internal":
+        return tuple(step for step in get_built_in_steps() if not step.listed)
+
     step_types = {
         "analysis": AnalysisStep,
         "core": CoreStep,
@@ -294,7 +297,7 @@ def _built_in_steps_of_kind(step_kind: str) -> tuple[Any, ...]:
     try:
         step_type = step_types[step_kind]
     except KeyError as error:
-        expected = ", ".join(step_types)
+        expected = ", ".join((*step_types, "internal"))
         raise ValueError(
             f"Unknown step kind {step_kind!r}; expected one of: {expected}."
         ) from error
@@ -908,5 +911,7 @@ class ASOkaiStepList(SphinxDirective):
             self.env,
             _step_documentation_sources(steps),
         )
+        if step_kind == "internal" and not steps:
+            return [nodes.paragraph(text="There are no built-in internal steps currently.")]
         self.set_source_info(step_toctree)
         return [step_list, step_toctree]

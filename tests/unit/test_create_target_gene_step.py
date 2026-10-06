@@ -8,15 +8,22 @@ License: LGPL-3.0-or-later
 """
 
 import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+from Bio import SeqIO
 from Bio.Seq import Seq
+from GenomeUtils.Genome import Locus
 import pytest
 import yaml
 from ASOkai.Targets import TargetGene
 from ASOkai._cwl.generation import StepCwlGenerator
-from ASOkai.Plugins import CoreStep, FileOutput, JsonFile, Step
+from ASOkai.Plugins import CoreStep, FastaFile, FileOutput, JsonFile, Step
 from ASOkai._pipeline.contracts.execution import StepInputBinding, StepRun
-from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.create_target_gene import (
+    CreateTargetGeneStep,
+    _fasta_records,
+)
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
@@ -74,6 +81,7 @@ def test_output_paths_structure(step, config, tmp_path):
         / "ENSG00000133703_k16_pre-mrna.json"
     )
     assert paths["target_gene"] == expected
+    assert paths["fasta"] == expected.with_suffix(".fa")
 
 
 def test_output_paths_uses_target_name_fallback(step, tmp_path):
@@ -99,6 +107,7 @@ def test_output_paths_uses_target_name_fallback(step, tmp_path):
         / "KRAS_k16_pre-mrna.json"
     )
     assert paths["target_gene"] == expected
+    assert paths["fasta"] == expected.with_suffix(".fa")
 
 
 def test_output_path_identifies_the_genome_release(step, config, tmp_path):
@@ -119,6 +128,7 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
     assert isinstance(output, FileOutput)
     assert isinstance(output.file_type, JsonFile)
     assert output.file_type.value_type is TargetGene
+    assert isinstance(step.spec.output("fasta").file_type, FastaFile)
     assert doc["class"] == "CommandLineTool"
     assert doc["baseCommand"] == [
         "ASOkai", "step", "--run-id", run.run_id, "create-target-gene"
@@ -131,9 +141,88 @@ def test_cwl_spec_generates_command_line_tool(step, config, tmp_path):
         "prefix": "--target-gene-output",
         "valueFrom": "ENSG00000133703_k16_pre-mrna.json",
     } in doc["arguments"]
+    assert {
+        "prefix": "--fasta-output",
+        "valueFrom": "ENSG00000133703_k16_pre-mrna.fa",
+    } in doc["arguments"]
     assert doc["outputs"]["target_gene"]["outputBinding"]["glob"] == (
         "ENSG00000133703_k16_pre-mrna.json"
     )
+    assert doc["outputs"]["fasta"]["outputBinding"]["glob"] == (
+        "ENSG00000133703_k16_pre-mrna.fa"
+    )
+
+
+def test_fasta_records_match_selected_region() -> None:
+    target_gene = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=8,
+        strand="+",
+        sequence=Seq("ACGTTGCA"),
+        sites={},
+    )
+    first = Locus("12", 1, 4, "+")
+    second = Locus("12", 7, 8, "+")
+    transcripts = [
+        SimpleNamespace(
+            id="ENST2",
+            sequence=Seq("ACGTTG"),
+            exons=[
+                SimpleNamespace(locus=first, sequence=Seq("ACGT")),
+                SimpleNamespace(locus=second, sequence=Seq("TG")),
+            ],
+        ),
+        SimpleNamespace(
+            id="ENST1",
+            sequence=Seq("ACGT"),
+            exons=[SimpleNamespace(locus=first, sequence=Seq("ACGT"))],
+        ),
+    ]
+    genome = MagicMock()
+    genome.gene_by_id.return_value = SimpleNamespace(
+        exons=transcripts[0].exons,
+        transcripts=transcripts,
+    )
+
+    pre_mrna = _fasta_records(genome, target_gene, "pre-mrna")
+    exonic = _fasta_records(genome, target_gene, "exonic")
+    transcriptomic = _fasta_records(genome, target_gene, "transcriptomic")
+
+    assert [(record.id, str(record.seq)) for record in pre_mrna] == [
+        ("ENSG00000133703", "ACGTTGCA")
+    ]
+    assert [(record.id, str(record.seq)) for record in exonic] == [
+        ("ENSG00000133703:exon:12:1-4:+", "ACGT"),
+        ("ENSG00000133703:exon:12:7-8:+", "TG"),
+    ]
+    assert [(record.id, str(record.seq)) for record in transcriptomic] == [
+        ("ENST1", "ACGT"),
+        ("ENST2", "ACGTTG"),
+    ]
+    genome.gene_by_id.assert_called_with(target_gene.id)
+    genome.get_sequence_by_locus.assert_not_called()
+
+
+@pytest.mark.parametrize("region", ["exonic", "transcriptomic"])
+def test_fasta_records_reject_empty_region(region: str) -> None:
+    target_gene = TargetGene(
+        id="ENSG00000133703",
+        name="KRAS",
+        chr="12",
+        start=1,
+        end=4,
+        strand="+",
+        sequence=Seq("ACGT"),
+        sites={},
+    )
+    genome = MagicMock()
+    genome.gene_by_id.return_value = SimpleNamespace(exons=[], transcripts=[])
+
+    with pytest.raises(ValueError, match=f"no {region} sequences"):
+        _fasta_records(genome, target_gene, region)
 
 
 def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
@@ -144,6 +233,7 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
     import GenomeUtils.Genome as genome_mod
 
     output = tmp_path / "out" / "target.json"
+    fasta_output = tmp_path / "out" / "target.fa"
     captured = {}
 
     class FakeGenomeBuilder:
@@ -207,11 +297,17 @@ def test_run_cli_accepts_target_name_only_with_mocked_genome_creation(
             "Homo_sapiens",
             "--target-gene-output",
             str(output),
+            "--fasta-output",
+            str(fasta_output),
         ]
     )
 
     assert result == 0
     assert output.exists()
+    fasta_records = list(SeqIO.parse(fasta_output, "fasta"))
+    assert [(record.id, str(record.seq)) for record in fasta_records] == [
+        (target_gene.id, "ACGT")
+    ]
     payload = json.loads(output.read_text())
     assert payload["objects"] == {}
     payload = payload["root"]
@@ -250,6 +346,7 @@ def test_run_cli_rejects_invalid_target_selection_before_loading_genome(
     capsys,
 ):
     output = tmp_path / "out" / "target.json"
+    fasta_output = tmp_path / "out" / "target.fa"
     arguments = [
         *target_arguments,
         "--k",
@@ -270,6 +367,8 @@ def test_run_cli_rejects_invalid_target_selection_before_loading_genome(
         "Homo_sapiens",
         "--target-gene-output",
         str(output),
+        "--fasta-output",
+        str(fasta_output),
     ]
 
     with pytest.raises(SystemExit) as error:

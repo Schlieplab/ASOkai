@@ -190,7 +190,7 @@ def test_list_commands_show_registered_units():
 
     verbose_steps = runner.invoke(main, ["list", "-v", "steps"])
     assert verbose_steps.exit_code == 0
-    assert "target-gene-to-fasta" in verbose_steps.output
+    assert "target-gene-to-fasta" not in verbose_steps.output
 
 
 def test_list_analyses_includes_categorized_tasks_and_respects_hidden_steps(
@@ -271,16 +271,23 @@ def test_verbose_catalog_reveals_internal_steps(monkeypatch):
 
     public = runner.invoke(main, ["list", "steps"])
     verbose = runner.invoke(main, ["list", "-v", "steps"])
-    hidden = runner.invoke(main, ["describe", "step", "download-genome"])
-    described = runner.invoke(main, ["describe", "-v", "step", "download-genome"])
+    described = runner.invoke(main, ["describe", "step", "download-genome"])
+    verbose_described = runner.invoke(
+        main, ["describe", "-v", "step", "download-genome"]
+    )
 
-    assert public.exit_code == verbose.exit_code == described.exit_code == 0
+    assert (
+        public.exit_code
+        == verbose.exit_code
+        == described.exit_code
+        == verbose_described.exit_code
+        == 0
+    )
     assert "download-genome" not in public.output
     assert "download-genome" in verbose.output
     assert "Internal\n" in verbose.output
-    assert hidden.exit_code != 0
-    assert "Unknown step 'download-genome'" in hidden.output
     assert "Type        : Internal" in described.output
+    assert "Type        : Internal" in verbose_described.output
 
 
 def test_describe_step_create_target_gene_shows_details():
@@ -299,6 +306,7 @@ def test_describe_step_create_target_gene_shows_details():
     assert "from download-genome.dna by default" in result.output
     assert "Outputs:" in result.output
     assert "target_gene          JSON" in result.output
+    assert "fasta                plain FASTA reference" in result.output
     assert "Input configuration (optional)" not in result.output
     assert "path" not in result.output
     assert "--config " not in result.output

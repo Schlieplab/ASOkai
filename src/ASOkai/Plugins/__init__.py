@@ -35,7 +35,6 @@ from ASOkai._pipeline.steps.analysis.intrinsic_features import (
 from ASOkai._pipeline.steps.base import ExternalCommandStep, Step
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
-from ASOkai._pipeline.steps.utils.target_gene_to_fasta import TargetGeneToFastaStep
 from ASOkai._pipeline.steps.core.base import CoreStep
 from ASOkai._pipeline.steps.utils.base import UtilityStep
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
@@ -77,7 +76,6 @@ __all__ = [
     "StepSpec",
     "StandardWorkflow",
     "Task",
-    "TargetGeneToFastaStep",
     "TableAnalysisStep",
     "TemplateField",
     "UtilityStep",

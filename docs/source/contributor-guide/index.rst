@@ -12,3 +12,4 @@ components page explains the contracts that support it.
 
    guides/Analysis-guide
    guides/Pipeline-components
+   guides/Internal-steps

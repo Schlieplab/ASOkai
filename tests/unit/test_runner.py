@@ -364,6 +364,7 @@ def test_multiple_selected_steps_share_one_run_report_context(
         "annotation.gtf.gz",
         "annotation.db",
         "target.json",
+        "target.fa",
     )
 
     runner.run_all(
@@ -378,6 +379,7 @@ def test_multiple_selected_steps_share_one_run_report_context(
     assert "[run] Outputs:" in completion
     assert "download-genome.dna" in completion
     assert "create-target-gene.target_gene" in completion
+    assert "create-target-gene.fasta" in completion
     assert all(line.startswith("[run] ") for line in completion.splitlines() if line)
 
 
@@ -476,7 +478,9 @@ def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_pa
     assert job["runs.2.region"] == "exonic"
     assert {entry["id"] for entry in layout["outputs"]} == {
         "runs.1.target_gene",
+        "runs.1.fasta",
         "runs.2.target_gene",
+        "runs.2.fasta",
     }
     assert (export_dir / "steps" / "runs.1.cwl").exists()
     assert (export_dir / "steps" / "runs.2.cwl").exists()
@@ -666,6 +670,7 @@ def test_task_dry_run_returns_requested_outputs(workflow_config):
         "instantiate-target-gene.genome.annotation",
         "instantiate-target-gene.genome.db",
         "instantiate-target-gene.gene.target_gene",
+        "instantiate-target-gene.gene.fasta",
     }
     assert result["instantiate-target-gene.gene.target_gene"] == (
         Path(workflow_config["datadir"])
@@ -703,7 +708,8 @@ def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
     )
 
     assert result == {
-        "create-target-gene.target_gene": plan.goals[0].output_paths()["target_gene"]
+        "create-target-gene.target_gene": plan.goals[0].output_paths()["target_gene"],
+        "create-target-gene.fasta": plan.goals[0].output_paths()["fasta"],
     }
     executor.run.assert_not_called()
 

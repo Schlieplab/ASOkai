@@ -175,49 +175,37 @@ properties:
                 pattern: '^(?:all|(?!(?:.*?,\s*)?(GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*,.*?\b\1\b)\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*(?:,\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*)*)$(?!\n)'
                 default: all
                 description: >-
-                  Comma-separated intrinsic feature columns without duplicates,
-                  or 'all' for every supported feature. Available columns are
-                  GC_content, AT_content, T_count, CpG_count, T_content, and
-                  CpG_content.
-          repeated_sites:
+                  Comma-separated intrinsic feature columns, or 'all' for every
+                  supported feature.
+          potential_repeated_sites:
             type: object
             additionalProperties: false
-            description: Settings of the repeated-sites task.
+            description: >-
+              Tree search for sequences that a gapmer binds as well as its
+              own target site.
             properties:
-              treesearch:
-                type: object
-                additionalProperties: false
+              max_ddg:
+                type: number
+                minimum: 0
+                default: 5.0
                 description: >-
-                  Tree search for site variants that a gapmer still binds.
-                properties:
-                  max_ddg:
-                    type: number
-                    minimum: 0
-                    default: 5.0
-                    description: >-
-                      Largest accepted binding-energy loss in kcal/mol relative
-                      to the original site.
-                  ddg_tolerance:
-                    type: number
-                    minimum: 0
-                    default: 0.5
-                    description: >-
-                      Extra binding-energy loss in kcal/mol that is still
-                      explored, because later mutations can have better binding.
-                  unconstrained_duplex:
-                    type: boolean
-                    default: false
-                    description: >-
-                      Fold duplexes without enforcing the base pairs between
-                      the gapmer gap and the site.
-                  model_settings:
-                    type: string
-                    default: ''
-                    description: >-
-                      Extra ViennaRNA model arguments as comma-separated
-                      name=value pairs, such as 'temperature=37.0,noGU=1'.
-                      Accepted names are the fields of ViennaRNA's model
-                      details. An empty value keeps every ViennaRNA default values.
+                  Largest accepted binding-energy loss in kcal/mol relative
+                  to the original site.
+              ddg_tolerance:
+                type: number
+                minimum: 0
+                default: 0.5
+                description: >-
+                  Extra binding-energy loss in kcal/mol that is still
+                  explored, because later mutations can have better binding.
+              model_settings:
+                type: string
+                default: ''
+                description: >-
+                  Extra ViennaRNA model arguments as comma-separated
+                  name=value pairs, such as 'temperature=37.0,noGU=1'.
+                  Accepted names are the fields of ViennaRNA's model
+                  details. An empty value keeps every ViennaRNA default values.
       bowtie2:
         type: object
         additionalProperties: false

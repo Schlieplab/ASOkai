@@ -10,13 +10,3 @@ by the concrete analysis.
    :members:
    :undoc-members:
    :show-inheritance:
-
-.. autoclass:: ASOkai.Analysis.GenomicHitsAnalysis
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. autoclass:: ASOkai.Analysis.SiteGenomicHits
-   :members:
-   :undoc-members:
-   :show-inheritance:

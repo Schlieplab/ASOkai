@@ -15,19 +15,15 @@ with either worker threads or processes.
    :undoc-members:
    :show-inheritance:
 
-Candidate repeated sites
-------------------------
+Similar sequences
+-----------------
 
-:class:`~ASOkai.Analysis.TreesearchTargetSitesAnalysis` searches each target
-site for variants that the site's own gapmer still binds. See
-:doc:`/steps/treesearch-target-sites` for the search, its identifiers, and its
+:class:`~ASOkai.Analysis.SimilarSequenceAnalysis` searches each target site for
+sequences that the site's own gapmer still binds. See
+:doc:`/steps/potential-repeated-sites` for the search, its identifiers, and its
 output.
 
-.. autoclass:: ASOkai.Analysis.TreesearchTargetSitesAnalysis
+.. autoclass:: ASOkai.Analysis.SimilarSequenceAnalysis
    :members:
    :undoc-members:
-   :show-inheritance:
-
-.. autoclass:: ASOkai.Analysis.CandidateRepeatedSite
-   :members: id, is_reference
    :show-inheritance:

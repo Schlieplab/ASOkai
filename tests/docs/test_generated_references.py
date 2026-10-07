@@ -270,7 +270,7 @@ def test_task_index_groups_built_in_tasks_by_category() -> None:
 
     assert targets(core) == ["/tasks/instantiate-target-gene"]
     assert targets(utility) == []
-    assert targets(analysis) == ["/tasks/repeated-sites"]
+    assert targets(analysis) == ["/tasks/find-repeated-sites"]
 
 
 def test_task_reference_links_to_its_steps() -> None:

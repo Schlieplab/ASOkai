@@ -169,9 +169,10 @@ against them.
 
 ### ViennaRNA
 
-[ViennaRNA](https://www.tbi.univie.ac.at/RNA/) computes binding free energies
-for the repeated-sites tree search. ASOkai imports its Python bindings, which
-are distributed under ViennaRNA's own license; review it before use.
+[ViennaRNA](https://www.tbi.univie.ac.at/RNA/) computes the binding free
+energies used by the potential-repeated-sites search. ASOkai imports its
+Python bindings, which are distributed under ViennaRNA's own license; review
+it before use.
 
 ## Contributor setup
 

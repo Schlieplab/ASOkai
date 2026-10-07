@@ -16,11 +16,11 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 REQUIRED_HEADER_FIELDS = (
-    "Filename",
-    "Author",
-    "Copyright",
-    "Description",
-    "License",
+    ("Filename",),
+    ("Author", "Authors"),
+    ("Copyright",),
+    ("Description",),
+    ("License",),
 )
 
 
@@ -56,16 +56,16 @@ def test_tracked_python_file_has_required_header_elements(path: Path) -> None:
     docstring_lines = docstring.splitlines()
 
     header = {}
-    for field in REQUIRED_HEADER_FIELDS:
-        prefix = f"{field}:"
+    for accepted_names in REQUIRED_HEADER_FIELDS:
         values = [
-            line.removeprefix(prefix).strip()
+            line.removeprefix(f"{name}:").strip()
+            for name in accepted_names
             for line in docstring_lines
-            if line.startswith(prefix)
+            if line.startswith(f"{name}:")
         ]
-        assert len(values) == 1
+        assert len(values) == 1, accepted_names
         assert values[0]
-        header[field] = values[0]
+        header[accepted_names[0]] = values[0]
 
     assert header["Filename"] == str(path.relative_to(REPOSITORY_ROOT))
     assert not any(

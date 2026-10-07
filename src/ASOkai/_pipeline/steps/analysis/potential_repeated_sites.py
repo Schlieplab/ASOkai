@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/analysis/treesearch_target_sites.py
-Author: Kian Jalilian
+Filename: src/ASOkai/_pipeline/steps/analysis/potential_repeated_sites.py
+Authors: Arash Ayat, Kian Jalilian
 Copyright: 2026, Alexander Schliep
-Description: Definition of the target-site tree-search step.
+Description: Definition of the potential-repeated-sites step.
 License: LGPL-3.0-or-later
 """
 
@@ -16,7 +16,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from ASOkai.Analysis import TreesearchTargetSitesAnalysis
+from ASOkai.Analysis import SimilarSequenceAnalysis
 from ASOkai._pipeline.contracts.file_types import FastaFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -40,9 +40,9 @@ def _scalar(value: str) -> Any:
             continue
     return value
 
-_TREESEARCH_CONFIG = "parameters.analysis.repeated_sites.treesearch"
+_STEP_CONFIG = "parameters.analysis.potential_repeated_sites"
 
-_TREESEARCH_PATH_FIELDS = {
+_PATH_FIELDS = {
     "assembly": TemplateField("parameters.genome.assembly"),
     "source": TemplateField("parameters.genome.source", default="ensembl"),
     "release": TemplateField("parameters.genome.release"),
@@ -55,48 +55,39 @@ _TREESEARCH_PATH_FIELDS = {
     "left": TemplateField("parameters.antisense.design.left_wing_length"),
     "gap": TemplateField("parameters.antisense.design.gap_length"),
     "right": TemplateField("parameters.antisense.design.right_wing_length"),
-    "max_ddg": TemplateField(f"{_TREESEARCH_CONFIG}.max_ddg", default=5.0),
+    "max_ddg": TemplateField(f"{_STEP_CONFIG}.max_ddg", default=5.0),
     "tolerance": TemplateField(
-        f"{_TREESEARCH_CONFIG}.ddg_tolerance",
+        f"{_STEP_CONFIG}.ddg_tolerance",
         default=0.5,
-    ),
-    "unconstrained": TemplateField(
-        f"{_TREESEARCH_CONFIG}.unconstrained_duplex",
-        default=False,
-    ),
-    "model": TemplateField(
-        f"{_TREESEARCH_CONFIG}.model_settings",
-        default="default",
     ),
 }
 
 
-class TreesearchTargetSitesStep(AnalysisStep):
-    name = "treesearch-target-sites"
+class PotentialRepeatedSitesStep(AnalysisStep):
+    name = "potential-repeated-sites"
     description = (
-        "Searches target-site variants that the site's own gapmer still binds."
+        "Searches potential repeated sites that each target site's own "
+        "gapmer still binds."
     )
-    analysis_cls = TreesearchTargetSitesAnalysis
+    analysis_cls = SimilarSequenceAnalysis
     target_gene_input = FileInput(
         "target_gene",
         source=CreateTargetGeneStep.target_gene_output,
         doc="Target gene whose sites are searched, from create-target-gene.",
     )
-    candidates_output = FileOutput(
-        "candidate_repeated_sites",
+    potential_sites_output = FileOutput(
+        "potential_repeated_sites",
         file_type=FastaFile(),
         destination=OutputPathTemplate(
             "{assembly}/{source}/{release}/targets/{target}/"
             "analysis/repeated_sites/"
             "{target}_k{k}_{region}_gapmer_l{left}_g{gap}_r{right}_"
-            "ddg{max_ddg}_tol{tolerance}_unconstrained{unconstrained}_"
-            "model{model}_treesearch_target_sites.fa",
-            fields=_TREESEARCH_PATH_FIELDS,
+            "ddg{max_ddg}_tol{tolerance}_potential_repeated_sites.fa",
+            fields=_PATH_FIELDS,
         ),
         doc=(
-            "One FASTA record per candidate repeated site. Each record is "
-            "named by its target site and substitutions, and its description "
-            "carries the binding energies."
+            "One FASTA record per potential repeated site, named by its "
+            "target site and the substitutions applied to it."
         ),
     )
     spec = StepSpec(
@@ -129,14 +120,14 @@ class TreesearchTargetSitesStep(AnalysisStep):
             ScalarParam(
                 "max_ddg",
                 float,
-                config=f"{_TREESEARCH_CONFIG}.max_ddg",
+                config=f"{_STEP_CONFIG}.max_ddg",
                 default=5.0,
                 doc="Largest reported binding-energy loss in kcal/mol.",
             ),
             ScalarParam(
                 "ddg_tolerance",
                 float,
-                config=f"{_TREESEARCH_CONFIG}.ddg_tolerance",
+                config=f"{_STEP_CONFIG}.ddg_tolerance",
                 default=0.5,
                 doc=(
                     "Extra binding-energy loss in kcal/mol that is still "
@@ -144,15 +135,9 @@ class TreesearchTargetSitesStep(AnalysisStep):
                 ),
             ),
             ScalarParam(
-                "unconstrained_duplex",
-                bool,
-                config=f"{_TREESEARCH_CONFIG}.unconstrained_duplex",
-                doc="Fold duplexes without enforcing the gap base pairs.",
-            ),
-            ScalarParam(
                 "model_settings",
                 str,
-                config=f"{_TREESEARCH_CONFIG}.model_settings",
+                config=f"{_STEP_CONFIG}.model_settings",
                 default="",
                 doc=(
                     "Extra ViennaRNA model arguments as comma-separated "
@@ -163,7 +148,7 @@ class TreesearchTargetSitesStep(AnalysisStep):
             ),
         ],
         inputs=[target_gene_input],
-        outputs=[candidates_output],
+        outputs=[potential_sites_output],
         compatible_with={
             "parameters.antisense.modality": ["aso"],
             "parameters.antisense.mechanism": ["rnase-h1"],
@@ -225,7 +210,6 @@ class TreesearchTargetSitesStep(AnalysisStep):
             "right_wing_length": args.right_wing_length,
             "max_ddg": args.max_ddg,
             "ddg_tolerance": args.ddg_tolerance,
-            "constrain_core": not args.unconstrained_duplex,
             "model_settings": self._model_settings(args.model_settings),
         }
 
@@ -243,20 +227,16 @@ class TreesearchTargetSitesStep(AnalysisStep):
         return sites
 
     def write_results(self, args, analysis, results) -> None:
-        """Write every candidate as one FASTA record named by its ID."""
-        logger.info("Writing %d candidate repeated sites", len(results))
-        with args.candidate_repeated_sites_output.open(
+        """Write every result as one FASTA record named by its identifier."""
+        logger.info("Writing %d potential repeated sites", len(results))
+        with args.potential_repeated_sites_output.open(
             "w",
             encoding="utf-8",
         ) as stream:
             SeqIO.write(
                 (
-                    SeqRecord(
-                        Seq(candidate.sequence),
-                        id=candidate.id,
-                        description="",
-                    )
-                    for candidate in results
+                    SeqRecord(Seq(sequence), id=identifier, description="")
+                    for identifier, sequence in results
                 ),
                 stream,
                 "fasta",

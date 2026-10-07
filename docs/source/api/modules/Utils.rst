@@ -9,5 +9,4 @@ and public Python API.
 
    Utils/kmc
    Utils/bowtie2
-   Utils/rnacofold
    Utils/serialization

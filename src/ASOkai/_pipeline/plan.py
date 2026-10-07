@@ -820,12 +820,11 @@ def _validated_run_specs(
                 "Select runs in the configuration or with --step/--task/--workflow, "
                 "not both."
             )
+        declarations = cfg.assign_run_ids(config["runs"])
         named_run_ids: dict[str, str] = {}
         named_outputs: dict[str, FromRun] = {}
         selection_ids: set[str] = set()
-        for index, declaration in enumerate(config["runs"]):
-            if "id" not in declaration:
-                continue
+        for index, declaration in enumerate(declarations):
             name = declaration["id"]
             if name in selection_ids:
                 raise ValueError(f"$.runs[{index}].id: duplicate run id '{name}'.")
@@ -871,7 +870,7 @@ def _validated_run_specs(
                         reference.output_name,
                     )
 
-        for index, declaration in enumerate(config["runs"]):
+        for index, declaration in enumerate(declarations):
             if "step" in declaration:
                 step_name = declaration["step"]
                 step = registered_steps.get(step_name)
@@ -881,9 +880,7 @@ def _validated_run_specs(
                     )
                 run_specs.append(
                     RunSpec(
-                        run_id=named_run_ids.get(
-                            declaration.get("id"), f"runs.{index + 1}"
-                        ),
+                        run_id=named_run_ids[declaration["id"]],
                         step=step,
                         parameters=dict(declaration.get("parameters", {})),
                         inputs=_normalized_inputs(
@@ -908,7 +905,7 @@ def _validated_run_specs(
             run_specs.extend(
                 _task_run_specs(
                     task,
-                    f"runs.{declaration.get('id', index + 1)}",
+                    f"runs.{declaration['id']}",
                     declaration.get("parameters", {}),
                     declaration.get("runs", ()),
                     named_outputs,

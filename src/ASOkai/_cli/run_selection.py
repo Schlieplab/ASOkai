@@ -16,6 +16,7 @@ import yaml
 
 from ASOkai._pipeline.base import flatten_workflow_members
 from ASOkai._pipeline.catalog import PipelineCatalog
+from ASOkai._pipeline.config import assign_run_ids
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.steps.base import Step
@@ -248,17 +249,4 @@ def resolved_runs(
             for member in flatten_workflow_members(workflow):
                 kind = "step" if isinstance(member, Step) else "task"
                 runs.append({kind: member.name})
-    used_ids = {run["id"] for run in runs if "id" in run}
-    for run in runs:
-        if "id" in run:
-            continue
-        name = run.get("step", run.get("task"))
-        assert isinstance(name, str)
-        run_id = name
-        suffix = 2
-        while run_id in used_ids:
-            run_id = f"{name}-{suffix}"
-            suffix += 1
-        run["id"] = run_id
-        used_ids.add(run_id)
-    return runs
+    return assign_run_ids(runs)

@@ -298,7 +298,7 @@ def test_configured_runs_keep_order_and_resolve_parameter_fallback(config):
 
     plan = build_plan([], config, _registry={step.name: step})
 
-    assert [run.run_id for run in plan.goals] == ["runs.1", "runs.2"]
+    assert [run.run_id for run in plan.goals] == [f"runs.{step.name}", f"runs.{step.name}-2"]
     assert [run.parameters for run in plan.goals] == [
         {"mode": "fast", "local": 7},
         {"mode": "slow", "local": 5},
@@ -307,8 +307,53 @@ def test_configured_runs_keep_order_and_resolve_parameter_fallback(config):
         Path(config["datadir"]) / "results/fast.txt",
         Path(config["datadir"]) / "results/slow.txt",
     ]
-    assert _scheduled_run_ids(plan) == ["runs.1", "runs.2"]
+    assert _scheduled_run_ids(plan) == [f"runs.{step.name}", f"runs.{step.name}-2"]
     assert config["shared"]["mode"] == "fast"
+
+
+def test_generated_run_ids_reserve_explicit_ids_declared_later(config):
+    step = _make_parameter_step()
+    declarations = [
+        {"step": step.name},
+        {"step": step.name, "id": step.name},
+        {"step": step.name, "id": f"{step.name}-2"},
+        {"step": step.name},
+    ]
+    config["runs"] = declarations
+
+    _, specs, _ = _validated_run_specs([], config, {step.name: step}, None, None)
+
+    assert [spec.run_id for spec in specs] == [
+        f"runs.{step.name}-3",
+        f"runs.{step.name}",
+        f"runs.{step.name}-2",
+        f"runs.{step.name}-4",
+    ]
+    assert config["runs"] == declarations
+    assert "id" not in declarations[0]
+    assert "id" not in declarations[3]
+
+
+def test_generated_run_ids_support_forward_output_references(config):
+    producer, consumer = _make_configurable_producer_and_consumer()
+    config["runs"] = [
+        {
+            "step": consumer.name,
+            "inputs": {"result": {"from": f"run.{producer.name}.result"}},
+        },
+        {"step": producer.name, "parameters": {"mode": "alt"}},
+    ]
+
+    plan = build_export_plan(
+        [], config, recursive=True,
+        _registry={producer.name: producer, consumer.name: consumer},
+    )
+
+    assert plan.goals[0].run_id == f"runs.{consumer.name}"
+    assert plan.goals[1].run_id == f"runs.{producer.name}"
+    selected = plan.goals[0].inputs[0].source
+    assert isinstance(selected, StepRunOutput)
+    assert selected.run is plan.goals[1]
 
 
 def test_cli_and_config_selections_normalize_to_run_specs(config):
@@ -330,7 +375,7 @@ def test_cli_and_config_selections_normalize_to_run_specs(config):
     ]
     _, configured_specs, _ = _validated_run_specs([], config, registry, None, None)
     assert all(isinstance(spec, RunSpec) for spec in configured_specs)
-    assert [spec.run_id for spec in configured_specs] == ["runs.1", "runs.source"]
+    assert [spec.run_id for spec in configured_specs] == [f"runs.{consumer.name}", "runs.source"]
     assert configured_specs[0].inputs == {
         "result": FromRun("runs.source", "result")
     }
@@ -372,7 +417,7 @@ def test_equivalent_configured_runs_share_one_execution(config):
 
     assert len(plan.goals) == 2
     assert plan.goals[0] is plan.goals[1]
-    assert _scheduled_run_ids(plan) == ["runs.1"]
+    assert _scheduled_run_ids(plan) == [f"runs.{step.name}"]
 
 
 def test_reused_run_cannot_share_an_output_path_with_another_run(config):
@@ -437,10 +482,10 @@ def test_configured_task_expands_its_steps_in_order(config):
     )
 
     assert [run.run_id for run in plan.goals] == [
-        "runs.1.first",
-        "runs.1.second",
+        "runs.two-step-task.first",
+        "runs.two-step-task.second",
     ]
-    assert _scheduled_run_ids(plan) == ["runs.1.first", "runs.1.second"]
+    assert _scheduled_run_ids(plan) == ["runs.two-step-task.first", "runs.two-step-task.second"]
 
 
 def test_legacy_task_general_parameter_applies_to_matching_step(config):
@@ -467,7 +512,7 @@ def test_legacy_task_general_parameter_applies_to_matching_step(config):
 def test_named_task_runs_keep_local_links_and_repeated_steps(config, selection, export):
     task, source, consumer = _make_named_task()
     config["source"] = {"mode": "shared"}
-    prefix = "runs.1" if selection == "yaml" else task.name
+    prefix = f"runs.{task.name}" if selection == "yaml" else task.name
     if selection == "yaml":
         config["runs"] = [{"task": task.name}]
         runnables = []
@@ -643,7 +688,7 @@ def test_task_declared_path_supplies_fixed_child_input(config, tmp_path):
         _tasks={task.name: task},
     )
 
-    assert _scheduled_run_ids(plan) == ["runs.1.consumer"]
+    assert _scheduled_run_ids(plan) == ["runs.fixed-path-task.consumer"]
     assert plan.goals[0].input_paths()[input_name] == selected_path
 
 
@@ -840,8 +885,8 @@ def test_named_run_input_link_resolves_forward_reference_before_consumer(config)
         [], config, _registry={producer.name: producer, consumer.name: consumer}
     )
 
-    assert [run.run_id for run in plan.goals] == ["runs.1", "runs.alternate"]
-    assert _scheduled_run_ids(plan) == ["runs.alternate", "runs.1"]
+    assert [run.run_id for run in plan.goals] == [f"runs.{consumer.name}", "runs.alternate"]
+    assert _scheduled_run_ids(plan) == ["runs.alternate", f"runs.{consumer.name}"]
     source = plan.goals[0].inputs[0].source
     assert isinstance(source, StepRunOutput)
     assert source.run is plan.goals[1]
@@ -866,7 +911,7 @@ def test_configured_run_external_path_replaces_global_input(config, tmp_path):
         [], config, _registry={producer.name: producer, consumer.name: consumer}
     )
 
-    assert _scheduled_run_ids(plan) == ["runs.1"]
+    assert _scheduled_run_ids(plan) == [f"runs.{consumer.name}"]
     assert plan.goals[0].input_paths()["result"] == selected_path
     assert plan.goals[0].inputs[0].selection_path == "$.runs[0].inputs.result.path"
 

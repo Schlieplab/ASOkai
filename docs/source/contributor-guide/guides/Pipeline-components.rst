@@ -176,7 +176,9 @@ output-reuse ``validation`` setting are also root keys. For example::
 
 ``analysis`` names the task selection. The task declares a public
 ``target_gene`` output, so the step can refer to it even though the task is
-listed later. An ``id`` is needed only when another run refers to it. A
+listed later. Without an explicit ``id``, selections use their step or task
+name; repeated selections receive ``-2``, ``-3``, and so on. Explicit IDs are
+reserved before unnamed runs are assigned IDs. A
 selected step run's output can be referenced with
 ``from: run.RUN_ID.OUTPUT_NAME``. To
 use an existing file, replace the ``from`` mapping with ``path:
@@ -454,8 +456,12 @@ Step logging
 
 Step implementations should emit plain log messages without embedding their
 own name. The internal dispatcher prefixes every non-empty line with
-``[step:<name>]``. Runner messages instead identify the selected orchestration
-level with ``[step:<name>]``, ``[task:<name>]``, or ``[workflow:<name>]``.
+``[step:<run-id>]``. CLI and YAML selections share the same naming rule:
+``create-target-gene`` for an unnamed first run, then
+``create-target-gene-2`` for a repeated selection. Explicit IDs appear in the
+log label, and task children include the task selection's ID. Runner messages
+identify the selected orchestration level with ``[step:<name>]``,
+``[task:<name>]``, or ``[workflow:<name>]``.
 
 Generated-output validation receipts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

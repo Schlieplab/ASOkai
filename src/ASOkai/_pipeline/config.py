@@ -119,6 +119,28 @@ def apply_overrides(config: dict, overrides: dict[str, Any]) -> dict:
     return config
 
 
+def assign_run_ids(
+    declarations: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Copy selections and name unnamed runs, reserving all explicit IDs."""
+    runs = [dict(declaration) for declaration in declarations]
+    used_ids = {run["id"] for run in runs if "id" in run}
+    for run in runs:
+        if "id" in run:
+            continue
+        name = run.get("step", run.get("task"))
+        if not isinstance(name, str):
+            raise ValueError("Each run must select a step or task.")
+        run_id = name
+        suffix = 2
+        while run_id in used_ids:
+            run_id = f"{name}-{suffix}"
+            suffix += 1
+        run["id"] = run_id
+        used_ids.add(run_id)
+    return runs
+
+
 def resolve_parameter_value(
     config: Mapping[str, Any],
     parameter: ScalarParam,

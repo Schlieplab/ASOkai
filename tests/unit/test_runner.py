@@ -489,16 +489,18 @@ def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_pa
 
     job = yaml.safe_load((export_dir / "job.yml").read_text())
     layout = yaml.safe_load((export_dir / "output-layout.yml").read_text())
-    assert job["runs.1.region"] == "pre-mrna"
-    assert job["runs.2.region"] == "exonic"
+    assert job["runs.create-target-gene.region"] == "pre-mrna"
+    assert job["runs.create-target-gene-2.region"] == "exonic"
     assert {entry["id"] for entry in layout["outputs"]} == {
-        "runs.1.target_gene",
-        "runs.1.fasta",
-        "runs.2.target_gene",
-        "runs.2.fasta",
+        "runs.create-target-gene.target_gene",
+        "runs.create-target-gene.fasta",
+        "runs.create-target-gene-2.target_gene",
+        "runs.create-target-gene-2.fasta",
     }
-    assert (export_dir / "steps" / "runs.1.cwl").exists()
-    assert (export_dir / "steps" / "runs.2.cwl").exists()
+    for run_id in ("runs.create-target-gene", "runs.create-target-gene-2"):
+        tool = yaml.safe_load((export_dir / "steps" / f"{run_id}.cwl").read_text())
+        command = tool["baseCommand"]
+        assert command[command.index("--run-id") + 1] == run_id
 
 
 def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
@@ -549,10 +551,10 @@ def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
     )
 
     workflow = yaml.safe_load((export_dir / "run.cwl").read_text())
-    assert workflow["steps"]["step_runs.1"]["in"]["input"] == (
+    assert workflow["steps"]["step_runs.named_consumer"]["in"]["input"] == (
         "step_runs.source/result"
     )
-    assert list(workflow["steps"])[:2] == ["step_runs.source", "step_runs.1"]
+    assert list(workflow["steps"])[:2] == ["step_runs.source", "step_runs.named_consumer"]
 
 
 def test_executor_from_name_uses_central_runner_configuration():

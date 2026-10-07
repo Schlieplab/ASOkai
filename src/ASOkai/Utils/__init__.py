@@ -10,6 +10,7 @@ from . import KMCTools
 from ._bowtie2 import Bowtie2, Bowtie2Build, Bowtie2ExecutionError, Bowtie2Inspect
 from ._kmc import KMC, KMCExecutionError
 from ._reference_sequences import ReferenceSequence, write_reference_fasta
+from ._rnacofold import binding_dg
 from ._serializer import Serializable
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "KMCExecutionError",
     "ReferenceSequence",
     "Serializable",
+    "binding_dg",
     "write_reference_fasta",
 ]

@@ -14,3 +14,20 @@ with either worker threads or processes.
    :members:
    :undoc-members:
    :show-inheritance:
+
+Candidate repeated sites
+------------------------
+
+:class:`~ASOkai.Analysis.TreesearchTargetSitesAnalysis` searches each target
+site for variants that the site's own gapmer still binds. See
+:doc:`/steps/treesearch-target-sites` for the search, its identifiers, and its
+output.
+
+.. autoclass:: ASOkai.Analysis.TreesearchTargetSitesAnalysis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: ASOkai.Analysis.CandidateRepeatedSite
+   :members: id, is_reference
+   :show-inheritance:

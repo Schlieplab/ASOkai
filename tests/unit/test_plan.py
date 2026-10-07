@@ -1935,3 +1935,69 @@ def test_recursive_export_includes_complete_producer_closure(config):
 
     assert _scheduled_run_ids(plan) == ["source", "intermediate", "goal"]
     assert plan.resolved_outputs == {}
+
+
+@pytest.mark.parametrize("parameters", [{"shared.mode": "slow"}, {"shared": {"mode": "slow"}}])
+@pytest.mark.parametrize("export", [False, True])
+def test_configured_step_parameters_use_public_paths(config, parameters, export):
+    step = _make_parameter_step()
+    config["shared"] = {"mode": "fast"}
+    config["runs"] = [{"step": step.name, "parameters": parameters}]
+
+    build = build_export_plan if export else build_plan
+    plan = build([], config, _registry={step.name: step})
+
+    assert plan.goals[0].parameters == {"mode": "slow", "local": 5}
+    assert plan.goals[0].output_paths()["result"] == Path(config["datadir"]) / "results/slow.txt"
+    assert config["shared"]["mode"] == "fast"
+    assert config["runs"][0]["parameters"] == parameters
+
+
+@pytest.mark.parametrize("parameters", [{"shared.mode": "child"}, {"shared": {"mode": "child"}}])
+def test_task_and_child_parameters_use_public_paths(config, parameters):
+    task, step = _make_configurable_task()
+    config["runs"] = [{
+        "task": task.name,
+        "parameters": {"shared": {"mode": "general"}},
+        "runs": [{"id": "selected", "parameters": parameters}],
+    }]
+
+    plan = build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+    assert [run.parameters["mode"] for run in plan.goals] == ["child", "fixed"]
+
+
+def test_task_general_nested_parameters_apply_to_open_children(config):
+    task, step = _make_configurable_task()
+    config["runs"] = [{"task": task.name, "parameters": {"shared": {"mode": "general"}}}]
+
+    plan = build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+    assert [run.parameters["mode"] for run in plan.goals] == ["general", "fixed"]
+
+
+@pytest.mark.parametrize("parameters", [
+    {"shared.mode": "changed"}, {"shared": {"mode": "changed"}},
+])
+def test_scoped_child_parameters_cannot_replace_fixed_task_values(config, parameters):
+    task, step = _make_configurable_task()
+    config["runs"] = [{
+        "task": task.name,
+        "runs": [{"id": "fixed", "parameters": parameters}],
+    }]
+
+    with pytest.raises(ValueError, match="cannot override task-declared"):
+        build_plan([], config, _registry={step.name: step}, _tasks={task.name: task})
+
+
+@pytest.mark.parametrize(("parameters", "message"), [
+    ({"shared": {"mdoe": "slow"}}, "unknown parameter"),
+    ({"shared.mode": "slow", "shared": {"mode": "slow"}}, "duplicate parameter path"),
+    ({"shared.mode": "slow", "mode": "slow"}, "both by name and configuration path"),
+])
+def test_invalid_scoped_overrides_are_rejected(config, parameters, message):
+    step = _make_parameter_step()
+    config["runs"] = [{"step": step.name, "parameters": parameters}]
+
+    with pytest.raises(ValueError, match=message):
+        build_plan([], config, _registry={step.name: step})

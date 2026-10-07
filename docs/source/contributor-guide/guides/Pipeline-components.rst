@@ -178,15 +178,33 @@ output-reuse ``validation`` setting are also root keys. For example::
 ``target_gene`` output, so the step can refer to it even though the task is
 listed later. Without an explicit ``id``, selections use their step or task
 name; repeated selections receive ``-2``, ``-3``, and so on. Explicit IDs are
-reserved before unnamed runs are assigned IDs. A
-selected step run's output can be referenced with
+reserved before unnamed runs are assigned IDs. Configuration error paths use
+these IDs in place of run indices, even when schema validation fails.
+A selected step run's output can be referenced with
 ``from: run.RUN_ID.OUTPUT_NAME``. To
 use an existing file, replace the ``from`` mapping with ``path:
 /path/to/target_gene.json``. Relative paths resolve from the current working
 directory. A selected run may override its declared scalar parameters using
-its own ``parameters`` mapping; a task selection applies matching names to
-its children. Fixed values in a task declaration cannot be replaced. Distinct
-runs must resolve to distinct output paths, or planning reports a collision.
+its own ``parameters`` mapping. Use the same nested groups as the shared
+configuration. For example, the CLI option ``--param target.region=exonic``
+corresponds to::
+
+   runs:
+     - step: create-target-gene
+       parameters:
+         target:
+           region: exonic
+     - step: create-target-gene
+       parameters:
+         target:
+           region: transcriptomic
+
+Run overrides use the same ``ScalarParam.config`` mapping and schema
+constraints as shared configuration and CLI overrides. A task selection
+applies matching values to its children; child run overrides use the same
+nested syntax. Fixed values in a task declaration cannot be replaced.
+Distinct runs must resolve to distinct output paths, or planning reports a
+collision.
 
 Invoke ``ASOkai run --configfile config.yaml`` or ``ASOkai export
 --configfile config.yaml`` to use these selections. A file with ``runs`` cannot
@@ -254,13 +272,15 @@ for one declared child run::
      - task: compare-regions
        id: comparison
        parameters:
-         k: 21
+         target:
+           k: 21
        runs:
          - id: transcriptomic
            parameters:
-             k: 18
+             target:
+               k: 18
 
-``k`` applies to both child runs; the ``transcriptomic`` child uses 18 because
+``target.k`` applies to both child runs; the ``transcriptomic`` child uses 18 because
 its own ``parameters`` entry takes precedence. Values declared in a task's
 ``RunSpec.parameters``, such as each child's ``region`` above, are fixed:
 task-wide parameters cannot replace them, and an attempted child override is
@@ -392,7 +412,8 @@ to a consumer::
      - step: create-target-gene
        id: comparison
        parameters:
-         region: pre-mrna
+         target:
+           region: pre-mrna
      - step: example-analysis
        inputs:
          target:

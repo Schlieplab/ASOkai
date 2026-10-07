@@ -16,7 +16,7 @@ import yaml
 
 from ASOkai._pipeline.base import flatten_workflow_members
 from ASOkai._pipeline.catalog import PipelineCatalog
-from ASOkai._pipeline.config import assign_run_ids
+from ASOkai._pipeline.config import assign_run_ids, normalize_parameter_overrides
 from ASOkai._pipeline.contracts.parameters import ScalarParam
 from ASOkai._pipeline.contracts.run_spec import RunSpec
 from ASOkai._pipeline.steps.base import Step
@@ -42,24 +42,10 @@ def _assignment(value: str, option: str) -> tuple[str, str]:
 def _scoped_parameters(
     values: dict[str, Any], parameters: Sequence[ScalarParam]
 ) -> dict[str, Any]:
-    names: dict[str, str] = {}
-    for parameter in parameters:
-        path = parameter.selection_path
-        previous = names.get(path)
-        if previous is not None and previous != parameter.name:
-            raise click.BadParameter(
-                f"Parameter path '{path}' is ambiguous between '{previous}' "
-                f"and '{parameter.name}'.",
-                param_hint="--param",
-            )
-        names[path] = parameter.name
-    unknown = set(values) - set(names)
-    if unknown:
-        raise click.BadParameter(
-            f"Unknown parameter path(s): {', '.join(sorted(unknown))}.",
-            param_hint="--param",
-        )
-    return {names[path]: value for path, value in values.items()}
+    try:
+        return normalize_parameter_overrides(values, parameters, allow_names=False)
+    except ValueError as error:
+        raise click.BadParameter(str(error), param_hint="--param") from error
 
 
 def _task_parameters(selection: dict[str, Any], task: Any) -> None:

@@ -99,8 +99,10 @@ def build_json_graph_schema(expected_type: Any) -> JsonSchema:
 def json_schema_errors(
     schema: JsonSchema,
     data: Any,
+    *,
+    path_names: Mapping[tuple[str | int, ...], str] | None = None,
 ) -> list[str]:
-    """Return every validation issue in data as a readable JSON path."""
+    """Return readable JSON paths, optionally replacing array indices with names."""
     validator_class = validator_for(schema)
     validator_class.check_schema(schema)
     errors = sorted(
@@ -110,11 +112,17 @@ def json_schema_errors(
             error.message,
         ),
     )
-    return [
-        f"{_json_path(error.absolute_path)}: "
-        f"{_schema_error_message(error)}"
-        for error in errors
-    ]
+    messages: list[str] = []
+    for error in errors:
+        parts = tuple(error.absolute_path)
+        display_parts = [
+            (path_names or {}).get(parts[:index + 1], part)
+            for index, part in enumerate(parts)
+        ]
+        messages.append(
+            f"{_json_path(display_parts)}: {_schema_error_message(error)}"
+        )
+    return messages
 
 
 def validate_json_data(

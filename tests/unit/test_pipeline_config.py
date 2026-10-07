@@ -920,3 +920,91 @@ def test_intrinsic_feature_schema_rejects_invalid_selections(features):
         )
     with pytest.raises(ValueError, match="intrinsic_features.features"):
         IntrinsicFeaturesStep().resolved_parameter_values({}, {"features": features})
+
+
+@pytest.mark.parametrize("parameters", [
+    {"target.region": "exonic"}, {"target": {"region": "exonic"}},
+])
+def test_schema_accepts_scoped_parameters_for_steps_tasks_and_children(parameters):
+    cfg.validate_config_schema({"datadir": ".", "runs": [
+        {"step": "create-target-gene", "parameters": parameters},
+        {"task": "instantiate-target-gene", "parameters": parameters,
+         "runs": [{"id": "gene", "parameters": parameters}]},
+    ]}, plugin_schema_paths={})
+
+
+@pytest.mark.parametrize("parameters", [
+    {"target": {"region": ["exonic"]}}, {"target": {}}, {"target": {1: "exonic"}},
+])
+def test_schema_rejects_invalid_nested_run_parameter_values(parameters):
+    with pytest.raises(ValueError, match="runs"):
+        cfg.validate_config_schema({"datadir": ".", "runs": [
+            {"step": "create-target-gene", "parameters": parameters},
+        ]}, plugin_schema_paths={})
+
+
+def test_schema_errors_include_generated_run_names_without_mutating_config():
+    config = {"datadir": ".", "runs": [
+        {"step": "create-target-gene"},
+        {"step": "create-target-gene", "parameters": {"target": {"region": ["exonic"]}}},
+        {"step": "create-target-gene", "parameters": {"target": {"region": ["transcriptomic"]}}},
+    ]}
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(config, plugin_schema_paths={})
+
+    message = str(raised.value)
+    assert "$.runs.create-target-gene-2.parameters.target.region" in message
+    assert "$.runs.create-target-gene-3.parameters.target.region" in message
+    assert all("id" not in run for run in config["runs"])
+
+
+def test_schema_error_run_names_reserve_explicit_ids_declared_later():
+    config = {"datadir": ".", "runs": [
+        {"step": "create-target-gene", "parameters": {"target.region": []}},
+        {"step": "create-target-gene", "id": "create-target-gene"},
+        {"step": "create-target-gene", "id": "create-target-gene-2"},
+    ]}
+    with pytest.raises(ValueError, match=r"runs\.create-target-gene-3\.parameters"):
+        cfg.validate_config_schema(config, plugin_schema_paths={})
+
+
+def test_schema_errors_include_task_child_run_names():
+    config = {"datadir": ".", "runs": [{
+        "task": "instantiate-target-gene", "id": "comparison",
+        "runs": [{"id": "gene", "parameters": {"target": {"region": []}}}],
+    }]}
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(config, plugin_schema_paths={})
+
+    assert "$.runs.comparison.runs.gene.parameters.target.region" in str(raised.value)
+
+
+@pytest.mark.parametrize("runs", [
+    None, [None], [{"id": []}], [{"step": []}],
+    [None, {"step": "create-target-gene", "id": []}],
+])
+def test_malformed_run_declarations_still_report_schema_errors(runs):
+    with pytest.raises(ValueError, match="runs"):
+        cfg.validate_config_schema({"datadir": ".", "runs": runs}, plugin_schema_paths={})
+
+
+def test_plugin_schema_errors_include_run_names(tmp_path):
+    schema_path = tmp_path / "config.schema.yaml"
+    schema_path.write_text(
+        "type: object\n"
+        "properties:\n"
+        "  runs:\n"
+        "    type: array\n"
+        "    items:\n"
+        "      properties:\n"
+        "        parameters:\n"
+        "          additionalProperties: {type: string}\n"
+    )
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema({"datadir": ".", "runs": [{
+            "step": "example-step", "parameters": {"count": 3},
+        }]}, plugin_schema_paths={"example": schema_path})
+
+    message = str(raised.value)
+    assert "Plugin 'example' schema" in message
+    assert "$.runs.example-step.parameters.count" in message

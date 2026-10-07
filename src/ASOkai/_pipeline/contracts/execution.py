@@ -165,9 +165,13 @@ class StepRun:
             deepcopy(dict(self.config)), inherited_values
         )
         self.step._validate_standard_parameters()
-        parameters = self.step.resolved_parameter_values(
-            effective_config, self.parameters
-        )
+        try:
+            parameters = self.step.resolved_parameter_values(
+                effective_config, self.parameters
+            )
+        except ValueError as error:
+            label = self.run_id.removeprefix("runs.")
+            raise ValueError(f"Run '{label}': {error}") from error
         config_values = dict(inherited_values)
         config_values.update(
             {

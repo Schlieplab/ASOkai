@@ -141,6 +141,69 @@ def assign_run_ids(
     return runs
 
 
+def flatten_parameter_overrides(
+    values: Mapping[str, Any],
+    *,
+    location: str = "parameters",
+) -> dict[str, Any]:
+    """Flatten nested override groups into public dotted parameter paths."""
+    if not isinstance(values, Mapping):
+        raise TypeError(f"{location} must be a mapping.")
+    flattened: dict[str, Any] = {}
+
+    def visit(group: Mapping[str, Any], prefix: str = "") -> None:
+        for name, value in group.items():
+            _dotted_key_parts(name)
+            path = f"{prefix}.{name}" if prefix else name
+            if isinstance(value, Mapping):
+                if not value:
+                    raise ValueError(
+                        f"{location}.{path}: parameter groups must not be empty."
+                    )
+                visit(value, path)
+            else:
+                if path in flattened:
+                    raise ValueError(f"{location}: duplicate parameter path '{path}'.")
+                flattened[path] = value
+
+    visit(values)
+    return flattened
+
+
+def normalize_parameter_overrides(
+    values: Mapping[str, Any],
+    parameters: Sequence[ScalarParam],
+    *,
+    location: str = "parameters",
+    allow_names: bool = True,
+) -> dict[str, Any]:
+    """Resolve public YAML/CLI paths to concrete step parameter names."""
+    flattened = flatten_parameter_overrides(values, location=location)
+    names: dict[str, set[str]] = {}
+    for parameter in parameters:
+        names.setdefault(parameter.selection_path, set()).add(parameter.name)
+        if allow_names:
+            names.setdefault(parameter.name, set()).add(parameter.name)
+    unknown = set(flattened) - names.keys()
+    if unknown:
+        formatted = ", ".join(sorted(unknown))
+        if not allow_names:
+            raise ValueError(f"Unknown parameter path(s): {formatted}.")
+        raise ValueError(f"{location} has unknown parameter(s): {formatted}.")
+    normalized: dict[str, Any] = {}
+    for path, value in flattened.items():
+        candidates = names[path]
+        if len(candidates) != 1:
+            raise ValueError(f"{location}: parameter path '{path}' is ambiguous.")
+        name = next(iter(candidates))
+        if name in normalized:
+            raise ValueError(
+                f"{location} specifies '{name}' both by name and configuration path."
+            )
+        normalized[name] = value
+    return normalized
+
+
 def resolve_parameter_value(
     config: Mapping[str, Any],
     parameter: ScalarParam,
@@ -537,9 +600,33 @@ def _schema_errors(
     schema: JsonSchema,
     config: Any,
 ) -> list[str]:
-    """Return readable errors from one configuration schema."""
+    """Use run IDs in configuration error paths before planning succeeds."""
+    path_names: dict[tuple[str | int, ...], str] = {}
+    runs = config.get("runs") if isinstance(config, Mapping) else None
+    if isinstance(runs, list):
+        # Invalid declarations still need schema errors, rather than failing
+        # ID assignment. Copy only identifiable selections for error labels.
+        identifiable: dict[int, dict[str, Any]] = {}
+        for index, run in enumerate(runs):
+            if not isinstance(run, Mapping):
+                continue
+            declaration = dict(run)
+            if "id" in declaration and not isinstance(declaration["id"], str):
+                declaration.pop("id")
+            name = declaration.get("step", declaration.get("task"))
+            if "id" in declaration or isinstance(name, str):
+                identifiable[index] = declaration
+        named_runs = assign_run_ids(list(identifiable.values()))
+        for index, run in zip(identifiable, named_runs):
+            run_id = run["id"]
+            path_names[("runs", index)] = run_id
+            children = run.get("runs")
+            if isinstance(children, list):
+                for child_index, child in enumerate(children):
+                    if isinstance(child, Mapping) and isinstance(child.get("id"), str):
+                        path_names[("runs", index, "runs", child_index)] = child["id"]
     try:
-        errors = json_schema_errors(schema, config)
+        errors = json_schema_errors(schema, config, path_names=path_names)
     except SchemaError as error:
         raise ValueError(
             f"{owner} configuration schema is invalid: {error.message}"

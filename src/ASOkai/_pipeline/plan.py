@@ -621,8 +621,9 @@ def _task_parameters(
     location: str,
 ) -> dict[str, Any]:
     """Validate parameters for child ports left open by the task."""
-    if not isinstance(overrides, Mapping):
-        raise TypeError(f"{location}.parameters must be a mapping.")
+    overrides = cfg.flatten_parameter_overrides(
+        overrides, location=f"{location}.parameters"
+    )
     declarations: dict[str, list[ScalarParam]] = {}
     for run in runs:
         for parameter in run.step.spec.params:
@@ -727,16 +728,14 @@ def _task_run_specs(
         override, child_location = overrides_by_id.get(
             run.run_id, ({}, f"task[{task.name}].runs[{run.run_id}]")
         )
-        child_parameters = override.get("parameters", {})
+        child_parameters = cfg.normalize_parameter_overrides(
+            override.get("parameters", {}),
+            run.step.spec.params,
+            location=f"{child_location}.parameters",
+        )
         declared_parameters = {
             parameter.name: parameter for parameter in run.step.spec.params
         }
-        unknown_parameters = set(child_parameters) - declared_parameters.keys()
-        if unknown_parameters:
-            names = ", ".join(sorted(str(name) for name in unknown_parameters))
-            raise ValueError(
-                f"{child_location}.parameters has unknown parameter(s): {names}."
-            )
         fixed_parameters = set(child_parameters) & run.parameters.keys()
         if fixed_parameters:
             names = ", ".join(sorted(fixed_parameters))
@@ -882,7 +881,11 @@ def _validated_run_specs(
                     RunSpec(
                         run_id=named_run_ids[declaration["id"]],
                         step=step,
-                        parameters=dict(declaration.get("parameters", {})),
+                        parameters=cfg.normalize_parameter_overrides(
+                            declaration.get("parameters", {}),
+                            step.spec.params,
+                            location=f"$.runs[{index}].parameters",
+                        ),
                         inputs=_normalized_inputs(
                             step,
                             declaration.get("inputs", {}),

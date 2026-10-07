@@ -523,3 +523,12 @@ def test_plugin_schema_constraints_apply_to_resolved_values(tmp_path, monkeypatc
     with pytest.raises(ValueError, match="example.*shared.count"):
         ParameterStep().resolved_parameter_values({}, {"count": 2})
     assert ParameterStep().resolved_parameter_values({}, {"count": 3})["count"] == 3
+
+
+def test_resolved_parameter_errors_include_run_name():
+    with pytest.raises(ValueError) as raised:
+        StepRun("runs.schema-parameter-2", SchemaParameterStep(), {}, parameters={"count": 0})
+
+    message = str(raised.value)
+    assert "Run 'schema-parameter-2'" in message
+    assert "parameters.target.k" in message

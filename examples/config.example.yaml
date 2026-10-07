@@ -52,7 +52,8 @@ resources:
 #     id: gene
 #   - step: create-target-gene
 #     parameters:
-#       region: exonic
+#       target:
+#         region: exonic
 # An existing file can be selected instead with:
 #       target_gene:
 #         path: /path/to/target_gene.json

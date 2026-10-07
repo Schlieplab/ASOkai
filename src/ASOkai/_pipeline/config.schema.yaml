@@ -4,6 +4,25 @@ type: object
 additionalProperties: true
 required:
   - datadir
+$defs:
+  run_parameter_value:
+    type: [string, number, boolean, "null", object]
+    minProperties: 1
+    propertyNames:
+      type: string
+      minLength: 1
+    additionalProperties:
+      $ref: '#/$defs/run_parameter_value'
+  run_parameters:
+    type: object
+    description: >-
+      Run overrides using the same nested groups as shared configuration,
+      such as target: {region: exonic}.
+    propertyNames:
+      type: string
+      minLength: 1
+    additionalProperties:
+      $ref: '#/$defs/run_parameter_value'
 properties:
   datadir:
     type: string
@@ -43,14 +62,8 @@ properties:
           type: string
           minLength: 1
         parameters:
-          type: object
+          $ref: '#/$defs/run_parameters'
           description: Step parameters or task-wide child-step parameter overrides.
-          additionalProperties:
-            type:
-              - string
-              - number
-              - boolean
-              - "null"
         inputs:
           type: object
           minProperties: 1
@@ -87,9 +100,7 @@ properties:
                 type: string
                 pattern: ^[A-Za-z][A-Za-z0-9_-]*$
               parameters:
-                type: object
-                additionalProperties:
-                  type: [string, number, boolean, "null"]
+                $ref: '#/$defs/run_parameters'
               inputs:
                 type: object
                 minProperties: 1

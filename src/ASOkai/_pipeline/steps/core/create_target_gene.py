@@ -14,7 +14,7 @@ from typing import Mapping
 
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
-from GenomeUtils.Genome import Genome
+from GenomeUtils.Genome import Genome, Locus
 
 from ASOkai.Targets import TargetGene
 from ASOkai.Types import TargetRegion
@@ -36,35 +36,40 @@ def _fasta_records(
     genome: Genome, target_gene: TargetGene, region: TargetRegion
 ) -> list[SeqRecord]:
     """Return the selected gene's full region sequences in a stable order."""
+    def description(locus: Locus) -> str:
+        return (
+            f"{target_gene.name} gene={target_gene.id} locus={locus.chr}:"
+            f"{locus.start}-{locus.end}:{locus.strand}"
+        )
+
     if region == "pre-mrna":
         return [
             SeqRecord(
                 target_gene.sequence,
                 id=target_gene.id,
-                description=target_gene.name,
+                description=description(target_gene.locus),
             )
         ]
 
     gene = genome.gene_by_id(target_gene.id)
     if region == "exonic":
-        exons_by_locus = {exon.locus: exon for exon in gene.exons}
+        exons_by_id = {exon.id: exon for exon in gene.exons}
         records = [
             SeqRecord(
-                exons_by_locus[locus].sequence,
-                id=(
-                    f"{target_gene.id}:exon:{locus.chr}:"
-                    f"{locus.start}-{locus.end}:{locus.strand}"
-                ),
-                description=target_gene.name,
+                exon.sequence,
+                id=exon.id,
+                description=description(exon.locus),
             )
-            for locus in sorted(exons_by_locus)
+            for exon in sorted(
+                exons_by_id.values(), key=lambda item: (item.locus, item.id)
+            )
         ]
     elif region == "transcriptomic":
         records = [
             SeqRecord(
                 transcript.sequence,
                 id=transcript.id,
-                description=target_gene.name,
+                description=description(transcript.locus),
             )
             for transcript in sorted(gene.transcripts, key=lambda item: item.id)
         ]

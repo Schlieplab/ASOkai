@@ -169,21 +169,26 @@ def test_fasta_records_match_selected_region() -> None:
     transcripts = [
         SimpleNamespace(
             id="ENST2",
+            locus=Locus("12", 1, 8, "+"),
             sequence=Seq("ACGTTG"),
             exons=[
-                SimpleNamespace(locus=first, sequence=Seq("ACGT")),
-                SimpleNamespace(locus=second, sequence=Seq("TG")),
+                SimpleNamespace(id="ENSE1", locus=first, sequence=Seq("ACGT")),
+                SimpleNamespace(id="ENSE2", locus=second, sequence=Seq("TG")),
             ],
         ),
         SimpleNamespace(
             id="ENST1",
+            locus=first,
             sequence=Seq("ACGT"),
-            exons=[SimpleNamespace(locus=first, sequence=Seq("ACGT"))],
+            exons=[
+                SimpleNamespace(id="ENSE1", locus=first, sequence=Seq("ACGT")),
+                SimpleNamespace(id="ENSE3", locus=first, sequence=Seq("ACGT")),
+            ],
         ),
     ]
     genome = MagicMock()
     genome.gene_by_id.return_value = SimpleNamespace(
-        exons=transcripts[0].exons,
+        exons=transcripts[0].exons + transcripts[1].exons,
         transcripts=transcripts,
     )
 
@@ -194,13 +199,26 @@ def test_fasta_records_match_selected_region() -> None:
     assert [(record.id, str(record.seq)) for record in pre_mrna] == [
         ("ENSG00000133703", "ACGTTGCA")
     ]
+    assert pre_mrna[0].description == (
+        "KRAS gene=ENSG00000133703 locus=12:1-8:+"
+    )
     assert [(record.id, str(record.seq)) for record in exonic] == [
-        ("ENSG00000133703:exon:12:1-4:+", "ACGT"),
-        ("ENSG00000133703:exon:12:7-8:+", "TG"),
+        ("ENSE1", "ACGT"),
+        ("ENSE3", "ACGT"),
+        ("ENSE2", "TG"),
+    ]
+    assert [record.description for record in exonic] == [
+        "KRAS gene=ENSG00000133703 locus=12:1-4:+",
+        "KRAS gene=ENSG00000133703 locus=12:1-4:+",
+        "KRAS gene=ENSG00000133703 locus=12:7-8:+",
     ]
     assert [(record.id, str(record.seq)) for record in transcriptomic] == [
         ("ENST1", "ACGT"),
         ("ENST2", "ACGTTG"),
+    ]
+    assert [record.description for record in transcriptomic] == [
+        "KRAS gene=ENSG00000133703 locus=12:1-4:+",
+        "KRAS gene=ENSG00000133703 locus=12:1-8:+",
     ]
     genome.gene_by_id.assert_called_with(target_gene.id)
     genome.get_sequence_by_locus.assert_not_called()

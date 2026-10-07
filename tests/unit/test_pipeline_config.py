@@ -891,3 +891,32 @@ def test_config_schema_rejects_non_mapping_resources(resources):
                 "resources": resources,
             }
         )
+
+
+@pytest.mark.parametrize(
+    "features",
+    ["all", "GC_content", " GC_content , CpG_count ",
+     "GC_content,AT_content,T_count,CpG_count,T_content,CpG_content"],
+)
+def test_intrinsic_feature_schema_accepts_supported_selections(features):
+    cfg.validate_config_schema(
+        {"datadir": ".", "parameters": {"analysis": {"intrinsic_features": {"features": features}}}},
+        plugin_schema_paths={},
+    )
+    IntrinsicFeaturesStep().resolved_parameter_values({}, {"features": features})
+
+
+@pytest.mark.parametrize(
+    "features",
+    ["", " ", "all\n", "GC_contnet", "GC_content,", ",GC_content",
+     "all,GC_content", "GC_content,GC_content",
+     "GC_content, T_count, GC_content", "T_count,CpG_count,CpG_count", 1],
+)
+def test_intrinsic_feature_schema_rejects_invalid_selections(features):
+    with pytest.raises(ValueError, match="intrinsic_features.features"):
+        cfg.validate_config_schema(
+            {"datadir": ".", "parameters": {"analysis": {"intrinsic_features": {"features": features}}}},
+            plugin_schema_paths={},
+        )
+    with pytest.raises(ValueError, match="intrinsic_features.features"):
+        IntrinsicFeaturesStep().resolved_parameter_values({}, {"features": features})

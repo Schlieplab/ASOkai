@@ -528,6 +528,13 @@ Different declarations validate different boundaries:
 - plugin discovery additionally validates entry points, component types, and
   configuration-schema ownership.
 
+The shared parameter resolver uses each ``ScalarParam.config`` path to apply
+its field schema to resolved configuration values, invocation overrides, and
+defaults. Standalone step CLIs use this same resolver after argument parsing.
+This checks scalar constraints without requiring unrelated configuration fields;
+full configuration validation also checks structure and relationships between
+groups.
+
 ``Step.validate_parameters`` is reserved for relationships between resolved
 scalar parameters that cannot be expressed clearly in YAML Schema. It should
 not repeat type, choice, required-field, or file-contract validation.

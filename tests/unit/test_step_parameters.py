@@ -467,3 +467,59 @@ def test_cwl_defaults_use_resolved_invocation_values(tmp_path):
     )
     args = _parse_cwl_command(run, tmp_path, inputs={})
     assert {p.name: getattr(args, p.name) for p in run.step.spec.params} == run.parameters
+
+
+class SchemaParameterStep(Step):
+    name = "schema-parameter"
+    description = "Validate resolved values against a configuration field."
+    spec = StepSpec(
+        params=[ScalarParam("count", int, config="parameters.target.k", default=1)],
+    )
+
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_schema_constraints_apply_to_shared_values_and_run_overrides(count):
+    step = SchemaParameterStep()
+    with pytest.raises(ValueError, match="parameters.target.k"):
+        step.resolved_parameter_values({"parameters": {"target": {"k": count}}})
+    with pytest.raises(ValueError, match="parameters.target.k"):
+        StepRun("invalid", step, {}, parameters={"count": count})
+
+
+def test_schema_validation_checks_the_resolved_override():
+    assert SchemaParameterStep().resolved_parameter_values(
+        {"parameters": {"target": {"k": 0}}}, {"count": 4}
+    ) == {"count": 4}
+
+
+def test_schema_constraints_apply_to_declared_defaults():
+    class InvalidDefaultStep(Step):
+        name = "invalid-schema-default"
+        description = "Reject a default that violates its config schema."
+        spec = StepSpec(
+            params=[ScalarParam("count", int, config="parameters.target.k", default=0)],
+        )
+
+    with pytest.raises(ValueError, match="parameters.target.k"):
+        InvalidDefaultStep().resolved_parameter_values({})
+
+
+def test_plugin_schema_constraints_apply_to_resolved_values(tmp_path, monkeypatch):
+    schema_path = tmp_path / "config.schema.yaml"
+    schema_path.write_text(
+        "type: object\n"
+        "$defs:\n"
+        "  count: {type: integer, minimum: 3}\n"
+        "properties:\n"
+        "  shared:\n"
+        "    type: object\n"
+        "    properties:\n"
+        "      count: {$ref: '#/$defs/count'}\n"
+    )
+    monkeypatch.setattr(
+        "ASOkai._pipeline.catalog.get_config_schema_paths",
+        lambda: {"example": schema_path},
+    )
+    with pytest.raises(ValueError, match="example.*shared.count"):
+        ParameterStep().resolved_parameter_values({}, {"count": 2})
+    assert ParameterStep().resolved_parameter_values({}, {"count": 3})["count"] == 3

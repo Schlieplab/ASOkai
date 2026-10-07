@@ -453,7 +453,7 @@ def test_config_rejects_k_above_kmc_limit(
     [
         ({"p": 11}, "p must be between 5 and 11 and no greater than k"),
         ({"ci": 3, "cx": 2}, "ci must be no greater than cx"),
-        ({"n": 0}, "n must be a positive integer"),
+        ({"n": 0}, r"parameters.kmc.n.*less than the minimum of 1"),
     ],
 )
 def test_config_rejects_invalid_kmc_options(step, config, options, message):

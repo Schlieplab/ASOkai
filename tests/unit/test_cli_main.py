@@ -422,7 +422,7 @@ def test_execution_commands_reject_removed_global_config_option(command):
 
 def test_run_requires_explicit_runnable_selection():
     runner = CliRunner()
-    result = runner.invoke(main, ["run"])
+    result = runner.invoke(main, ["run", "--no-config"])
 
     assert result.exit_code != 0
     assert "Select at least one runnable" in result.output
@@ -912,7 +912,8 @@ def test_linked_analysis_uses_target_k_from_selected_producer(
 
 def test_scoped_param_rejects_short_name():
     result = CliRunner().invoke(
-        main, ["run", "--step", "create-target-gene", "--param", "k=18"]
+        main,
+        ["run", "--no-config", "--step", "create-target-gene", "--param", "k=18"],
     )
 
     assert result.exit_code != 0
@@ -1266,7 +1267,7 @@ def test_export_accepts_configured_runs_without_cli_selection(monkeypatch, tmp_p
     ],
 )
 def test_run_rejects_unknown_runnables(option, name, kind):
-    result = CliRunner().invoke(main, ["run", option, name])
+    result = CliRunner().invoke(main, ["run", "--no-config", option, name])
 
     assert result.exit_code != 0
     assert f"Unknown {kind} '{name}'." in result.output

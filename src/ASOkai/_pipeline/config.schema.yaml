@@ -161,10 +161,13 @@ properties:
               features:
                 type: string
                 minLength: 1
+                pattern: '^(?:all|(?!(?:.*?,\s*)?(GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*,.*?\b\1\b)\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*(?:,\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*)*)$(?!\n)'
                 default: all
                 description: >-
-                  Comma-separated intrinsic feature columns, or 'all' for every
-                  supported feature.
+                  Comma-separated intrinsic feature columns without duplicates,
+                  or 'all' for every supported feature. Available columns are
+                  GC_content, AT_content, T_count, CpG_count, T_content, and
+                  CpG_content.
       bowtie2:
         type: object
         additionalProperties: false

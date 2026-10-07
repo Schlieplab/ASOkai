@@ -9,8 +9,6 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from typing import Mapping
-
 from ASOkai.Analysis import IntrinsicFeaturesAnalysis
 from ASOkai._pipeline.contracts.file_types import CsvFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
@@ -98,19 +96,7 @@ class IntrinsicFeaturesStep(TableAnalysisStep):
     def _features(value: str) -> list[str] | None:
         if value == "all":
             return None
-        names = [name.strip() for name in value.split(",")]
-        if not all(names):
-            raise ValueError("features must name at least one feature column")
-        if len(set(names)) != len(names):
-            raise ValueError("features must not repeat a feature column")
-        IntrinsicFeaturesAnalysis(features=names)
-        return names
-
-    def validate_parameters(self, values: Mapping[str, object]) -> None:
-        value = values["features"]
-        if not isinstance(value, str):
-            raise ValueError("features must be a comma-separated string")
-        self._features(value)
+        return [name.strip() for name in value.split(",")]
 
     def analysis_kwargs(self, args):
         return {"features": self._features(args.features)}

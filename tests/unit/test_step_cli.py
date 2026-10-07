@@ -298,3 +298,39 @@ def test_step_requires_values_for_every_declared_parameter():
         "visible": "yes", "internal": 3,
         "missing": "supplied", "unconfigured": "local",
     }
+
+
+class SchemaValidatedStep(Step):
+    name = "schema-validated"
+    description = "Apply a configuration field constraint through the shared CLI."
+    result_output = FileOutput("result", destination="result.txt")
+    spec = StepSpec(
+        params=[ScalarParam("count", int, config="parameters.target.k", default=1)],
+        outputs=[result_output],
+    )
+
+    def run_from_args(self, args) -> int:
+        args.result_output.write_text(str(args.count), encoding="utf-8")
+        return 0
+
+
+@pytest.mark.parametrize("count", ["0", "-1"])
+def test_run_cli_applies_config_schema_before_creating_outputs(tmp_path, capsys, count):
+    output = tmp_path / "nested" / "result.txt"
+
+    with pytest.raises(SystemExit) as raised:
+        SchemaValidatedStep().run_cli(
+            ["--count", count, "--result-output", str(output)]
+        )
+
+    assert raised.value.code == 2
+    assert "parameters.target.k" in capsys.readouterr().err
+    assert not output.parent.exists()
+
+
+def test_run_cli_accepts_schema_valid_value_without_unrelated_config(tmp_path):
+    output = tmp_path / "result.txt"
+    assert SchemaValidatedStep().run_cli(
+        ["--count", "4", "--result-output", str(output)]
+    ) == 0
+    assert output.read_text() == "4"

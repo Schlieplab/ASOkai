@@ -134,6 +134,13 @@ constraints in YAML Schema, and override ``validate_parameters(values)`` only
 for relationships between resolved scalar parameters that the schema cannot
 express clearly.
 
+The shared parameter resolver applies each field's schema through its
+``ScalarParam.config`` path to shared configuration values, run overrides,
+and defaults. The standalone step CLI uses the same resolver after parsing
+arguments, so scalar constraints belong in the schema rather than in the step.
+Only the step's declared fields are checked at this stage; full configuration
+validation separately checks required fields and relationships between groups.
+
 Use ``StepSpec.compatible_with`` only for real biological applicability
 restrictions, such as a mechanism or modality required by the analysis. Omit
 it when the analysis is generally applicable.

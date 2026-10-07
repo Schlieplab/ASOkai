@@ -499,7 +499,7 @@ def test_run_cli_writes_empty_lists_for_target_without_sites(tmp_path):
                 "--right-wing-length",
                 "6",
             ],
-            "gapmer segment lengths must be positive integers",
+            "left_wing_length: 0 is less than the minimum of 1",
         ),
         (
             [

@@ -181,11 +181,52 @@ def _resolve_step_parameters(
             errors.append(f"{location}: {error}")
 
     if not errors:
+        errors.extend(_parameter_schema_errors(step.spec.params, values))
+
+    if not errors:
         try:
             step.validate_parameters(values)
         except (NotImplementedError, ValueError) as error:
             errors.append(f"Step '{step.name}' parameters: {error}")
     return values, errors
+
+
+def _parameter_schema_errors(
+    parameters: Sequence[ScalarParam],
+    values: Mapping[str, Any],
+) -> list[str]:
+    """Apply config-field schemas to resolved values, including CLI overrides.
+
+    A step receives only its declared scalars, so validate their field schemas
+    without requiring unrelated configuration fields. Optional ``None`` values
+    represent absent CLI options. Full configuration relationships are checked
+    by ``validate_config_schema``; step relationships by ``validate_parameters``.
+    """
+    configured = [
+        parameter
+        for parameter in parameters
+        if parameter.config is not None and values[parameter.name] is not None
+    ]
+    if not configured:
+        return []
+
+    from ASOkai._pipeline.catalog import get_config_schema_paths
+
+    errors: list[str] = []
+    for owner, schema in _registered_config_schemas(get_config_schema_paths()).items():
+        validator = validator_for(schema)(schema)
+        for parameter in configured:
+            path = parameter.config
+            assert path is not None
+            field_schema = _schema_at_path(schema, path)
+            if field_schema is None:
+                continue
+            # Evolve the root validator to retain the schema's reference scope.
+            for error in validator.evolve(schema=field_schema).iter_errors(
+                values[parameter.name]
+            ):
+                errors.append(f"{owner} schema: $.{path}: {error.message}")
+    return errors
 
 
 def validate_step_config(
@@ -491,13 +532,21 @@ def _schema_declares_path(
     dotted_path: str,
 ) -> bool:
     """Return whether nested schema properties declare a dotted path."""
+    return _schema_at_path(schema, dotted_path) is not None
+
+
+def _schema_at_path(
+    schema: Mapping[str, Any],
+    dotted_path: str,
+) -> Any:
+    """Return a declared field schema, preserving boolean JSON schemas."""
     current: Any = schema
     for name in _dotted_key_parts(dotted_path):
         properties = current.get("properties") if isinstance(current, Mapping) else None
         if not isinstance(properties, Mapping) or name not in properties:
-            return False
+            return None
         current = properties[name]
-    return True
+    return current
 
 
 def _dotted_key_parts(dotted_key: str) -> tuple[str, ...]:

@@ -268,7 +268,7 @@ class Step(Runnable):
             for parameter in self.spec.params
         }
         try:
-            self.validate_parameters(parameter_values)
+            self.resolved_parameter_values({}, parameter_values)
         except (NotImplementedError, ValueError) as error:
             parser.error(str(error))
         self.prepare_output_directories(args)

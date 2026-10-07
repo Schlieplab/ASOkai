@@ -6,7 +6,7 @@ Find repeated sites
 This task prepares the data needed to find the genomic sites at which each
 target site repeats, for RNase H1 gapmer ASOs. ``create-target-gene`` supplies
 the target gene and its FASTA, ``build-bowtie2-index`` indexes that FASTA, and
-``potential-repeated-sites`` searches the sequences that each site's own gapmer
+``identify-potential-repeated-sites`` searches the sequences that each site's own gapmer
 still binds.
 
 Aligning those sequences against the index and counting the genomic hits per

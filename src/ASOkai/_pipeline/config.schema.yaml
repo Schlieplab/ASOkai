@@ -198,6 +198,27 @@ properties:
                 description: >-
                   Extra binding-energy loss in kcal/mol that is still
                   explored, because later mutations can have better binding.
+              energy_parameters:
+                enum:
+                  - RNA_Turner2004
+                  - RNA_Turner1999
+                  - RNA_Andronescu2007
+                  - RNA_Langdon2018
+                  - DNA_Mathews2004
+                  - DNA_Mathews1999
+                default: RNA_Turner2004
+                description: >-
+                  Built-in ViennaRNA energy parameter set. The DNA sets model
+                  a DNA duplex rather than the DNA-RNA hybrid a gapmer forms,
+                  so they are an approximation too.
+              energy_parameter_file:
+                type: [string, 'null']
+                minLength: 1
+                default: null
+                description: >-
+                  ViennaRNA parameter file to load instead of a named set. It
+                  is read where it lies rather than staged, so a run under CWL
+                  needs a path its job can reach.
               model_settings:
                 type: string
                 default: ''

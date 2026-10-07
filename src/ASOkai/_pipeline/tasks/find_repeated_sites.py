@@ -12,8 +12,8 @@ from __future__ import annotations
 from typing import ClassVar
 
 from ASOkai._pipeline.contracts.run_spec import FromRun, RunSpec
-from ASOkai._pipeline.steps.analysis.potential_repeated_sites import (
-    PotentialRepeatedSitesStep,
+from ASOkai._pipeline.steps.analysis.identify_potential_repeated_sites import (
+    IdentifyPotentialRepeatedSitesStep,
 )
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexStep
@@ -37,7 +37,7 @@ class FindRepeatedSitesTask(Task):
         ),
         RunSpec(
             "search",
-            PotentialRepeatedSitesStep(),
+            IdentifyPotentialRepeatedSitesStep(),
             inputs={"target_gene": FromRun("gene", "target_gene")},
         ),
     )

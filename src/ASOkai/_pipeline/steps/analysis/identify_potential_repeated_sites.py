@@ -1,22 +1,27 @@
 #!/usr/bin/env python
 """
-Filename: src/ASOkai/_pipeline/steps/analysis/potential_repeated_sites.py
+Filename: src/ASOkai/_pipeline/steps/analysis/identify_potential_repeated_sites.py
 Authors: Arash Ayat, Kian Jalilian
 Copyright: 2026, Alexander Schliep
-Description: Definition of the potential-repeated-sites step.
+Description: Definition of the identify-potential-repeated-sites step.
 License: LGPL-3.0-or-later
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping, cast
+from pathlib import Path
+from typing import Any, Literal, Mapping, cast
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from ASOkai.Analysis import SimilarSequenceAnalysis
+from ASOkai.Analysis._similar_sequence import (
+    DEFAULT_ENERGY_PARAMETERS,
+    ENERGY_PARAMETER_SETS,
+)
 from ASOkai._pipeline.contracts.file_types import FastaFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -63,8 +68,8 @@ _PATH_FIELDS = {
 }
 
 
-class PotentialRepeatedSitesStep(AnalysisStep):
-    name = "potential-repeated-sites"
+class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
+    name = "identify-potential-repeated-sites"
     description = (
         "Searches potential repeated sites that each target site's own "
         "gapmer still binds."
@@ -135,6 +140,35 @@ class PotentialRepeatedSitesStep(AnalysisStep):
                 ),
             ),
             ScalarParam(
+                "energy_parameters",
+                Literal[
+                    "RNA_Turner2004",
+                    "RNA_Turner1999",
+                    "RNA_Andronescu2007",
+                    "RNA_Langdon2018",
+                    "DNA_Mathews2004",
+                    "DNA_Mathews1999",
+                ],
+                config=f"{_STEP_CONFIG}.energy_parameters",
+                default=DEFAULT_ENERGY_PARAMETERS,
+                doc=(
+                    "Built-in ViennaRNA energy parameter set. The DNA sets "
+                    "model a DNA duplex rather than the DNA-RNA hybrid a "
+                    "gapmer forms, so they are an approximation too."
+                ),
+            ),
+            ScalarParam(
+                "energy_parameter_file",
+                str | None,
+                config=f"{_STEP_CONFIG}.energy_parameter_file",
+                default=None,
+                doc=(
+                    "ViennaRNA parameter file to load instead of a named "
+                    "set. It is read where it lies rather than staged, so a "
+                    "run under CWL needs a path its job can reach."
+                ),
+            ),
+            ScalarParam(
                 "model_settings",
                 str,
                 config=f"{_STEP_CONFIG}.model_settings",
@@ -176,7 +210,8 @@ class PotentialRepeatedSitesStep(AnalysisStep):
         return settings
 
     def validate_parameters(self, values: Mapping[str, object]) -> None:
-        """Require a gapmer layout that covers the target-site length."""
+        """Require a gapmer layout and energy parameters that can be used."""
+        self._validate_energy_parameters(values)
         model_settings = values.get("model_settings")
         if isinstance(model_settings, str):
             self._model_settings(model_settings)
@@ -202,6 +237,30 @@ class PotentialRepeatedSitesStep(AnalysisStep):
                 f"({target_site_length}); received {design_length}"
             )
 
+    @staticmethod
+    def _validate_energy_parameters(values: Mapping[str, object]) -> None:
+        """Require one usable energy parameter selection."""
+        named = values.get("energy_parameters", DEFAULT_ENERGY_PARAMETERS)
+        if named not in ENERGY_PARAMETER_SETS:
+            accepted = ", ".join(ENERGY_PARAMETER_SETS)
+            raise ValueError(
+                f"energy_parameters must be one of {accepted}"
+            )
+        parameter_file = values.get("energy_parameter_file")
+        if parameter_file is None:
+            return
+        if named != DEFAULT_ENERGY_PARAMETERS:
+            raise ValueError(
+                "set either energy_parameters or energy_parameter_file, "
+                "not both"
+            )
+        if not isinstance(parameter_file, str) or not parameter_file.strip():
+            raise ValueError("energy_parameter_file must be a path")
+        if not Path(parameter_file).expanduser().is_file():
+            raise ValueError(
+                f"energy_parameter_file is not a file: {parameter_file}"
+            )
+
     def analysis_kwargs(self, args):
         """Build the search from the gapmer layout and energy thresholds."""
         return {
@@ -211,6 +270,8 @@ class PotentialRepeatedSitesStep(AnalysisStep):
             "max_ddg": args.max_ddg,
             "ddg_tolerance": args.ddg_tolerance,
             "model_settings": self._model_settings(args.model_settings),
+            "energy_parameters": args.energy_parameters,
+            "energy_parameter_file": args.energy_parameter_file,
         }
 
     def analysis_units(self, args):

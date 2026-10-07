@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Filename: tests/unit/test_potential_repeated_sites.py
+Filename: tests/unit/test_identify_potential_repeated_sites.py
 Author: Kian Jalilian
 Copyright: 2026, Alexander Schliep
 Description: Tests for the similar-sequence search and its pipeline step.
@@ -16,7 +16,9 @@ import pytest
 
 from ASOkai.Analysis import SimilarSequenceAnalysis
 from ASOkai.Analysis._similar_sequence import (
+    DEFAULT_ENERGY_PARAMETERS,
     _gapmer_core_positions,
+    _load_energy_parameters,
     _mfe,
     _model_details,
     _parse_similar_sequence_id,
@@ -25,8 +27,8 @@ from ASOkai.Analysis._similar_sequence import (
 )
 from ASOkai.Sites import GenomicSite
 from ASOkai.Targets import TargetGene
-from ASOkai._pipeline.steps.analysis.potential_repeated_sites import (
-    PotentialRepeatedSitesStep,
+from ASOkai._pipeline.steps.analysis.identify_potential_repeated_sites import (
+    IdentifyPotentialRepeatedSitesStep,
 )
 from ASOkai._pipeline.steps.core.create_target_gene import (
     CreateTargetGeneStep,
@@ -89,7 +91,7 @@ def test_an_unsatisfiable_constraint_is_an_error() -> None:
 
 
 def test_step_parses_model_settings_as_name_value_pairs() -> None:
-    parse = PotentialRepeatedSitesStep()._model_settings
+    parse = IdentifyPotentialRepeatedSitesStep()._model_settings
 
     assert parse("temperature=37.0,noGU=1") == {
         "temperature": 37.0,
@@ -102,6 +104,68 @@ def test_step_parses_model_settings_as_name_value_pairs() -> None:
         parse("noGU=1,noGU=0")
 
 
+def test_named_energy_parameter_sets_change_the_folding_energies() -> None:
+    duplex = f"{GENE_SEQUENCE[:16]}&{Seq(GENE_SEQUENCE[:16]).reverse_complement()}"
+
+    # Model details bind the loaded parameters when first folded with, so
+    # each measurement builds its own, exactly as analyze_unit does.
+    _load_energy_parameters("RNA_Turner2004", None)
+    rna = _mfe(duplex, _model_details({}))
+    _load_energy_parameters("DNA_Mathews2004", None)
+    dna = _mfe(duplex, _model_details({}))
+    _load_energy_parameters(DEFAULT_ENERGY_PARAMETERS, None)
+
+    assert rna != dna
+
+
+def test_a_parameter_file_can_replace_the_named_set(tmp_path: Path) -> None:
+    import RNA
+
+    parameter_file = tmp_path / "custom.par"
+    RNA.params_save(str(parameter_file))
+
+    _load_energy_parameters(DEFAULT_ENERGY_PARAMETERS, parameter_file)
+
+    assert parameter_file.is_file()
+
+
+def test_energy_parameters_reject_an_unusable_selection(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Unknown energy parameter set"):
+        _load_energy_parameters("Nope", None)
+
+    with pytest.raises(ValueError, match="not both"):
+        _load_energy_parameters("DNA_Mathews2004", tmp_path / "custom.par")
+
+    with pytest.raises(ValueError, match="is not a file"):
+        _load_energy_parameters(DEFAULT_ENERGY_PARAMETERS, tmp_path / "missing.par")
+
+
+def test_step_rejects_an_unusable_energy_parameter_selection() -> None:
+    step = IdentifyPotentialRepeatedSitesStep()
+    base = {
+        "k": 16,
+        "left_wing_length": 3,
+        "gap_length": 10,
+        "right_wing_length": 3,
+        "max_ddg": 1.0,
+        "ddg_tolerance": 0.5,
+        "model_settings": "",
+        "energy_parameters": DEFAULT_ENERGY_PARAMETERS,
+        "energy_parameter_file": None,
+    }
+
+    step.validate_parameters(base)
+    with pytest.raises(ValueError, match="not both"):
+        step.validate_parameters(
+            {**base, "energy_parameters": "DNA_Mathews2004",
+             "energy_parameter_file": "/tmp/custom.par"}
+        )
+    with pytest.raises(ValueError, match="is not a file"):
+        step.validate_parameters(
+            {**base, "energy_parameter_file": "/tmp/definitely-missing.par"}
+        )
+
+
 def test_core_positions_follow_the_gapmer_gap() -> None:
     # The gapmer is antiparallel, so its 5' left wing covers the site's 3' end.
     assert _gapmer_core_positions(10, 4) == range(4, 14)
@@ -110,7 +174,7 @@ def test_core_positions_follow_the_gapmer_gap() -> None:
 
 def test_step_rejects_a_layout_that_misses_the_target_site_length() -> None:
     with pytest.raises(ValueError, match="must equal the target-site length"):
-        PotentialRepeatedSitesStep().validate_parameters(
+        IdentifyPotentialRepeatedSitesStep().validate_parameters(
             {
                 "k": 16,
                 "left_wing_length": 3,
@@ -242,7 +306,7 @@ def test_step_writes_one_recreatable_fasta_record_per_result(
     target_gene: Path,
     tmp_path: Path,
 ) -> None:
-    step = PotentialRepeatedSitesStep()
+    step = IdentifyPotentialRepeatedSitesStep()
     output = tmp_path / "potential.fa"
 
     assert step.run_cli(
@@ -280,7 +344,7 @@ def test_step_writes_one_recreatable_fasta_record_per_result(
 def test_step_takes_its_units_from_the_target_gene_sites(
     target_gene: Path,
 ) -> None:
-    step = PotentialRepeatedSitesStep()
+    step = IdentifyPotentialRepeatedSitesStep()
     gene = CreateTargetGeneStep.target_gene_output.file_type.read(target_gene)
     args = SimpleNamespace(
         target_gene=gene,

@@ -20,7 +20,7 @@ Similar sequences
 
 :class:`~ASOkai.Analysis.SimilarSequenceAnalysis` searches each target site for
 sequences that the site's own gapmer still binds. See
-:doc:`/steps/potential-repeated-sites` for the search, its identifiers, and its
+:doc:`/steps/identify-potential-repeated-sites` for the search, its identifiers, and its
 output.
 
 .. autoclass:: ASOkai.Analysis.SimilarSequenceAnalysis

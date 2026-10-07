@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 import multiprocessing
 import os
+from pathlib import Path
 import re
 import sys
 import time
@@ -26,6 +27,18 @@ from ._base import PerUnitAnalysis
 
 _NUCLEOTIDES = "ACGT"
 _PROGRESS_DESCRIPTION = "Searching target sites"
+
+#: ViennaRNA's built-in energy parameter sets, by the name used to select one.
+ENERGY_PARAMETER_SETS = (
+    "RNA_Turner2004",
+    "RNA_Turner1999",
+    "RNA_Andronescu2007",
+    "RNA_Langdon2018",
+    "DNA_Mathews2004",
+    "DNA_Mathews1999",
+)
+#: The set ViennaRNA itself uses unless another one is loaded.
+DEFAULT_ENERGY_PARAMETERS = "RNA_Turner2004"
 _SEQUENCE_ID_PATTERN = re.compile(
     r"(?P<site_id>.+)&n(?P<count>\d+)(?P<mutations>(?:_m\d+[ACGT])*)"
 )
@@ -111,6 +124,46 @@ def _rebuild_sequence(
             )
         bases[position] = nucleotide
     return "".join(bases)
+
+
+def _load_energy_parameters(
+    energy_parameters: str,
+    energy_parameter_file: str | Path | None,
+) -> None:
+    """Load the energy parameters every later fold in this process uses.
+
+    ViennaRNA keeps one energy parameter table per process rather than one
+    per folding model, so this replaces the table outright. Loading it in the
+    parent before any worker is forked lets every worker inherit it.
+
+    Model details bind the loaded table the first time they are folded with,
+    so this must run before :func:`_model_details` builds the details used
+    for a search.
+
+    Raises:
+        ValueError: If the named set is unknown, a file is combined with a
+            named set, or the file cannot be read.
+    """
+    if energy_parameters not in ENERGY_PARAMETER_SETS:
+        accepted = ", ".join(ENERGY_PARAMETER_SETS)
+        raise ValueError(
+            f"Unknown energy parameter set: {energy_parameters!r}. "
+            f"Accepted sets are {accepted}."
+        )
+    if energy_parameter_file is None:
+        getattr(RNA, f"params_load_{energy_parameters}")()
+        return
+    if energy_parameters != DEFAULT_ENERGY_PARAMETERS:
+        raise ValueError(
+            "Supply either a named energy parameter set or a parameter "
+            f"file, not both; received {energy_parameters!r} and "
+            f"{str(energy_parameter_file)!r}."
+        )
+    path = Path(energy_parameter_file).expanduser()
+    if not path.is_file():
+        raise ValueError(f"Energy parameter file is not a file: {path}.")
+    if not RNA.params_load(str(path)):
+        raise ValueError(f"ViennaRNA could not read the parameter file {path}.")
 
 
 def _model_details(model_settings: Mapping[str, Any]) -> Any:
@@ -201,6 +254,8 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         max_ddg: float = 5.0,
         ddg_tolerance: float = 0.5,
         model_settings: Mapping[str, Any] | None = None,
+        energy_parameters: str = DEFAULT_ENERGY_PARAMETERS,
+        energy_parameter_file: str | Path | None = None,
     ) -> None:
         """Initialize a search for one gapmer layout.
 
@@ -210,6 +265,11 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
             right_wing_length: Nucleotides in the gapmer's right wing.
             max_ddg: Largest reported binding-energy loss in kcal/mol.
             ddg_tolerance: Extra loss in kcal/mol that is still explored.
+            energy_parameters: Name of a built-in ViennaRNA energy
+                parameter set, one of :data:`ENERGY_PARAMETER_SETS`.
+            energy_parameter_file: A ViennaRNA parameter file to load instead
+                of a named set. The file is read where it lies, so a run
+                under CWL needs a path its job can reach.
             model_settings: Extra arguments for ViennaRNA's folding model,
                 given as field names of ``RNA.md()`` mapped to values. Common
                 fields are ``temperature`` in degrees Celsius, ``dangles``,
@@ -218,7 +278,8 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
 
         Raises:
             ValueError: If a segment length is not positive, an energy
-                threshold is negative, or a model setting is unknown.
+                threshold is negative, a model setting is unknown, or the
+                energy parameters are not selected correctly.
         """
         lengths = (left_wing_length, gap_length, right_wing_length)
         if any(type(length) is not int or length < 1 for length in lengths):
@@ -232,6 +293,10 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         self.ddg_tolerance = ddg_tolerance
         self.model_settings = dict(model_settings or {})
         _model_details(self.model_settings)  # reject unknown settings early
+        self.energy_parameters = energy_parameters
+        self.energy_parameter_file = energy_parameter_file
+        # Reject an unusable selection before any site is searched.
+        _load_energy_parameters(energy_parameters, energy_parameter_file)
         # Progress state stays private to whichever process touches it: a
         # forked worker counts only its own sites and never reports back.
         # Progress state, published to forked workers by run().
@@ -248,6 +313,12 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         forked, so every worker counts into the same total and exactly one
         of them draws the bar.
         """
+        # ViennaRNA holds one parameter table per process, so load it here,
+        # before super().run() forks the workers that inherit it.
+        _load_energy_parameters(
+            self.energy_parameters,
+            self.energy_parameter_file,
+        )
         analysis_units = list(units)
         self._total = len(analysis_units)
         self._bar = None

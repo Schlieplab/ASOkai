@@ -32,6 +32,8 @@ parameters:
   #     max_ddg: 5.0               # kcal/mol; default: 5.0
   #     ddg_tolerance: 0.5         # kcal/mol; default: 0.5
   #     model_settings: temperature=37.0,noGU=1  # extra ViennaRNA arguments
+  #     energy_parameters: RNA_Turner2004   # or DNA_Mathews2004, ...
+  #     energy_parameter_file: /path/to/custom.par  # instead of a named set
 
 # How to check generated outputs before reusing them. "signature" is the default;
 # "contract" fully validates each existing output instead.

@@ -18,8 +18,8 @@ from typing import Any, Sequence
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
-from ASOkai._pipeline.steps.analysis.potential_repeated_sites import (
-    PotentialRepeatedSitesStep,
+from ASOkai._pipeline.steps.analysis.identify_potential_repeated_sites import (
+    IdentifyPotentialRepeatedSitesStep,
 )
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
@@ -51,7 +51,7 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
     BuildBowtie2IndexStep(),
     GenerateTherapeuticCandidatesStep(),
     IntrinsicFeaturesStep(),
-    PotentialRepeatedSitesStep(),
+    IdentifyPotentialRepeatedSitesStep(),
 )
 
 # Built-in task registry

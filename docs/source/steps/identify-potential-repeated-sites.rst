@@ -1,7 +1,7 @@
-Potential repeated sites
-========================
+Identify potential repeated sites
+=================================
 
-.. asokai-step-reference:: potential-repeated-sites
+.. asokai-step-reference:: identify-potential-repeated-sites
 
 The step finds potential repeated sites: sequences that a target site's own
 gapmer still binds almost as strongly as the site itself. They are only
@@ -48,6 +48,25 @@ site, so its own folding energy is computed once per site.
 The gap's base pairs are enforced while folding, so every sequence is scored
 in the RNase H1-competent alignment that the gapmer must form. The core is
 always an exact reverse complement of the gapmer gap and is never mutated.
+
+Energy parameters
+-----------------
+
+ViennaRNA folds with one energy parameter table per process.
+``energy_parameters`` selects a built-in set:
+
+``RNA_Turner2004`` (the default), ``RNA_Turner1999``, ``RNA_Andronescu2007``,
+``RNA_Langdon2018``, ``DNA_Mathews2004``, ``DNA_Mathews1999``.
+
+``energy_parameter_file`` loads a ViennaRNA parameter file instead. Supply one
+or the other, never both. The file is read where it lies rather than staged
+into the job, so a run under CWL needs a path its job can reach.
+
+A gapmer binds its RNA target as a DNA-RNA hybrid, and ViennaRNA ships
+parameters for neither RNA-DNA hybrids nor the modified wings. The RNA sets
+therefore model the duplex as RNA-RNA and the DNA sets model it as DNA-DNA;
+both are approximations, and switching between them moves every energy the
+step reports.
 
 Progress
 --------

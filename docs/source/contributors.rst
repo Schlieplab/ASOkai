@@ -6,8 +6,8 @@ people are responsible for the ongoing development and maintenance of the
 project:
 
 - Arash Ayat -- Author
-- Nathalie Gocht -- Maintainer
-- Aleksandra Khatova -- Maintainer
+- Nathalie Gocht -- Contributor
+- Aleksandra Khatova -- Contributor
 - Kian Jalilian -- Contributor
 - Alexander Schliep -- Owner
 

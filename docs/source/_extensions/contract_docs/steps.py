@@ -135,11 +135,15 @@ def _inputs_table(
             )
             input_details.append(("Producer output", producer_output, False))
         configuration_path = file_input.configuration_path(step.name)
+        config_source = nodes.inline()
+        config_source += nodes.literal(text=f"{configuration_path}.path")
+        config_source += nodes.Text(" or ")
+        config_source += nodes.literal(text=f"{configuration_path}.from")
         input_details.append(
             (
                 "Shared config source",
-                f"{configuration_path}.path or {configuration_path}.from",
-                True,
+                config_source,
+                False,
             )
         )
         input_details.extend(

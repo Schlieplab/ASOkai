@@ -8,9 +8,6 @@ version = "0.1.1"
 authors = [
     {name="Seyedarash Ayatollahi", email="seyedarash.ayatollahi@b-tu.de"},
 ]
-maintainers = [
-    {name="Nathalie Gocht", email="nathalie.gocht@b-tu.de"}
-]
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 classifiers = [

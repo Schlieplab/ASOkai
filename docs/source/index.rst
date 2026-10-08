@@ -3,8 +3,9 @@
 
 Welcome to the official documentation for the :mod:`ASOkai` library.
 
-If you're new to the project, start with the :doc:`Getting Started
-<getting-started>` guide. The :doc:`pipeline reference <steps/index>` describes
+If you're new to the project, follow the :doc:`installation <installation>`
+instructions, then read the :doc:`Getting Started <getting-started>` guide.
+The :doc:`pipeline reference <steps/index>` describes
 the available steps. The API sections below document the public Python
 interface.
 
@@ -12,12 +13,8 @@ interface.
    :maxdepth: 2
    :caption: User Guide
 
+   installation
    getting-started
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Analyses
-
    analyses/index
 
 .. toctree::

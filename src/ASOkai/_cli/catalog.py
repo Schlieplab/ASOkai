@@ -240,7 +240,7 @@ def _describe_step_parameters(step, *, verbose: bool) -> None:
 
 
 def _describe_step_inputs(step, *, verbose: bool) -> None:
-    """Print file inputs and explain selection only in the detailed view."""
+    """Print file inputs and CLI syntax, with configuration details when requested."""
     if not step.spec.inputs:
         click.echo("Inputs: (none)")
         return
@@ -256,13 +256,13 @@ def _describe_step_inputs(step, *, verbose: bool) -> None:
         click.echo(
             f"  {file_input.name:<20} {file_input.file_type.format_name}{origin}"
         )
+        click.echo(
+            f"    CLI: --input {file_input.name}=path:PATH or "
+            f"--input {file_input.name}=from:run.RUN_ID.OUTPUT"
+        )
         if verbose:
             if file_input.doc:
                 click.echo(f"    {file_input.doc}")
-            click.echo(
-                f"    CLI: --input-path {file_input.name}=PATH or "
-                f"--from-run {file_input.name}=RUN_ID.OUTPUT"
-            )
             click.echo(
                 "    Shared config input: "
                 f"{file_input.configuration_path(step.name)} "
@@ -317,10 +317,10 @@ def _describe_task(task, *, verbose: bool) -> None:
             )
             details = f"{file_input.file_type.format_name}{origin}"
             click.echo(f"  {qualified_name:<24} {details}")
-            if verbose:
-                click.echo(
-                    f"    CLI: --child {run_id} --input-path {file_input.name}=PATH"
-                )
+            click.echo(
+                f"    CLI: --child {run_id} --input {file_input.name}=path:PATH or "
+                f"--input {file_input.name}=from:run.RUN_ID.OUTPUT"
+            )
     else:
         click.echo("Inputs: (none at task boundary)")
     outputs = validate_task_outputs(task) if runs else {}

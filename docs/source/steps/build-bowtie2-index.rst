@@ -24,3 +24,11 @@ To index a target gene, name an ``instantiate-target-gene`` task run
        inputs:
          reference:
            from: run.target_gene.fasta
+
+On the CLI, select an existing FASTA with::
+
+   ASOkai run --no-config \
+     --step build-bowtie2-index --input reference=path:/path/to/reference.fa
+
+To link a named producer in the same CLI selection, use
+``--input reference=from:run.target_gene.fasta`` after the index step.

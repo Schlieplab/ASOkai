@@ -35,8 +35,10 @@ def _run_selection_options(command):
             "Before a selection: shared PATH=VALUE (e.g. genome.assembly=GRCh38); "
             "after a selection: run parameter PATH=VALUE (e.g. target.k=18).",
         ),
-        ("--from-run", "Input INPUT=RUN_ID.OUTPUT for the current run."),
-        ("--input-path", "Input INPUT=PATH for the current run."),
+        (
+            "--input",
+            "Input INPUT=path:PATH or INPUT=from:run.RUN_ID.OUTPUT for the current run.",
+        ),
         ("--child", "Declared child ID of the preceding task."),
     ):
         command = click.option(

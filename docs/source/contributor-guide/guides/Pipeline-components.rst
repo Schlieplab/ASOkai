@@ -338,7 +338,7 @@ they belong to::
      --param genome.assembly=GRCh39 \
      --step create-target-gene --id reference-gene --param target.region=pre-mrna \
      --step generate-therapeutic-candidates --id candidates \
-       --from-run target_gene=reference-gene.target_gene \
+       --input target_gene=from:run.reference-gene.target_gene \
      --task compare-regions --id comparison --param target.k=21 \
        --child transcriptomic --param target.k=18
 
@@ -348,9 +348,12 @@ or task name, with ``-2``, ``-3``, and so on for repeats. Before the first selec
 the ``parameters.`` prefix is omitted. After a selection, the same path form
 applies to that run, or to the child named by the most recent ``--child``.
 Run-specific values take precedence over shared values. Values use YAML scalar
-syntax, so ``target.k=21`` is an integer. Use ``--from-run
-INPUT=RUN_ID.OUTPUT`` for a named producer and ``--input-path INPUT=PATH`` for
-an existing file. These options configure the current step or task child;
+syntax, so ``target.k=21`` is an integer. Use ``--input
+INPUT=from:run.RUN_ID.OUTPUT`` for a named producer and ``--input
+INPUT=path:PATH`` for an existing file. These values match the YAML ``from`` and
+``path`` input declarations. Repeat ``--input`` to select multiple inputs, and
+quote the assignment if a path contains spaces. The option configures the current
+step or task child;
 ``--child`` names an ID already declared in the task. A new ``--step`` or
 ``--task`` starts the next top-level run. ``--workflow`` expands its members
 at its position in the CLI sequence. ``export`` accepts the same run options.

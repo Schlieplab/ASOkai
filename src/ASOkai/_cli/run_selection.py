@@ -26,8 +26,7 @@ _RUN_VALUE_OPTIONS = {
     *_SELECTION_OPTIONS,
     "--id",
     "--param",
-    "--from-run",
-    "--input-path",
+    "--input",
     "--child",
 }
 
@@ -176,15 +175,24 @@ def parse_ordered_runs(
         inputs = target.setdefault("inputs", {})
         if name in inputs:
             raise click.UsageError(f"Duplicate input selection for '{name}'.")
-        if option == "--input-path":
-            inputs[name] = {"path": source}
-        else:
-            run_id, dot, output = source.rpartition(".")
-            if not dot or not run_id or not output:
+        source_kind, colon, source_value = source.partition(":")
+        if not colon or source_kind not in ("path", "from") or not source_value:
+            raise click.BadParameter(
+                "Expected INPUT=path:PATH or INPUT=from:run.RUN_ID.OUTPUT.",
+                param_hint=option,
+            )
+        if source_kind == "from":
+            run_id, dot, output = source_value.removeprefix("run.").rpartition(".")
+            if (
+                not source_value.startswith("run.")
+                or not dot
+                or not run_id
+                or not output
+            ):
                 raise click.BadParameter(
-                    "Expected INPUT=RUN_ID.OUTPUT.", param_hint=option
+                    "Expected INPUT=from:run.RUN_ID.OUTPUT.", param_hint=option
                 )
-            inputs[name] = {"from": f"run.{run_id}.{output}"}
+        inputs[name] = {source_kind: source_value}
     return shared_parameters, runs
 
 

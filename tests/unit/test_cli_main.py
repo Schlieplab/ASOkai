@@ -308,7 +308,9 @@ def test_describe_step_create_target_gene_shows_details():
     assert "target_gene          JSON" in result.output
     assert "fasta                plain FASTA reference" in result.output
     assert "Input configuration (optional)" not in result.output
-    assert "path" not in result.output
+    assert "--input dna=path:PATH" in result.output
+    assert "--input dna=from:run.RUN_ID.OUTPUT" in result.output
+    assert "Shared config input:" not in result.output
     assert "--config " not in result.output
     assert "Dependencies: download-genome" in result.output
 
@@ -316,7 +318,7 @@ def test_describe_step_create_target_gene_shows_details():
     assert verbose.exit_code == 0
     assert "config key: parameters.target.target_id" in verbose.output
     assert "config key: parameters.target.region" in verbose.output
-    assert "--input-path dna=PATH" in verbose.output
+    assert "--input dna=path:PATH" in verbose.output
     assert "steps.create-target-gene.inputs.dna" in verbose.output
     assert "Shared config input:" in verbose.output
     assert "with path: PATH or from: run.ID.OUTPUT" in verbose.output
@@ -324,20 +326,31 @@ def test_describe_step_create_target_gene_shows_details():
     assert "{target}_k{k}_{region}.json" in verbose.output
 
 
-def test_describe_step_without_default_input_explains_file_selection():
+@pytest.mark.parametrize(
+    ("step_name", "output_name", "output_format"),
+    [
+        ("build-kmc-index", "kmc_index", "KFF k-mer index"),
+        ("build-bowtie2-index", "index", "Bowtie 2 index directory"),
+    ],
+)
+def test_describe_step_without_default_input_explains_file_selection(
+    step_name, output_name, output_format
+):
     runner = CliRunner()
 
-    result = runner.invoke(main, ["describe", "step", "build-kmc-index"])
-    verbose = runner.invoke(main, ["describe", "-v", "step", "build-kmc-index"])
+    result = runner.invoke(main, ["describe", "step", step_name])
+    verbose = runner.invoke(main, ["describe", "-v", "step", step_name])
 
     assert result.exit_code == verbose.exit_code == 0
     assert "reference" in result.output
     assert "supply a file or link a run" in result.output
-    assert "kmc_index" in result.output
-    assert "KFF k-mer index" in result.output
-    assert "--from-run reference=RUN_ID.OUTPUT" in verbose.output
-    assert "--input-path reference=PATH" in verbose.output
-    assert "steps.build-kmc-index.inputs.reference" in verbose.output
+    assert output_name in result.output
+    assert output_format in result.output
+    assert "--input reference=from:run.RUN_ID.OUTPUT" in result.output
+    assert "--input reference=path:PATH" in result.output
+    assert "--input reference=from:run.RUN_ID.OUTPUT" in verbose.output
+    assert "--input reference=path:PATH" in verbose.output
+    assert f"steps.{step_name}.inputs.reference" in verbose.output
     assert "with path: PATH or from: run.ID.OUTPUT" in verbose.output
 
 
@@ -583,8 +596,8 @@ def test_repeated_unnamed_steps_receive_readable_ids(monkeypatch):
             "testing",
             "--step",
             "compute-intrinsic-features",
-            "--from-run",
-            "target_gene=testing.target_gene",
+            "--input",
+            "target_gene=from:run.testing.target_gene",
             "--step",
             "compute-intrinsic-features",
         ],
@@ -682,8 +695,8 @@ def test_cli_run_options_match_ordered_yaml_declarations(
             "generate-therapeutic-candidates",
             "--id",
             "candidates",
-            "--from-run",
-            "target_gene=reference-gene.target_gene",
+            "--input",
+            "target_gene=from:run.reference-gene.target_gene",
             "--task",
             "compare-regions",
             "--id",
@@ -726,7 +739,7 @@ def test_cli_run_options_match_ordered_yaml_declarations(
         (["--param", "k=21"], "shared parameter path"),
         (["--id", "gene"], "must follow --step or --task"),
         (
-            ["--task", "instantiate-target-gene", "--from-run", "dna=gene.dna"],
+            ["--task", "instantiate-target-gene", "--input", "dna=from:run.gene.dna"],
             "requires --child",
         ),
         (["--step", "download-genome", "--child", "gene"], "must follow a task"),
@@ -890,8 +903,8 @@ def test_linked_analysis_uses_target_k_from_selected_producer(
         [
             "--step",
             "compute-intrinsic-features",
-            "--from-run",
-            "target_gene=testing.target_gene",
+            "--input",
+            "target_gene=from:run.testing.target_gene",
         ]
     )
 
@@ -1035,8 +1048,8 @@ def test_cli_preserves_mixed_selection_order_and_file_input(monkeypatch, tmp_pat
             "create-target-gene",
             "--id",
             "custom",
-            "--input-path",
-            f"dna={tmp_path / 'genome.fa'}",
+            "--input",
+            f"dna=path:{tmp_path / 'genome.fa'}",
             "--step",
             "download-genome",
         ],
@@ -1056,6 +1069,100 @@ def test_cli_preserves_mixed_selection_order_and_file_input(monkeypatch, tmp_pat
             "inputs": {"dna": {"path": str(tmp_path / "genome.fa")}},
         },
         {"step": "download-genome", "id": "download-genome"},
+    ]
+
+
+@pytest.mark.parametrize("command", ["run", "export"])
+@pytest.mark.parametrize("attached", [False, True])
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("path:/tmp/reference a:b=c.fa", {"path": "/tmp/reference a:b=c.fa"}),
+        ("from:run.comparison.exonic.fasta", {"from": "run.comparison.exonic.fasta"}),
+    ],
+)
+def test_cli_input_sources_use_yaml_syntax(
+    monkeypatch, tmp_path, command, attached, source, expected
+):
+    captured = {}
+
+    def capture(_runnables, config, **_kwargs):
+        captured["config"] = config
+        return tmp_path / "export"
+
+    monkeypatch.setattr("ASOkai._cli.execution.runner.run_all", capture)
+    monkeypatch.setattr("ASOkai._cli.execution.runner.export_all", capture)
+    assignment = f"reference={source}"
+    input_args = [f"--input={assignment}"] if attached else ["--input", assignment]
+    result = CliRunner().invoke(
+        main,
+        [command, "--no-config", "--step", "build-bowtie2-index", *input_args],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["config"]["runs"][0]["inputs"] == {"reference": expected}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "/tmp/reference.fa",
+        "url:https://example.com/reference.fa",
+        "path:",
+        "from:",
+        "from:exonic-target.fasta",
+        "from:run.exonic-target",
+        "from:run.exonic-target.",
+        "from:run..fasta",
+    ],
+)
+def test_cli_rejects_invalid_input_sources(source):
+    result = CliRunner().invoke(
+        main,
+        [
+            "run", "--no-config", "--step", "build-bowtie2-index",
+            "--input", f"reference={source}",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Invalid value for --input" in result.output
+    assert "Expected INPUT=" in result.output
+
+
+def test_cli_rejects_duplicate_input_selection():
+    result = CliRunner().invoke(
+        main,
+        [
+            "run", "--no-config", "--step", "build-bowtie2-index",
+            "--input", "reference=path:/tmp/reference.fa",
+            "--input", "reference=from:run.exonic-target.fasta",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Duplicate input selection for 'reference'" in result.output
+
+
+def test_input_selection_applies_to_task_child():
+    from ASOkai._cli.run_selection import parse_ordered_runs
+
+    shared, runs = parse_ordered_runs(
+        [
+            "--task", "compare-regions", "--child", "exonic",
+            "--input", "reference=from:run.target.fasta",
+        ],
+        set(),
+    )
+
+    assert shared == {}
+    assert runs == [
+        {
+            "task": "compare-regions",
+            "runs": [
+                {"id": "exonic", "inputs": {"reference": {"from": "run.target.fasta"}}}
+            ],
+        }
     ]
 
 

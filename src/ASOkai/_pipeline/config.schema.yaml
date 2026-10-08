@@ -175,10 +175,75 @@ properties:
                 pattern: '^(?:all|(?!(?:.*?,\s*)?(GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*,.*?\b\1\b)\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*(?:,\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*)*)$(?!\n)'
                 default: all
                 description: >-
-                  Comma-separated intrinsic feature columns without duplicates,
-                  or 'all' for every supported feature. Available columns are
-                  GC_content, AT_content, T_count, CpG_count, T_content, and
-                  CpG_content.
+                  Comma-separated intrinsic feature columns, or 'all' for every
+                  supported feature.
+          potential_repeated_sites:
+            type: object
+            additionalProperties: false
+            description: >-
+              Tree search for sequences that a gapmer binds as well as its
+              own target site.
+            properties:
+              max_ddg:
+                type: number
+                minimum: 0
+                default: 5.0
+                description: >-
+                  Largest accepted binding-energy loss in kcal/mol relative
+                  to the original site.
+              ddg_tolerance:
+                type: number
+                minimum: 0
+                default: 0.5
+                description: >-
+                  Extra binding-energy loss in kcal/mol that is still
+                  explored, because later mutations can have better binding.
+              energy_parameters:
+                enum:
+                  - RNA_Turner2004
+                  - RNA_Turner1999
+                  - RNA_Andronescu2007
+                  - RNA_Langdon2018
+                  - DNA_Mathews2004
+                  - DNA_Mathews1999
+                  - null
+                default: null
+                description: >-
+                  Built-in ViennaRNA energy parameter set. The DNA sets model
+                  a DNA duplex rather than the DNA-RNA hybrid a gapmer forms,
+                  so they are an approximation too.
+              energy_parameter_file:
+                type: [string, 'null']
+                minLength: 1
+                default: null
+                description: >-
+                  ViennaRNA parameter file to load instead of a named set. It
+                  is read where it lies rather than staged, so a run under CWL
+                  needs a path its job can reach.
+              model_settings:
+                type: string
+                default: ''
+                description: >-
+                  Extra ViennaRNA model arguments as comma-separated
+                  name=value pairs, such as 'temperature=37.0,noGU=1'.
+                  Accepted names are the fields of ViennaRNA's model
+                  details. An empty value keeps every ViennaRNA default values.
+            allOf:
+              - not:
+                  allOf:
+                    - required:
+                        - energy_parameters
+                      properties:
+                        energy_parameters:
+                          type: string
+                    - required:
+                        - energy_parameter_file
+                      properties:
+                        energy_parameter_file:
+                          type: string
+                x-error-message: >-
+                  set either energy_parameters or energy_parameter_file,
+                  not both
       bowtie2:
         type: object
         additionalProperties: false

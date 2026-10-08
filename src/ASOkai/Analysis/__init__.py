@@ -8,10 +8,12 @@ License: LGPL-3.0-or-later
 """
 from ._base import Analysis, BatchAnalysis, PerUnitAnalysis
 from ._intrinsic_features import IntrinsicFeaturesAnalysis
+from ._similar_sequence import SimilarSequenceAnalysis
 
 __all__ = [
     "Analysis",
     "BatchAnalysis",
     "IntrinsicFeaturesAnalysis",
     "PerUnitAnalysis",
+    "SimilarSequenceAnalysis",
 ]

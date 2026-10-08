@@ -18,6 +18,9 @@ from typing import Any, Sequence
 from ASOkai._pipeline.steps.analysis.intrinsic_features import (
     IntrinsicFeaturesStep,
 )
+from ASOkai._pipeline.steps.analysis.identify_potential_repeated_sites import (
+    IdentifyPotentialRepeatedSitesStep,
+)
 from ASOkai._pipeline.steps.base import Step
 from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
 from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
@@ -28,6 +31,7 @@ from ASOkai._pipeline.steps.utils.build_bowtie2_index import BuildBowtie2IndexSt
 from ASOkai._pipeline.steps.utils.build_kmc_index import BuildKMCIndexStep
 from ASOkai._pipeline.tasks.base import Task
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+from ASOkai._pipeline.tasks.find_repeated_sites import FindRepeatedSitesTask
 from ASOkai._pipeline.workflows.base import Workflow
 from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
@@ -47,11 +51,13 @@ _BUILTIN_STEPS: tuple[Step, ...] = (
     BuildBowtie2IndexStep(),
     GenerateTherapeuticCandidatesStep(),
     IntrinsicFeaturesStep(),
+    IdentifyPotentialRepeatedSitesStep(),
 )
 
 # Built-in task registry
 _BUILTIN_TASKS: tuple[Task, ...] = (
     InstantiateTargetGeneTask(),
+    FindRepeatedSitesTask(),
 )
 
 # Built-in workflow registry

@@ -167,6 +167,13 @@ repository for the license text.
 ASOkai invokes its command-line executables but does not distribute or link
 against them.
 
+### ViennaRNA
+
+[ViennaRNA](https://www.tbi.univie.ac.at/RNA/) computes the binding free
+energies used by the potential-repeated-sites search. ASOkai imports its
+Python bindings, which are distributed under ViennaRNA's own license; review
+it before use.
+
 ## Contributor setup
 
 Install ASOkai with its contributor-only tools in the Conda environment:

@@ -28,6 +28,7 @@ dependencies = [
     "tqdm>=4.67,<5",
     "GenomeUtils>=0.2,<0.3",
     "jsonschema>=4,<5",
+    "ViennaRNA>=2.6,<3",
 ]
 
 [project.optional-dependencies]

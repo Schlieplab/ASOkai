@@ -54,9 +54,9 @@ _PATH_FIELDS = {
     ),
     "k": TemplateField("parameters.target.k"),
     "region": TemplateField("parameters.target.region"),
-    "left": TemplateField("parameters.antisense.design.left_wing_length"),
-    "gap": TemplateField("parameters.antisense.design.gap_length"),
-    "right": TemplateField("parameters.antisense.design.right_wing_length"),
+    "left": TemplateField("parameters.antisense.modality.design.left_wing_length"),
+    "gap": TemplateField("parameters.antisense.modality.design.gap_length"),
+    "right": TemplateField("parameters.antisense.modality.design.right_wing_length"),
     "max_ddg": TemplateField(f"{_STEP_CONFIG}.max_ddg", default=5.0),
     "tolerance": TemplateField(
         f"{_STEP_CONFIG}.ddg_tolerance",
@@ -104,19 +104,19 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
             ScalarParam(
                 "left_wing_length",
                 int,
-                config="parameters.antisense.design.left_wing_length",
+                config="parameters.antisense.modality.design.left_wing_length",
                 doc="Nucleotides in the gapmer's left wing.",
             ),
             ScalarParam(
                 "gap_length",
                 int,
-                config="parameters.antisense.design.gap_length",
+                config="parameters.antisense.modality.design.gap_length",
                 doc="Nucleotides in the gapmer's central gap.",
             ),
             ScalarParam(
                 "right_wing_length",
                 int,
-                config="parameters.antisense.design.right_wing_length",
+                config="parameters.antisense.modality.design.right_wing_length",
                 doc="Nucleotides in the gapmer's right wing.",
             ),
             ScalarParam(
@@ -181,9 +181,9 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
         inputs=[target_gene_input],
         outputs=[potential_sites_output],
         compatible_with={
-            "parameters.antisense.modality": ["aso"],
-            "parameters.antisense.mechanism": ["rnase-h1"],
-            "parameters.antisense.design.type": ["gapmer"],
+            "parameters.antisense.modality.type": ["aso"],
+            "parameters.antisense.modality.mechanism": ["rnase-h1"],
+            "parameters.antisense.modality.design.type": ["gapmer"],
         },
     )
 

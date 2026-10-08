@@ -130,6 +130,16 @@ def test_a_parameter_file_can_replace_the_named_set(tmp_path: Path) -> None:
     assert parameter_file.is_file()
 
 
+def test_loading_an_unknown_named_set_is_an_error() -> None:
+    # ViennaRNA itself decides which sets exist, so no list is duplicated here.
+    with pytest.raises(ValueError, match="Unknown energy parameter set"):
+        _load_energy_parameters("Bogus", None)
+
+
+def test_loading_no_named_set_keeps_the_viennarna_default() -> None:
+    _load_energy_parameters(None, None)
+
+
 def test_loading_an_unreadable_parameter_file_is_an_error(tmp_path: Path) -> None:
     # The step validates the selection, so the loader only reports what
     # ViennaRNA itself refuses.

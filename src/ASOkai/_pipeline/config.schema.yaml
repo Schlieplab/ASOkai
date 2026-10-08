@@ -206,7 +206,8 @@ properties:
                   - RNA_Langdon2018
                   - DNA_Mathews2004
                   - DNA_Mathews1999
-                default: RNA_Turner2004
+                  - null
+                default: null
                 description: >-
                   Built-in ViennaRNA energy parameter set. The DNA sets model
                   a DNA duplex rather than the DNA-RNA hybrid a gapmer forms,
@@ -227,6 +228,22 @@ properties:
                   name=value pairs, such as 'temperature=37.0,noGU=1'.
                   Accepted names are the fields of ViennaRNA's model
                   details. An empty value keeps every ViennaRNA default values.
+            allOf:
+              - not:
+                  allOf:
+                    - required:
+                        - energy_parameters
+                      properties:
+                        energy_parameters:
+                          type: string
+                    - required:
+                        - energy_parameter_file
+                      properties:
+                        energy_parameter_file:
+                          type: string
+                x-error-message: >-
+                  set either energy_parameters or energy_parameter_file,
+                  not both
       bowtie2:
         type: object
         additionalProperties: false

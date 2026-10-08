@@ -116,7 +116,7 @@ def _rebuild_sequence(
 
 
 def _load_energy_parameters(
-    energy_parameters: str,
+    energy_parameters: str | None,
     energy_parameter_file: str | Path | None,
 ) -> None:
     """Load the energy parameters every later fold in this process uses.
@@ -129,13 +129,19 @@ def _load_energy_parameters(
     so this must run before :func:`_model_details` builds the details used
     for a search.
 
-    The step validates the selection, so this only loads it.
+    The step validates the selection, so this only loads it. ViennaRNA itself
+    decides which named sets exist.
 
     Raises:
-        ValueError: If ViennaRNA cannot read the parameter file.
+        ValueError: If the named set is unknown to ViennaRNA, or ViennaRNA
+            cannot read the parameter file.
     """
     if energy_parameter_file is None:
-        getattr(RNA, f"params_load_{energy_parameters}")()
+        name = energy_parameters or DEFAULT_ENERGY_PARAMETERS
+        loader = getattr(RNA, f"params_load_{name}", None)
+        if loader is None:
+            raise ValueError(f"Unknown energy parameter set: {name!r}.")
+        loader()
         return
     path = Path(energy_parameter_file).expanduser()
     if not RNA.params_load(str(path)):
@@ -230,7 +236,7 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         max_ddg: float = 5.0,
         ddg_tolerance: float = 0.5,
         model_settings: Mapping[str, Any] | None = None,
-        energy_parameters: str = DEFAULT_ENERGY_PARAMETERS,
+        energy_parameters: str | None = None,
         energy_parameter_file: str | Path | None = None,
     ) -> None:
         """Initialize a search for one gapmer layout.
@@ -242,7 +248,8 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
             max_ddg: Largest reported binding-energy loss in kcal/mol.
             ddg_tolerance: Extra loss in kcal/mol that is still explored.
             energy_parameters: Name of a built-in ViennaRNA energy
-                parameter set, such as ``RNA_Turner2004``.
+                parameter set, such as ``RNA_Turner2004``. Defaults to the
+                set ViennaRNA itself uses.
             energy_parameter_file: A ViennaRNA parameter file to load instead
                 of a named set. The file is read where it lies, so a run
                 under CWL needs a path its job can reach.

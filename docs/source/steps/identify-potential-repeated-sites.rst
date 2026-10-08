@@ -71,10 +71,11 @@ step reports.
 Progress
 --------
 
-The step logs the number of target sites and workers before it starts, then
-draws one progress bar over the whole search. Workers count into a shared
-total and one of them draws the bar, so it tracks every site rather than one
-worker's share. Set ``show_progress`` on the analysis to turn the bar off.
+The step logs the number of target sites and workers before it starts. Each
+process then logs how many sites it has searched and its current rate, every
+1000 sites by default. A worker counts only its own sites, so the lines from
+several workers add up to the total. Set ``progress_interval`` to 0 on the
+analysis to silence them.
 
 Output
 ------

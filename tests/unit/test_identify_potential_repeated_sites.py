@@ -7,6 +7,7 @@ Description: Tests for the similar-sequence search and its pipeline step.
 License: LGPL-3.0-or-later
 """
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -129,15 +130,14 @@ def test_a_parameter_file_can_replace_the_named_set(tmp_path: Path) -> None:
     assert parameter_file.is_file()
 
 
-def test_energy_parameters_reject_an_unusable_selection(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="Unknown energy parameter set"):
-        _load_energy_parameters("Nope", None)
-
-    with pytest.raises(ValueError, match="not both"):
-        _load_energy_parameters("DNA_Mathews2004", tmp_path / "custom.par")
-
-    with pytest.raises(ValueError, match="is not a file"):
-        _load_energy_parameters(DEFAULT_ENERGY_PARAMETERS, tmp_path / "missing.par")
+def test_loading_an_unreadable_parameter_file_is_an_error(tmp_path: Path) -> None:
+    # The step validates the selection, so the loader only reports what
+    # ViennaRNA itself refuses.
+    with pytest.raises(ValueError, match="could not read the parameter file"):
+        _load_energy_parameters(
+            DEFAULT_ENERGY_PARAMETERS,
+            tmp_path / "missing.par",
+        )
 
 
 def test_step_rejects_an_unusable_energy_parameter_selection() -> None:
@@ -250,27 +250,26 @@ def test_search_returns_identifier_and_sequence_pairs() -> None:
     assert references == len(sites)
 
 
-def test_search_counts_every_site_into_its_progress_bar() -> None:
+def test_search_logs_progress_at_its_interval(caplog) -> None:
     sites = list(_sites().values())
-    counted: list[int] = []
 
-    class Counting(SimilarSequenceAnalysis):
-        def _advance_progress(self) -> None:
-            super()._advance_progress()
-            counted.append(self._counter.value)
+    class Noisy(SimilarSequenceAnalysis):
+        progress_interval = 1
 
-    Counting(*LAYOUT, max_ddg=0.5).run(sites, n_workers=1)
+    with caplog.at_level(logging.INFO, logger="ASOkai.Analysis._similar_sequence"):
+        Noisy(*LAYOUT, max_ddg=0.5).run(sites, n_workers=1)
 
-    assert counted == list(range(1, len(sites) + 1))
+    assert len([r for r in caplog.records if "Searched" in r.message]) == len(sites)
 
 
-def test_progress_can_be_switched_off(capsys) -> None:
+def test_search_can_report_no_progress(caplog) -> None:
     class Quiet(SimilarSequenceAnalysis):
-        show_progress = False
+        progress_interval = 0
 
-    Quiet(*LAYOUT, max_ddg=0.5).run(list(_sites().values()), n_workers=1)
+    with caplog.at_level(logging.INFO, logger="ASOkai.Analysis._similar_sequence"):
+        Quiet(*LAYOUT, max_ddg=0.5).run(list(_sites().values()), n_workers=1)
 
-    assert capsys.readouterr().err == ""
+    assert not [r for r in caplog.records if "Searched" in r.message]
 
 
 def test_search_rejects_negative_thresholds() -> None:

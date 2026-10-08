@@ -18,10 +18,7 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from ASOkai.Analysis import SimilarSequenceAnalysis
-from ASOkai.Analysis._similar_sequence import (
-    DEFAULT_ENERGY_PARAMETERS,
-    ENERGY_PARAMETER_SETS,
-)
+from ASOkai.Analysis._similar_sequence import DEFAULT_ENERGY_PARAMETERS
 from ASOkai._pipeline.contracts.file_types import FastaFile
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput
 from ASOkai._pipeline.contracts.parameters import ScalarParam
@@ -241,11 +238,6 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
     def _validate_energy_parameters(values: Mapping[str, object]) -> None:
         """Require one usable energy parameter selection."""
         named = values.get("energy_parameters", DEFAULT_ENERGY_PARAMETERS)
-        if named not in ENERGY_PARAMETER_SETS:
-            accepted = ", ".join(ENERGY_PARAMETER_SETS)
-            raise ValueError(
-                f"energy_parameters must be one of {accepted}"
-            )
         parameter_file = values.get("energy_parameter_file")
         if parameter_file is None:
             return

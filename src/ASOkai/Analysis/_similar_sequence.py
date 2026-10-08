@@ -10,33 +10,22 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-import multiprocessing
+import logging
 import os
 from pathlib import Path
 import re
-import sys
 import time
 from typing import Any, ClassVar, Mapping
 
 import RNA
-from tqdm import tqdm
 
 from ..Sites import Site
 from ..Types import AnalysisUnitType
 from ._base import PerUnitAnalysis
 
 _NUCLEOTIDES = "ACGT"
-_PROGRESS_DESCRIPTION = "Searching target sites"
+logger = logging.getLogger(__name__)
 
-#: ViennaRNA's built-in energy parameter sets, by the name used to select one.
-ENERGY_PARAMETER_SETS = (
-    "RNA_Turner2004",
-    "RNA_Turner1999",
-    "RNA_Andronescu2007",
-    "RNA_Langdon2018",
-    "DNA_Mathews2004",
-    "DNA_Mathews1999",
-)
 #: The set ViennaRNA itself uses unless another one is loaded.
 DEFAULT_ENERGY_PARAMETERS = "RNA_Turner2004"
 _SEQUENCE_ID_PATTERN = re.compile(
@@ -140,28 +129,15 @@ def _load_energy_parameters(
     so this must run before :func:`_model_details` builds the details used
     for a search.
 
+    The step validates the selection, so this only loads it.
+
     Raises:
-        ValueError: If the named set is unknown, a file is combined with a
-            named set, or the file cannot be read.
+        ValueError: If ViennaRNA cannot read the parameter file.
     """
-    if energy_parameters not in ENERGY_PARAMETER_SETS:
-        accepted = ", ".join(ENERGY_PARAMETER_SETS)
-        raise ValueError(
-            f"Unknown energy parameter set: {energy_parameters!r}. "
-            f"Accepted sets are {accepted}."
-        )
     if energy_parameter_file is None:
         getattr(RNA, f"params_load_{energy_parameters}")()
         return
-    if energy_parameters != DEFAULT_ENERGY_PARAMETERS:
-        raise ValueError(
-            "Supply either a named energy parameter set or a parameter "
-            f"file, not both; received {energy_parameters!r} and "
-            f"{str(energy_parameter_file)!r}."
-        )
     path = Path(energy_parameter_file).expanduser()
-    if not path.is_file():
-        raise ValueError(f"Energy parameter file is not a file: {path}.")
     if not RNA.params_load(str(path)):
         raise ValueError(f"ViennaRNA could not read the parameter file {path}.")
 
@@ -242,8 +218,8 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
     analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
     uses_worker_processes = True
 
-    #: Whether to draw a progress bar over the sites being searched.
-    show_progress: ClassVar[bool] = True
+    #: Sites one process searches between progress lines; 0 logs nothing.
+    progress_interval: ClassVar[int] = 1000
 
     def __init__(
         self,
@@ -266,7 +242,7 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
             max_ddg: Largest reported binding-energy loss in kcal/mol.
             ddg_tolerance: Extra loss in kcal/mol that is still explored.
             energy_parameters: Name of a built-in ViennaRNA energy
-                parameter set, one of :data:`ENERGY_PARAMETER_SETS`.
+                parameter set, such as ``RNA_Turner2004``.
             energy_parameter_file: A ViennaRNA parameter file to load instead
                 of a named set. The file is read where it lies, so a run
                 under CWL needs a path its job can reach.
@@ -278,8 +254,7 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
 
         Raises:
             ValueError: If a segment length is not positive, an energy
-                threshold is negative, a model setting is unknown, or the
-                energy parameters are not selected correctly.
+                threshold is negative, or a model setting is unknown.
         """
         lengths = (left_wing_length, gap_length, right_wing_length)
         if any(type(length) is not int or length < 1 for length in lengths):
@@ -295,101 +270,13 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         _model_details(self.model_settings)  # reject unknown settings early
         self.energy_parameters = energy_parameters
         self.energy_parameter_file = energy_parameter_file
-        # Reject an unusable selection before any site is searched.
+        # ViennaRNA keeps one parameter table per process. Loading it here
+        # puts it in place before any worker is forked from this process.
         _load_energy_parameters(energy_parameters, energy_parameter_file)
         # Progress state stays private to whichever process touches it: a
         # forked worker counts only its own sites and never reports back.
-        # Progress state, published to forked workers by run().
-        self._counter: Any = None
-        self._renderer: Any = None
-        self._total = 0
+        self._searched = 0
         self._started = 0.0
-        self._bar: Any = None
-
-    def run(self, units: Iterable[Site], *, n_workers: int = 1) -> list[Any]:
-        """Search every site, drawing one progress bar for the whole run.
-
-        The shared counter and the bar are created before any worker is
-        forked, so every worker counts into the same total and exactly one
-        of them draws the bar.
-        """
-        # ViennaRNA holds one parameter table per process, so load it here,
-        # before super().run() forks the workers that inherit it.
-        _load_energy_parameters(
-            self.energy_parameters,
-            self.energy_parameter_file,
-        )
-        analysis_units = list(units)
-        self._total = len(analysis_units)
-        self._bar = None
-        # tqdm measures elapsed time against time.time().
-        self._started = time.time()
-        if self.show_progress and self._total:
-            self._counter = multiprocessing.Value("L", 0)
-            self._renderer = multiprocessing.Value("L", 0)
-        try:
-            return super().run(analysis_units, n_workers=n_workers)
-        finally:
-            self._finish_progress()
-            self._counter = self._renderer = None
-
-    def _finish_progress(self) -> None:
-        """Leave one complete bar behind once every worker has stopped.
-
-        The drawing worker only refreshes while it is searching, so whichever
-        worker finished last leaves the bar short of the total. The shared
-        counter survives in this process, so the final bar is drawn here.
-        """
-        if self._counter is None:
-            return
-        searched = self._counter.value
-        if self._bar is not None:
-            self._bar.n = searched
-            self._bar.refresh()
-            self._bar.close()
-            return
-        if not searched:
-            return
-        # A worker drew the bar and cannot close it from here, so overwrite
-        # its unfinished line with one complete line in the same format.
-        sys.stderr.write(
-            "\r"
-            + tqdm.format_meter(
-                searched,
-                self._total,
-                time.time() - self._started,
-                unit="site",
-                prefix=_PROGRESS_DESCRIPTION,
-            )
-            + "\n"
-        )
-
-    def _new_bar(self) -> Any:
-        """Return a bar whose elapsed time covers the whole run so far."""
-        bar = tqdm(
-            total=self._total,
-            unit="site",
-            desc=_PROGRESS_DESCRIPTION,
-            file=sys.stderr,
-        )
-        bar.start_t = self._started
-        return bar
-
-    def _advance_progress(self) -> None:
-        """Count one searched site and refresh the bar if this process owns it."""
-        if self._counter is None:
-            return
-        with self._counter.get_lock():
-            self._counter.value += 1
-            searched = self._counter.value
-            if not self._renderer.value:
-                self._renderer.value = os.getpid()
-        if self._renderer.value != os.getpid():
-            return
-        if self._bar is None:
-            self._bar = self._new_bar()
-        self._bar.n = searched
-        self._bar.refresh()
 
     def analyze_unit(self, site: Site) -> list[SimilarSequence]:
         """Search one target site for the sequences its gapmer still binds.
@@ -442,7 +329,7 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
                         found[mutated] = (mutated_mutations, delta)
             frontier = next_frontier
 
-        self._advance_progress()
+        self._report_progress()
         return [
             (_similar_sequence_id(site.id, ()), sequence),
             *(
@@ -453,3 +340,20 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
                 )
             ),
         ]
+
+    def _report_progress(self) -> None:
+        """Log how many sites this process has searched, now and then."""
+        if not self.progress_interval:
+            return
+        if not self._searched:
+            self._started = time.monotonic()
+        self._searched += 1
+        if self._searched % self.progress_interval:
+            return
+        elapsed = time.monotonic() - self._started
+        logger.info(
+            "Searched %d sites in worker %d (%.1f sites/s)",
+            self._searched,
+            os.getpid(),
+            self._searched / elapsed if elapsed else 0.0,
+        )

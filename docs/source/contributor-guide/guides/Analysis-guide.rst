@@ -169,6 +169,10 @@ The generated page reads the following sources:
 ``ScalarParam`` and ``config.schema.yaml``
    Select the configuration values used by the step and provide their types,
    requirements, constraints, and descriptions.
+   Recognized string patterns are rendered as readable format rules, including
+   run identifiers, named output references, and comma-separated selections of
+   unique values. Other patterns retain their regular expression in the
+   generated reference.
 
 ``FileInput.doc`` and ``FileOutput.doc``
    Describe file dependencies and produced files. Their file types supply the

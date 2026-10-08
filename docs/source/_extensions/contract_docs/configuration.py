@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 from docutils import nodes
@@ -266,6 +267,41 @@ def _json_type(value: Any) -> str:
     return "value"
 
 
+def _format_pattern(pattern: str) -> str:
+    """Describe recognized regex formats without guessing at other patterns."""
+    if pattern == r"^[A-Za-z][A-Za-z0-9_-]*$":
+        return (
+            "format: starts with a letter; remaining characters are letters, "
+            "digits, underscores, or hyphens"
+        )
+    if pattern == r"^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$":
+        return (
+            "format: run.ID.OUTPUT, optionally with additional dotted names; "
+            "names contain letters, digits, underscores, or hyphens"
+        )
+
+    sentinel = re.match(r"^\^\(\?:([A-Za-z_][A-Za-z0-9_-]*)\|", pattern)
+    choices = re.search(
+        r"\(([A-Za-z_][A-Za-z0-9_-]*(?:\|[A-Za-z_][A-Za-z0-9_-]*)+)\)",
+        pattern,
+    )
+    if sentinel and choices:
+        special_value = sentinel[1]
+        alternatives = choices[1]
+        unique_list_pattern = (
+            rf"^(?:{special_value}|(?!(?:.*?,\s*)?({alternatives})"
+            rf"\s*,.*?\b\1\b)\s*(?:{alternatives})"
+            rf"\s*(?:,\s*(?:{alternatives})\s*)*)$(?!\n)"
+        )
+        if pattern == unique_list_pattern:
+            names = ", ".join(alternatives.split("|"))
+            return (
+                f"format: '{special_value}' or a comma-separated list without "
+                f"duplicates; choices: {names}; surrounding whitespace allowed"
+            )
+    return f"pattern: {pattern}"
+
+
 def _format_constraints(schema: Mapping[str, Any]) -> str:
     constraints: list[str] = []
     if "const" in schema and schema.get("default") != schema["const"]:
@@ -281,11 +317,12 @@ def _format_constraints(schema: Mapping[str, Any]) -> str:
         "exclusiveMaximum": "less than",
         "minLength": "minimum string length",
         "maxLength": "maximum string length",
-        "pattern": "pattern",
     }
     for keyword, label in labels.items():
         if keyword in schema:
             constraints.append(f"{label}: {_format_value(schema[keyword])}")
+    if "pattern" in schema:
+        constraints.append(_format_pattern(str(schema["pattern"])))
     return "; ".join(constraints) if constraints else "—"
 
 

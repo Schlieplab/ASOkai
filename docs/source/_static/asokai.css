@@ -16,6 +16,7 @@
 .rst-content table.asokai-reference-table td {
   overflow-wrap: anywhere;
   vertical-align: top;
+  white-space: normal;
   word-break: normal;
 }
 
@@ -28,12 +29,6 @@
 .rst-content table.asokai-step-configuration th:first-child,
 .rst-content table.asokai-step-applicability th:first-child {
   width: 35%;
-}
-
-.rst-content table.asokai-step-configuration td:first-child code.literal,
-.rst-content table.asokai-step-configuration td:first-child code.literal span.pre {
-  overflow-wrap: break-word;
-  word-break: normal;
 }
 
 .rst-content .asokai-reference-details p {

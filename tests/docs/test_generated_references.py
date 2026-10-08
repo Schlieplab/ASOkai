@@ -45,6 +45,8 @@ from contract_docs.file_contracts import (  # noqa: E402
     json_example,
 )
 from contract_docs.rendering import note_reference_dependencies  # noqa: E402
+from contract_docs.configuration import _format_constraints  # noqa: E402
+from ASOkai.Analysis import IntrinsicFeaturesAnalysis  # noqa: E402
 from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
 from ASOkai._pipeline.contracts.files import FileInput, FileOutput  # noqa: E402
 from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
@@ -89,6 +91,69 @@ def test_step_config_collects_nested_and_dynamic_fields() -> None:
     assert fields["parameters.target.target_id"].requirement == (
         "Exactly one of target_id, target_name is required when parameters.target is configured"
     )
+
+
+def test_intrinsic_feature_pattern_is_documented_as_readable_choices() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    schema = _config_schema()
+    fields = {
+        field.path: field for field in collect_step_config_fields(step, schema)
+    }
+    constraints = fields["parameters.analysis.intrinsic_features.features"].constraints
+    pattern = (
+        schema["properties"]["parameters"]["properties"]["analysis"]["properties"]
+        ["intrinsic_features"]["properties"]["features"]["pattern"]
+    )
+
+    assert "'all' or a comma-separated list without duplicates" in constraints
+    assert "surrounding whitespace allowed" in constraints
+    for name in IntrinsicFeaturesAnalysis.supported_features:
+        assert name in constraints
+    reference = "\n".join(node.astext() for node in build_step_reference(step, schema))
+    assert pattern not in reference
+
+
+def test_list_pattern_documentation_uses_the_pattern_choices() -> None:
+    schema = _config_schema()
+    pattern = (
+        schema["properties"]["parameters"]["properties"]["analysis"]["properties"]
+        ["intrinsic_features"]["properties"]["features"]["pattern"]
+    )
+    alternatives = "|".join(IntrinsicFeaturesAnalysis.supported_features)
+    changed_pattern = pattern.replace(alternatives, "score|length").replace(
+        "^(?:all|", "^(?:everything|"
+    )
+
+    constraints = _format_constraints({"pattern": changed_pattern})
+
+    assert "'everything' or a comma-separated list without duplicates" in constraints
+    assert "choices: score, length" in constraints
+    assert "GC_content" not in constraints
+    assert changed_pattern not in constraints
+
+
+@pytest.mark.parametrize(
+    ("pattern", "description"),
+    [
+        (r"^[A-Za-z][A-Za-z0-9_-]*$", "starts with a letter"),
+        (
+            r"^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$",
+            "run.ID.OUTPUT, optionally with additional dotted names",
+        ),
+    ],
+)
+def test_identifier_patterns_have_readable_format_rules(pattern, description) -> None:
+    constraints = _format_constraints({"pattern": pattern})
+
+    assert description in constraints
+    assert "letters, digits, underscores, or hyphens" in constraints
+    assert pattern not in constraints
+
+
+def test_unrecognized_pattern_keeps_its_exact_expression() -> None:
+    pattern = r"(?i)^(?:all|GC_content)$"
+
+    assert _format_constraints({"pattern": pattern}) == f"pattern: {pattern}"
 
 
 def test_every_used_built_in_config_field_has_a_schema_description() -> None:

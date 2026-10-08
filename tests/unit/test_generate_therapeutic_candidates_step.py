@@ -43,13 +43,15 @@ def config(tmp_path):
             },
             "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 },
             },
         },
@@ -91,12 +93,12 @@ def test_step_contract_and_dependency(step):
 def test_config_and_input_mapping(step):
     assert step.config_map == {
         "k": "parameters.target.k",
-        "modality": "parameters.antisense.modality",
-        "design": "parameters.antisense.design.type",
-        "left_wing_length": "parameters.antisense.design.left_wing_length",
-        "gap_length": "parameters.antisense.design.gap_length",
-        "right_wing_length": "parameters.antisense.design.right_wing_length",
-        "mechanism": "parameters.antisense.mechanism",
+        "modality": "parameters.antisense.modality.type",
+        "design": "parameters.antisense.modality.design.type",
+        "left_wing_length": "parameters.antisense.modality.design.left_wing_length",
+        "gap_length": "parameters.antisense.modality.design.gap_length",
+        "right_wing_length": "parameters.antisense.modality.design.right_wing_length",
+        "mechanism": "parameters.antisense.modality.mechanism",
     }
     assert step.target_gene_input.configuration_path(step.name) == (
         "steps.generate-therapeutic-candidates.inputs.target_gene"
@@ -104,7 +106,7 @@ def test_config_and_input_mapping(step):
 
 
 def test_unscoped_k_follows_the_selected_target_gene(step, config, tmp_path):
-    config["parameters"]["antisense"]["design"]["gap_length"] = 12
+    config["parameters"]["antisense"]["modality"]["design"]["gap_length"] = 12
     producer_step = CreateTargetGeneStep()
     producer = StepRun(
         "gene",
@@ -175,7 +177,7 @@ def test_output_path_uses_supplied_target_name(step, config, tmp_path):
 
 
 def test_output_path_supports_unmodified_asos(step, config, tmp_path):
-    config["parameters"]["antisense"]["design"] = {"type": "unmodified"}
+    config["parameters"]["antisense"]["modality"]["design"] = {"type": "unmodified"}
 
     paths = _run(step, config, tmp_path).output_paths()
 
@@ -191,7 +193,7 @@ def test_output_path_supports_unmodified_asos(step, config, tmp_path):
 
 def test_output_path_identifies_the_gapmer_layout(step, config, tmp_path):
     first = _run(step, config, tmp_path).output_paths()["therapeutics"]
-    config["parameters"]["antisense"]["design"].update(
+    config["parameters"]["antisense"]["modality"]["design"].update(
         {
             "left_wing_length": 4,
             "gap_length": 8,

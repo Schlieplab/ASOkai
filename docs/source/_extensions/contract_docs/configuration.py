@@ -36,6 +36,7 @@ class ConditionalParameterGroup:
     discriminator: ConfigField
     alternatives: Mapping[str, tuple[ConfigField, ...]]
     explained_rules: frozenset[str]
+    conditions: Mapping[str, str]
 
 
 def _collect_config_fields(schema: Mapping[str, Any]) -> list[ConfigField]:
@@ -319,6 +320,10 @@ def _collect_schema_rules(
             for alternative in alternatives:
                 if isinstance(alternative, Mapping):
                     rules.extend(_collect_schema_rules(alternative, path=path))
+    for keyword in ("then", "else"):
+        consequence = schema.get(keyword)
+        if isinstance(consequence, Mapping):
+            rules.extend(_collect_schema_rules(consequence, path=path))
     return list(dict.fromkeys(rules))
 
 
@@ -374,7 +379,7 @@ def collect_step_config_fields(
             continue
         field = all_fields[parameter.config]
         requirement = field.requirement
-        if requirement == "Optional" and parameter.parser_required():
+        if parameter.parser_required():
             requirement = "Required"
         add(replace(field, requirement=requirement))
 
@@ -474,7 +479,9 @@ def collect_conditional_parameter_groups(
     fields_by_path = {field.path: field for field in config_fields}
     groups: list[ConditionalParameterGroup] = []
 
-    def visit(current: Mapping[str, Any], path: str) -> None:
+    def visit(
+        current: Mapping[str, Any], path: str, conditions: Mapping[str, str]
+    ) -> None:
         alternatives_by_field: dict[str, dict[str, dict[str, set[str]]]] = {}
         rules_by_field: dict[str, set[str]] = {}
         branches = current.get("allOf")
@@ -581,6 +588,7 @@ def collect_conditional_parameter_groups(
                     explained_rules=frozenset(
                         rules_by_field.get(discriminator_path, ())
                     ),
+                    conditions=dict(conditions),
                 )
             )
 
@@ -589,9 +597,31 @@ def collect_conditional_parameter_groups(
             for name, child in properties.items():
                 if isinstance(child, Mapping):
                     child_path = f"{path}.{name}" if path else name
-                    visit(child, child_path)
+                    visit(child, child_path, conditions)
 
-    visit(schema, "")
+        if isinstance(branches, list):
+            for branch in branches:
+                if not isinstance(branch, Mapping):
+                    continue
+                condition = branch.get("if")
+                consequence = branch.get("then")
+                if not isinstance(condition, Mapping) or not isinstance(
+                    consequence, Mapping
+                ):
+                    continue
+                condition_properties = condition.get("properties")
+                if not isinstance(condition_properties, Mapping):
+                    continue
+                branch_conditions = dict(conditions)
+                for name, field_schema in condition_properties.items():
+                    if isinstance(field_schema, Mapping) and isinstance(
+                        field_schema.get("const"), str
+                    ):
+                        field_path = f"{path}.{name}" if path else name
+                        branch_conditions[field_path] = field_schema["const"]
+                visit(consequence, path, branch_conditions)
+
+    visit(schema, "", {})
     return groups
 
 

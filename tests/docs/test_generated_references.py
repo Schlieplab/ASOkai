@@ -284,7 +284,7 @@ def test_step_config_contains_only_fields_used_by_that_step() -> None:
         "Overrides resources.default"
     )
     assert fields["resources.default.n_workers"].requirement == ("Built-in fallback: 1")
-    assert "parameters.antisense.design.gap_length" not in fields
+    assert "parameters.antisense.modality.design.gap_length" not in fields
     assert collect_step_schema_rules(step, _config_schema()) == [
         "exactly one of these config values is required: " "target_id, target_name"
     ]
@@ -441,7 +441,7 @@ def test_step_reference_renders_only_declared_applicability() -> None:
         description = "Example step with an explicit biological restriction."
         spec = StepSpec(
             compatible_with={
-                "parameters.antisense.mechanism": ["rnase-h1"],
+                "parameters.antisense.modality.mechanism": ["rnase-h1"],
             }
         )
 
@@ -456,7 +456,7 @@ def test_step_reference_renders_only_declared_applicability() -> None:
     }
 
     assert "asokai-step-applicability" in table_classes
-    assert "parameters.antisense.mechanism" in reference
+    assert "parameters.antisense.modality.mechanism" in reference
     assert "rnase-h1" in reference
 
 
@@ -466,7 +466,7 @@ def test_therapeutic_candidate_generation_declares_its_modality() -> None:
     reference = "\n".join(node.astext() for node in generated_nodes)
 
     assert step.spec.compatible_with == {}
-    assert "parameters.antisense.modality" in reference
+    assert "parameters.antisense.modality.type" in reference
     modality = next(param for param in step.spec.params if param.name == "modality")
     assert modality.inferred_cwl_type()["symbols"] == ["aso", "sirna"]
 
@@ -479,13 +479,13 @@ def test_candidate_generation_documents_conditional_design_fields() -> None:
     }
     rules = collect_step_schema_rules(step, _config_schema())
 
-    assert fields["parameters.antisense.design.type"].requirement == "Required"
+    assert fields["parameters.antisense.modality.design.type"].requirement == "Required"
     for field_name in (
         "left_wing_length",
         "gap_length",
         "right_wing_length",
     ):
-        field = fields[f"parameters.antisense.design.{field_name}"]
+        field = fields[f"parameters.antisense.modality.design.{field_name}"]
         assert field.requirement == "Optional"
         assert "Required for a gapmer design" in field.description
         assert field.constraints == "minimum: 1"
@@ -509,32 +509,41 @@ def test_candidate_generation_separates_design_parameters() -> None:
     gapmer_design = sections["Gapmer design"]
     unmodified_design = sections["Unmodified design"]
 
-    assert "parameters.antisense.design.type" not in common_parameters
+    assert "parameters.antisense.modality.design.type" not in common_parameters
     assert yaml.safe_load(
         next(gapmer_design.findall(nodes.literal_block)).astext()
     ) == {
         "parameters": {
             "antisense": {
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 }
             }
         }
     }
     assert yaml.safe_load(
         next(unmodified_design.findall(nodes.literal_block)).astext()
-    ) == {"parameters": {"antisense": {"design": {"type": "unmodified"}}}}
+    ) == {
+        "parameters": {
+            "antisense": {
+                "modality": {"type": "aso", "design": {"type": "unmodified"}}
+            }
+        }
+    }
     for field_name in (
         "left_wing_length",
         "gap_length",
         "right_wing_length",
     ):
-        assert f"parameters.antisense.design.{field_name}" in gapmer_design.astext()
+        assert f"parameters.antisense.modality.design.{field_name}" in gapmer_design.astext()
         assert (
-            f"parameters.antisense.design.{field_name}"
+            f"parameters.antisense.modality.design.{field_name}"
             not in unmodified_design.astext()
         )
 

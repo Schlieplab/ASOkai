@@ -37,21 +37,21 @@ _THERAPEUTIC_PATH_FIELDS = {
     ),
     "k": TemplateField("parameters.target.k"),
     "region": TemplateField("parameters.target.region"),
-    "modality": TemplateField("parameters.antisense.modality"),
-    "design": TemplateField("parameters.antisense.design.type"),
+    "modality": TemplateField("parameters.antisense.modality.type"),
+    "design": TemplateField("parameters.antisense.modality.design.type"),
     "left": TemplateField(
-        "parameters.antisense.design.left_wing_length",
+        "parameters.antisense.modality.design.left_wing_length",
         default="na",
     ),
     "gap": TemplateField(
-        "parameters.antisense.design.gap_length",
+        "parameters.antisense.modality.design.gap_length",
         default="na",
     ),
     "right": TemplateField(
-        "parameters.antisense.design.right_wing_length",
+        "parameters.antisense.modality.design.right_wing_length",
         default="na",
     ),
-    "mechanism": TemplateField("parameters.antisense.mechanism"),
+    "mechanism": TemplateField("parameters.antisense.modality.mechanism"),
 }
 
 
@@ -97,35 +97,35 @@ class GenerateTherapeuticCandidatesStep(CoreStep):
             ScalarParam(
                 "modality",
                 Literal["aso", "sirna"],
-                config="parameters.antisense.modality",
+                config="parameters.antisense.modality.type",
             ),
             ScalarParam(
                 "design",
                 Literal["unmodified", "gapmer"],
-                config="parameters.antisense.design.type",
+                config="parameters.antisense.modality.design.type",
             ),
             ScalarParam(
                 "left_wing_length",
                 int | None,
-                config="parameters.antisense.design.left_wing_length",
+                config="parameters.antisense.modality.design.left_wing_length",
                 default=None,
             ),
             ScalarParam(
                 "gap_length",
                 int | None,
-                config="parameters.antisense.design.gap_length",
+                config="parameters.antisense.modality.design.gap_length",
                 default=None,
             ),
             ScalarParam(
                 "right_wing_length",
                 int | None,
-                config="parameters.antisense.design.right_wing_length",
+                config="parameters.antisense.modality.design.right_wing_length",
                 default=None,
             ),
             ScalarParam(
                 "mechanism",
                 str,
-                config="parameters.antisense.mechanism",
+                config="parameters.antisense.modality.mechanism",
             ),
         ],
         inputs=[target_gene_input],

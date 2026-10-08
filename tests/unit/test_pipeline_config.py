@@ -268,19 +268,83 @@ def test_output_validation_policy_accepts_only_supported_modes(tmp_path):
         cfg.validate_config_schema(config)
 
 
-def test_config_schema_leaves_supported_values_to_selected_steps(tmp_path):
+def test_config_schema_accepts_other_modalities_with_their_own_design_fields(tmp_path):
     cfg.validate_config_schema(
         {
             "datadir": str(tmp_path),
             "parameters": {
                 "antisense": {
-                    "modality": "sirna",
-                    "mechanism": "risc",
-                    "design": {"type": "custom"},
+                    "modality": {
+                        "type": "sirna",
+                        "mechanism": "risc",
+                        "design": {"type": "custom", "sense_length": 21},
+                    },
                 }
             },
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("antisense", "message"),
+    [
+        ({"modality": "aso"}, r"modality.*object"),
+        (
+            {"modality": {"type": "aso"}, "mechanism": "rnase-h1"},
+            r"antisense.*mechanism.*unexpected",
+        ),
+        (
+            {"modality": {"type": "aso"}, "design": {"type": "unmodified"}},
+            r"antisense.*design.*unexpected",
+        ),
+        (
+            {"modality": {"design": {"type": "unmodified"}}},
+            r"modality.*type.*required",
+        ),
+    ],
+)
+def test_config_schema_requires_the_nested_modality_layout(antisense, message):
+    with pytest.raises(ValueError, match=message):
+        cfg.validate_config_schema(
+            {"datadir": ".", "parameters": {"antisense": antisense}}
+        )
+
+
+@pytest.mark.parametrize("modality", ["aso", "sirna"])
+def test_gapmer_design_rules_apply_only_to_aso(modality):
+    config = {
+        "datadir": ".",
+        "parameters": {
+            "antisense": {
+                "modality": {"type": modality, "design": {"type": "gapmer"}}
+            }
+        },
+    }
+
+    if modality == "aso":
+        with pytest.raises(ValueError, match="gapmer design requires"):
+            cfg.validate_config_schema(config)
+    else:
+        cfg.validate_config_schema(config)
+
+
+@pytest.mark.parametrize(
+    "design",
+    [
+        {"type": "custom"},
+        {"type": "unmodified", "sense_length": 21},
+    ],
+)
+def test_config_schema_rejects_designs_outside_the_aso_contract(design):
+    with pytest.raises(ValueError, match=r"modality.design"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
+                "parameters": {
+                    "antisense": {"modality": {"type": "aso", "design": design}}
+                },
+            }
+        )
 
 
 def test_selected_step_rejects_an_unsupported_design(tmp_path):
@@ -295,16 +359,18 @@ def test_selected_step_rejects_an_unsupported_design(tmp_path):
             },
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {"type": "custom"},
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {"type": "custom"},
+                },
             },
         },
     }
 
     with pytest.raises(
         ValueError,
-        match=r"antisense.design.type.*unmodified.*gapmer",
+        match=r"antisense.modality.design.type.*unmodified.*gapmer",
     ):
         cfg.validate_step_config(
             config,
@@ -324,9 +390,11 @@ def test_selected_step_accepts_an_unmodified_aso_design(tmp_path):
             },
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {"type": "unmodified"},
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {"type": "unmodified"},
+                },
             },
         },
     }
@@ -345,9 +413,11 @@ def test_therapeutic_step_reports_sirna_not_implemented(tmp_path):
             "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "sirna",
-                "mechanism": "rnase-h1",
-                "design": {"type": "unmodified"},
+                "modality": {
+                    "type": "sirna",
+                    "mechanism": "rnase-h1",
+                    "design": {"type": "unmodified"},
+                },
             },
         },
     }
@@ -577,19 +647,22 @@ def test_config_schema_rejects_two_target_identifiers(tmp_path):
 )
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
 def test_config_schema_rejects_invalid_gapmer_segment_lengths(field, value):
-    with pytest.raises(ValueError, match=rf"antisense.design.{field}"):
+    with pytest.raises(ValueError, match=rf"antisense.modality.design.{field}"):
         cfg.validate_config_schema(
             {
                 "datadir": ".",
                 "parameters": {
                     "antisense": {
-                        "design": {
-                            "type": "gapmer",
-                            "left_wing_length": 3,
-                            "gap_length": 10,
-                            "right_wing_length": 3,
-                            field: value,
-                        }
+                        "modality": {
+                            "type": "aso",
+                            "design": {
+                                "type": "gapmer",
+                                "left_wing_length": 3,
+                                "gap_length": 10,
+                                "right_wing_length": 3,
+                                field: value,
+                            },
+                        },
                     }
                 },
             }
@@ -609,19 +682,29 @@ def test_config_schema_requires_every_gapmer_segment_length(missing_field):
     }
     del design[missing_field]
 
-    with pytest.raises(ValueError, match=rf"antisense.design.*{missing_field}"):
-        cfg.validate_config_schema(
-            {"datadir": ".", "parameters": {"antisense": {"design": design}}}
-        )
-
-
-def test_config_schema_rejects_gapmer_lengths_for_unmodified_aso():
-    with pytest.raises(ValueError, match="antisense.design"):
+    with pytest.raises(ValueError, match=rf"antisense.modality.design.*{missing_field}"):
         cfg.validate_config_schema(
             {
                 "datadir": ".",
                 "parameters": {
-                    "antisense": {"design": {"type": "unmodified", "gap_length": 10}}
+                    "antisense": {"modality": {"type": "aso", "design": design}}
+                },
+            }
+        )
+
+
+def test_config_schema_rejects_gapmer_lengths_for_unmodified_aso():
+    with pytest.raises(ValueError, match="antisense.modality.design"):
+        cfg.validate_config_schema(
+            {
+                "datadir": ".",
+                "parameters": {
+                    "antisense": {
+                        "modality": {
+                            "type": "aso",
+                            "design": {"type": "unmodified", "gap_length": 10},
+                        }
+                    }
                 },
             }
         )
@@ -636,13 +719,15 @@ def test_selected_step_requires_gapmer_segments_to_match_target_length(
             "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 18, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 },
             },
         },
@@ -685,13 +770,15 @@ def test_validate_step_config_rejects_invalid_override_path(
             "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 },
             },
         },
@@ -718,13 +805,15 @@ def test_validate_step_config_checks_override_file_contents(tmp_path):
             "genome": {"assembly": "GRCh38"},
             "target": {"target_id": "ENSG1", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 },
             },
         },

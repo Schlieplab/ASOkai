@@ -51,7 +51,7 @@ def test_template_field_uses_a_literal_default_for_a_missing_optional_value():
         "layout-{left}.json",
         fields={
             "left": TemplateField(
-                "antisense.design.left_wing_length",
+                "antisense.modality.design.left_wing_length",
                 default="na",
             ),
         },
@@ -59,7 +59,7 @@ def test_template_field_uses_a_literal_default_for_a_missing_optional_value():
 
     assert destination.render({}).as_posix() == "layout-na.json"
     assert destination.render(
-        {"antisense": {"design": {"left_wing_length": 3}}}
+        {"antisense": {"modality": {"design": {"left_wing_length": 3}}}}
     ).as_posix() == "layout-3.json"
 
 

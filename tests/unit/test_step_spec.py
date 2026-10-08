@@ -68,11 +68,11 @@ def test_step_spec_derives_config_maps():
 
 def test_step_spec_normalizes_declared_compatibility():
     spec = StepSpec(
-        compatible_with={"antisense.mechanism": ["rnase-h1"]},
+        compatible_with={"antisense.modality.mechanism": ["rnase-h1"]},
     )
 
     assert spec.compatible_with == {
-        "antisense.mechanism": ("rnase-h1",),
+        "antisense.modality.mechanism": ("rnase-h1",),
     }
 
 

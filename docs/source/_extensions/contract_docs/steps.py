@@ -698,17 +698,17 @@ def _conditional_parameter_section(
     alternatives: list[nodes.Node] = []
     for value, fields in group.alternatives.items():
         description = nodes.paragraph()
-        description += nodes.Text("Set ")
-        description += nodes.literal(
-            group.discriminator.path,
-            group.discriminator.path,
-        )
-        description += nodes.Text(" to ")
-        description += nodes.literal(value, value)
+        selections = [*group.conditions.items(), (group.discriminator.path, value)]
+        for index, (path, selected_value) in enumerate(selections):
+            description += nodes.Text("Set " if index == 0 else " and ")
+            description += nodes.literal(path, path)
+            description += nodes.Text(" to ")
+            description += nodes.literal(selected_value, selected_value)
         description += nodes.Text(".")
 
         variant_config: dict[str, Any] = {}
-        _assign_path(variant_config, group.discriminator.path, value)
+        for path, selected_value in selections:
+            _assign_path(variant_config, path, selected_value)
         for field in fields:
             example_value = _resolve_optional(example_config, field.path)
             if example_value is not None:

@@ -145,6 +145,11 @@ Use ``StepSpec.compatible_with`` only for real biological applicability
 restrictions, such as a mechanism or modality required by the analysis. Omit
 it when the analysis is generally applicable.
 
+The modality selector is ``parameters.antisense.modality.type``. Each modality
+owns its mechanism at ``parameters.antisense.modality.mechanism`` and its design
+settings below ``parameters.antisense.modality.design``; scope
+design validation to the applicable modality in the configuration schema.
+
 .. _generated-step-reference:
 
 Generated reference documentation

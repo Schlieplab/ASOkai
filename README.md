@@ -61,14 +61,19 @@ gapmer:
 ```yaml
 parameters:
   antisense:
-    modality: aso
-    mechanism: rnase-h1
-    design:
-      type: gapmer
-      left_wing_length: 3
-      gap_length: 10
-      right_wing_length: 3
+    modality:
+      type: aso
+      mechanism: rnase-h1
+      design:
+        type: gapmer
+        left_wing_length: 3
+        gap_length: 10
+        right_wing_length: 3
 ```
+
+Each modality groups its mechanism under `modality.mechanism` and its design
+settings under `modality.design`. For an unmodified DNA ASO, set
+`modality.design` to `{type: unmodified}`.
 
 ## ASOkai CLI
 

@@ -262,13 +262,15 @@ def workflow_config(tmp_path):
             },
             "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
             "antisense": {
-                "modality": "aso",
-                "mechanism": "rnase-h1",
-                "design": {
-                    "type": "gapmer",
-                    "left_wing_length": 3,
-                    "gap_length": 10,
-                    "right_wing_length": 3,
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
                 },
             },
         },

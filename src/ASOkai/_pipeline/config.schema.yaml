@@ -279,76 +279,98 @@ properties:
         additionalProperties: false
         properties:
           modality:
-            type: string
-            minLength: 1
-            description: Antisense therapeutic modality.
-          mechanism:
-            type: string
-            minLength: 1
-            description: Therapeutic mechanism of action.
-          design:
             type: object
             additionalProperties: false
+            required: [type]
             properties:
               type:
                 type: string
                 minLength: 1
-                description: Structural design of the antisense therapeutic.
-              left_wing_length:
-                type: integer
-                minimum: 1
-                description: >-
-                  Number of nucleotides in the left gapmer wing. Required for a
-                  gapmer design and not used by an unmodified design.
-              gap_length:
-                type: integer
-                minimum: 1
-                description: >-
-                  Number of nucleotides in the central gapmer gap. Required for a
-                  gapmer design and not used by an unmodified design.
-              right_wing_length:
-                type: integer
-                minimum: 1
-                description: >-
-                  Number of nucleotides in the right gapmer wing. Required for a
-                  gapmer design and not used by an unmodified design.
+                description: Antisense therapeutic modality.
+              mechanism:
+                type: string
+                minLength: 1
+                description: Therapeutic mechanism of action for the selected modality.
+              design:
+                type: object
+                additionalProperties: true
+                required: [type]
+                properties:
+                  type:
+                    type: string
+                    minLength: 1
+                    description: Structural design of the antisense therapeutic.
+                  left_wing_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the left gapmer wing. Required for a
+                      gapmer design and not used by an unmodified design.
+                  gap_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the central gapmer gap. Required for a
+                      gapmer design and not used by an unmodified design.
+                  right_wing_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the right gapmer wing. Required for a
+                      gapmer design and not used by an unmodified design.
             allOf:
-              - x-error-message: >-
-                  A gapmer design requires left_wing_length, gap_length, and
-                  right_wing_length.
-                if:
-                  required:
-                    - type
+              - if:
+                  required: [type]
                   properties:
                     type:
-                      const: gapmer
+                      const: aso
                 then:
-                  x-error-message: >-
-                    A gapmer design requires left_wing_length, gap_length, and
-                    right_wing_length.
-                  required:
-                    - left_wing_length
-                    - gap_length
-                    - right_wing_length
-              - x-error-message: >-
-                  An unmodified design must not define gapmer segment lengths.
-                if:
-                  required:
-                    - type
                   properties:
-                    type:
-                      const: unmodified
-                then:
-                  x-error-message: >-
-                    An unmodified design must not define gapmer segment lengths.
-                  not:
-                    anyOf:
-                      - required:
-                          - left_wing_length
-                      - required:
-                          - gap_length
-                      - required:
-                          - right_wing_length
+                    design:
+                      additionalProperties: false
+                      properties:
+                        type:
+                          enum: [unmodified, gapmer]
+                        left_wing_length: {}
+                        gap_length: {}
+                        right_wing_length: {}
+                      allOf:
+                        - x-error-message: >-
+                            A gapmer design requires left_wing_length, gap_length, and
+                            right_wing_length.
+                          if:
+                            required:
+                              - type
+                            properties:
+                              type:
+                                const: gapmer
+                          then:
+                            x-error-message: >-
+                              A gapmer design requires left_wing_length, gap_length, and
+                              right_wing_length.
+                            required:
+                              - left_wing_length
+                              - gap_length
+                              - right_wing_length
+                        - x-error-message: >-
+                            An unmodified design must not define gapmer segment lengths.
+                          if:
+                            required:
+                              - type
+                            properties:
+                              type:
+                                const: unmodified
+                          then:
+                            x-error-message: >-
+                              An unmodified design must not define gapmer segment lengths.
+                            not:
+                              anyOf:
+                                - required:
+                                    - left_wing_length
+                                - required:
+                                    - gap_length
+                                - required:
+                                    - right_wing_length
 
   resources:
     type: object

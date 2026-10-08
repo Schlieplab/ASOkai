@@ -156,10 +156,11 @@ output-reuse ``validation`` setting are also root keys. For example::
        k: 16
        region: pre-mrna
      antisense:
-       modality: aso
-       mechanism: rnase-h1
-       design:
-         type: unmodified
+       modality:
+         type: aso
+         mechanism: rnase-h1
+         design:
+           type: unmodified
    resources:
      default:
        n_workers: 2

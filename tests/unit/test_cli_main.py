@@ -1166,6 +1166,62 @@ def test_input_selection_applies_to_task_child():
     ]
 
 
+@pytest.mark.parametrize("command", ["run", "export"])
+def test_cli_candidate_generation_resolves_modality_specific_design(
+    monkeypatch, tmp_path, command
+):
+    from ASOkai._pipeline.plan import build_export_plan
+
+    captured = {}
+
+    def capture(_runnables, config, **kwargs):
+        config["datadir"] = str(tmp_path)
+        captured["plan"] = build_export_plan(
+            [],
+            config,
+            recursive=True,
+            _registry=kwargs["registered_steps"],
+            _tasks=kwargs["registered_tasks"],
+            _config_schema_paths=kwargs["config_schema_paths"],
+        )
+        return tmp_path / "export"
+
+    monkeypatch.setattr("ASOkai._cli.execution.runner.run_all", capture)
+    monkeypatch.setattr("ASOkai._cli.execution.runner.export_all", capture)
+    arguments = [command, "--no-config"]
+    for assignment in (
+        "genome.assembly=GRCh38",
+        "genome.release=114",
+        "genome.species=Homo_sapiens",
+        "target.target_id=ENSG00000133703",
+        "target.k=16",
+        "target.region=pre-mrna",
+    ):
+        arguments.extend(["--param", assignment])
+    arguments.extend(["--step", "generate-therapeutic-candidates"])
+    for assignment in (
+        "antisense.modality.type=aso",
+        "antisense.modality.mechanism=rnase-h1",
+        "antisense.modality.design.type=gapmer",
+        "antisense.modality.design.left_wing_length=3",
+        "antisense.modality.design.gap_length=10",
+        "antisense.modality.design.right_wing_length=3",
+    ):
+        arguments.extend(["--param", assignment])
+
+    result = CliRunner().invoke(main, arguments)
+
+    assert result.exit_code == 0, result.output
+    goal = captured["plan"].goals[0]
+    assert goal.parameters["modality"] == "aso"
+    assert goal.parameters["mechanism"] == "rnase-h1"
+    assert goal.parameters["design"] == "gapmer"
+    assert goal.parameters["gap_length"] == 10
+    assert goal.output_paths()["therapeutics"].name == (
+        "ENSG00000133703_k16_pre-mrna_aso_gapmer_l3_g10_r3_rnase-h1_therapeutics.json"
+    )
+
+
 def test_cli_rejects_selection_alongside_configured_runs(monkeypatch):
     monkeypatch.setattr(
         "ASOkai._cli.execution.cfg.load",

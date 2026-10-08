@@ -24,7 +24,7 @@ CSV or JSON outputs after it and return their values from
 
 Use ``StepSpec.compatible_with`` only when the analysis is biologically
 restricted, for example
-``compatible_with={"parameters.antisense.mechanism": ["rnase-h1"]}``. Omit it for an
+``compatible_with={"parameters.antisense.modality.mechanism": ["rnase-h1"]}``. Omit it for an
 analysis that applies regardless of modality, mechanism, or chemistry.
 
 Most steps need no custom validation. Override ``validate_parameters`` only

@@ -29,17 +29,25 @@ from ASOkai._pipeline.validation import validate_component
 
 class FakeAnalysis(PerUnitAnalysis):
     analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
-    last_worker_count = None
+    last_worker_count: ClassVar[int | None] = None
 
     def __init__(self, value: int) -> None:
         self.value = value
 
-    def run(self, units, *, n_workers=1):
-        type(self).last_worker_count = n_workers
-        return super().run(units, n_workers=n_workers)
-
     def analyze_unit(self, unit: str) -> list[dict[str, Scalar]]:
         return [{"site_id": unit, "value": self.value}]
+
+
+@pytest.fixture(autouse=True)
+def record_fake_analysis_workers(monkeypatch):
+    original_run = PerUnitAnalysis.run
+
+    def record_run(analysis, units, *, n_workers=1):
+        if isinstance(analysis, FakeAnalysis):
+            type(analysis).last_worker_count = n_workers
+        return original_run(analysis, units, n_workers=n_workers)
+
+    monkeypatch.setattr(PerUnitAnalysis, "run", record_run)
 
 
 class TextAnalysis(PerUnitAnalysis):

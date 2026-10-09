@@ -181,7 +181,10 @@ def test_list_commands_show_registered_units():
     assert analyses.exit_code == 0
     assert "compute-intrinsic-features" in analyses.output
     assert "(step)" in analyses.output
-    assert "[Per site]" in analyses.output
+    assert "[Per site]" not in analyses.output
+    assert "identify-potential-repeated-sites" not in analyses.output
+    assert "find-repeated-sites" in analyses.output
+    assert "find-repeated-sites" in tasks.output
     assert "instantiate-target-gene" not in analyses.output
 
     assert workflows.exit_code == 0
@@ -245,6 +248,7 @@ def test_list_analyses_includes_categorized_tasks_and_respects_hidden_steps(
     assert "compute-intrinsic-features" not in public.output
     assert "compute-intrinsic-features" in verbose.output
     assert "(step)" in verbose.output
+    assert "[Per site]" not in verbose.output
     assert tasks.exit_code == 0
     assert "Analysis\n" in tasks.output
     assert "example-analysis-task" in tasks.output

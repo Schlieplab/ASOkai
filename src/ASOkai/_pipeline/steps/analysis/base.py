@@ -10,7 +10,7 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any, ClassVar
+from typing import Any, ClassVar, final
 
 from ASOkai.Analysis import Analysis, BatchAnalysis, PerUnitAnalysis
 from ASOkai._pipeline.steps.base import Step
@@ -40,6 +40,7 @@ class AnalysisStep(Step):
             f"Analysis step '{self.name}' must implement write_results()."
         )
 
+    @final
     def run_from_args(self, args) -> int:
         """Run the configured analysis and write all declared outputs."""
         if self.analysis_cls is None:

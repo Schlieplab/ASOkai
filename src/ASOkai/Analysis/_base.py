@@ -14,7 +14,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, ClassVar
+from typing import Any, ClassVar, final
 
 from ASOkai.Types import AnalysisUnitType
 
@@ -75,6 +75,7 @@ class PerUnitAnalysis(Analysis):
     #: Target tasks per process when deriving a chunk size.
     target_tasks_per_worker: ClassVar[int] = 512
 
+    @final
     def run(self, units: Iterable[Any], *, n_workers: int = 1) -> list[Any]:
         """Collect zero or more results per unit in input order."""
         if type(n_workers) is not int or n_workers < 1:
@@ -163,7 +164,7 @@ class PerUnitAnalysis(Analysis):
                 _WORKER_ANALYSIS, _WORKER_UNITS = None, []
 
     @abstractmethod
-    def analyze_unit(self, unit: Any) -> Iterable[Any]:
+    def analyze_unit(self, unit: Any, /) -> Iterable[Any]:
         """Return zero or more results for one analysis unit."""
         ...
 
@@ -171,6 +172,7 @@ class PerUnitAnalysis(Analysis):
 class BatchAnalysis(Analysis):
     """Pass the whole collection of units to one backend invocation."""
 
+    @final
     def run(self, units: Iterable[Any], *, n_workers: int = 1) -> list[Any]:
         """Pass the collected units and worker count to the backend."""
         if type(n_workers) is not int or n_workers < 1:

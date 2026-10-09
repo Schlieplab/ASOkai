@@ -54,6 +54,7 @@ where = ["src"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+reportIncompatibleMethodOverride = "error"
 extraPaths = ["src", "docs/source/_extensions"]
 include = [
     "src",

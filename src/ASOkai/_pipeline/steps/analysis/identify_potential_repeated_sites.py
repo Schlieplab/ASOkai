@@ -67,6 +67,7 @@ _PATH_FIELDS = {
 
 class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
     name = "identify-potential-repeated-sites"
+    listed = False
     description = (
         "Searches potential repeated sites that each target site's own "
         "gapmer still binds."
@@ -81,10 +82,12 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
         "potential_repeated_sites",
         file_type=FastaFile(),
         destination=OutputPathTemplate(
-            "{assembly}/{source}/{release}/targets/{target}/"
-            "analysis/repeated_sites/"
-            "{target}_k{k}_{region}_gapmer_l{left}_g{gap}_r{right}_"
-            "ddg{max_ddg}_tol{tolerance}_potential_repeated_sites.fa",
+            template=(
+                "{assembly}/{source}/{release}/targets/{target}/"
+                "analysis/repeated_sites/"
+                "{target}_k{k}_{region}_gapmer_l{left}_g{gap}_r{right}_"
+                "ddg{max_ddg}_tol{tolerance}_potential_repeated_sites.fa"
+            ),
             fields=_PATH_FIELDS,
         ),
         doc=(

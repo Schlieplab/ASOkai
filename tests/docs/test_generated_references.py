@@ -223,6 +223,8 @@ def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
 
     assert "/steps/compute-intrinsic-features" in targets
     assert "/tasks/example-analysis-task" in targets
+    assert "/steps/identify-potential-repeated-sites" not in targets
+    assert "/tasks/find-repeated-sites" in targets
     assert "/tasks/instantiate-target-gene" not in targets
 
 

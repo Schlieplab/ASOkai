@@ -26,22 +26,6 @@ the step class, where ASOkai already knows how to handle it. In practice that
 means you can develop and test the calculation on its own, and that changes to
 how the pipeline runs do not affect your calculations.
 
-A step run moves left to right through three stages, and you own only the middle
-one:
-
-.. code-block:: text
-
-   ┌── ASOkai ──────────────┐   ┌ your analysis ┐   ┌── ASOkai ─────────────┐
-   │ parse and validate     │   │               │   │ validate each         │
-   │ every input file       │   │               │   │ declared output       │
-   │                        │   │  the analysis │   │                       │
-   │ resolve configuration  │──>│  calculation  │──>│ write it to its       │
-   │ into parameters        │   │               │   │ destination path      │
-   │                        │   │               │   │                       │
-   │ construct the analysis │   │               │   │ record a receipt so   │
-   │ and collect its units  │   │               │   │ the run can be reused │
-   └────────────────────────┘   └───────────────┘   └───────────────────────┘
-
 You write the calculation and the declarations that describe it. Argument
 parsing, file loading and writing, path construction, dependency resolution,
 and the step's reference documentation page are all handled by ASOkai's own
@@ -146,7 +130,7 @@ collection of them.
 Decision 2: what your step writes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Then decide what the step leaves on disk. That choice fixes the base class of
+Then decide what the step writes to disk. That choice fixes the base class of
 your step and whether you write any output code at all.
 
 .. list-table::
@@ -231,7 +215,9 @@ Only on :class:`~ASOkai.Analysis.PerUnitAnalysis`:
    * - ``analyze_unit(unit)`` **required**
      - Returns *zero or more* results for one unit. Returning a list of one is
        normal; returning several is how one unit produces several rows, and
-       returning an empty list drops the unit.
+       returning an empty list drops the unit. The framework passes the unit
+       positionally, so your parameter may be named ``site``, ``therapeutic``,
+       or another name that fits the calculation.
    * - ``uses_worker_processes``
      - Set ``True`` when the calculation holds the interpreter lock. See
        `Running in parallel`_.
@@ -279,6 +265,13 @@ Shared by both step base classes:
    * - ``validate_parameters(values)``
      - Only for relationships between parameters that the schema cannot
        express.
+   * - ``run_from_args(args)`` **Don't override**
+     - Provided and marked final. Constructs the analysis, supplies its units
+       and worker count, and calls the result-writing hook.
+   * - ``listed``
+     - Set ``False`` for an internal step used by a task. It is omitted from
+       the default step and analysis listings, remains selectable by name,
+       and appears in verbose listings.
 
 Only on :class:`~ASOkai.Plugins.AnalysisStep`:
 
@@ -372,6 +365,23 @@ arrives in the documentation with no meaning attached.
 
 Running in parallel
 ~~~~~~~~~~~~~~~~~~~
+
+The person running the pipeline requests a worker count through
+``resources.<step-name>.n_workers``. For example:
+
+.. code-block:: yaml
+
+   resources:
+     my-analysis:
+       n_workers: 1
+
+For ``PerUnitAnalysis``, one worker runs directly without a worker pool. A
+``BatchAnalysis`` receives the same budget and manages its backend's
+parallelism. The setting configures the budget for that step and can be changed
+for another pipeline invocation. Analysis steps expose the standard
+``--n-workers`` argument automatically;
+do not declare it as a ``ScalarParam`` or disable ``supports_multiple_workers``
+on an analysis step.
 
 ``PerUnitAnalysis.run`` gives you parallelism without any work on your part,
 but the right kind depends on your calculation:
@@ -664,11 +674,18 @@ examples.
    * - A rule about the calculation's own arguments
      - Your analysis constructor.
 
-Two layers are sometimes correct: the schema covers configuration files, while
-``validate_parameters`` also covers a direct ``ASOkai step`` invocation, where
-no schema is applied. ``create-target-gene`` enforces "exactly one of
-``target_id`` or ``target_name``" in both places for that reason. What to avoid
-is the same rule repeated twice for the *same* entry point.
+The parameter resolver applies the schema at each ``ScalarParam.config`` path
+to shared configuration, run overrides, defaults, and direct ``ASOkai step``
+arguments. Keep scalar type, choice, and range constraints in the schema.
+Full configuration validation also checks the configuration structure and
+relationships between groups.
+
+``validate_parameters`` receives the resolved values and handles relationships
+that validation of individual fields cannot establish. For example,
+``create-target-gene`` checks that exactly one of ``target_id`` and
+``target_name`` is supplied, including when invoked directly. A relationship
+may also appear in the full configuration schema; it should not require
+duplicating the validation of individual scalar fields in the step.
 
 Use ``StepSpec.compatible_with`` only for a real biological restriction, such
 as an analysis that is meaningful only for one mechanism:
@@ -739,8 +756,9 @@ faster, and a failure points at the calculation instead of the plumbing.
 model yours on.
 
 The shared contract checks in ``tests/contributor`` already cover registration,
-configuration paths, and documentation generation for every step, so you do not
-need to repeat those.
+configuration paths, and generated interfaces for every step. Documentation
+generation is checked in ``tests/docs`` and by the Sphinx build, so you do not
+need to repeat those shared checks in your analysis tests.
 
 Step 8: check your work
 -----------------------
@@ -751,6 +769,7 @@ While developing, run your own tests together with the shared contract checks:
 
    pytest -q tests/unit/test_<analysis>.py tests/unit/test_<analysis>_step.py
    pytest -q tests/contributor/test_analysis_steps.py
+   pytest -q tests/docs/test_generated_references.py
    pre-commit run validate-asokai-contributor-steps --all-files
 
 The contract checks:
@@ -761,15 +780,20 @@ The contract checks:
    pre-commit run validate-asokai-contributor-steps --all-files
 
 verify that your step is registered once, that its configuration paths exist
-in the schema, that its contract builds from the example configuration, and
-that its declarations produce a valid reference page.
+in the schema, and that its contract builds from the example configuration.
+The documentation tests check the generated reference pages.
 
 Before submitting:
 
 .. code-block:: console
 
    pytest
+   python -m pyright
    python -m sphinx -W --keep-going -b html docs/source docs/build/html
+
+Pyright checks method-override compatibility, including overrides of the final
+execution methods. The ``check-python-types`` pre-commit hook runs the same
+project type check.
 
 The documentation build is run with warnings as errors, so a broken
 cross-reference fails it.
@@ -795,6 +819,7 @@ reads it:
 
    class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
        name = "identify-potential-repeated-sites"
+       listed = False
        analysis_cls = SimilarSequenceAnalysis
 
        potential_sites_output = FileOutput(
@@ -823,6 +848,12 @@ output: an output called ``potential_repeated_sites`` arrives as
 ``args.potential_repeated_sites_output``, with its parent directory already
 created. And the step still declares its output with a file type, so the
 written file is validated afterwards exactly as a CSV would be.
+
+This step is a child of the :doc:`find-repeated-sites task
+</tasks/find-repeated-sites>`, which is the public entry in the Analyses
+catalog. ``listed = False`` keeps the child out of the default lists; use
+``asokai describe step identify-potential-repeated-sites`` to inspect it or
+``asokai list -v steps`` to include internal steps.
 
 The template
 ------------

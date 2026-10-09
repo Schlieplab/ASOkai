@@ -53,7 +53,11 @@ def _fasta_records(
 
     gene = genome.gene_by_id(target_gene.id)
     if region == "exonic":
-        exons_by_id = {exon.id: exon for exon in gene.exons}
+        exons_by_id = {
+            exon.id: exon
+            for transcript in gene.transcripts
+            for exon in transcript.exons
+        }
         records = [
             SeqRecord(
                 exon.sequence,

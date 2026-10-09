@@ -106,7 +106,7 @@ def list_command(ctx: click.Context, unit: str) -> None:
         ):
             click.echo(
                 f"  {name:<{name_width}} ({kind}) "
-                f"{_display_description(pipeline_unit)}"
+                f"{pipeline_unit.description}"
             )
         return
 

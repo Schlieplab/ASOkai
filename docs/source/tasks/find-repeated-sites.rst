@@ -3,6 +3,10 @@ Find repeated sites
 
 .. asokai-runnable-reference:: task find-repeated-sites
 
+This task is the public entry in the Analyses catalog. Its
+``identify-potential-repeated-sites`` child is an internal step; inspect it with
+``asokai describe step identify-potential-repeated-sites``.
+
 This task prepares the data needed to find the genomic sites at which each
 target site repeats, for RNase H1 gapmer ASOs. ``create-target-gene`` supplies
 the target gene and its FASTA, ``build-bowtie2-index`` indexes that FASTA, and

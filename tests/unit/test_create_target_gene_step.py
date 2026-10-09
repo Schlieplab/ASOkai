@@ -188,7 +188,6 @@ def test_fasta_records_match_selected_region() -> None:
     ]
     genome = MagicMock()
     genome.gene_by_id.return_value = SimpleNamespace(
-        exons=transcripts[0].exons + transcripts[1].exons,
         transcripts=transcripts,
     )
 
@@ -237,7 +236,7 @@ def test_fasta_records_reject_empty_region(region: str) -> None:
         sites={},
     )
     genome = MagicMock()
-    genome.gene_by_id.return_value = SimpleNamespace(exons=[], transcripts=[])
+    genome.gene_by_id.return_value = SimpleNamespace(transcripts=[])
 
     with pytest.raises(ValueError, match=f"no {region} sequences"):
         _fasta_records(genome, target_gene, region)

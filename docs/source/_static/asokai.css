@@ -38,3 +38,24 @@
 .rst-content .asokai-reference-details p:last-child {
   margin-bottom: 0;
 }
+
+/* Hand-written guide tables wrap and grow taller instead of scrolling
+   sideways. Column proportions come from each table's own :widths:. */
+.rst-content table.asokai-guide-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.rst-content table.asokai-guide-table th,
+.rst-content table.asokai-guide-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  white-space: normal;
+  word-break: normal;
+}
+
+.rst-content table.asokai-guide-table code.literal,
+.rst-content table.asokai-guide-table code.literal span.pre {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

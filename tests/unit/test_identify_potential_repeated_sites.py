@@ -7,7 +7,6 @@ Description: Tests for the similar-sequence search and its pipeline step.
 License: LGPL-3.0-or-later
 """
 
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -258,28 +257,6 @@ def test_search_returns_identifier_and_sequence_pairs() -> None:
         assert sequence[3:13] == site_sequence[3:13]
         references += not mutations
     assert references == len(sites)
-
-
-def test_search_logs_progress_at_its_interval(caplog) -> None:
-    sites = list(_sites().values())
-
-    class Noisy(SimilarSequenceAnalysis):
-        progress_interval = 1
-
-    with caplog.at_level(logging.INFO, logger="ASOkai.Analysis._similar_sequence"):
-        Noisy(*LAYOUT, max_ddg=0.5).run(sites, n_workers=1)
-
-    assert len([r for r in caplog.records if "Searched" in r.message]) == len(sites)
-
-
-def test_search_can_report_no_progress(caplog) -> None:
-    class Quiet(SimilarSequenceAnalysis):
-        progress_interval = 0
-
-    with caplog.at_level(logging.INFO, logger="ASOkai.Analysis._similar_sequence"):
-        Quiet(*LAYOUT, max_ddg=0.5).run(list(_sites().values()), n_workers=1)
-
-    assert not [r for r in caplog.records if "Searched" in r.message]
 
 
 def test_search_rejects_negative_thresholds() -> None:

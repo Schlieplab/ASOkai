@@ -10,11 +10,8 @@ License: LGPL-3.0-or-later
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-import logging
-import os
 from pathlib import Path
 import re
-import time
 from typing import Any, ClassVar, Mapping
 
 import RNA
@@ -24,7 +21,6 @@ from ..Types import AnalysisUnitType
 from ._base import PerUnitAnalysis
 
 _NUCLEOTIDES = "ACGT"
-logger = logging.getLogger(__name__)
 
 #: The set ViennaRNA itself uses unless another one is loaded.
 DEFAULT_ENERGY_PARAMETERS = "RNA_Turner2004"
@@ -224,9 +220,6 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
     analysis_unit_type: ClassVar[AnalysisUnitType] = "site"
     uses_worker_processes = True
 
-    #: Sites one process searches between progress lines; 0 logs nothing.
-    progress_interval: ClassVar[int] = 1000
-
     def __init__(
         self,
         left_wing_length: int,
@@ -280,10 +273,6 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
         # ViennaRNA keeps one parameter table per process. Loading it here
         # puts it in place before any worker is forked from this process.
         _load_energy_parameters(energy_parameters, energy_parameter_file)
-        # Progress state stays private to whichever process touches it: a
-        # forked worker counts only its own sites and never reports back.
-        self._searched = 0
-        self._started = 0.0
 
     def analyze_unit(self, site: Site) -> list[SimilarSequence]:
         """Search one target site for the sequences its gapmer still binds.
@@ -336,7 +325,6 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
                         found[mutated] = (mutated_mutations, delta)
             frontier = next_frontier
 
-        self._report_progress()
         return [
             (_similar_sequence_id(site.id, ()), sequence),
             *(
@@ -347,20 +335,3 @@ class SimilarSequenceAnalysis(PerUnitAnalysis):
                 )
             ),
         ]
-
-    def _report_progress(self) -> None:
-        """Log how many sites this process has searched, now and then."""
-        if not self.progress_interval:
-            return
-        if not self._searched:
-            self._started = time.monotonic()
-        self._searched += 1
-        if self._searched % self.progress_interval:
-            return
-        elapsed = time.monotonic() - self._started
-        logger.info(
-            "Searched %d sites in worker %d (%.1f sites/s)",
-            self._searched,
-            os.getpid(),
-            self._searched / elapsed if elapsed else 0.0,
-        )

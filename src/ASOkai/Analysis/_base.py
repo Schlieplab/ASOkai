@@ -16,9 +16,16 @@ from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar, final
 
+from tqdm import tqdm
+
 from ASOkai.Types import AnalysisUnitType
 
 logger = logging.getLogger(__name__)
+
+# A progress bar otherwise starts a monitor thread that outlives it, and a
+# parent with a second thread cannot fork workers, so showing progress would
+# silently cost every process-backed analysis its parallelism.
+tqdm.monitor_interval = 0
 
 # Forked workers inherit these objects; tasks send only index ranges.
 _WORKER_ANALYSIS: "PerUnitAnalysis | None" = None
@@ -73,7 +80,10 @@ class PerUnitAnalysis(Analysis):
     worker_chunk_size: ClassVar[int | None] = None
 
     #: Target tasks per process when deriving a chunk size.
-    target_tasks_per_worker: ClassVar[int] = 512
+    target_tasks_per_worker: ClassVar[int] = 256
+
+    #: Show a progress bar while running, on a terminal.
+    show_progress: ClassVar[bool] = True
 
     @final
     def run(self, units: Iterable[Any], *, n_workers: int = 1) -> list[Any]:
@@ -83,30 +93,62 @@ class PerUnitAnalysis(Analysis):
         analysis_units = list(units)
         if not analysis_units:
             return []
-        if n_workers == 1:
-            logger.debug("%s: running sequentially", type(self).__name__)
-            results = map(self.analyze_unit, analysis_units)
-            return [result for unit_results in results for result in unit_results]
-        if self.uses_worker_processes:
-            reason = self._fork_unavailable_reason()
-            if reason is None:
-                logger.debug(
-                    "%s: using %d process workers", type(self).__name__, n_workers
+        with self._progress(len(analysis_units)) as progress:
+            if n_workers == 1:
+                logger.debug("%s: running sequentially", type(self).__name__)
+                return self._collect(
+                    ((1, self.analyze_unit(unit)) for unit in analysis_units),
+                    progress,
                 )
-                return self._run_on_processes(analysis_units, n_workers)
-            logger.debug(
-                "%s: using %d thread workers (process workers unavailable: %s)",
-                type(self).__name__,
-                n_workers,
-                reason,
-            )
-        else:
-            logger.debug(
-                "%s: using %d thread workers", type(self).__name__, n_workers
-            )
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            results = executor.map(self.analyze_unit, analysis_units)
-            return [result for unit_results in results for result in unit_results]
+            if self.uses_worker_processes:
+                reason = self._fork_unavailable_reason()
+                if reason is None:
+                    logger.debug(
+                        "%s: using %d process workers", type(self).__name__, n_workers
+                    )
+                    return self._run_on_processes(analysis_units, n_workers, progress)
+                logger.debug(
+                    "%s: using %d thread workers (process workers unavailable: %s)",
+                    type(self).__name__,
+                    n_workers,
+                    reason,
+                )
+            else:
+                logger.debug(
+                    "%s: using %d thread workers", type(self).__name__, n_workers
+                )
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                return self._collect(
+                    (
+                        (1, unit_results)
+                        for unit_results in executor.map(
+                            self.analyze_unit, analysis_units
+                        )
+                    ),
+                    progress,
+                )
+
+    def _progress(self, n_units: int) -> tqdm:
+        """Return a progress bar over the units about to be analyzed."""
+        return tqdm(
+            total=n_units,
+            desc=type(self).__name__,
+            unit=self.analysis_unit_type or "unit",
+            # None lets tqdm disable itself off a terminal, which keeps
+            # carriage returns out of pipeline and CWL logs.
+            disable=None if self.show_progress else True,
+        )
+
+    @staticmethod
+    def _collect(
+        analyzed: Iterable[tuple[int, Iterable[Any]]], progress: tqdm
+    ) -> list[Any]:
+        """Flatten results in input order, counting units as they finish."""
+        results: list[Any] = []
+        for n_units, unit_results in analyzed:
+            results.extend(unit_results)
+            progress.update(n_units)
+        return results
 
     @staticmethod
     def _fork_unavailable_reason() -> str | None:
@@ -130,7 +172,7 @@ class PerUnitAnalysis(Analysis):
         return self.worker_chunk_size
 
     def _run_on_processes(
-        self, analysis_units: list[Any], n_workers: int
+        self, analysis_units: list[Any], n_workers: int, progress: tqdm
     ) -> list[Any]:
         """Analyze units on forked workers that inherit them from this process."""
         global _WORKER_ANALYSIS, _WORKER_UNITS
@@ -151,13 +193,18 @@ class PerUnitAnalysis(Analysis):
             try:
                 context = multiprocessing.get_context("fork")
                 with context.Pool(processes=n_workers) as pool:
-                    return [
-                        result
-                        for chunk_results in pool.imap(
-                            _analyze_index_range, index_ranges
-                        )
-                        for result in chunk_results
-                    ]
+                    # A task covers a whole range, so it advances the bar by
+                    # every unit it analyzed rather than by one.
+                    return self._collect(
+                        (
+                            (stop - start, chunk_results)
+                            for (start, stop), chunk_results in zip(
+                                index_ranges,
+                                pool.imap(_analyze_index_range, index_ranges),
+                            )
+                        ),
+                        progress,
+                    )
             finally:
                 if owns_frozen_generation:
                     gc.unfreeze()

@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from multiprocessing import Barrier
 from os import getpid
 from pickle import dumps
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, active_count
 from time import sleep
 from typing import ClassVar
 
@@ -366,3 +366,83 @@ def test_a_nested_analysis_inside_a_worker_falls_back_to_worker_threads(
 
     assert [result["value"] for result in results] == [0, 1, 2, 3]
     assert all(result["pid"] == getpid() for result in results)
+
+
+class RecordingBar:
+    """Stands in for tqdm, recording how the run advances it."""
+
+    instances: ClassVar[list["RecordingBar"]] = []
+
+    def __init__(self, total=None, disable=None, **kwargs) -> None:
+        self.total = total
+        self.disable = disable
+        self.updates: list[int] = []
+        RecordingBar.instances.append(self)
+
+    def update(self, n_units: int) -> None:
+        self.updates.append(n_units)
+
+    def __enter__(self) -> "RecordingBar":
+        return self
+
+    def __exit__(self, *exc_info) -> bool:
+        return False
+
+
+@pytest.fixture
+def progress_bars(monkeypatch):
+    """Capture the progress bars a run creates."""
+    RecordingBar.instances = []
+    monkeypatch.setattr(_base, "tqdm", RecordingBar)
+    return RecordingBar.instances
+
+
+@pytest.mark.parametrize("n_workers", [1, 2])
+def test_progress_counts_every_unit_exactly_once(n_workers, progress_bars):
+    CountingAnalysis().run(list(range(4)), n_workers=n_workers)
+
+    (bar,) = progress_bars
+    assert bar.total == 4
+    assert bar.updates == [1, 1, 1, 1]
+
+
+@requires_fork
+def test_progress_counts_whole_ranges_on_worker_processes(
+    progress_bars, monkeypatch
+):
+    # A chunk advances the bar by its own size, not by one.
+    monkeypatch.setattr(ForkedAnalysis, "worker_chunk_size", 4)
+
+    ForkedAnalysis(Lock()).run(
+        [Unpicklable(value) for value in range(16)], n_workers=2
+    )
+
+    (bar,) = progress_bars
+    assert bar.total == 16
+    assert bar.updates == [4, 4, 4, 4]
+
+
+def test_progress_is_left_to_tqdm_to_disable_off_a_terminal(progress_bars):
+    CountingAnalysis().run([0, 1])
+
+    assert progress_bars[0].disable is None
+
+
+def test_progress_can_be_turned_off_for_an_analysis(progress_bars, monkeypatch):
+    monkeypatch.setattr(CountingAnalysis, "show_progress", False)
+
+    CountingAnalysis().run(list(range(4)))
+
+    assert progress_bars[0].disable is True
+
+
+@requires_fork
+def test_showing_progress_does_not_disable_worker_processes():
+    # A progress bar must not leave a thread behind: a parent with a second
+    # thread cannot fork, which would silently serialize every analysis.
+    results = ForkedAnalysis(Lock()).run(
+        [Unpicklable(value) for value in range(8)], n_workers=2
+    )
+
+    assert active_count() == 1
+    assert all(result["pid"] != getpid() for result in results)

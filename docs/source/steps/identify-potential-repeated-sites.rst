@@ -71,11 +71,10 @@ step reports.
 Progress
 --------
 
-The step logs the number of target sites and workers before it starts. Each
-process then logs how many sites it has searched and its current rate, every
-1000 sites by default. A worker counts only its own sites, so the lines from
-several workers add up to the total. Set ``progress_interval`` to 0 on the
-analysis to silence them.
+The step logs the number of target sites and workers before it starts, and
+then shows one progress bar over every site, counting the work of all
+workers together. The bar writes to the terminal, so a run whose output is
+redirected to a file, as under CWL, records nothing for it.
 
 Output
 ------

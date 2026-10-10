@@ -40,14 +40,15 @@ class FakeAnalysis(PerUnitAnalysis):
 
 @pytest.fixture(autouse=True)
 def record_fake_analysis_workers(monkeypatch):
-    original_run = PerUnitAnalysis.run
+    original_stream = PerUnitAnalysis.stream
 
-    def record_run(analysis, units, *, n_workers=1):
+    def record_stream(analysis, units, *, n_workers=1):
         if isinstance(analysis, FakeAnalysis):
             type(analysis).last_worker_count = n_workers
-        return original_run(analysis, units, n_workers=n_workers)
+        return original_stream(analysis, units, n_workers=n_workers)
 
-    monkeypatch.setattr(PerUnitAnalysis, "run", record_run)
+    # run() streams too, so this records whichever one a step uses.
+    monkeypatch.setattr(PerUnitAnalysis, "stream", record_stream)
 
 
 class TextAnalysis(PerUnitAnalysis):
@@ -70,7 +71,8 @@ class JsonAnalysisStep(AnalysisStep):
         return ["site-1", "site-2"]
 
     def write_results(self, args, analysis, results):
-        self.json_output.write(args.json_output, {"values": results})
+        # JSON needs the whole document, so this step collects its rows.
+        self.json_output.write(args.json_output, {"values": list(results)})
 
 
 class FakeAnalysisStep(TableAnalysisStep):

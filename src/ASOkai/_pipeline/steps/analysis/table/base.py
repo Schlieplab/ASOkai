@@ -9,7 +9,7 @@ License: LGPL-3.0-or-later
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from ASOkai.Analysis import Analysis
@@ -114,9 +114,13 @@ class TableAnalysisStep(AnalysisStep):
             output.write(getattr(args, output.argument_name), values[output])
 
     def write_results(
-        self, args, analysis: Analysis, results: list[Any]
+        self, args, analysis: Analysis, results: Iterable[Any]
     ) -> None:
         """Write the primary CSV and every declared additional output."""
+        # A streamed result yields once, and these rows are read twice: for
+        # the additional outputs and for the table itself. A table holds one
+        # row per unit, so collecting them costs little.
+        results = list(results)
         provided_additional_values: object = self.additional_output_values(
             analysis, results
         )

@@ -25,9 +25,10 @@ _NUCLEOTIDES = "ACGT"
 #: The set ViennaRNA itself uses unless another one is loaded.
 DEFAULT_ENERGY_PARAMETERS = "RNA_Turner2004"
 _SEQUENCE_ID_PATTERN = re.compile(
-    r"(?P<site_id>.+)&n(?P<count>\d+)(?P<mutations>(?:_m\d+[ACGT])*)"
+    r"(?P<site_id>[^&]+)"
+    r"(?:&(?P<mutations>[1-9]\d*[ACGT](?:_[1-9]\d*[ACGT])*))?"
 )
-_MUTATION_PATTERN = re.compile(r"_m(\d+)([ACGT])")
+_MUTATION_PATTERN = re.compile(r"(\d+)([ACGT])")
 
 #: One substitution as a zero-based site position and its new nucleotide.
 Mutation = tuple[int, str]
@@ -53,16 +54,16 @@ def _gapmer_core_positions(gap_length: int, right_wing_length: int) -> range:
 def _similar_sequence_id(site_id: str, mutations: Sequence[Mutation]) -> str:
     """Return the identifier describing one result's substitutions.
 
-    The identifier is ``{site_id}&n{count}`` followed by one ``_m{position}
-    {nucleotide}`` group per substitution, with one-based positions. The
-    unmutated site is ``{site_id}&n0``. Applying the groups to the site
+    The identifier is ``{site_id}&{position}{nucleotide}`` with substitutions
+    separated by underscores and one-based positions. The unmutated site
+    uses just ``{site_id}``. Applying the groups to the site
     sequence reproduces the result, so the identifier alone records the whole
     sequence.
     """
-    groups = "".join(
-        f"_m{position + 1}{nucleotide}" for position, nucleotide in mutations
+    groups = "_".join(
+        f"{position + 1}{nucleotide}" for position, nucleotide in mutations
     )
-    return f"{site_id}&n{len(mutations)}{groups}"
+    return f"{site_id}&{groups}" if groups else site_id
 
 
 def _parse_similar_sequence_id(
@@ -71,8 +72,7 @@ def _parse_similar_sequence_id(
     """Return the site ID and zero-based substitutions of a result ID.
 
     Raises:
-        ValueError: If the identifier is malformed or its substitution count
-            does not match the groups that follow it.
+        ValueError: If the identifier is malformed.
     """
     match = _SEQUENCE_ID_PATTERN.fullmatch(identifier)
     if match is None:
@@ -80,14 +80,9 @@ def _parse_similar_sequence_id(
     mutations = tuple(
         (int(position) - 1, nucleotide)
         for position, nucleotide in _MUTATION_PATTERN.findall(
-            match["mutations"]
+            match["mutations"] or ""
         )
     )
-    if len(mutations) != int(match["count"]):
-        raise ValueError(
-            f"Sequence identifier {identifier!r} declares "
-            f"{match['count']} substitution(s) but lists {len(mutations)}."
-        )
     return match["site_id"], mutations
 
 

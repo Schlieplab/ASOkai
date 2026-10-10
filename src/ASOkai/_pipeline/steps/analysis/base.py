@@ -33,9 +33,16 @@ class AnalysisStep(Step):
         )
 
     def write_results(
-        self, args, analysis: Analysis, results: list[Any]
+        self, args, analysis: Analysis, results: Iterable[Any]
     ) -> None:
-        """Write the analysis results through declared output contracts."""
+        """Write the analysis results through declared output contracts.
+
+        A per-unit analysis streams its results, so they arrive as an
+        iterator that yields each result once. Pass it straight to a writer
+        that accepts an iterable to keep an analysis producing far more
+        results than units from holding all of them in memory. A step that
+        needs the results more than once collects them itself.
+        """
         raise NotImplementedError(
             f"Analysis step '{self.name}' must implement write_results()."
         )
@@ -58,6 +65,14 @@ class AnalysisStep(Step):
         units = self.analysis_units(args)
         if not isinstance(analysis, (PerUnitAnalysis, BatchAnalysis)):
             raise TypeError("analysis_cls must use PerUnitAnalysis or BatchAnalysis.")
-        results = analysis.run(units, n_workers=args.n_workers)
-        self.write_results(args, analysis, results)
+        if isinstance(analysis, PerUnitAnalysis):
+            # Write results as the workers produce them, and keep the workers
+            # alive until every output is written.
+            with analysis.stream(units, n_workers=args.n_workers) as results:
+                self.write_results(args, analysis, results)
+            return 0
+        # One backend invocation returns everything it produced at once.
+        self.write_results(
+            args, analysis, analysis.run(units, n_workers=args.n_workers)
+        )
         return 0

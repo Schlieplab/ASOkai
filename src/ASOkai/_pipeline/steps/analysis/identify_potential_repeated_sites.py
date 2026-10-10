@@ -277,12 +277,13 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
 
     def write_results(self, args, analysis, results) -> None:
         """Write every result as one FASTA record named by its identifier."""
-        logger.info("Writing %d potential repeated sites", len(results))
         with args.potential_repeated_sites_output.open(
             "w",
             encoding="utf-8",
         ) as stream:
-            SeqIO.write(
+            # The results stream in while the search runs, so they are counted
+            # on the way past rather than measured up front.
+            written = SeqIO.write(
                 (
                     SeqRecord(Seq(sequence), id=identifier, description="")
                     for identifier, sequence in results
@@ -290,3 +291,4 @@ class IdentifyPotentialRepeatedSitesStep(AnalysisStep):
                 stream,
                 "fasta",
             )
+        logger.info("Wrote %d potential repeated sites", written)

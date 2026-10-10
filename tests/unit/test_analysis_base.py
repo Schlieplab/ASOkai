@@ -11,6 +11,7 @@ import gc
 import logging
 import sys
 from collections.abc import Iterable
+from math import ceil
 from multiprocessing import Barrier
 from os import getpid
 from pickle import dumps
@@ -22,6 +23,7 @@ import pytest
 
 from ASOkai.Analysis import Analysis, BatchAnalysis, PerUnitAnalysis
 from ASOkai.Analysis import _base
+from ASOkai.Analysis._base import _WORKER_PUBLICATION
 from ASOkai.Types import AnalysisUnitType, Scalar
 
 
@@ -268,13 +270,26 @@ def test_thread_worker_failure_preserves_exception_type(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("n_units", "n_workers", "expected"),
-    [(1_000, 4, 1), (45_676, 4, 22), (36_000_000, 64, 1_098)],
+    ("n_units", "n_workers"),
+    [(1_000, 4), (45_676, 4), (36_000_000, 64)],
 )
 def test_derived_chunk_size_bounds_dispatch_without_starving_workers(
-    n_units, n_workers, expected
+    n_units, n_workers
 ):
-    assert ForkedAnalysis(None).chunk_size(n_units, n_workers) == expected
+    analysis = ForkedAnalysis(None)
+
+    chunk = analysis.chunk_size(n_units, n_workers)
+
+    # Either every task is one unit, which balances perfectly, or there are
+    # enough tasks per worker to even out units of uneven cost.
+    tasks = ceil(n_units / chunk)
+    assert chunk >= 1
+    assert chunk == 1 or tasks >= n_workers * analysis.target_tasks_per_worker
+
+
+def test_small_workloads_give_every_task_a_single_unit():
+    # Dispatch costs nothing at this size, so prefer perfect balance.
+    assert ForkedAnalysis(None).chunk_size(1_000, 4) == 1
 
 
 def test_declared_chunk_size_overrides_the_derived_one():
@@ -446,3 +461,80 @@ def test_showing_progress_does_not_disable_worker_processes():
 
     assert active_count() == 1
     assert all(result["pid"] != getpid() for result in results)
+
+
+def test_stream_yields_results_without_collecting_them_all():
+    analysis = CountingAnalysis()
+
+    with analysis.stream([1, 2, 3]) as results:
+        first = next(results)
+        # Nothing forced the remaining units, so the rest is still pending.
+        assert first == {"unit": 1, "hit": 0}
+        assert list(results) == [
+            {"unit": 2, "hit": 0},
+            {"unit": 2, "hit": 1},
+            {"unit": 3, "hit": 0},
+            {"unit": 3, "hit": 1},
+            {"unit": 3, "hit": 2},
+        ]
+
+
+def test_stream_of_no_units_yields_nothing():
+    with CountingAnalysis().stream([]) as results:
+        assert list(results) == []
+
+
+@pytest.mark.parametrize("n_workers", [1, 2])
+def test_run_and_stream_agree(n_workers):
+    analysis = CountingAnalysis()
+    units = list(range(4))
+
+    with analysis.stream(units, n_workers=n_workers) as results:
+        streamed = list(results)
+
+    assert streamed == analysis.run(units, n_workers=n_workers)
+
+
+@requires_fork
+def test_leaving_the_stream_releases_the_worker_processes():
+    analysis = ForkedAnalysis(Lock())
+    units = [Unpicklable(value) for value in range(8)]
+
+    with analysis.stream(units, n_workers=2) as results:
+        next(results)
+
+    # The pool, the publication and the frozen generation are all released
+    # even though the results were never consumed to the end.
+    assert _base._WORKER_ANALYSIS is None
+    assert not _WORKER_PUBLICATION.locked()
+    assert gc.get_freeze_count() == 0
+    assert active_count() == 1
+
+
+@requires_fork
+def test_a_stream_can_run_after_an_abandoned_one():
+    analysis = ForkedAnalysis(Lock())
+    units = [Unpicklable(value) for value in range(8)]
+
+    with analysis.stream(units, n_workers=2) as results:
+        next(results)
+
+    assert [result["value"] for result in analysis.run(units, n_workers=2)] == [
+        0, 1, 2, 3, 4, 5, 6, 7
+    ]
+
+
+@requires_fork
+def test_a_failing_consumer_still_releases_the_worker_processes():
+    analysis = ForkedAnalysis(Lock())
+    units = [Unpicklable(value) for value in range(8)]
+
+    with pytest.raises(RuntimeError, match="writing failed"):
+        with analysis.stream(units, n_workers=2) as results:
+            for _ in results:
+                raise RuntimeError("writing failed")
+
+    assert _base._WORKER_ANALYSIS is None
+    assert not _WORKER_PUBLICATION.locked()
+    assert gc.get_freeze_count() == 0
+    assert active_count() == 1

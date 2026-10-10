@@ -283,7 +283,14 @@ Only on :class:`~ASOkai.Plugins.AnalysisStep`:
    * - Member
      - Purpose
    * - ``write_results(args, analysis, results)`` **required**
-     - Writes the results through your declared outputs.
+     - Writes the results through your declared outputs. After a
+       ``PerUnitAnalysis``, ``results`` is an iterator that arrives while the
+       workers are still running and yields each result once. Pass it
+       straight to a writer that takes an iterable, such as ``SeqIO.write``
+       or ``csv.writer.writerows``, and an analysis returning far more
+       results than units never collects them all in memory. Call
+       ``list(results)`` when you need them twice or need their number up
+       front, and only when the results are small enough to hold.
 
 Only on :class:`~ASOkai.Plugins.TableAnalysisStep`:
 

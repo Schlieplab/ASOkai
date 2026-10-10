@@ -83,28 +83,28 @@ Output
 ready to align against a reference. Each record is named by the site it came
 from and the substitutions applied to it, and carries nothing else::
 
-   >site:GRCh38:12:25250719-25250734:-&n0
+   >site:GRCh38:12:25250719-25250734:-
    ATGACTGAATATAAAC
-   >site:GRCh38:12:25250719-25250734:-&n1_m1G
+   >site:GRCh38:12:25250719-25250734:-&1G
    GTGACTGAATATAAAC
-   >site:GRCh38:12:25250719-25250734:-&n2_m1G_m14G
+   >site:GRCh38:12:25250719-25250734:-&1G_14G
    GTGACTGAATATAGAC
 
-The identifier is the site ID, then ``&n`` and the number of substitutions,
-then one ``_m{position}{nucleotide}`` group per substitution with one-based
-positions. ``&n2_m1G_m14G`` therefore means two substitutions, ``G`` at
-position 1 and ``G`` at position 14. The ``&`` separates the site ID, which
+The identifier is the site ID, then ``&`` and one ``{position}{nucleotide}``
+group per substitution, separated by underscores, with one-based positions
+in the site sequence. ``&1G_14G`` therefore means ``G`` at position 1 and
+``G`` at position 14. The ``&`` separates the site ID, which
 contains colons and hyphens of its own, from the suffix. Applying the groups
 to the site sequence reproduces the result, so the identifier records the
 whole sequence and no side table is needed.
 
 The record carries no description, so an aligner keeps the identifier intact
 as the read name and a later step can recover each alignment's target site
-from that name alone. Every search also writes the unmutated site itself as an
-``&n0`` record, so exact copies of a site are found too. Within one site the
-remaining records are ordered by binding-energy loss. The energies themselves
-are neither written nor returned; the search uses them only to prune and to
-order its results.
+from that name alone. Every search also writes the unmutated site itself as a
+record with just the site ID, so exact copies of a site are found too. Within
+one site the remaining records are ordered by binding-energy loss. The energies
+themselves are neither written nor returned; the search uses them only to prune
+and to order its results.
 
 Limitations
 -----------

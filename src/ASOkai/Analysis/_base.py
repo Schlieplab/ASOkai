@@ -12,8 +12,9 @@ import multiprocessing
 import sys
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import Any, ClassVar, final
 
 from tqdm import tqdm
@@ -80,7 +81,7 @@ class PerUnitAnalysis(Analysis):
     worker_chunk_size: ClassVar[int | None] = None
 
     #: Target tasks per process when deriving a chunk size.
-    target_tasks_per_worker: ClassVar[int] = 256
+    target_tasks_per_worker: ClassVar[int] = 512
 
     #: Show a progress bar while running, on a terminal.
     show_progress: ClassVar[bool] = True
@@ -88,25 +89,44 @@ class PerUnitAnalysis(Analysis):
     @final
     def run(self, units: Iterable[Any], *, n_workers: int = 1) -> list[Any]:
         """Collect zero or more results per unit in input order."""
+        with self.stream(units, n_workers=n_workers) as results:
+            return list(results)
+
+    @final
+    @contextmanager
+    def stream(
+        self, units: Iterable[Any], *, n_workers: int = 1
+    ) -> Generator[Iterator[Any], None, None]:
+        """Yield results in input order as the workers produce them.
+
+        Holding the results in an iterator keeps an analysis that returns far
+        more results than units from collecting all of them in memory. The
+        workers stay alive for as long as this context is open, so consume
+        the iterator inside it, and consume it fully to run every unit.
+        """
         if type(n_workers) is not int or n_workers < 1:
             raise ValueError("n_workers must be a positive integer.")
         analysis_units = list(units)
         if not analysis_units:
-            return []
+            yield iter(())
+            return
         with self._progress(len(analysis_units)) as progress:
             if n_workers == 1:
                 logger.debug("%s: running sequentially", type(self).__name__)
-                return self._collect(
-                    ((1, self.analyze_unit(unit)) for unit in analysis_units),
-                    progress,
-                )
+                analyzed = ((1, self.analyze_unit(unit)) for unit in analysis_units)
+                yield self._flatten(analyzed, progress)
+                return
             if self.uses_worker_processes:
                 reason = self._fork_unavailable_reason()
                 if reason is None:
                     logger.debug(
                         "%s: using %d process workers", type(self).__name__, n_workers
                     )
-                    return self._run_on_processes(analysis_units, n_workers, progress)
+                    with self._analyzed_on_processes(
+                        analysis_units, n_workers
+                    ) as analyzed:
+                        yield self._flatten(analyzed, progress)
+                    return
                 logger.debug(
                     "%s: using %d thread workers (process workers unavailable: %s)",
                     type(self).__name__,
@@ -118,15 +138,13 @@ class PerUnitAnalysis(Analysis):
                     "%s: using %d thread workers", type(self).__name__, n_workers
                 )
             with ThreadPoolExecutor(max_workers=n_workers) as executor:
-                return self._collect(
-                    (
-                        (1, unit_results)
-                        for unit_results in executor.map(
-                            self.analyze_unit, analysis_units
-                        )
-                    ),
-                    progress,
+                analyzed = (
+                    (1, unit_results)
+                    for unit_results in executor.map(
+                        self.analyze_unit, analysis_units
+                    )
                 )
+                yield self._flatten(analyzed, progress)
 
     def _progress(self, n_units: int) -> tqdm:
         """Return a progress bar over the units about to be analyzed."""
@@ -140,15 +158,13 @@ class PerUnitAnalysis(Analysis):
         )
 
     @staticmethod
-    def _collect(
+    def _flatten(
         analyzed: Iterable[tuple[int, Iterable[Any]]], progress: tqdm
-    ) -> list[Any]:
-        """Flatten results in input order, counting units as they finish."""
-        results: list[Any] = []
+    ) -> Iterator[Any]:
+        """Yield results in input order, counting units as they finish."""
         for n_units, unit_results in analyzed:
-            results.extend(unit_results)
+            yield from unit_results
             progress.update(n_units)
-        return results
 
     @staticmethod
     def _fork_unavailable_reason() -> str | None:
@@ -171,9 +187,10 @@ class PerUnitAnalysis(Analysis):
             raise ValueError("worker_chunk_size must be a positive integer.")
         return self.worker_chunk_size
 
-    def _run_on_processes(
-        self, analysis_units: list[Any], n_workers: int, progress: tqdm
-    ) -> list[Any]:
+    @contextmanager
+    def _analyzed_on_processes(
+        self, analysis_units: list[Any], n_workers: int
+    ) -> Generator[Iterator[tuple[int, Iterable[Any]]], None, None]:
         """Analyze units on forked workers that inherit them from this process."""
         global _WORKER_ANALYSIS, _WORKER_UNITS
 
@@ -193,17 +210,14 @@ class PerUnitAnalysis(Analysis):
             try:
                 context = multiprocessing.get_context("fork")
                 with context.Pool(processes=n_workers) as pool:
-                    # A task covers a whole range, so it advances the bar by
-                    # every unit it analyzed rather than by one.
-                    return self._collect(
-                        (
-                            (stop - start, chunk_results)
-                            for (start, stop), chunk_results in zip(
-                                index_ranges,
-                                pool.imap(_analyze_index_range, index_ranges),
-                            )
-                        ),
-                        progress,
+                    # A task covers a whole range, so it reports every unit it
+                    # analyzed rather than one.
+                    yield (
+                        (stop - start, chunk_results)
+                        for (start, stop), chunk_results in zip(
+                            index_ranges,
+                            pool.imap(_analyze_index_range, index_ranges),
+                        )
                     )
             finally:
                 if owns_frozen_generation:

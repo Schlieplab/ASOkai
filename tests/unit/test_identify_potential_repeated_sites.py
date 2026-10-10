@@ -202,7 +202,7 @@ def test_identifiers_round_trip() -> None:
 
     identifier = _similar_sequence_id("site:12:1-16,+", mutations)
 
-    assert identifier == "site:12:1-16,+&n2_m1G_m14T"
+    assert identifier == "site:12:1-16,+&1G_14T"
     assert _parse_similar_sequence_id(identifier) == (
         "site:12:1-16,+",
         mutations,
@@ -218,23 +218,24 @@ def test_identifier_accepts_a_full_genomic_site_id() -> None:
 
     identifier = _similar_sequence_id(site_id, mutations)
 
-    assert identifier == f"{site_id}&n2_m1G_m14G"
+    assert identifier == f"{site_id}&1G_14G"
     assert _parse_similar_sequence_id(identifier) == (site_id, mutations)
 
 
 def test_identifier_of_the_unmutated_site_has_no_groups() -> None:
     identifier = _similar_sequence_id("site:12:1-16,+", ())
 
-    assert identifier == "site:12:1-16,+&n0"
+    assert identifier == "site:12:1-16,+"
     assert _parse_similar_sequence_id(identifier) == ("site:12:1-16,+", ())
 
 
-def test_identifier_rejects_a_wrong_substitution_count() -> None:
-    with pytest.raises(ValueError, match="declares 3 substitution"):
-        _parse_similar_sequence_id("site:1&n3_m1G")
-
+@pytest.mark.parametrize(
+    "identifier",
+    ["site:1&n3_m1G", "site:1&m1G", "site:1&", "site:1&0G", "site:1&1G_"],
+)
+def test_identifier_rejects_malformed_substitutions(identifier: str) -> None:
     with pytest.raises(ValueError, match="Malformed"):
-        _parse_similar_sequence_id("site:1&m1G")
+        _parse_similar_sequence_id(identifier)
 
 
 def test_search_returns_identifier_and_sequence_pairs() -> None:

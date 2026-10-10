@@ -41,7 +41,9 @@ interface.
    :maxdepth: 2
    :caption: Contributor Guide
 
-   contributor-guide/index
+   contributor-guide/guides/Analysis-guide
+   contributor-guide/guides/Pipeline-components
+   contributor-guide/guides/Internal-steps
 
 .. toctree::
    :maxdepth: 0

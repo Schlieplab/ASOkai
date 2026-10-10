@@ -14,6 +14,7 @@ import re
 from abc import ABC
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import fields, is_dataclass
+from difflib import get_close_matches
 from types import NoneType, UnionType
 from typing import (
     Any,
@@ -114,15 +115,83 @@ def json_schema_errors(
     )
     messages: list[str] = []
     for error in errors:
-        parts = tuple(error.absolute_path)
-        display_parts = [
-            (path_names or {}).get(parts[:index + 1], part)
-            for index, part in enumerate(parts)
-        ]
-        messages.append(
-            f"{_json_path(display_parts)}: {_schema_error_message(error)}"
-        )
-    return messages
+        for parts, message in _schema_error_details(error):
+            display_parts = [
+                (path_names or {}).get(parts[:index + 1], part)
+                for index, part in enumerate(parts)
+            ]
+            messages.append(f"{_json_path(display_parts)}: {message}")
+    return list(dict.fromkeys(messages))
+
+
+def _unexpected_fields(instance: Mapping[str, Any], schema: Mapping[str, Any]) -> list[str]:
+    """Find fields rejected by an object's additional-properties rule."""
+    if schema.get("additionalProperties") is not False:
+        return []
+    properties = schema.get("properties", {})
+    patterns = schema.get("patternProperties", {})
+    return sorted(
+        name
+        for name in instance
+        if isinstance(name, str)
+        and name not in properties
+        and not any(re.search(pattern, name) for pattern in patterns)
+    )
+
+
+def _field_suggestion(name: str, schema: Mapping[str, Any]) -> str | None:
+    matches = get_close_matches(name, schema.get("properties", {}), n=1, cutoff=0.75)
+    return matches[0] if matches else None
+
+
+def _schema_error_details(error: Any) -> list[tuple[tuple[str | int, ...], str]]:
+    """Describe field errors and simple exclusive choices without instance dumps."""
+    parts = tuple(error.absolute_path)
+    schema = error.schema
+    if not isinstance(schema, Mapping) or "x-error-message" in schema:
+        return [(parts, _schema_error_message(error))]
+    if isinstance(error.instance, Mapping):
+        unexpected = _unexpected_fields(error.instance, schema)
+        if error.validator == "additionalProperties" and unexpected:
+            details = []
+            for name in unexpected:
+                message = f"Unknown field '{name}'."
+                suggestion = _field_suggestion(name, schema)
+                if suggestion:
+                    message += f" Did you mean '{suggestion}'?"
+                details.append(((*parts, name), message))
+            return details
+        branches = schema.get("oneOf")
+        if error.validator == "oneOf" and isinstance(branches, list):
+            names = []
+            for branch in branches:
+                required = branch.get("required") if isinstance(branch, Mapping) else None
+                if not isinstance(required, list) or len(required) != 1:
+                    break
+                if not isinstance(required[0], str):
+                    break
+                names.append(required[0])
+            if len(names) == len(branches) and len(set(names)) == len(names):
+                selected = [index for index, name in enumerate(names) if name in error.instance]
+                if len(selected) == 1:
+                    details = []
+                    for child in error.context:
+                        if child.schema_path and child.schema_path[0] == selected[0]:
+                            details.extend(_schema_error_details(child))
+                    if details:
+                        return details
+                else:
+                    suggestions = {
+                        suggestion
+                        for name in unexpected
+                        if (suggestion := _field_suggestion(name, schema)) in names
+                    }
+                    if not selected and len(suggestions) == 1:
+                        # The unknown-field error already explains the missing choice.
+                        return []
+                    choices = " or ".join(repr(name) for name in names)
+                    return [(parts, f"Choose exactly one of {choices}.")]
+    return [(parts, _schema_error_message(error))]
 
 
 def validate_json_data(

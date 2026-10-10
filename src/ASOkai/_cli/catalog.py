@@ -374,7 +374,7 @@ def _describe_dependencies(
 @describe_verbose_option
 @click.argument(
     "unit",
-    type=click.Choice(["step", "task", "workflow"]),
+    type=click.Choice(["step", "task", "analysis", "workflow"]),
 )
 @click.argument("name")
 @click.pass_context
@@ -383,19 +383,36 @@ def describe_command(
     unit: str,
     name: str,
 ) -> None:
-    """Describe a step, task, or workflow."""
+    """Describe a step, task, analysis, or workflow."""
     try:
         catalog = get_pipeline_catalog()
     except ValueError as error:
         raise click.ClickException(str(error)) from error
-    registry = {
-        "step": catalog.steps,
-        "task": catalog.tasks,
-        "workflow": catalog.workflows,
-    }[unit]
-    pipeline_unit = registry.get(name)
-    if pipeline_unit is None:
-        raise click.ClickException(f"Unknown {unit} '{name}'.")
+    if unit == "analysis":
+        matches: list[tuple[str, Runnable]] = []
+        step = catalog.steps.get(name)
+        if isinstance(step, AnalysisStep):
+            matches.append(("step", step))
+        task = catalog.tasks.get(name)
+        if task is not None and task_category(task) == "analysis":
+            matches.append(("task", task))
+        if not matches:
+            raise click.ClickException(f"Unknown analysis '{name}'.")
+        if len(matches) > 1:
+            raise click.ClickException(
+                f"Analysis '{name}' is ambiguous; use 'asokai describe step {name}' "
+                f"or 'asokai describe task {name}'."
+            )
+        unit, pipeline_unit = matches[0]
+    else:
+        registry = {
+            "step": catalog.steps,
+            "task": catalog.tasks,
+            "workflow": catalog.workflows,
+        }[unit]
+        pipeline_unit = registry.get(name)
+        if pipeline_unit is None:
+            raise click.ClickException(f"Unknown {unit} '{name}'.")
 
     click.echo(f"Name        : {pipeline_unit.name}")
     click.echo(f"Description : {_display_description(pipeline_unit)}")

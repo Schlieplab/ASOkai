@@ -392,6 +392,71 @@ def test_describe_task_expands_step_names():
     assert "Steps: download-genome, create-target-gene" not in result.output
 
 
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("compute-intrinsic-features", "step"),
+        ("find-repeated-sites", "task"),
+        ("identify-potential-repeated-sites", "step"),
+    ],
+)
+@pytest.mark.parametrize("verbose", [False, True])
+def test_describe_analysis_matches_its_step_or_task(name, kind, verbose):
+    runner = CliRunner()
+    options = ["-v"] if verbose else []
+
+    analysis = runner.invoke(main, ["describe", *options, "analysis", name])
+    explicit = runner.invoke(main, ["describe", *options, kind, name])
+
+    assert analysis.exit_code == explicit.exit_code == 0
+    assert analysis.output == explicit.output
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["unknown-analysis", "download-genome", "instantiate-target-gene", "standard"],
+)
+def test_describe_analysis_rejects_unknown_and_non_analysis_units(name):
+    result = CliRunner().invoke(main, ["describe", "analysis", name])
+
+    assert result.exit_code != 0
+    assert f"Unknown analysis '{name}'" in result.output
+
+
+@pytest.mark.parametrize("name", ["plugin-analysis", "compute-intrinsic-features"])
+def test_describe_analysis_resolves_plugin_tasks_and_reports_ambiguity(
+    monkeypatch, name
+):
+    from dataclasses import replace
+
+    from ASOkai._pipeline.catalog import get_pipeline_catalog
+    from ASOkai._pipeline.contracts.run_spec import RunSpec
+    from ASOkai._pipeline.steps.analysis.intrinsic_features import IntrinsicFeaturesStep
+    from ASOkai._pipeline.tasks.base import Task
+
+    class PluginAnalysisTask(Task):
+        description = "An installed analysis task."
+        category = "analysis"
+        runs = (RunSpec("features", IntrinsicFeaturesStep()),)
+
+    PluginAnalysisTask.name = name
+    catalog = get_pipeline_catalog()
+    catalog = replace(catalog, tasks={**catalog.tasks, name: PluginAnalysisTask()})
+    monkeypatch.setattr("ASOkai._cli.catalog.get_pipeline_catalog", lambda: catalog)
+
+    result = CliRunner().invoke(main, ["describe", "analysis", name])
+
+    if name == "compute-intrinsic-features":
+        assert result.exit_code != 0
+        assert "ambiguous" in result.output
+        assert f"asokai describe step {name}" in result.output
+        assert f"asokai describe task {name}" in result.output
+    else:
+        assert result.exit_code == 0, result.output
+        assert "Description : An installed analysis task." in result.output
+        assert "Steps       : compute-intrinsic-features" in result.output
+
+
 def test_describe_workflow_shows_members_and_expanded_steps():
     runner = CliRunner()
 
@@ -1534,6 +1599,21 @@ def test_run_displays_configuration_errors_without_traceback(monkeypatch):
     assert "Error: Invalid configuration:" in result.output
     assert "$.parameters.target.k" in result.output
     assert "Traceback" not in result.output
+
+
+def test_run_reports_a_yaml_selection_typo_without_schema_noise(tmp_path):
+    config_path = tmp_path / "typo.yaml"
+    config_path.write_text(
+        "datadir: ./data\nruns:\n  - steps: identify-potential-repeated-sites\n"
+    )
+
+    result = CliRunner().invoke(main, ["run", "--configfile", str(config_path)])
+
+    assert result.exit_code != 0
+    assert result.output == (
+        "Error: Invalid configuration:\n"
+        "- $.runs[0].steps: Unknown field 'steps'. Did you mean 'step'?\n"
+    )
 
 
 def test_run_displays_missing_dependency_errors_without_traceback(monkeypatch):

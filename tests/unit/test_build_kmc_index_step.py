@@ -476,5 +476,5 @@ def test_config_rejects_unsupported_kmc_memory(step, config, memory_mb):
 def test_config_rejects_old_kmc_memory_parameter(config):
     config["parameters"]["kmc"] = {"m": 8}
 
-    with pytest.raises(ValueError, match="Additional properties are not allowed"):
+    with pytest.raises(ValueError, match="Unknown field 'm'"):
         cfg.validate_config_schema(config)

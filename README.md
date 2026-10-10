@@ -129,6 +129,8 @@ ASOkai list workflows
 # Describe one unit
 ASOkai describe step download-genome
 ASOkai describe task instantiate-target-gene
+ASOkai describe analysis compute-intrinsic-features
+ASOkai describe analysis find-repeated-sites
 ASOkai describe workflow standard
 
 # Run one step, task, or workflow

@@ -10,4 +10,9 @@ Built-in analysis steps and tasks are listed together below.
 Use ``asokai list analyses`` to see the same category in the installed CLI,
 including analysis plugins. Each entry is labeled as a step or task.
 
+Inspect either kind with ``asokai describe analysis NAME``. For example,
+``asokai describe analysis compute-intrinsic-features`` describes a step, and
+``asokai describe analysis find-repeated-sites`` describes a task. Add ``-v``
+for configuration keys, file details, and dependency information.
+
 .. asokai-analysis-list::

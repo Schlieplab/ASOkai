@@ -291,11 +291,11 @@ def test_config_schema_accepts_other_modalities_with_their_own_design_fields(tmp
         ({"modality": "aso"}, r"modality.*object"),
         (
             {"modality": {"type": "aso"}, "mechanism": "rnase-h1"},
-            r"antisense.*mechanism.*unexpected",
+            r"antisense.mechanism: Unknown field 'mechanism'",
         ),
         (
             {"modality": {"type": "aso"}, "design": {"type": "unmodified"}},
-            r"antisense.*design.*unexpected",
+            r"antisense.design: Unknown field 'design'",
         ),
         (
             {"modality": {"design": {"type": "unmodified"}}},
@@ -1030,6 +1030,81 @@ def test_schema_rejects_invalid_nested_run_parameter_values(parameters):
         cfg.validate_config_schema({"datadir": ".", "runs": [
             {"step": "create-target-gene", "parameters": parameters},
         ]}, plugin_schema_paths={})
+
+
+@pytest.mark.parametrize(("field", "suggestion"), [("steps", "step"), ("tasks", "task")])
+def test_run_selection_typos_report_one_actionable_error(field, suggestion):
+    config = {"datadir": ".", "runs": [{field: "example"}]}
+
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(config, plugin_schema_paths={})
+
+    assert str(raised.value) == (
+        "Invalid configuration:\n"
+        f"- $.runs[0].{field}: Unknown field '{field}'. Did you mean '{suggestion}'?"
+    )
+    assert config["runs"] == [{field: "example"}]
+
+
+@pytest.mark.parametrize("run", [{}, {"step": "example", "task": "example-task"}])
+def test_run_selection_errors_explain_the_exclusive_choice(run):
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema({"datadir": ".", "runs": [run]}, plugin_schema_paths={})
+
+    assert "Choose exactly one of 'step' or 'task'." in str(raised.value)
+    assert "not valid under" not in str(raised.value)
+    assert repr(run) not in str(raised.value)
+
+
+def test_typo_hints_do_not_hide_unrelated_configuration_errors():
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(
+            {"datadir": 3, "runs": [{"steps": "example", "inputs": {}}]},
+            plugin_schema_paths={},
+        )
+
+    message = str(raised.value)
+    assert "$.datadir: 3 is not of type 'string'" in message
+    assert "$.runs[0].steps: Unknown field 'steps'. Did you mean 'step'?" in message
+    assert "$.runs[0].inputs" in message
+
+
+@pytest.mark.parametrize(
+    ("input_value", "expected"),
+    [
+        ({"path": 3}, "reference.path: 3 is not of type 'string'"),
+        ({"path": "a.fa", "from": "run.gene.fasta"}, "Choose exactly one of 'path' or 'from'."),
+        ({}, "Choose exactly one of 'path' or 'from'."),
+    ],
+)
+def test_run_input_errors_identify_the_invalid_field_or_choice(input_value, expected):
+    with pytest.raises(ValueError) as raised:
+        cfg.validate_config_schema(
+            {"datadir": ".", "runs": [{"step": "example", "inputs": {"reference": input_value}}]},
+            plugin_schema_paths={},
+        )
+
+    message = str(raised.value)
+    assert expected in message
+    assert "not valid under" not in message
+
+
+def test_readable_errors_preserve_schema_messages_and_pattern_properties():
+    from ASOkai._pipeline.contracts.json_schema import json_schema_errors
+
+    schema = {
+        "type": "object",
+        "properties": {"known": {"type": "string"}},
+        "patternProperties": {"^x-": {"type": "integer"}},
+        "additionalProperties": False,
+    }
+    data = {"knwon": "value", "x-extension": 3}
+
+    assert json_schema_errors(schema, data) == [
+        "$.knwon: Unknown field 'knwon'. Did you mean 'known'?"
+    ]
+    schema["x-error-message"] = "Use the declared fields."
+    assert json_schema_errors(schema, data) == ["$: Use the declared fields."]
 
 
 def test_schema_errors_include_generated_run_names_without_mutating_config():

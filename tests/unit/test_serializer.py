@@ -412,7 +412,7 @@ class TestSerializableInputValidation:
         value = ClosedSerializable(1)
         setattr(value, "unexpected", 2)
 
-        with pytest.raises(ValueError, match="Additional properties"):
+        with pytest.raises(ValueError, match="Unknown field 'unexpected'"):
             JsonFile(ClosedSerializable).dumps(value)
 
     def test_extra_metadata_kwargs_roundtrip(self):

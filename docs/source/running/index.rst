@@ -53,7 +53,9 @@ Run IDs
    Without an explicit ``id``, selections use their step or task name, and
    repeated selections receive ``-2``, ``-3``, and so on. Explicit IDs are
    reserved before unnamed runs are assigned theirs. Configuration error paths
-   name these IDs in place of run indices, even when schema validation fails.
+   name these IDs in place of run indices, even when schema validation fails. These
+   IDs also label the log output, as ``[step:create-target-gene]`` or
+   ``[task:<name>]``, and a task's children carry the task selection's ID.
 
 Inputs
    ``from: run.RUN_ID.OUTPUT_NAME`` references a selected run's output, and
@@ -131,6 +133,40 @@ analysis spreads its units across that many workers; a batch analysis passes
 the count to the program it drives. Analyses that use worker processes need
 ``fork``, so on other platforms they use worker threads instead, which
 produces the same results and takes longer.
+
+Output reuse
+------------
+
+A step whose outputs already exist is skipped, and ``--force`` runs it anyway.
+
+ASOkai records one validation receipt per completed run, below
+``datadir/.asokai/validation``. A later plan reuses the run only when its
+configuration, its output destinations, and every recorded file match that
+receipt. A missing or changed output invalidates the whole run rather than one
+file, so the step runs again.
+
+Outputs without a receipt are never adopted. ASOkai reruns the step and writes
+the receipt only once it succeeds. Files supplied with ``path:`` never receive
+receipts and keep their file-contract validation instead.
+
+``validation.existing_outputs`` chooses how existing outputs are checked::
+
+   validation:
+     existing_outputs: signature
+
+``signature``
+   The default. Requires a matching receipt and recorded output metadata.
+
+``contract``
+   Ignores receipts and fully validates every existing output before deciding
+   whether to reuse it.
+
+Successful runs write receipts in either mode, so switching back to
+``signature`` does not require another run.
+
+Receipts detect ordinary file changes and support work reuse. They are not
+cryptographic proof against someone able to modify both the data and the
+receipts.
 
 Configuring runs on the command line
 ------------------------------------

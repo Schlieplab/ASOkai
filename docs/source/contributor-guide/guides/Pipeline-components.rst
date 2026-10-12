@@ -284,46 +284,22 @@ Step logging
 
 Step implementations should emit plain log messages without embedding their
 own name. The internal dispatcher prefixes every non-empty line with
-``[step:<run-id>]``. CLI and YAML selections share the same naming rule:
-``create-target-gene`` for an unnamed first run, then
-``create-target-gene-2`` for a repeated selection. Explicit IDs appear in the
-log label, and task children include the task selection's ID. Runner messages
-identify the selected orchestration level with ``[step:<name>]``,
-``[task:<name>]``, or ``[workflow:<name>]``.
+``[step:<run-id>]``, using the run ID that
+:doc:`Running the pipeline </running/index>` describes.
 
 Generated-output validation receipts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Each step fully validates every declared output immediately after producing
-it and before reporting success, so invalid files cannot be passed to a
-downstream step. After CWL publishes those validated outputs, ASOkai records
-one validation receipt for the complete output set under
-``datadir/.asokai/validation``. Publication verifies that every destination
-exists but does not repeat content validation. A later plan reuses the run
-only when its configuration identity, output destinations, and every recorded
-file match that receipt. A missing or changed output invalidates the complete
-run rather than only one file.
+Each step fully validates every declared output immediately after producing it
+and before reporting success, so an invalid file cannot reach a downstream
+step. After CWL publishes those validated outputs, ASOkai records one
+validation receipt for the complete output set. Publication verifies that
+every destination exists but does not repeat content validation.
 
-ASOkai does not adopt existing outputs that have no receipt. It reruns the
-step, validates its newly produced outputs, publishes them, and creates the
-receipt only after successful execution. User-supplied ``path`` files
-never receive receipts; they continue to receive their inherited
-file-contract validation directly.
-
-The ``validation.existing_outputs`` mode controls this reuse check:
-
-* ``signature`` (the default) requires a matching validation receipt and
-  recorded output metadata.
-* ``contract`` bypasses receipts during planning and fully validates every
-  existing generated output before deciding whether to reuse it.
-
-The selected mode does not change override handling. Successful runs write
-receipts in either mode, so changing back to ``signature`` does not require
-another run.
-
-Receipts support work reuse and ordinaryfile change detection; 
-they are not cryptographic proof against a user who can modify 
-both data and receipt files.
+A step therefore does not check whether its outputs already exist, and does
+not decide whether to reuse them. :doc:`Running the pipeline </running/index>`
+describes the reuse rules and the ``validation.existing_outputs`` modes that
+users configure.
 
 .. _analysis-step-lifecycle:
 

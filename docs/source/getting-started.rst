@@ -140,28 +140,19 @@ alone:
 Export instead of running
 -------------------------
 
-``export`` writes the selected runs as a self-contained CWL bundle instead of
-executing them, for running on a cluster or under another workflow engine:
+``export`` writes the selected runs as a CWL job bundle instead of executing
+them, for running on a cluster or under another workflow engine:
 
 .. code-block:: bash
 
-   asokai export --workflow standard
+   asokai export --workflow standard --recursive
 
-The bundle contains ``run.cwl``, one generated tool per step under ``steps/``,
-a ``job.yml`` holding the resolved inputs, and a ``README.md`` describing how
-to run it. By default it lands under ``datadir/jobs``; ``--outdir`` chooses
-another location.
+The bundle lands under ``datadir/jobs``. ``--recursive`` includes the
+producers the selection needs; without it the bundle refers to existing
+outputs by absolute path and runs only where those files already are.
 
-Unlike ``run``, ``export`` does **not** include dependencies by default. Pass
-``--recursive`` to export the complete set of producers the selection needs:
-
-.. code-block:: bash
-
-   asokai export --step compute-intrinsic-features --recursive
-
-ASOkai must be installed wherever the bundle runs, because the generated tools
-call ASOkai entry points. ``job.yml`` can contain absolute paths from the
-machine that produced it, so check it before moving a bundle.
+:doc:`Running the pipeline <running/index>` describes the bundle and how to
+run it.
 
 Next steps
 ----------

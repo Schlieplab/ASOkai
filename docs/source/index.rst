@@ -15,6 +15,7 @@ interface.
 
    installation
    getting-started
+   running/index
    analyses/index
 
 .. toctree::

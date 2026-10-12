@@ -96,6 +96,10 @@ Dependencies are not listed separately. A ``FileInput`` points to a producer
 step's exact ``FileOutput`` object, and that connection identifies both the
 dependency and the shared file contract.
 
+Selecting runs, linking inputs to producers, and the command-line
+equivalents are described in :doc:`Running the pipeline
+</running/index>`.
+
 Scalar parameters
 ~~~~~~~~~~~~~~~~~
 
@@ -136,81 +140,6 @@ configuration. Per-unit analyses use it for ASOkai's worker pool; batch
 analyses receive it in ``analyze_batch`` and manage their own parallelism.
 A core step opts in with ``supports_multiple_workers = True`` only when its
 runtime consumes ``args.n_workers``.
-
-Configuring runs in YAML
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-A config file selects ordered runs below the root ``runs`` key. Shared
-fallbacks live below root ``parameters``; ``resources`` and the optional
-output-reuse ``validation`` setting are also root keys. For example::
-
-   datadir: ./data
-   parameters:
-     genome:
-       assembly: GRCh38
-       release: 114
-       source: ensembl
-       species: Homo_sapiens
-     target:
-       target_name: KRAS
-       k: 16
-       region: pre-mrna
-     antisense:
-       modality:
-         type: aso
-         mechanism: rnase-h1
-         design:
-           type: unmodified
-   resources:
-     default:
-       n_workers: 2
-       memory_mb: 4096
-   validation:
-     existing_outputs: signature
-   runs:
-     - step: compute-intrinsic-features
-       inputs:
-         target_gene:
-           from: run.analysis.target_gene
-     - task: instantiate-target-gene
-       id: analysis
-
-``analysis`` names the task selection. The task declares a public
-``target_gene`` output, so the step can refer to it even though the task is
-listed later. Without an explicit ``id``, selections use their step or task
-name; repeated selections receive ``-2``, ``-3``, and so on. Explicit IDs are
-reserved before unnamed runs are assigned IDs. Configuration error paths use
-these IDs in place of run indices, even when schema validation fails.
-A selected step run's output can be referenced with
-``from: run.RUN_ID.OUTPUT_NAME``. To
-use an existing file, replace the ``from`` mapping with ``path:
-/path/to/target_gene.json``. Relative paths resolve from the current working
-directory. A selected run may override its declared scalar parameters using
-its own ``parameters`` mapping. Use the same nested groups as the shared
-configuration. For example, the CLI option ``--param target.region=exonic``
-corresponds to::
-
-   runs:
-     - step: create-target-gene
-       parameters:
-         target:
-           region: exonic
-     - step: create-target-gene
-       parameters:
-         target:
-           region: transcriptomic
-
-Run overrides use the same ``ScalarParam.config`` mapping and schema
-constraints as shared configuration and CLI overrides. A task selection
-applies matching values to its children; child run overrides use the same
-nested syntax. Fixed values in a task declaration cannot be replaced.
-Distinct runs must resolve to distinct output paths, or planning reports a
-collision.
-
-Invoke ``ASOkai run --configfile config.yaml`` or ``ASOkai export
---configfile config.yaml`` to use these selections. A file with ``runs`` cannot
-also use CLI ``--step``, ``--task``, or ``--workflow`` selections. Shared
-``genome``, ``target``, and ``antisense`` settings belong under ``parameters``.
 
 Composing task runs
 ~~~~~~~~~~~~~~~~~~~
@@ -266,98 +195,9 @@ the same step more than once, using local IDs to distinguish the runs::
        )
        outputs = {"target_gene": FromRun("exonic", "target_gene")}
 
-Once registered, this task can receive a task-wide parameter and an override
-for one declared child run::
-
-   runs:
-     - task: compare-regions
-       id: comparison
-       parameters:
-         target:
-           k: 21
-       runs:
-         - id: transcriptomic
-           parameters:
-             target:
-               k: 18
-
-``target.k`` applies to both child runs; the ``transcriptomic`` child uses 18 because
-its own ``parameters`` entry takes precedence. Values declared in a task's
-``RunSpec.parameters``, such as each child's ``region`` above, are fixed:
-task-wide parameters cannot replace them, and an attempted child override is
-rejected. Prefer task-wide settings for routine use. Child overrides remain
-available for targeted variation; runs with different inputs can share a
-destination and therefore cannot execute together in one plan unless their
-destinations differ. Nested ``runs`` must name IDs already declared by the task. They
-can supply inputs left open by its ``RunSpec`` declarations, but cannot replace
-a task-declared input link. Thus the ``features`` to ``gene`` link above is
-part of the task's wiring. A link inside a task uses a local child ID such as
-``gene``. Outside a named task selection, callers can use a public alias such
-as ``from: run.comparison.target_gene`` or address a child output directly,
-such as ``from: run.comparison.transcriptomic.target_gene``. The latter uses
-the task selection ID, child run ID, and child output name, and works even
-when the task does not expose that output through ``Task.outputs``. Omit
-``inputs`` when no explicit link is needed. Each distinct run must have a
-distinct output destination. Older tasks with ``steps`` remain valid. The
+Older tasks with ``steps`` remain valid. The
 planner converts YAML and CLI selections into ``RunSpec`` objects, then
 resolves them into concrete ``StepRun`` objects.
-
-How an input source is chosen
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-An ``inputs`` entry on a selected step run chooses either ``from:`` (a named
-run's output) or ``path:`` (an existing file). A task can fix a child's input
-in its ``RunSpec.inputs`` declaration. If it does, a nested ``runs`` override
-for that input is rejected; otherwise the nested override may supply the
-child's ``from:`` or ``path:`` source. A task selection has no separate
-``inputs`` mapping.
-
-If the input has no run-level source, shared configuration at
-``steps.STEP.inputs.INPUT`` can supply either ``path:`` or ``from:``.
-Otherwise, ``FileInput.source`` identifies the step's default producer
-output. An input with neither a supplied source nor a default producer
-fails planning. Scalar
-``parameters`` determine how a producer run executes and where its output
-belongs; they do not identify a producer run by themselves. The planner
-reuses a valid existing producer output or schedules that producer before
-the consumer. With ``--non-recursive``, a missing dependency causes an error
-instead of being scheduled.
-
-Configuring runs on the command line
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-CLI selections use the same ordered run declarations and validation as YAML.
-The CLI reads ``./config.yaml`` when present, including for CLI-selected runs.
-Use ``--configfile`` to select another file. For a CLI-only run, use
-``--no-config``; if no default file exists, CLI selections also work without
-that flag. Both cases use ``./data`` as the data directory. A file containing
-``runs`` cannot be combined with CLI selections. Put shared parameter overrides
-before the first selection and run-specific overrides after the step or task
-they belong to::
-
-   ASOkai run --configfile common.yaml \
-     --param genome.assembly=GRCh39 \
-     --step create-target-gene --id reference-gene --param target.region=pre-mrna \
-     --step generate-therapeutic-candidates --id candidates \
-       --input target_gene=from:run.reference-gene.target_gene \
-     --task compare-regions --id comparison --param target.k=21 \
-       --child transcriptomic --param target.k=18
-
-``--id`` names the preceding step or task. Unnamed CLI selections use the step
-or task name, with ``-2``, ``-3``, and so on for repeats. Before the first selection,
-``--param PATH=VALUE`` sets a shared parameter such as ``genome.assembly``;
-the ``parameters.`` prefix is omitted. After a selection, the same path form
-applies to that run, or to the child named by the most recent ``--child``.
-Run-specific values take precedence over shared values. Values use YAML scalar
-syntax, so ``target.k=21`` is an integer. Use ``--input
-INPUT=from:run.RUN_ID.OUTPUT`` for a named producer and ``--input
-INPUT=path:PATH`` for an existing file. These values match the YAML ``from`` and
-``path`` input declarations. Repeat ``--input`` to select multiple inputs, and
-quote the assignment if a path contains spaces. The option configures the current
-step or task child;
-``--child`` names an ID already declared in the task. A new ``--step`` or
-``--task`` starts the next top-level run. ``--workflow`` expands its members
-at its position in the CLI sequence. ``export`` accepts the same run options.
 
 File contracts
 ~~~~~~~~~~~~~~
@@ -401,45 +241,8 @@ a shared ``path:`` or ``from:`` configuration option. ``path:`` substitutes
 an existing file; ``from:`` links a named run. ASOkai validates external files
 before running them.
 
-.. _configuring-an-input-producer:
-
-Choosing the producer run for an input
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Normally, a ``FileInput`` receives the producer output made with the main
-configuration. This is the default for core and analysis steps alike.
-
-A selected producer run can use different parameters and provide one input
-to a consumer::
-
-   runs:
-     - step: create-target-gene
-       id: comparison
-       parameters:
-         target:
-           region: pre-mrna
-     - step: example-analysis
-       inputs:
-         target:
-           from: run.comparison.target_gene
-
-The consumer's other inputs continue to use their declared default producers.
-Runs with the same step, resolved scalar values, and file inputs share one
-execution. Runs that differ in any of those values remain separate.
-
-For an existing file, select ``path:`` on the consuming run::
-
-   runs:
-     - step: example-analysis
-       inputs:
-         target:
-           path: /path/to/target_gene.json
-
-Shared configuration also accepts ``steps.example-analysis.inputs.target.path``
-or ``steps.example-analysis.inputs.target.from``.
-
-Without an explicit input selection or shared input source, a fixed-source input
-uses the producer's main configuration.
+Output destinations and input configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Output destinations read configuration values through ``TemplateField``
 without requiring a runtime ``ScalarParam``. A run inherits resolved parameter

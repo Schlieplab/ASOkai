@@ -1,7 +1,10 @@
 Targets
-=======
+===========
 
-.. automodule:: ASOkai.Targets
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Target data and target construction are documented separately.
+
+.. toctree::
+   :maxdepth: 2
+
+   Targets/target-genes
+   Targets/construction

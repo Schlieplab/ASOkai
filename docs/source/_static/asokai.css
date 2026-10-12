@@ -1,0 +1,61 @@
+/* Generated contract tables favor vertical space over horizontal scrolling. */
+.wy-nav-content {
+  max-width: 1000px;
+}
+
+.rst-content table.asokai-reference-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.rst-content table.asokai-reference-table th:first-child {
+  width: 25%;
+}
+
+.rst-content table.asokai-reference-table th,
+.rst-content table.asokai-reference-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  white-space: normal;
+  word-break: normal;
+}
+
+.rst-content table.asokai-reference-table code.literal,
+.rst-content table.asokai-reference-table code.literal span.pre {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.rst-content table.asokai-step-configuration th:first-child,
+.rst-content table.asokai-step-applicability th:first-child {
+  width: 35%;
+}
+
+.rst-content .asokai-reference-details p {
+  margin-bottom: 0.5rem;
+}
+
+.rst-content .asokai-reference-details p:last-child {
+  margin-bottom: 0;
+}
+
+/* Hand-written guide tables wrap and grow taller instead of scrolling
+   sideways. Column proportions come from each table's own :widths:. */
+.rst-content table.asokai-guide-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.rst-content table.asokai-guide-table th,
+.rst-content table.asokai-guide-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  white-space: normal;
+  word-break: normal;
+}
+
+.rst-content table.asokai-guide-table code.literal,
+.rst-content table.asokai-guide-table code.literal span.pre {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

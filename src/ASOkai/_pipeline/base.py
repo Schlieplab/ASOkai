@@ -3,215 +3,70 @@
 Filename: src/ASOkai/_pipeline/base.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
-Description: Base protocols for steps and CLI-level step collections.
+Description: Shared protocol for named pipeline units.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
-import json
-from dataclasses import replace
-from pathlib import Path
-from typing import Any, ClassVar, Protocol, runtime_checkable
+import re
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
-from ASOkai._cwl.spec import CwlCommandLineToolSpec, ScalarParam, StepSpec
+if TYPE_CHECKING:
+    from ASOkai._pipeline.steps.base import Step
+    from ASOkai._pipeline.tasks.base import Task
+
+_RUNNABLE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
-_N_PROCESSES_PARAM = ScalarParam(
-    "n_processes",
-    int,
-    default=1,
-    doc="Number of processes allocated to this step.",
-)
+def is_valid_runnable_name(value: object) -> bool:
+    """Return whether a value can identify one pipeline unit or run segment."""
+    return type(value) is str and _RUNNABLE_NAME_PATTERN.fullmatch(value) is not None
 
 
 @runtime_checkable
 class Runnable(Protocol):
-    """
-    Shared contract for every named pipeline unit or CLI collection.
-    """
+    """Shared identity for every named pipeline unit or CLI collection."""
 
     name: ClassVar[str]
     description: ClassVar[str]
 
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        ...
 
-    def outputs_exist(self, config: dict) -> bool:
-        ...
+def flatten_workflow_members(
+    runnable: Runnable,
+    seen_workflows: frozenset[str] = frozenset(),
+) -> list[Step | Task]:
+    """Flatten nested workflows into steps and intact tasks."""
+    from ASOkai._pipeline.steps.base import Step
+    from ASOkai._pipeline.tasks.base import Task
+    from ASOkai._pipeline.workflows.base import Workflow
 
-    def cleanup(self, config: dict) -> None:
-        ...
-
-
-class Step(Runnable):
-    """Atomic pipeline unit backed by a generated CWL command-line tool."""
-
-    name: ClassVar[str]
-    description: ClassVar[str]
-    dependencies: ClassVar[list[str]]
-    cli_module: ClassVar[str]
-    spec: ClassVar[StepSpec]
-
-    @property
-    def config_map(self) -> dict[str, str]:
-        """Return config-backed CWL inputs for this step."""
-        return self.spec.config_map()
-
-    @property
-    def input_overrides(self) -> dict[str, str]:
-        """Return optional file override inputs for this step."""
-        return self.spec.input_overrides()
-
-    def _validate_standard_parameters(self) -> None:
-        for param in (*self.spec.params, *self.spec.inputs):
-            if (
-                param.name == _N_PROCESSES_PARAM.name
-                or param.cli_prefix == _N_PROCESSES_PARAM.cli_prefix
-            ):
-                raise ValueError(
-                    f"Step '{self.name}' declares reserved standard parameter "
-                    f"'{_N_PROCESSES_PARAM.name}'."
-                )
-
-    @property
-    def cwl_spec(self) -> CwlCommandLineToolSpec:
-        """Return the generated lower-level CWL tool spec for this step."""
-        self._validate_standard_parameters()
-        spec = self.spec.to_cwl_tool_spec()
-        n_processes_input = _N_PROCESSES_PARAM.to_cwl_input()
-        if n_processes_input is None:
-            raise RuntimeError("The standard n_processes parameter must be a CWL input.")
-        return replace(spec, inputs=[*spec.inputs, n_processes_input])
-
-    def build_parser(self, *, description: str | None = None):
-        """Build an argparse parser from this step's parameter spec."""
-        self._validate_standard_parameters()
-        parser = self.spec.build_parser(description=description or self.description)
-        _N_PROCESSES_PARAM.add_to_parser(parser)
-        return parser
-
-    def _output_template_values(self, config: dict) -> dict[str, Any]:
-        """Resolve config-backed values used by output path templates."""
-        from ASOkai._pipeline import config as cfg
-
-        values: dict[str, Any] = {}
-        for param in (*self.spec.params, *self.spec.inputs):
-            if not param.config:
-                continue
-            try:
-                values[param.name] = cfg.resolve(config, param.config)
-            except KeyError:
-                pass
-        return values
-
-    def output_relative_path(self, name: str, config: dict) -> Path:
-        """Render a declared output path relative to ``config['datadir']``."""
-        path = self.spec.output_relative_path(
-            name,
-            self._output_template_values(config),
-        )
-        return Path(*path.parts)
-
-    def validated_output_paths(self, config: dict) -> dict[str, Path]:
-        """Return output paths after checking them against the step specification."""
-        paths = self.output_paths(config)
-        self.spec.validate_output_paths(paths)
-        datadir = Path(config["datadir"])
-        for name, path in paths.items():
-            expected = datadir / self.output_relative_path(name, config)
-            if path != expected:
-                raise ValueError(
-                    f"Output '{name}' path does not match its destination template "
-                    f"(expected: {expected}; actual: {path})."
-                )
-        return paths
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        """Return all declared output paths below the configured data directory."""
-        datadir = Path(config["datadir"])
-        return {
-            output.name: datadir / self.output_relative_path(output.name, config)
-            for output in self.spec.outputs
-        }
-
-    def outputs_exist(self, config: dict) -> bool:
-        """Return whether every declared output currently exists."""
-        return all(path.exists() for path in self.output_paths(config).values())
-
-    def cleanup(self, config: dict) -> None:
-        """Remove all declared output files that currently exist."""
-        for path in self.output_paths(config).values():
-            if path.exists():
-                path.unlink()
+    if isinstance(runnable, Workflow):
+        if runnable.name in seen_workflows:
+            raise ValueError(f"Workflow '{runnable.name}' participates in a cycle.")
+        seen = seen_workflows | {runnable.name}
+        members: list[Step | Task] = []
+        for member in runnable.members:
+            members.extend(flatten_workflow_members(member, seen))
+        return members
+    if isinstance(runnable, Task):
+        return [runnable]
+    if isinstance(runnable, Step):
+        return [runnable]
+    raise TypeError(f"Unsupported runnable type: {type(runnable).__name__!r}.")
 
 
-class CoreStep(Step):
-    """Pipeline step that prepares, downloads, builds, or transforms core data."""
+def expand_runnable_steps(
+    runnable: Runnable,
+    seen_workflows: frozenset[str] = frozenset(),
+) -> list[Step]:
+    """Expand one runnable into its ordered endpoint steps."""
+    from ASOkai._pipeline.steps.base import Step
 
-
-class AnalysisStep(Step):
-    """Pipeline step that runs analysis logic and writes analysis results."""
-
-    analysis_cls: ClassVar[type | None] = None
-
-    def load_analysis_inputs(self, args) -> dict[str, Any]:
-        """Load input objects needed to construct the analysis."""
-        return {}
-
-    def analysis_kwargs(self, args, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Build keyword arguments for the configured analysis class."""
-        return {}
-
-    def analysis_metadata(self, args, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Build output metadata written next to analysis results."""
-        return {"analysis": self.name}
-
-    def output_arg(self, args):
-        """Return the parsed output path for single-output analysis steps."""
-        outputs = self.spec.outputs
-        if len(outputs) != 1:
-            raise RuntimeError(
-                f"Analysis step '{self.name}' must override output_arg for multiple outputs."
-            )
-        return getattr(args, outputs[0].argument_name)
-
-    def write_analysis_output(self, args, payload: dict[str, Any]) -> None:
-        """Write the analysis payload."""
-        output = self.output_arg(args)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(payload, indent=4))
-
-    def run_from_args(self, args) -> int:
-        """Load inputs, run the configured analysis, and write its JSON output."""
-        if self.analysis_cls is None:
-            raise RuntimeError(f"Analysis step '{self.name}' does not define analysis_cls.")
-
-        inputs = self.load_analysis_inputs(args)
-        analysis_kwargs = self.analysis_kwargs(args, inputs)
-        analysis_kwargs.setdefault("n_processes", args.n_processes)
-        analysis = self.analysis_cls(**analysis_kwargs)
-        payload = {
-            **self.analysis_metadata(args, inputs),
-            "results": analysis.run(),
-        }
-        self.write_analysis_output(args, payload)
-        return 0
-
-
-@runtime_checkable
-class Task(Runnable, Protocol):
-    """CLI-level named collection of Steps."""
-
-    steps: list[Step]
-
-
-@runtime_checkable
-class Workflow(Runnable, Protocol):
-    """
-    CLI-level named collection of Runnables.
-
-    Jobs are generated by recursively flattening ``members`` to Steps.
-    """
-
-    members: list[Runnable]
+    steps: list[Step] = []
+    for member in flatten_workflow_members(runnable, seen_workflows):
+        if isinstance(member, Step):
+            steps.append(member)
+        else:
+            steps.extend(member.steps)
+    return steps

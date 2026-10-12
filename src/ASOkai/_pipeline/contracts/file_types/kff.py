@@ -1,0 +1,69 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/contracts/file_types/kff.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Contract for K-mer File Format index files.
+License: LGPL-3.0-or-later
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+
+from ASOkai.Utils import KMCTools
+
+from .base import FileType
+
+_KFF_MAGIC = b"KFF"
+
+
+@dataclass(frozen=True, init=False)
+class KffFile(FileType):
+    """A KFF index with the required opening and closing markers."""
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "media_type", "application/octet-stream")
+        object.__setattr__(self, "format_name", "KFF k-mer index")
+
+    def read(self, path: str | Path) -> Path:
+        """Return a KFF input path without loading the index."""
+        return Path(path)
+
+    def validate(self, path: str | Path) -> None:
+        """Require a framed KFF file that ``kmc_tools`` can read completely."""
+        super().validate(path)
+        source = Path(path)
+        if source.stat().st_size < 2 * len(_KFF_MAGIC):
+            raise ValueError(f"Invalid KFF file {source}: file is too short.")
+        with source.open("rb") as stream:
+            opening = stream.read(len(_KFF_MAGIC))
+            stream.seek(-len(_KFF_MAGIC), 2)
+            closing = stream.read(len(_KFF_MAGIC))
+        if opening != _KFF_MAGIC or closing != _KFF_MAGIC:
+            raise ValueError(
+                f"Invalid KFF file {source}: missing KFF framing markers."
+            )
+
+        try:
+            (
+                KMCTools.Transform()
+                .dump(os.devnull)
+                .run(
+                    source,
+                    t=1,
+                    hp=True,
+                    debug=False,
+                )
+            )
+        except KMCTools.KMCToolsExecutionError as error:
+            details = (error.stderr or error.stdout or "").strip()
+            message = (
+                f"Invalid KFF file {source}: kmc_tools could not read "
+                "the complete index."
+            )
+            if details:
+                message = f"{message} {details}"
+            raise ValueError(message) from error

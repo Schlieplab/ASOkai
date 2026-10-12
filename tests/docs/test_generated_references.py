@@ -1,0 +1,816 @@
+#!/usr/bin/env python
+"""
+Filename: tests/docs/test_generated_references.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Tests for documentation generated from runtime contracts.
+License: LGPL-3.0-or-later
+"""
+
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+import pytest
+import yaml
+from docutils import nodes
+from docutils.utils import new_document
+from sphinx import addnodes
+
+pytest.importorskip("sphinx")
+
+ROOT = Path(__file__).parents[2]
+sys.path.insert(
+    0,
+    str(ROOT / "docs/source/_extensions"),
+)
+
+from contract_docs import (  # noqa: E402
+    build_analysis_list,
+    build_runnable_list,
+    build_runnable_reference,
+    build_step_list,
+    build_step_reference,
+    collect_step_config_fields,
+    collect_step_schema_rules,
+    get_built_in_step,
+    get_built_in_steps,
+    get_built_in_runnable,
+    get_built_in_runnables,
+    serializable_contract_nodes,
+)
+from contract_docs.file_contracts import (  # noqa: E402
+    append_serializable_contracts,
+    json_contract_types,
+    json_example,
+)
+from contract_docs.rendering import note_reference_dependencies  # noqa: E402
+from contract_docs.configuration import _format_constraints  # noqa: E402
+from ASOkai.Analysis import IntrinsicFeaturesAnalysis  # noqa: E402
+from ASOkai._pipeline.contracts.file_types import CsvFile, JsonFile  # noqa: E402
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput  # noqa: E402
+from ASOkai._pipeline.contracts.step_spec import StepSpec  # noqa: E402
+from ASOkai._pipeline.steps.analysis.base import AnalysisStep  # noqa: E402
+from ASOkai._pipeline.steps.core.base import CoreStep  # noqa: E402
+from ASOkai._pipeline.steps.utils.base import UtilityStep  # noqa: E402
+from ASOkai._pipeline.tasks.instantiate_target_gene import (  # noqa: E402
+    InstantiateTargetGeneTask,
+)
+from ASOkai.Antisense import (  # noqa: E402
+    ASO,
+    AntisenseTherapeutic,
+    Gapmer,
+    Oligonucleotide,
+    siRNA,
+)
+from ASOkai.Biochemistry import Chemistry  # noqa: E402
+from ASOkai.Sites import Site, TranscriptSite  # noqa: E402
+from ASOkai.Targets import TargetGene  # noqa: E402
+
+
+def _config_schema() -> dict:
+    schema_path = ROOT / "src/ASOkai/_pipeline/config.schema.yaml"
+    schema = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    assert isinstance(schema, dict)
+    return schema
+
+
+def test_step_config_collects_nested_and_dynamic_fields() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    fields = {
+        field.path: field
+        for field in collect_step_config_fields(step, _config_schema())
+    }
+
+    assert fields["datadir"].requirement == "Required"
+    assert fields["validation.existing_outputs"].requirement == "Default: signature"
+    assert fields["parameters.target.region"].constraints == (
+        "one of: exonic, pre-mrna, transcriptomic"
+    )
+    assert fields["resources.compute-intrinsic-features.n_workers"].value_type == "integer"
+    assert fields["parameters.target.target_id"].requirement == (
+        "Exactly one of target_id, target_name is required when parameters.target is configured"
+    )
+
+
+def test_intrinsic_feature_pattern_is_documented_as_readable_choices() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    schema = _config_schema()
+    fields = {
+        field.path: field for field in collect_step_config_fields(step, schema)
+    }
+    constraints = fields["parameters.analysis.intrinsic_features.features"].constraints
+    pattern = (
+        schema["properties"]["parameters"]["properties"]["analysis"]["properties"]
+        ["intrinsic_features"]["properties"]["features"]["pattern"]
+    )
+
+    assert "'all' or a comma-separated list without duplicates" in constraints
+    assert "surrounding whitespace allowed" in constraints
+    for name in IntrinsicFeaturesAnalysis.supported_features:
+        assert name in constraints
+    reference = "\n".join(node.astext() for node in build_step_reference(step, schema))
+    assert pattern not in reference
+
+
+def test_list_pattern_documentation_uses_the_pattern_choices() -> None:
+    schema = _config_schema()
+    pattern = (
+        schema["properties"]["parameters"]["properties"]["analysis"]["properties"]
+        ["intrinsic_features"]["properties"]["features"]["pattern"]
+    )
+    alternatives = "|".join(IntrinsicFeaturesAnalysis.supported_features)
+    changed_pattern = pattern.replace(alternatives, "score|length").replace(
+        "^(?:all|", "^(?:everything|"
+    )
+
+    constraints = _format_constraints({"pattern": changed_pattern})
+
+    assert "'everything' or a comma-separated list without duplicates" in constraints
+    assert "choices: score, length" in constraints
+    assert "GC_content" not in constraints
+    assert changed_pattern not in constraints
+
+
+@pytest.mark.parametrize(
+    ("pattern", "description"),
+    [
+        (r"^[A-Za-z][A-Za-z0-9_-]*$", "starts with a letter"),
+        (
+            r"^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$",
+            "run.ID.OUTPUT, optionally with additional dotted names",
+        ),
+    ],
+)
+def test_identifier_patterns_have_readable_format_rules(pattern, description) -> None:
+    constraints = _format_constraints({"pattern": pattern})
+
+    assert description in constraints
+    assert "letters, digits, underscores, or hyphens" in constraints
+    assert pattern not in constraints
+
+
+def test_unrecognized_pattern_keeps_its_exact_expression() -> None:
+    pattern = r"(?i)^(?:all|GC_content)$"
+
+    assert _format_constraints({"pattern": pattern}) == f"pattern: {pattern}"
+
+
+def test_every_used_built_in_config_field_has_a_schema_description() -> None:
+    for step in get_built_in_steps():
+        for field in collect_step_config_fields(step, _config_schema()):
+            assert field.description != "—", f"{step.name}: {field.path}"
+
+
+def test_every_built_in_step_has_generated_documentation() -> None:
+    for step in get_built_in_steps():
+        assert get_built_in_step(step.name) is step
+        assert build_step_reference(step, _config_schema())
+
+
+def test_step_index_is_generated_from_the_built_in_registry() -> None:
+    core_list = build_step_list("core", include_descriptions=True)
+    analysis_list = build_step_list("analysis")
+    utility_list = build_step_list("utils")
+    internal_list = build_step_list("internal")
+    built_in_steps = get_built_in_steps()
+
+    for step_type, generated_list in (
+        (CoreStep, core_list),
+        (AnalysisStep, analysis_list),
+        (UtilityStep, utility_list),
+    ):
+        expected_targets = [
+            f"/steps/{step.name}"
+            for step in built_in_steps
+            if isinstance(step, step_type) and step.listed
+        ]
+        generated_targets = [
+            link["reftarget"] for link in generated_list.findall(addnodes.pending_xref)
+        ]
+        assert generated_targets == expected_targets
+
+    assert [
+        link["reftarget"] for link in internal_list.findall(addnodes.pending_xref)
+    ] == [
+        f"/steps/{step.name}" for step in built_in_steps if not step.listed
+    ]
+
+
+def test_removed_conversion_step_is_not_registered() -> None:
+    assert "target-gene-to-fasta" not in {
+        step.name for step in get_built_in_steps()
+    }
+
+
+def test_analysis_index_includes_categorized_tasks(monkeypatch) -> None:
+    from ASOkai._pipeline import catalog
+
+    class ExampleAnalysisTask(InstantiateTargetGeneTask):
+        name = "example-analysis-task"
+        description = "Example composed analysis."
+        category = "analysis"
+
+    monkeypatch.setattr(
+        catalog,
+        "_BUILTIN_TASKS",
+        (*catalog._BUILTIN_TASKS, ExampleAnalysisTask()),
+    )
+    index = build_analysis_list()
+    targets = [
+        link["reftarget"] for link in index.findall(addnodes.pending_xref)
+    ]
+
+    assert "/steps/compute-intrinsic-features" in targets
+    assert "/tasks/example-analysis-task" in targets
+    assert "/steps/identify-potential-repeated-sites" not in targets
+    assert "/tasks/find-repeated-sites" in targets
+    assert "/tasks/instantiate-target-gene" not in targets
+
+
+def test_generated_references_track_their_content_sources(tmp_path) -> None:
+    explicit_source = tmp_path / "example.yaml"
+    dependencies: list[str] = []
+
+    note_reference_dependencies(
+        SimpleNamespace(note_dependency=dependencies.append),
+        (TargetGene,),
+        paths=(explicit_source,),
+    )
+
+    assert str(explicit_source) in dependencies
+    assert any(path.endswith("contract_docs/rendering.py") for path in dependencies)
+    assert any(path.endswith("Targets/_target_gene.py") for path in dependencies)
+
+
+@pytest.mark.parametrize("kind", ["task", "workflow"])
+def test_every_built_in_runnable_has_generated_documentation(kind: str) -> None:
+    for runnable in get_built_in_runnables(kind):
+        assert get_built_in_runnable(kind, runnable.name) is runnable
+        assert build_runnable_reference(runnable, kind)
+        assert (ROOT / f"docs/source/{kind}s/{runnable.name}.rst").is_file()
+
+
+@pytest.mark.parametrize("kind", ["task", "workflow"])
+def test_runnable_indexes_are_generated_from_the_registry(kind: str) -> None:
+    runnable_list = build_runnable_list(kind)
+    assert [
+        link["reftarget"] for link in runnable_list.findall(addnodes.pending_xref)
+    ] == [f"/{kind}s/{runnable.name}" for runnable in get_built_in_runnables(kind)]
+
+
+def test_task_index_groups_built_in_tasks_by_category() -> None:
+    core = build_runnable_list("task", category="core")
+    utility = build_runnable_list("task", category="utils")
+    analysis = build_runnable_list("task", category="analysis")
+
+    def targets(runnable_list):
+        return [
+            link["reftarget"]
+            for link in runnable_list.findall(addnodes.pending_xref)
+        ]
+
+    assert targets(core) == ["/tasks/instantiate-target-gene"]
+    assert targets(utility) == []
+    assert targets(analysis) == ["/tasks/find-repeated-sites"]
+
+
+def test_task_reference_links_to_its_steps() -> None:
+    task = get_built_in_runnable("task", "instantiate-target-gene")
+    generated = build_runnable_reference(
+        task,
+        "task",
+        refdoc="tasks/instantiate-target-gene",
+    )
+    reference = "\n".join(node.astext() for node in generated)
+    link_targets = {
+        link["reftarget"]
+        for node in generated
+        for link in node.findall(addnodes.pending_xref)
+    }
+
+    assert (
+        "ASOkai run --task instantiate-target-gene "
+        "--config-file ./config.yaml" in reference
+    )
+    assert "Expanded steps" not in reference
+    assert "Contracts" not in reference
+    assert link_targets == {
+        "/steps/download-genome",
+        "/steps/create-target-gene",
+    }
+
+
+def test_workflow_reference_links_members_and_expanded_steps() -> None:
+    workflow = get_built_in_runnable("workflow", "standard")
+    generated = build_runnable_reference(
+        workflow,
+        "workflow",
+        refdoc="workflows/standard",
+    )
+    reference = "\n".join(node.astext() for node in generated)
+    link_targets = {
+        link["reftarget"]
+        for node in generated
+        for link in node.findall(addnodes.pending_xref)
+    }
+
+    assert "ASOkai run --workflow standard" in reference
+    assert "Direct members" in reference
+    assert "Expanded steps" in reference
+    assert "Contracts" not in reference
+    assert link_targets == {
+        "/tasks/instantiate-target-gene",
+        "/steps/download-genome",
+        "/steps/create-target-gene",
+        "/steps/generate-therapeutic-candidates",
+        "/steps/compute-intrinsic-features",
+    }
+
+
+def test_step_config_contains_only_fields_used_by_that_step() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    fields = {
+        field.path: field
+        for field in collect_step_config_fields(step, _config_schema())
+    }
+
+    assert fields["datadir"].requirement == "Required"
+    assert fields["parameters.target.k"].requirement == (
+        "Required to determine the output path"
+    )
+    assert (
+        fields["steps.compute-intrinsic-features.inputs.target_gene.path"].requirement
+        == "Choose path or from"
+    )
+    assert (
+        fields["steps.compute-intrinsic-features.inputs.target_gene.from"].requirement
+        == "Choose path or from"
+    )
+    assert fields["resources.compute-intrinsic-features.n_workers"].requirement == (
+        "Overrides resources.default"
+    )
+    assert fields["resources.default.n_workers"].requirement == ("Built-in fallback: 1")
+    assert "parameters.antisense.modality.design.gap_length" not in fields
+    assert collect_step_schema_rules(step, _config_schema()) == [
+        "exactly one of these config values is required: " "target_id, target_name"
+    ]
+
+
+def test_step_reference_documents_named_run_input_selection() -> None:
+    from ASOkai._pipeline.steps.core.create_target_gene import (
+        CreateTargetGeneStep,
+    )
+
+    class ContextConsumerStep(CoreStep):
+        name = "context-consumer"
+        description = "Consumes a separately configured target gene."
+        context_target_input = FileInput(
+            "context_target",
+            source=CreateTargetGeneStep.target_gene_output,
+        )
+        result_output = FileOutput("result", destination="context/result.txt")
+        spec = StepSpec(
+            inputs=[context_target_input],
+            outputs=[result_output],
+        )
+
+    reference = "\n".join(
+        node.astext()
+        for node in build_step_reference(
+            ContextConsumerStep(),
+            _config_schema(),
+        )
+    )
+    input_path = "steps.context-consumer.inputs.context_target"
+
+    assert f"{input_path}.path" in reference
+    assert "A selected run can instead link a named output" in reference
+    assert f"{input_path}.parameters.region" not in reference
+
+
+def test_single_thread_step_omits_thread_count() -> None:
+    step = get_built_in_step("download-genome")
+    fields = {
+        field.path for field in collect_step_config_fields(step, _config_schema())
+    }
+    reference = "\n".join(
+        node.astext() for node in build_step_reference(step, _config_schema())
+    )
+
+    assert "resources.default.n_workers" not in fields
+    assert "resources.download-genome.n_workers" not in fields
+    assert "n_workers" not in reference
+    assert "resources.default.memory_mb" in reference
+    assert "resources.download-genome.memory_mb" in reference
+
+
+def test_step_reference_renders_declared_dependencies_and_file_ports() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    generated_nodes = build_step_reference(
+        step,
+        _config_schema(),
+        refdoc="steps/compute-intrinsic-features",
+    )
+    reference = "\n".join(node.astext() for node in generated_nodes)
+
+    assert (
+        "ASOkai run --step compute-intrinsic-features "
+        "--config-file ./config.yaml" in reference
+    )
+    assert "create-target-gene.target_gene" in reference
+    input_path = "steps.compute-intrinsic-features.inputs.target_gene.path"
+    assert input_path in reference
+    sections = {
+        node[0].astext(): node
+        for node in generated_nodes
+        if isinstance(node, nodes.section)
+    }
+    assert list(sections) == [
+        "Run this step",
+        "Parameters",
+        "Inputs",
+        "Resources",
+        "Outputs",
+    ]
+    assert "Dependencies" not in sections
+    assert "Configuration" not in sections
+    assert "datadir" not in sections["Parameters"].astext()
+    assert input_path in sections["Inputs"].astext()
+    assert "config.yaml" in sections["Inputs"].astext()
+    override_examples = list(sections["Inputs"].findall(nodes.literal_block))
+    assert len(override_examples) == 1
+    assert yaml.safe_load(override_examples[0].astext()) == {
+        "steps": {
+            "compute-intrinsic-features": {
+                "inputs": {
+                    "target_gene": {"path": "/path/to/target_gene.json"}
+                }
+            }
+        }
+    }
+    assert (
+        "{assembly}/{source}/{release}/targets/{target}/"
+        "analysis/intrinsic/{target}_k{k}_{region}_intrinsic_{features}.csv"
+    ) in reference
+    assert "Producer output: create-target-gene.target_gene" in reference
+    assert "Shared config source: " + input_path in reference
+    assert (
+        "GRCh38/ensembl/114/targets/"
+        "ENSG00000133703/analysis/intrinsic/"
+        "ENSG00000133703_k16_pre-mrna_intrinsic_all.csv" in reference
+    )
+
+    links = [
+        descendant
+        for node in generated_nodes
+        for descendant in node.findall(addnodes.pending_xref)
+    ]
+    assert any(
+        link["refdoc"] == "steps/compute-intrinsic-features"
+        and link["reftarget"] == "/steps/create-target-gene"
+        for link in links
+    )
+    assert any(link["reftarget"] == "ASOkai.Targets.TargetGene" for link in links)
+    assert not any("file-contracts" in link["reftarget"] for link in links)
+
+    table_classes = {
+        css_class
+        for node in generated_nodes
+        for generated_table in node.findall(nodes.table)
+        for css_class in generated_table["classes"]
+    }
+    assert "Scalar outputs" not in reference
+    assert "asokai-step-file-outputs" in table_classes
+    assert "asokai-step-resources" in table_classes
+    assert "asokai-step-applicability" not in table_classes
+    assert "asokai-analysis-output-columns" in table_classes
+    assert "Step override" in reference
+    assert "Shared default" in reference
+    assert "Built-in fallback" in reference
+    assert "JSON — TargetGene" in reference
+    assert "CSV" in reference
+    assert "Output columns" in reference
+    assert "Analysis" not in sections
+    assert "Output columns" in sections["Outputs"].astext()
+    assert "first row is a header" in reference
+    assert "Rows: Intrinsic features per target site" in reference
+    assert "Applicability" not in reference
+    assert not any(
+        isinstance(node, nodes.section) and node[0].astext() == "File contracts"
+        for node in generated_nodes
+    )
+
+
+def test_step_reference_renders_only_declared_applicability() -> None:
+    class RestrictedStep(CoreStep):
+        name = "restricted-example"
+        description = "Example step with an explicit biological restriction."
+        spec = StepSpec(
+            compatible_with={
+                "parameters.antisense.modality.mechanism": ["rnase-h1"],
+            }
+        )
+
+    step = RestrictedStep()
+    generated_nodes = build_step_reference(step, _config_schema())
+    reference = "\n".join(node.astext() for node in generated_nodes)
+    table_classes = {
+        css_class
+        for node in generated_nodes
+        for generated_table in node.findall(nodes.table)
+        for css_class in generated_table["classes"]
+    }
+
+    assert "asokai-step-applicability" in table_classes
+    assert "parameters.antisense.modality.mechanism" in reference
+    assert "rnase-h1" in reference
+
+
+def test_therapeutic_candidate_generation_declares_its_modality() -> None:
+    step = get_built_in_step("generate-therapeutic-candidates")
+    generated_nodes = build_step_reference(step, _config_schema())
+    reference = "\n".join(node.astext() for node in generated_nodes)
+
+    assert step.spec.compatible_with == {}
+    assert "parameters.antisense.modality.type" in reference
+    modality = next(param for param in step.spec.params if param.name == "modality")
+    assert modality.inferred_cwl_type()["symbols"] == ["aso", "sirna"]
+
+
+def test_candidate_generation_documents_conditional_design_fields() -> None:
+    step = get_built_in_step("generate-therapeutic-candidates")
+    fields = {
+        field.path: field
+        for field in collect_step_config_fields(step, _config_schema())
+    }
+    rules = collect_step_schema_rules(step, _config_schema())
+
+    assert fields["parameters.antisense.modality.design.type"].requirement == "Required"
+    for field_name in (
+        "left_wing_length",
+        "gap_length",
+        "right_wing_length",
+    ):
+        field = fields[f"parameters.antisense.modality.design.{field_name}"]
+        assert field.requirement == "Optional"
+        assert "Required for a gapmer design" in field.description
+        assert field.constraints == "minimum: 1"
+    assert (
+        "A gapmer design requires left_wing_length, gap_length, and "
+        "right_wing_length."
+    ) in rules
+    assert ("An unmodified design must not define gapmer segment lengths.") in rules
+
+
+def test_candidate_generation_separates_design_parameters() -> None:
+    step = get_built_in_step("generate-therapeutic-candidates")
+    generated_nodes = build_step_reference(step, _config_schema())
+    sections = {
+        generated_section[0].astext(): generated_section
+        for root in generated_nodes
+        for generated_section in root.findall(nodes.section)
+    }
+
+    common_parameters = sections["Common parameters"].astext()
+    gapmer_design = sections["Gapmer design"]
+    unmodified_design = sections["Unmodified design"]
+
+    assert "parameters.antisense.modality.design.type" not in common_parameters
+    assert yaml.safe_load(
+        next(gapmer_design.findall(nodes.literal_block)).astext()
+    ) == {
+        "parameters": {
+            "antisense": {
+                "modality": {
+                    "type": "aso",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
+                }
+            }
+        }
+    }
+    assert yaml.safe_load(
+        next(unmodified_design.findall(nodes.literal_block)).astext()
+    ) == {
+        "parameters": {
+            "antisense": {
+                "modality": {"type": "aso", "design": {"type": "unmodified"}}
+            }
+        }
+    }
+    for field_name in (
+        "left_wing_length",
+        "gap_length",
+        "right_wing_length",
+    ):
+        assert f"parameters.antisense.modality.design.{field_name}" in gapmer_design.astext()
+        assert (
+            f"parameters.antisense.modality.design.{field_name}"
+            not in unmodified_design.astext()
+        )
+
+    parameters = sections["Parameters"].astext()
+    assert "A gapmer design requires" not in parameters
+    assert "An unmodified design must not define" not in parameters
+    assert "exactly one of these config values is required" in parameters
+
+
+def test_json_file_contract_maps_to_its_serializable_class() -> None:
+    target_step = get_built_in_step("create-target-gene")
+    candidate_step = get_built_in_step("generate-therapeutic-candidates")
+
+    assert json_contract_types(target_step.target_gene_output.file_type) == (
+        TargetGene,
+    )
+    assert json_contract_types(candidate_step.therapeutics_output.file_type) == (
+        ASO,
+        Gapmer,
+        siRNA,
+    )
+    assert (
+        candidate_step.therapeutics_output.file_type.value_type
+        == list[AntisenseTherapeutic]
+    )
+
+
+def test_class_json_contract_owns_only_its_direct_fields() -> None:
+    contract = serializable_contract_nodes(
+        TargetGene,
+        refdoc="api/modules/Targets",
+    )
+    reference = "\n".join(node.astext() for node in contract)
+    links = [link for node in contract for link in node.findall(addnodes.pending_xref)]
+
+    contract_section = contract[0]
+    assert isinstance(contract_section, nodes.section)
+    contract_title = contract_section.next_node(nodes.title)
+    assert contract_title is not None
+    assert contract_title.astext() == "File contract"
+    assert "Example file" in reference
+    assert "__class__" in reference
+    assert "ASOkai.Targets._target_gene" in reference
+    assert "sites" in reference
+    assert "transcript_id" not in reference
+    assert {link["reftarget"] for link in links} == {
+        "ASOkai.Sites.GenomicSite",
+        "ASOkai.Sites.TranscriptSite",
+    }
+
+
+def test_nested_classes_own_their_json_details() -> None:
+    aso_contract = serializable_contract_nodes(
+        ASO,
+        refdoc="api/modules/Antisense",
+    )
+    gapmer_contract = serializable_contract_nodes(
+        Gapmer,
+        refdoc="api/modules/Antisense",
+    )
+    aso_fields = next(
+        table.astext() for node in aso_contract for table in node.findall(nodes.table)
+    )
+    gapmer_fields = next(
+        table.astext()
+        for node in gapmer_contract
+        for table in node.findall(nodes.table)
+    )
+
+    assert "chemistry" in aso_fields
+    assert "left_wing_length" not in aso_fields
+    assert "gap_length" not in aso_fields
+    assert "right_wing_length" not in aso_fields
+    assert "chemistry" in gapmer_fields
+    assert "left_wing_length" in gapmer_fields
+    assert "gap_length" in gapmer_fields
+    assert "right_wing_length" in gapmer_fields
+
+
+@pytest.mark.parametrize("serializable_type", [Oligonucleotide, siRNA])
+def test_serializable_contract_describes_every_field(serializable_type: type) -> None:
+    reference = "\n".join(
+        node.astext()
+        for node in serializable_contract_nodes(
+            serializable_type,
+            refdoc="api/modules/Antisense",
+        )
+    )
+
+    assert "Meaning: —" not in reference
+
+
+@pytest.mark.parametrize("serializable_type", [Site])
+def test_abstract_serializable_class_has_no_json_contract(
+    serializable_type: type,
+) -> None:
+    assert not serializable_contract_nodes(
+        serializable_type,
+        refdoc=f"api/modules/{serializable_type.__module__.split('.')[1]}",
+    )
+
+
+def test_chemistry_has_an_id_only_json_contract() -> None:
+    contract = serializable_contract_nodes(
+        Chemistry,
+        refdoc="api/modules/Biochemistry",
+    )
+    reference = "\n".join(node.astext() for node in contract)
+
+    assert "File contract" in reference
+    assert "id" in reference
+
+
+def test_serializable_contract_is_the_final_class_section() -> None:
+    document = new_document("api/modules/Targets")
+    module_section = nodes.section(ids=["targets"])
+    module_section += nodes.title(text="Targets")
+    description = addnodes.desc(objtype="class")
+    description += addnodes.desc_signature(
+        module="ASOkai.Targets",
+        fullname="TargetGene",
+    )
+    description += addnodes.desc_content()
+    module_section += description
+    document += module_section
+    dependencies: list[str] = []
+
+    append_serializable_contracts(
+        SimpleNamespace(
+            env=SimpleNamespace(
+                docname="api/modules/Targets",
+                note_dependency=dependencies.append,
+            )
+        ),
+        document,
+    )
+
+    content = description.next_node(addnodes.desc_content)
+    assert isinstance(content, addnodes.desc_content)
+    contract_section = content.children[-1]
+    assert isinstance(contract_section, nodes.section)
+    contract_title = contract_section.next_node(nodes.title)
+    assert contract_title is not None
+    assert contract_title.astext() == "File contract"
+    assert list(contract_section.findall(nodes.table))
+    assert any(path.endswith("Targets/_target_gene.py") for path in dependencies)
+    assert any(path.endswith("Sites/_genomic_site.py") for path in dependencies)
+
+
+def test_json_contract_generates_valid_examples() -> None:
+    for step in get_built_in_steps():
+        for output in step.spec.outputs:
+            if not isinstance(output.file_type, JsonFile):
+                continue
+            content = json_example(output.file_type)
+            assert content
+            output.file_type.loads(content, source="documentation test")
+
+
+def test_class_contract_omits_an_invalid_schema_derived_example() -> None:
+    contract = serializable_contract_nodes(
+        TranscriptSite,
+        refdoc="api/modules/Sites",
+    )
+    reference = "\n".join(node.astext() for node in contract)
+
+    assert "File contract" in reference
+    assert "Fields" in reference
+    assert "Example file" not in reference
+
+
+def test_opaque_outputs_use_human_readable_format_names() -> None:
+    step = get_built_in_step("download-genome")
+    reference = "\n".join(
+        node.astext() for node in build_step_reference(step, _config_schema())
+    )
+
+    assert "FASTA reference" in reference
+    assert "SQLite gffutils database" in reference
+    assert "application/gzip" not in reference
+
+
+def test_analysis_output_preserves_index_and_column_order() -> None:
+    step = get_built_in_step("compute-intrinsic-features")
+    csv_file = step.spec.outputs[0].file_type
+    assert isinstance(csv_file, CsvFile)
+    generated_nodes = build_step_reference(step, _config_schema())
+    reference = "\n".join(node.astext() for node in generated_nodes)
+    ordered_columns = (
+        "site_id",
+        "GC_content",
+        "AT_content",
+        "T_count",
+        "CpG_count",
+        "T_content",
+        "CpG_content",
+    )
+
+    positions = [reference.index(f"\n{column}\n") for column in ordered_columns]
+    assert positions == sorted(positions)
+    assert "proportion of Guanine" in reference
+    assert "Accepted value: string" in reference
+    assert "\nstr\n" not in reference

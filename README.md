@@ -1,7 +1,46 @@
 # ASOkai
 
-ASOkai is designed to provide analytical features from different aspects around ASO drug design, commonly used attributes like GC content as well as attributes usually requiring human experts. In particular, our focus is on extensive analysis of specific and unspecific off-targets and their impact on potential target knockdown evaluated through kinetic simulations.
-While the pipeline can be utilised as a ready-to-use workflow, its modularity enables the user to use any individual analytical step individually and integrate them in already existing user-defined drug design workflows. The frame work is open-source.
+ASOkai is an open-source pipeline for antisense-therapeutic design and
+analysis. Its steps can be run individually, grouped into tasks, or composed
+into workflows. ASOkai resolves the required upstream steps, validates their
+configuration and file contracts, and executes the resulting plan through CWL.
+
+## Installation
+
+Create the Conda environment so that binary dependencies such as KMC and
+Bowtie 2 are installed alongside the Python dependencies, then install ASOkai
+into it:
+
+```bash
+conda env create -f environment.yaml
+conda activate ASOkai
+python -m pip install -e .
+```
+
+## Quick start
+
+Copy the maintained example configuration and inspect the available pipeline
+units:
+
+```bash
+cp examples/config.example.yaml config.yaml
+ASOkai list steps
+ASOkai list tasks
+ASOkai list analyses
+ASOkai list workflows
+```
+
+Preview or run the standard workflow:
+
+```bash
+ASOkai run --workflow standard --dry-run
+ASOkai run --workflow standard
+```
+
+The [pipeline reference](docs/source/steps/index.rst) documents the built-in
+steps from their runtime declarations. The
+[example configuration](examples/config.example.yaml) shows the complete
+built-in configuration structure.
 
 ## Antisense therapeutic sequences
 
@@ -15,212 +54,151 @@ the sense-strand sequence is available separately as `sense_strand.sequence`.
 Candidate generation writes therapeutics and their site bindings to separate
 files. Each binding stores a therapeutic ID and a site ID.
 
-The standard workflow currently generates one RNase-H1 gapmer ASO per target
-site. Its initial design settings are scalar configuration values so they can
-also be overridden through the normal pipeline interface:
+The candidate-generation step currently supports unmodified DNA ASOs and
+wing-gap-wing gapmer ASOs. The example configuration selects an RNase-H1
+gapmer:
 
 ```yaml
-antisense:
-  modality: aso
-  mechanism: rnase-h1
-  chemistry:
-    type: gapmer
-    layout: "3-10-3"
+parameters:
+  antisense:
+    modality:
+      type: aso
+      mechanism: rnase-h1
+      design:
+        type: gapmer
+        left_wing_length: 3
+        gap_length: 10
+        right_wing_length: 3
 ```
 
-image
-
-Intrinsic Attributes:
-
-- GC content
-- Longest T-run
-- Longest AT-run
-
-Genome-wide attributes:
-
-- Specific off-targets
-- Unspecific off-targets
-- Location
-
-Kinetic Attribute:
-
-- Target-level after ASO administration 
-- Kinetic models excluding/including off-target presence
-
-Target attributes:
-
-- Secondary target sites
-- Target accessibility
+Each modality groups its mechanism under `modality.mechanism` and its design
+settings under `modality.design`. For an unmodified DNA ASO, set
+`modality.design` to `{type: unmodified}`.
 
 ## ASOkai CLI
 
 ### Configuration
 
-The `ASOkai` CLI is primarily driven by the configuration file (`config.yaml`). This file contains all the necessary parameters for the different workflows, tasks, and steps. Commands allow you to override specific configuration settings directly via command-line arguments.
+The CLI reads `./config.yaml` when present, including for CLI-selected runs.
+Use `--configfile` to select another file. For a CLI-only run, use `--no-config`;
+if no `config.yaml` exists, CLI selections also work without that flag. Both
+cases use `./data` as the data directory. A file containing `runs` cannot be
+combined with CLI selections.
+Place `--param PATH=VALUE` before the first selection to set a shared parameter;
+omit the `parameters.` prefix. Use the same path after a step or task to override
+that run's parameter:
 
-Each step can declare its single-node resource request under `resources`:
+```bash
+ASOkai run --no-config --param genome.assembly=GRCh39 --param genome.release=115 \
+  --param genome.species=Homo_sapiens --step create-target-gene \
+  --param target.target_id=ENSG00000133703 --param target.k=20 \
+  --param target.region=transcriptomic
+```
+
+Run `ASOkai describe step NAME` to see its parameters, inputs, and outputs.
+Add `-v` to see configuration keys, input override options, and output paths.
+
+Single-node resource requests are configured under `resources`:
 
 ```yaml
 resources:
   default:
-    n_processes: 1
+    n_workers: 1
     memory_mb: 4096
-  download-genome:
-    n_processes: 1
-    memory_mb: 4096
-  create-target-gene:
-    n_processes: 1
-    memory_mb: 4096
+  compute-intrinsic-features:
+    n_workers: 4
 ```
 
-Missing per-step fields inherit from `resources.default`; if the entire section
-is omitted, ASOkai uses one process and 4096 MiB. `memory_mb` is measured in
-MiB. ASOkai translates these values to the CWL `ResourceRequirement` fields
-`coresMin` and `ramMin`.
+Missing per-step settings inherit from `resources.default`. If the section is
+omitted, ASOkai uses 4096 MiB and one worker where parallel execution is
+supported. A step without worker support requests one core and does
+not accept a step-level `n_workers` setting.
 
-### Reporting
+### Commands
 
-Most commands support an optional `--report` flag, which generates a summary report for that specific step.
-
-### CLI Structure
-
-The CLI is organized around a central `run` command that can execute the entire pipeline or specific parts of it.
-
-```
-ASOkai
-├── workflows
-|   └── ...
-├── tasks
-|   ├── instantiate-target-gene
-|   ├── repeated-sites
-|   ├── site-accessibility
-|   ├── site-quality
-|   ├── kinetic-model
-|   ├── specific-off-targets
-|   ├── unspecific-off-targets
-|   └── intrinsic-features
-└── steps
-    ├── download-genome
-    ├── build-genome
-    ├── create-target-gene-object
-    ├── load-target-gene-object
-    ├── generate-results-file
-    └── ...
-```
-
----
-
-### 1. `run`
-
-This is the main, high-level command intended for most users. It can execute one or more low-level steps and automatically resolve dependencies between them.
-
-Current native step execution examples:
+Use `list` and `describe` instead of relying on a hard-coded catalog; installed
+plugins appear in the same commands:
 
 ```bash
 # List available units
 ASOkai list steps
 ASOkai list tasks
+ASOkai list analyses
 ASOkai list workflows
 
 # Describe one unit
 ASOkai describe step download-genome
-ASOkai describe task prepare-genome
+ASOkai describe task instantiate-target-gene
+ASOkai describe analysis compute-intrinsic-features
+ASOkai describe analysis find-repeated-sites
 ASOkai describe workflow standard
 
-# Run one step / task / workflow
-ASOkai run --steps download-genome
-ASOkai run --tasks prepare-genome
+# Run one step, task, or workflow
+ASOkai run --step download-genome
+ASOkai run --task instantiate-target-gene
 ASOkai run --workflow standard
 
-# Preview execution order without running
-ASOkai run --steps download-genome --dry-run
+# Run multiple selected units
+ASOkai run --step generate-therapeutic-candidates --step compute-intrinsic-features
 
-# Override config values from CLI directly
-ASOkai run --steps download-genome --genome.ensembl_release 115
+# Export the selected goals as a CWL job bundle without executing them
+ASOkai export --workflow standard
 
-# Force rerun even if outputs already exist
-ASOkai run --steps download-genome --force
+# Include the complete producer closure in the exported bundle
+ASOkai export --step compute-intrinsic-features --recursive
+
+# Require dependencies to exist instead of scheduling missing ones
+ASOkai run --step compute-intrinsic-features --non-recursive
 ```
-
----
-
-### 2. Workflows
-
-### 3. Tasks
-
-Tasks are logical collections of steps that perform a specific, complex analysis. They manage the inputs and outputs between steps automatically.
-
-**Dependency Handling:** When a task is executed, it automatically checks for its dependencies (e.g., a target gene object). If a dependency already exists, it will be loaded. If not, the task will automatically run the necessary preceding steps to create the dependency.
-
-#### `instantiate-target-gene`
-
-- **Description:** Creates and initializes a target gene object, which is a prerequisite for most analysis tasks.
-- **Dependencies:** `steps.download-genome`, `steps.build-genome`, `steps.create-target-gene-object`.
-
-#### Site-wide Analysis Tasks
-
-- `**intrinsic-features`**: Analyzes intrinsic features like GC content, AT/T-runs.
-- **Dependencies:** Depends on `tasks.instantiate-target-gene`.
-
-#### Target-wide Analysis Tasks
-
-- `**repeated-sites`**: Analyzes for repeated sites within the target.
-- `**site-accessibility**`: Assesses the accessibility of sites in the target.
-- `**site-quality**`: Evaluates the quality of potential ASO binding sites.
-- `**kinetic-model**`: Runs the kinetic model for the target.
-- **Dependencies:** All depend on `tasks.instantiate-target-gene`.
-
-#### Genome-wide Analysis Tasks
-
-- `**specific-off-targets`**: Identifies specific off-target sites.
-- `**unspecific-off-targets**`: Identifies unspecific off-target sites.
-- **Dependencies:** All depend on `tasks.instantiate-target-gene`.
-
-#### Results
-
-- `**gather-results`**: Gather results of different steps into a single file.
-
----
-
-### 4. Steps
-
-Steps are the individual, low-level building blocks of the pipeline. They are generally not intended for direct use by end-users, as managing their inputs and outputs can be complex. However, they can be used for manual pipeline execution or debugging.
-
-#### `download-genome`
-
-- **Description:** Downloads a genome using GenomeUtils.
-
-#### `build-genome`
-
-- **Description:** Builds Genome using GenomeUtils.
-- **Dependencies:** `steps.download-genome`.
-
-#### `create-target-gene-object`
-
-- **Description:** Creates a data object for the target gene from Genome, and extracts necessary sites.
-- **Dependencies:** `steps.build-genome`.
-
-#### `load-target-gene-object`
-
-- **Description:** Loads an existing target gene object from disk.
-- **Dependencies:** `steps.create-target-gene-object`.
 
 ## Third-party software and licenses
 
-External programs used by some workflows are not installed via `pip` with the ASOkai package. Obtain binaries according to your setup and respect each upstream license.
+External programs used by some workflows are not installed by the Python
+package. Obtain binaries according to your setup and respect each upstream
+license.
 
 ### KMC
 
-[KMC](https://github.com/refresh-bio/KMC) is GPLv3-only; see the upstream repository for the license text.
+[KMC](https://github.com/refresh-bio/KMC) is GPLv3-only; see the upstream
+repository for the license text.
 
+### Bowtie 2
+
+[Bowtie 2](https://bowtie-bio.sourceforge.net/bowtie2/manual.shtml) is
+[GPLv3 software](https://github.com/BenLangmead/bowtie2/blob/master/LICENSE).
+ASOkai invokes its command-line executables but does not distribute or link
+against them.
+
+### ViennaRNA
+
+[ViennaRNA](https://www.tbi.univie.ac.at/RNA/) computes the binding free
+energies used by the potential-repeated-sites search. ASOkai imports its
+Python bindings, which are distributed under ViennaRNA's own license; review
+it before use.
+
+## Contributor setup
+
+Install ASOkai with its contributor-only tools in the Conda environment:
+
+```bash
+conda env create -f environment.yaml
+conda activate ASOkai
+python -m pip install -e ".[dev]"
+```
+
+The [contributor guide](docs/source/contributor-guide/index.rst) explains the
+pipeline contracts and provides a copyable analysis-step starting point.
 
 ## Documentation
 
-To build the document using sphinx, run:
-`sphinx-build -M html docs/source docs/build`
+Build the documentation with the active environment's Python:
+
+```bash
+python -m sphinx -W --keep-going -b html docs/source docs/build/html
+```
 
 ## License
 
-This software is under L-GPL-3.0-later.
+ASOkai is licensed under LGPL-3.0-or-later.
 
 Copyright 2026 Alexander Schliep

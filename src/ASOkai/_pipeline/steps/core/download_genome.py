@@ -1,0 +1,158 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/steps/core/download_genome.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Definition of the download-genome pipeline step.
+License: LGPL-3.0-or-later
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Literal
+
+from GenomeUtils.Downloaders import EnsemblGenomeDownloader
+
+from ASOkai._pipeline.contracts.file_types import FastaFile, FileType
+from ASOkai._pipeline.contracts.files import FileOutput
+from ASOkai._pipeline.contracts.parameters import ScalarParam
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
+from ASOkai._pipeline.contracts.step_spec import StepSpec
+from ASOkai._pipeline.steps.core.base import CoreStep
+
+logger = logging.getLogger(__name__)
+
+
+_GENOME_PATH_FIELDS = {
+    "assembly": TemplateField("parameters.genome.assembly"),
+    "source": TemplateField("parameters.genome.source"),
+    "release": TemplateField("parameters.genome.release"),
+    "species": TemplateField("parameters.genome.species"),
+}
+
+
+class DownloadGenomeStep(CoreStep):
+    name = "download-genome"
+    description = (
+        "Downloads genome DNA, cDNA, annotation, and a reusable annotation database."
+    )
+    dna_output = FileOutput(
+        "dna",
+        file_type=FastaFile(gzip=True),
+        destination=OutputPathTemplate(
+            "{assembly}/{source}/{release}/genome/"
+            "{species}.{assembly}.dna.primary_assembly.fa.gz",
+            fields=_GENOME_PATH_FIELDS,
+        ),
+        doc="Primary assembly DNA FASTA.",
+    )
+    cdna_output = FileOutput(
+        "cdna",
+        file_type=FastaFile(gzip=True),
+        destination=OutputPathTemplate(
+            "{assembly}/{source}/{release}/genome/"
+            "{species}.{assembly}.cdna.all.fa.gz",
+            fields=_GENOME_PATH_FIELDS,
+        ),
+        doc="All-transcript cDNA FASTA.",
+    )
+    annotation_output = FileOutput(
+        "annotation",
+        file_type=FileType(
+            media_type="application/gzip",
+            format_name="gzip-compressed GTF",
+        ),
+        destination=OutputPathTemplate(
+            "{assembly}/{source}/{release}/genome/"
+            "{species}.{assembly}.{release}.gtf.gz",
+            fields=_GENOME_PATH_FIELDS,
+        ),
+        doc="Gene annotation GTF.",
+    )
+    db_output = FileOutput(
+        "db",
+        file_type=FileType(
+            media_type="application/vnd.sqlite3",
+            format_name="SQLite gffutils database",
+        ),
+        destination=OutputPathTemplate(
+            "{assembly}/{source}/{release}/genome/"
+            "{species}.{assembly}.{release}.gtf.db",
+            fields=_GENOME_PATH_FIELDS,
+        ),
+        doc="Reusable annotation database built by gffutils.",
+    )
+    spec = StepSpec(
+        requirements={
+            "NetworkAccess": {"networkAccess": True},
+            "WorkReuse": {"enableReuse": True},
+        },
+        params=[
+            ScalarParam(
+                "assembly",
+                str,
+                config="parameters.genome.assembly",
+                doc="Assembly ID (e.g. GRCh38).",
+            ),
+            ScalarParam(
+                "release",
+                int,
+                config="parameters.genome.release",
+                doc="Genome data release number (e.g. Ensembl 114).",
+            ),
+            ScalarParam(
+                "source",
+                Literal["ensembl"],
+                config="parameters.genome.source",
+                doc="Genome data source.",
+                default="ensembl",
+            ),
+            ScalarParam(
+                "species",
+                str,
+                config="parameters.genome.species",
+                doc="Species name (e.g. Homo_sapiens).",
+            ),
+        ],
+        outputs=[
+            dna_output,
+            cdna_output,
+            annotation_output,
+            db_output,
+        ],
+    )
+
+    def run_from_args(self, args) -> int:
+        """Download the configured genome files."""
+        outputs = {
+            output.name: getattr(args, output.argument_name)
+            for output in self.spec.outputs
+        }
+        downloader = EnsemblGenomeDownloader(
+            assembly_id=args.assembly,
+            ensembl_release=args.release,
+            species=args.species.lower().replace(" ", "_"),
+            destinations=outputs,
+        )
+        paths = downloader.download(force=True, output_db=True)
+
+        for name, output in outputs.items():
+            try:
+                downloaded = Path(paths[name])
+            except KeyError as error:
+                raise RuntimeError(
+                    f"Genome downloader did not return required output " f"{name!r}."
+                ) from error
+            if downloaded.resolve() != output.resolve():
+                raise RuntimeError(
+                    f"Genome downloader returned {downloaded} for output "
+                    f"{name!r}; expected {output}."
+                )
+            logger.debug("Wrote %s to %s", name, output)
+
+        return 0

@@ -164,4 +164,9 @@ cython_debug/
 submit_job.sh
 *.ipynb
 
+# Local runtime configuration copied from the maintained example.
+/config.yaml
+
 .vscode/*
+.DS_Store
+config.yaml

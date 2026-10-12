@@ -1,7 +1,10 @@
 Biochemistry
 ============
 
-.. automodule:: ASOkai.Biochemistry
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Biochemical declarations are grouped into chemistry and mechanism models.
+
+.. toctree::
+   :maxdepth: 2
+
+   Biochemistry/chemistry
+   Biochemistry/mechanisms

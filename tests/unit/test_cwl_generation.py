@@ -3,40 +3,48 @@
 Filename: tests/unit/test_cwl_generation.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Tests for generated top-level runtime CWLs.
 License: LGPL-3.0-or-later
 """
 
-from pathlib import Path
 import shutil
 import subprocess
-from typing import ClassVar
+from pathlib import Path
 
 import pytest
 import yaml
 
-from ASOkai._cwl.generation import generate_cwl_bundle
-from ASOkai._cwl.spec import (
-    InputParam,
-    OutputParam,
+from ASOkai._cwl.generation import GeneratedCwlBundle, generate_cwl_bundle
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
     ScalarParam,
-    StepCwlGenerator,
+    Step,
     StepSpec,
 )
-from ASOkai._pipeline.base import Step
-from ASOkai._pipeline.registry import get_steps
+from ASOkai._pipeline.catalog import get_steps
+from ASOkai._pipeline.contracts.execution import (
+    ExecutionPlan,
+    StepInputBinding,
+    StepRun,
+)
+from ASOkai._pipeline.contracts.paths import (
+    OutputPathTemplate,
+    TemplateField,
+)
+from ASOkai._pipeline.plan import build_plan
+from ASOkai._pipeline.output_receipts import record_validated_outputs
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
 
 
 class _SpecStep(Step):
     name = "test-step"
     description = "Test step."
-    cli_module = "tests.fake_step"
-    dependencies: ClassVar[list[str]] = []
     spec = StepSpec()
-
-    def outputs_exist(self, config):
-        return False
 
     def cleanup(self, config):
         pass
@@ -45,60 +53,234 @@ class _SpecStep(Step):
 def _spec_step(
     name: str,
     spec: StepSpec,
-    *,
-    dependencies: list[str] | None = None,
 ) -> Step:
     """Return an isolated Step subclass configured with class-level metadata."""
-
-    class ConfiguredSpecStep(_SpecStep):
-        pass
-
-    ConfiguredSpecStep.name = name
-    ConfiguredSpecStep.spec = spec
-    ConfiguredSpecStep.dependencies = list(dependencies or [])
+    namespace = {
+        "__module__": __name__,
+        "name": name,
+        "spec": spec,
+    }
+    namespace.update(
+        {
+            f"declared_output_{index}": output
+            for index, output in enumerate(spec.outputs)
+        }
+    )
+    ConfiguredSpecStep = type("ConfiguredSpecStep", (_SpecStep,), namespace)
     return ConfiguredSpecStep()
 
 
 def _generate_run_cwl(
     steps: list[Step],
-    pre_resolved: dict[str, Path],
     config: dict,
 ) -> str:
-    return generate_cwl_bundle(steps, pre_resolved, config).run_cwl
+    return _generate_bundle(steps, config).run_cwl
+
+
+def _step_runs(steps: list[Step], config: dict) -> list[StepRun]:
+    """Build main runs for focused CWL generator tests."""
+    runs: list[StepRun] = []
+    for step in steps:
+        bindings = []
+        for file_input in step.spec.inputs:
+            producer_run = next(
+                (
+                    candidate
+                    for candidate in runs
+                    if file_input.source is not None
+                    and candidate.step.name == file_input.source.producer
+                ),
+                None,
+            )
+            source = (
+                producer_run.output(file_input.source)
+                if producer_run is not None
+                else Path(config["datadir"]) / "external" / file_input.name
+            )
+            bindings.append(StepInputBinding(file_input, source))
+        runs.append(
+            StepRun(
+                run_id=step.name,
+                step=step,
+                config=config,
+                inputs=tuple(bindings),
+            )
+        )
+    return runs
+
+
+def _generate_bundle(steps: list[Step], config: dict):
+    return generate_cwl_bundle(_step_runs(steps, config))
+
+
+def _configured_run_bundle(tmp_path: Path) -> GeneratedCwlBundle:
+    """Generate two differently configured runs of one step class."""
+    step = _spec_step(
+        "producer",
+        StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[
+                FileOutput(
+                    "result",
+                    destination=OutputPathTemplate(
+                        "{mode}/result.txt",
+                        fields={"mode": TemplateField("producer.mode")},
+                    ),
+                )
+            ],
+        ),
+    )
+    main_run = StepRun(
+        run_id="producer",
+        step=step,
+        config={
+            "datadir": str(tmp_path),
+            "producer": {"mode": "main"},
+        },
+    )
+    configured_run = StepRun(
+        run_id="consumer.producer",
+        step=step,
+        config={
+            "datadir": str(tmp_path),
+            "producer": {"mode": "configured"},
+        },
+    )
+    return generate_cwl_bundle([main_run, configured_run])
+
+
+def _shared_producer_plan(
+    tmp_path: Path,
+    *,
+    producer_output_exists: bool = False,
+) -> ExecutionPlan:
+    """Plan two consumers linked to the same named producer run."""
+    producer_output = FileOutput(
+        "result",
+        destination=OutputPathTemplate(
+            "{mode}/result.txt",
+            fields={"mode": TemplateField("producer.mode")},
+        ),
+    )
+    producer = _spec_step(
+        "producer",
+        StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[producer_output],
+        ),
+    )
+    consumers = [
+        _spec_step(
+            name,
+            StepSpec(
+                inputs=[
+                    FileInput(
+                        "result",
+                        source=producer_output,
+                    ),
+                ],
+                outputs=[FileOutput(f"{name}_result", destination=f"{name}.txt")],
+            ),
+        )
+        for name in ("first", "second")
+    ]
+    config = {
+        "datadir": str(tmp_path),
+        "producer": {"mode": "main"},
+        "runs": [
+            {
+                "id": "alternate",
+                "step": "producer",
+                "parameters": {"mode": "alternate"},
+            },
+            *(
+                {
+                    "id": consumer.name,
+                    "step": consumer.name,
+                    "inputs": {"result": {"from": "run.alternate.result"}},
+                }
+                for consumer in consumers
+            ),
+        ],
+    }
+    registry = {step.name: step for step in (producer, *consumers)}
+    plan = build_plan(
+        [],
+        config,
+        _registry=registry,
+    )
+    if not producer_output_exists:
+        return plan
+
+    producer_run = plan.runs_to_execute[0]
+    producer_path = producer_run.output_paths()["result"]
+    producer_path.parent.mkdir()
+    producer_path.touch()
+    producer_run.validate_output_files()
+    record_validated_outputs(producer_run)
+    return build_plan([], config, _registry=registry)
+
+
+def _validate_bundle_with_cwltool(
+    generated: GeneratedCwlBundle,
+    directory: Path,
+) -> None:
+    """Write and validate one complete generated bundle."""
+    executable = shutil.which("cwltool")
+    if executable is None:
+        pytest.skip("cwltool is not installed")
+    assert executable is not None
+
+    steps_dir = directory / "steps"
+    steps_dir.mkdir()
+    for filename, contents in generated.step_cwls.items():
+        (steps_dir / filename).write_text(contents)
+    run_path = directory / "run.cwl"
+    run_path.write_text(generated.run_cwl)
+    (directory / "publish.cwl").write_text(generated.publish_cwl)
+    (directory / "output-layout.yml").write_text(generated.output_layout)
+
+    result = subprocess.run(
+        [executable, "--validate", str(run_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture
 def workflow_config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "target_name": "KRAS",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+        "parameters": {
+            "genome": {
+                "assembly": "GRCh38",
+                "release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
+                },
+            },
         },
     }
 
 
 def test_generate_cwl_wires_download_outputs_into_create_target_gene(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     doc = yaml.safe_load(
         _generate_run_cwl(
             [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
             workflow_config,
         )
     )
@@ -113,13 +295,9 @@ def test_generate_cwl_wires_download_outputs_into_create_target_gene(workflow_co
 def test_generate_cwl_does_not_expose_derived_output_filenames_as_inputs(
     workflow_config,
 ):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     doc = yaml.safe_load(
         _generate_run_cwl(
             [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
             workflow_config,
         )
     )
@@ -128,78 +306,54 @@ def test_generate_cwl_does_not_expose_derived_output_filenames_as_inputs(
     assert "dna_output" not in download_inputs
     assert "cdna_output" not in download_inputs
     assert "annotation_output" not in download_inputs
-    assert "dna_output" not in doc["inputs"]
+    assert "download-genome.dna_output" not in doc["inputs"]
 
 
 def test_generate_cwl_uses_declared_step_input_types(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     doc = yaml.safe_load(
         _generate_run_cwl(
             [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
             workflow_config,
         )
     )
 
-    assert doc["inputs"]["release"] == "int"
-    assert doc["inputs"]["k"] == "int"
-    assert doc["inputs"]["region"]["type"]["type"] == "enum"
+    assert doc["inputs"]["download-genome.release"] == "int"
+    assert doc["inputs"]["create-target-gene.k"] == "int"
+    assert doc["inputs"]["create-target-gene.region"]["type"]["type"] == "enum"
 
 
-def test_generate_cwl_pre_resolved_dependency_outputs_are_file_inputs(tmp_path):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-
+def test_generate_cwl_external_dependency_outputs_are_file_inputs(tmp_path):
     config = {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "target_name": "KRAS",
-            "k": 16,
-            "region": "pre-mrna",
+        "parameters": {
+            "genome": {
+                "assembly": "GRCh38",
+                "release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
         },
     }
 
     doc = yaml.safe_load(
         _generate_run_cwl(
             [CreateTargetGeneStep()],
-            {"dna": tmp_path / "dna.fa.gz", "cdna": tmp_path / "cdna.fa.gz"},
             config,
         )
     )
 
-    assert doc["inputs"]["dna"] == "File"
-    assert doc["inputs"]["cdna"] == "File"
-    assert doc["steps"]["step_create_target_gene"]["in"]["dna"] == "dna"
-    assert doc["steps"]["step_create_target_gene"]["in"]["cdna"] == "cdna"
-
-
-def test_generate_cwl_input_overrides_keep_declared_file_types_when_not_wired(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-
-    doc = yaml.safe_load(_generate_run_cwl([CreateTargetGeneStep()], {}, workflow_config))
-
-    assert doc["inputs"]["dna"] == "File"
-    assert doc["inputs"]["cdna"] == "File"
-    assert doc["inputs"]["annotation"] == "File"
-    assert doc["inputs"]["db"] == "File"
+    create_inputs = doc["steps"]["step_create_target_gene"]["in"]
+    for name in ("dna", "cdna", "annotation", "db"):
+        workflow_input = f"create-target-gene.{name}"
+        assert doc["inputs"][workflow_input] == "File"
+        assert create_inputs[name] == workflow_input
 
 
 def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     doc = yaml.safe_load(
         _generate_run_cwl(
             [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
             workflow_config,
         )
     )
@@ -215,6 +369,7 @@ def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_conf
         "step_download_genome/annotation",
         "step_download_genome/db",
         "step_create_target_gene/target_gene",
+        "step_create_target_gene/fasta",
     ]
     assert doc["steps"]["publish_outputs"]["in"]["files"]["linkMerge"] == (
         "merge_flattened"
@@ -223,12 +378,8 @@ def test_generate_cwl_publishes_every_step_output_under_data_roots(workflow_conf
 
 
 def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [DownloadGenomeStep(), CreateTargetGeneStep()],
-        {},
         workflow_config,
     )
     publisher = yaml.safe_load(generated.publish_cwl)
@@ -237,7 +388,7 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     assert publisher["baseCommand"] == ["ASOkai", "publish-outputs"]
     assert publisher["inputs"]["files"]["type"] == {
         "type": "array",
-        "items": "File",
+        "items": ["File", "Directory"],
     }
     assert publisher["outputs"]["published_GRCh38"] == {
         "type": "Directory",
@@ -245,9 +396,9 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     }
     assert "InlineJavascriptRequirement" not in publisher.get("requirements", {})
     assert layout["outputs"][0] == {
-        "id": "step_download_genome__dna",
+        "id": "download-genome.dna",
         "destination": (
-            "GRCh38/genomes/ensembl/114/"
+            "GRCh38/ensembl/114/genome/"
             "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         ),
     }
@@ -257,18 +408,59 @@ def test_generate_cwl_bundle_contains_every_required_document(workflow_config):
     }
 
 
-def test_generate_cwl_adds_each_steps_configured_resources(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+def test_generate_cwl_publishes_a_root_file_as_a_file(tmp_path):
+    step = _spec_step(
+        "single-file",
+        StepSpec(outputs=[FileOutput("result", destination="result.txt")]),
+    )
 
-    workflow_config["resources"] = {
-        "download-genome": {"n_processes": 2, "memory_mb": 4096},
-        "create-target-gene": {"n_processes": 8, "memory_mb": 16384},
+    generated = _generate_bundle([step], {"datadir": str(tmp_path)})
+    workflow = yaml.safe_load(generated.run_cwl)
+    publisher = yaml.safe_load(generated.publish_cwl)
+
+    assert workflow["outputs"]["published_result_txt"] == {
+        "type": "File",
+        "outputSource": "publish_outputs/published_result_txt",
+    }
+    assert publisher["outputs"]["published_result_txt"] == {
+        "type": "File",
+        "outputBinding": {"glob": "published/result.txt"},
     }
 
-    generated = generate_cwl_bundle(
+
+def test_generate_cwl_disambiguates_all_normalized_publication_root_ids(tmp_path):
+    step = _spec_step(
+        "colliding-roots",
+        StepSpec(
+            outputs=[
+                FileOutput("first", destination="a_b_3/first.txt"),
+                FileOutput("second", destination="a-b/second.txt"),
+                FileOutput("third", destination="a_b/third.txt"),
+            ]
+        ),
+    )
+
+    generated = _generate_bundle([step], {"datadir": str(tmp_path)})
+    workflow = yaml.safe_load(generated.run_cwl)
+    publisher = yaml.safe_load(generated.publish_cwl)
+
+    expected_ids = {
+        "published_a_b_3",
+        "published_a_b",
+        "published_a_b_2",
+    }
+    assert set(workflow["outputs"]) == expected_ids
+    assert set(publisher["outputs"]) == expected_ids
+
+
+def test_generate_cwl_keeps_single_thread_steps_at_one_core(workflow_config):
+    workflow_config["resources"] = {
+        "download-genome": {"memory_mb": 8192},
+        "create-target-gene": {"memory_mb": 16384},
+    }
+
+    generated = _generate_bundle(
         [DownloadGenomeStep(), CreateTargetGeneStep()],
-        {},
         workflow_config,
     )
     download = yaml.safe_load(generated.step_cwls["download-genome.cwl"])
@@ -276,37 +468,72 @@ def test_generate_cwl_adds_each_steps_configured_resources(workflow_config):
     workflow = yaml.safe_load(generated.run_cwl)
 
     assert download["requirements"]["ResourceRequirement"] == {
-        "coresMin": 2,
-        "ramMin": 4096,
+        "coresMin": 1,
+        "ramMin": 8192,
     }
     assert create["requirements"]["ResourceRequirement"] == {
-        "coresMin": 8,
+        "coresMin": 1,
         "ramMin": 16384,
     }
-    assert download["inputs"]["n_processes"] == {
+    assert "n_workers" not in download["inputs"]
+    assert "n_workers" not in create["inputs"]
+    assert "n_workers" not in workflow["steps"]["step_download_genome"]["in"]
+    assert "n_workers" not in workflow["steps"]["step_create_target_gene"]["in"]
+
+
+def test_generate_cwl_configures_workers_for_analysis_steps(workflow_config):
+    workflow_config["resources"] = {
+        "compute-intrinsic-features": {"n_workers": 4, "memory_mb": 8192},
+    }
+
+    generated = _generate_bundle(
+        [IntrinsicFeaturesStep()],
+        workflow_config,
+    )
+    intrinsic = yaml.safe_load(generated.step_cwls["compute-intrinsic-features.cwl"])
+    workflow = yaml.safe_load(generated.run_cwl)
+
+    assert intrinsic["requirements"]["ResourceRequirement"] == {
+        "coresMin": 4,
+        "ramMin": 8192,
+    }
+    assert intrinsic["inputs"]["n_workers"] == {
         "type": "int",
-        "doc": "Number of processes allocated to this step.",
+        "doc": "Number of workers allocated to this step.",
         "default": 1,
-        "inputBinding": {"prefix": "--n-processes"},
+        "inputBinding": {"prefix": "--n-workers"},
     }
-    assert create["inputs"]["n_processes"] == download["inputs"]["n_processes"]
-    assert workflow["steps"]["step_download_genome"]["in"]["n_processes"] == {
-        "default": 2,
+    assert workflow["steps"]["step_compute_intrinsic_features"]["in"]["n_workers"] == {
+        "default": 4,
     }
-    assert workflow["steps"]["step_create_target_gene"]["in"]["n_processes"] == {
-        "default": 8,
-    }
-    assert "n_processes" not in workflow["inputs"]
+    assert "n_workers" not in workflow["inputs"]
+
+
+def test_generate_cwl_enables_step_debug_logging_only_when_requested(
+    workflow_config,
+):
+    runs = _step_runs([IntrinsicFeaturesStep()], workflow_config)
+    normal = generate_cwl_bundle(runs)
+    verbose = generate_cwl_bundle(runs, verbose=True)
+
+    normal_step = yaml.safe_load(normal.step_cwls["compute-intrinsic-features.cwl"])
+    verbose_step = yaml.safe_load(verbose.step_cwls["compute-intrinsic-features.cwl"])
+    assert "--verbose" not in normal_step["baseCommand"]
+    assert verbose_step["baseCommand"] == [
+        "ASOkai",
+        "step",
+        "--verbose",
+        "--run-id",
+        "compute-intrinsic-features",
+        "compute-intrinsic-features",
+    ]
 
 
 def test_generate_cwl_uses_default_resource_requirement_when_not_configured(
     workflow_config,
 ):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
-    generated = generate_cwl_bundle(
+    generated = _generate_bundle(
         [DownloadGenomeStep()],
-        {},
         workflow_config,
     )
     download = yaml.safe_load(generated.step_cwls["download-genome.cwl"])
@@ -328,14 +555,14 @@ def test_generate_cwl_resource_precedence(workflow_config):
                     "tmpdirMin": 2048,
                 }
             },
-            outputs=[OutputParam("result", temp_filename="result.txt")],
+            outputs=[FileOutput("result", destination="result.txt")],
         ),
     )
     workflow_config["resources"] = {
         "authored-resources": {"memory_mb": 8192},
     }
 
-    generated = generate_cwl_bundle([step], {}, workflow_config)
+    generated = _generate_bundle([step], workflow_config)
     document = yaml.safe_load(generated.step_cwls["authored-resources.cwl"])
 
     assert document["requirements"]["ResourceRequirement"] == {
@@ -348,149 +575,323 @@ def test_generate_cwl_resource_precedence(workflow_config):
 @pytest.mark.parametrize(
     "parameter",
     [
-        ScalarParam("n_processes", int),
-        ScalarParam("workers", int, prefix="--n-processes"),
+        ScalarParam("n_workers", int),
+        ScalarParam("workers", int, prefix="--n-workers"),
     ],
 )
-def test_step_rejects_reserved_n_processes_parameter(parameter):
+def test_step_rejects_reserved_n_workers_parameter(parameter):
     step = _spec_step(
-        "conflicting-processes",
+        "conflicting-threads",
         StepSpec(params=[parameter]),
     )
 
-    with pytest.raises(ValueError, match="reserved.*n_processes"):
-        _ = step.cwl_spec
-    with pytest.raises(ValueError, match="reserved.*n_processes"):
+    with pytest.raises(ValueError, match="reserved.*n_workers"):
+        StepRun(step.name, step, {}).cwl_spec()
+    with pytest.raises(ValueError, match="reserved.*n_workers"):
         step.build_parser()
 
 
-def test_generate_cwl_normalizes_step_ids_with_underscores(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
-    doc = yaml.safe_load(
-        _generate_run_cwl(
-            [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
-            workflow_config,
-        )
-    )
-
-    assert "step_download_genome" in doc["steps"]
-    assert "step_create_target_gene" in doc["steps"]
-
-
 def test_generate_cwl_references_generated_step_files(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     doc = yaml.safe_load(
         _generate_run_cwl(
             [DownloadGenomeStep(), CreateTargetGeneStep()],
-            {},
             workflow_config,
         )
     )
 
     assert doc["steps"]["step_download_genome"]["run"] == "steps/download-genome.cwl"
-    assert doc["steps"]["step_create_target_gene"]["run"] == "steps/create-target-gene.cwl"
+    assert (
+        doc["steps"]["step_create_target_gene"]["run"] == "steps/create-target-gene.cwl"
+    )
 
 
-def test_registered_step_output_paths_define_names(workflow_config):
-    for step in get_steps().values():
-        assert tuple(step.output_paths(workflow_config).keys())
+def test_generate_cwl_namespaces_each_concrete_run(tmp_path):
+    generated = _configured_run_bundle(tmp_path)
+    document = yaml.safe_load(generated.run_cwl)
+    layout = yaml.safe_load(generated.output_layout)
+
+    assert set(generated.step_cwls) == {
+        "producer.cwl",
+        "consumer.producer.cwl",
+    }
+    assert yaml.safe_load(generated.step_cwls["producer.cwl"])["baseCommand"] == [
+        "ASOkai", "step", "--run-id", "producer", "producer"
+    ]
+    assert yaml.safe_load(generated.step_cwls["consumer.producer.cwl"])[
+        "baseCommand"
+    ] == ["ASOkai", "step", "--run-id", "consumer.producer", "producer"]
+    assert document["inputs"] == {
+        "producer.mode": "string",
+        "consumer.producer.mode": "string",
+    }
+    assert document["steps"]["step_producer"] == {
+        "run": "steps/producer.cwl",
+        "in": {"mode": "producer.mode"},
+        "out": ["result"],
+    }
+    assert document["steps"]["step_consumer.producer"] == {
+        "run": "steps/consumer.producer.cwl",
+        "in": {"mode": "consumer.producer.mode"},
+        "out": ["result"],
+    }
+    assert [entry["id"] for entry in layout["outputs"]] == [
+        "producer.result",
+        "consumer.producer.result",
+    ]
+
+
+def test_shared_producer_is_generated_and_wired_once(tmp_path):
+    plan = _shared_producer_plan(tmp_path)
+
+    generated = generate_cwl_bundle(list(plan.runs_to_execute))
+    workflow = yaml.safe_load(generated.run_cwl)
+    layout = yaml.safe_load(generated.output_layout)
+
+    assert set(generated.step_cwls) == {
+        "runs.alternate.cwl",
+        "runs.first.cwl",
+        "runs.second.cwl",
+    }
+    assert set(workflow["steps"]) == {
+        "step_runs.alternate",
+        "step_runs.first",
+        "step_runs.second",
+        "publish_outputs",
+    }
+    assert workflow["steps"]["step_runs.first"]["in"]["result"] == (
+        "step_runs.alternate/result"
+    )
+    assert workflow["steps"]["step_runs.second"]["in"]["result"] == (
+        "step_runs.alternate/result"
+    )
+    publication_sources = workflow["steps"]["publish_outputs"]["in"]["files"]["source"]
+    assert publication_sources.count("step_runs.alternate/result") == 1
+    assert [entry["id"] for entry in layout["outputs"]] == [
+        "runs.alternate.result",
+        "runs.first.first_result",
+        "runs.second.second_result",
+    ]
+
+
+def test_reused_shared_producer_is_one_workflow_input(tmp_path):
+    plan = _shared_producer_plan(
+        tmp_path,
+        producer_output_exists=True,
+    )
+
+    generated = generate_cwl_bundle(list(plan.runs_to_execute))
+    workflow = yaml.safe_load(generated.run_cwl)
+
+    assert set(generated.step_cwls) == {"runs.first.cwl", "runs.second.cwl"}
+    assert "step_runs.alternate" not in workflow["steps"]
+    assert workflow["inputs"] == {"runs.alternate.result": "File"}
+    assert workflow["steps"]["step_runs.first"]["in"]["result"] == (
+        "runs.alternate.result"
+    )
+    assert workflow["steps"]["step_runs.second"]["in"]["result"] == (
+        "runs.alternate.result"
+    )
 
 
 def test_registered_step_specs_cover_config_and_output_keys(workflow_config):
-    for step in get_steps().values():
-        input_names = step.cwl_spec.input_names()
-        output_names = step.cwl_spec.output_names()
+    runs = _step_runs(list(get_steps().values()), workflow_config)
+    for run in runs:
+        step = run.step
+        input_names = run.cwl_spec().input_names()
+        output_names = run.cwl_spec().output_names()
 
         assert set(step.config_map).issubset(input_names)
-        assert set(step.input_overrides).issubset(input_names)
-        assert set(step.output_paths(workflow_config)) == output_names
+        assert {item.name for item in step.spec.inputs}.issubset(input_names)
+        assert set(run.output_paths()) == output_names
 
 
-def test_generate_cwl_rejects_conflicting_shared_input_types(tmp_path):
+def test_generate_cwl_qualifies_same_named_inputs_by_run(tmp_path):
     first = _spec_step(
         "first",
         StepSpec(
             params=[ScalarParam("shared", str, config="first.shared")],
-            outputs=[
-                OutputParam("first_result", temp_filename="first_result.txt")
-            ],
+            outputs=[FileOutput("first_result", destination="first_result.txt")],
         ),
     )
     second = _spec_step(
         "second",
         StepSpec(
             params=[ScalarParam("shared", int, config="second.shared")],
-            outputs=[
-                OutputParam("second_result", temp_filename="second_result.txt")
-            ],
+            outputs=[FileOutput("second_result", destination="second_result.txt")],
         ),
     )
 
-    with pytest.raises(ValueError, match="conflicting CWL types"):
-        _generate_run_cwl([first, second], {}, {"datadir": str(tmp_path)})
+    document = yaml.safe_load(
+        _generate_run_cwl(
+            [first, second],
+            {
+                "datadir": str(tmp_path),
+                "first": {"shared": "value"},
+                "second": {"shared": 3},
+            },
+        )
+    )
+
+    assert document["inputs"]["first.shared"] == "string"
+    assert document["inputs"]["second.shared"] == "int"
 
 
 def test_generate_cwl_does_not_wire_undeclared_dependency_outputs(tmp_path):
     producer = _spec_step(
         "producer",
-        StepSpec(outputs=[OutputParam("unused", temp_filename="unused.txt")]),
+        StepSpec(outputs=[FileOutput("unused", destination="unused.txt")]),
     )
     consumer = _spec_step(
         "consumer",
-        StepSpec(outputs=[OutputParam("result", temp_filename="result.txt")]),
-        dependencies=["producer"],
+        StepSpec(outputs=[FileOutput("result", destination="result.txt")]),
     )
 
     doc = yaml.safe_load(
-        _generate_run_cwl([producer, consumer], {}, {"datadir": str(tmp_path)})
+        _generate_run_cwl([producer, consumer], {"datadir": str(tmp_path)})
     )
 
     assert "unused" not in doc["steps"]["step_consumer"]["in"]
     assert "unused" not in doc["inputs"]
 
 
-def test_generate_cwl_rejects_duplicate_temp_filenames(tmp_path):
+def test_generate_cwl_wires_differently_named_input_to_exact_output(tmp_path):
+    producer = _spec_step(
+        "producer",
+        StepSpec(outputs=[FileOutput("result", destination="producer-result.txt")]),
+    )
+    consumer = _spec_step(
+        "consumer",
+        StepSpec(
+            inputs=[
+                FileInput(
+                    "renamed_input",
+                    source=producer.spec.output("result"),
+                )
+            ],
+            outputs=[FileOutput("done", destination="consumer-done.txt")],
+        ),
+    )
+
+    doc = yaml.safe_load(
+        _generate_run_cwl([producer, consumer], {"datadir": str(tmp_path)})
+    )
+
+    assert doc["steps"]["step_consumer"]["in"]["renamed_input"] == (
+        "step_producer/result"
+    )
+
+
+def test_generate_cwl_rejects_duplicate_planned_run_ids(tmp_path):
+    first = _spec_step(
+        "duplicate",
+        StepSpec(outputs=[FileOutput("first", destination="first.txt")]),
+    )
+    second = _spec_step(
+        "duplicate",
+        StepSpec(outputs=[FileOutput("second", destination="second.txt")]),
+    )
+
+    with pytest.raises(ValueError, match="Duplicate planned run id"):
+        _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
+
+
+def test_generate_cwl_rejects_distinct_source_run_with_planned_id(
+    tmp_path,
+):
+    producer = _spec_step(
+        "producer",
+        StepSpec(
+            params=[ScalarParam("mode", str, config="producer.mode")],
+            outputs=[
+                FileOutput(
+                    "result",
+                    destination=OutputPathTemplate(
+                        "{mode}/result.txt",
+                        fields={"mode": TemplateField("producer.mode")},
+                    ),
+                )
+            ],
+        ),
+    )
+    consumer = _spec_step(
+        "consumer",
+        StepSpec(
+            inputs=[
+                FileInput(
+                    "result",
+                    source=producer.spec.output("result"),
+                ),
+            ],
+            outputs=[FileOutput("done", destination="done.txt")],
+        ),
+    )
+    main_config = {
+        "datadir": str(tmp_path),
+        "producer": {"mode": "main"},
+    }
+    planned_producer = StepRun("producer", producer, main_config)
+    referenced_producer = StepRun("producer", producer, main_config)
+    consumer_run = StepRun(
+        "consumer",
+        consumer,
+        main_config,
+        inputs=(
+            StepInputBinding(
+                consumer.spec.input("result"),
+                referenced_producer.output(producer.spec.output("result")),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="different StepRun object.*producer",
+    ):
+        generate_cwl_bundle([planned_producer, consumer_run])
+
+
+def test_generate_cwl_rejects_an_empty_plan():
+    with pytest.raises(ValueError, match="at least one output"):
+        generate_cwl_bundle([])
+
+
+def test_generate_cwl_allows_matching_work_filenames_in_separate_steps(tmp_path):
     first = _spec_step(
         "first",
-        StepSpec(outputs=[OutputParam("shared", temp_filename="shared.txt")]),
+        StepSpec(outputs=[FileOutput("shared", destination="first/shared.txt")]),
     )
     second = _spec_step(
         "second",
-        StepSpec(outputs=[OutputParam("shared", temp_filename="shared.txt")]),
+        StepSpec(outputs=[FileOutput("shared", destination="second/shared.txt")]),
     )
 
-    with pytest.raises(ValueError, match="temporary filename 'shared.txt'.*both"):
-        _generate_run_cwl([first, second], {}, {"datadir": str(tmp_path)})
+    _generate_run_cwl([first, second], {"datadir": str(tmp_path)})
 
 
-@pytest.mark.skipif(shutil.which("cwltool") is None, reason="cwltool is not installed")
+def test_generate_cwl_rejects_matching_work_filenames_within_one_step(tmp_path):
+    step = _spec_step(
+        "producer",
+        StepSpec(
+            outputs=[
+                FileOutput("first", destination="a/shared.txt"),
+                FileOutput("second", destination="b/shared.txt"),
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Duplicate CWL output filename.*shared.txt"):
+        _generate_run_cwl([step], {"datadir": str(tmp_path)})
+
+
 def test_generated_registered_tools_and_workflow_validate_with_cwltool(
     workflow_config,
     tmp_path,
 ):
     steps = list(get_steps().values())
-    steps_dir = tmp_path / "steps"
-    steps_dir.mkdir()
-    generator = StepCwlGenerator()
-    for step in steps:
-        (steps_dir / f"{step.name}.cwl").write_text(generator.render(step))
+    generated = _generate_bundle(steps, workflow_config)
+    _validate_bundle_with_cwltool(generated, tmp_path)
 
-    generated = generate_cwl_bundle(steps, {}, workflow_config)
-    run_path = tmp_path / "run.cwl"
-    run_path.write_text(generated.run_cwl)
-    (tmp_path / "publish.cwl").write_text(generated.publish_cwl)
-    (tmp_path / "output-layout.yml").write_text(generated.output_layout)
 
-    result = subprocess.run(
-        ["cwltool", "--validate", str(run_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
+def test_generated_dotted_run_ids_validate_with_cwltool(tmp_path):
+    generated = _configured_run_bundle(tmp_path)
+    _validate_bundle_with_cwltool(generated, tmp_path)

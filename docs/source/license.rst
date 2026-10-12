@@ -1,7 +1,7 @@
 License
-=======
+========
 
-GenomeUtils is distributed under the GNU Lesser General Public License version 3
+ASOkai is distributed under the GNU Lesser General Public License version 3
 (LGPL-3.0-or-later). This license allows you to link the library into
 proprietary or open-source applications while requiring that improvements to the
 library itself remain open and share-alike. When redistributing the project,

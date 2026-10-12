@@ -1,10 +1,12 @@
 Analysis
 ========
-.. currentmodule:: ASOkai.Analysis
 
-.. rubric:: Classes
-    
-.. automodule:: ASOkai.Analysis
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Analyses are grouped by execution model. Concrete analyses declare their own
+scientific context and analysis unit type.
+
+.. toctree::
+   :maxdepth: 2
+
+   Analysis/base
+   Analysis/per-unit
+   Analysis/batch

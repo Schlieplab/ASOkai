@@ -3,40 +3,79 @@
 Filename: tests/unit/test_runner.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Tests for pipeline runner logic.
 License: LGPL-3.0-or-later
 """
 
+import logging
+from dataclasses import replace
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
 import pytest
 import yaml
-from pathlib import Path
-from typing import ClassVar
-from unittest.mock import patch, MagicMock
-from ASOkai._cwl.spec import StepSpec
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
+    FileType,
+    Step,
+    StepSpec,
+)
 from ASOkai._pipeline import runner
 from ASOkai._cwl.executors import CwlToolExecutor, ToilExecutor
-from ASOkai._pipeline.base import Runnable, Step
-from ASOkai._pipeline.plan import ExecutionPlan
+from ASOkai._pipeline.contracts.execution import (
+    ExecutionPlan,
+    StepInputBinding,
+    StepRun,
+)
+from ASOkai._pipeline.output_receipts import (
+    receipt_path,
+    record_validated_outputs,
+    reusable_output_paths,
+)
+from ASOkai._pipeline.plan import build_plan
+from ASOkai._pipeline.steps.core.create_target_gene import CreateTargetGeneStep
+from ASOkai._pipeline.steps.core.download_genome import DownloadGenomeStep
+from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+from ASOkai._pipeline.workflows.standard import StandardWorkflow
 
 
 @pytest.fixture
 def config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
+        "parameters": {
+            "genome": {
+                "assembly": "GRCh38",
+                "release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            }
         },
     }
 
 
-def _materializing_executor(*filenames):
+def _step_run(step, config):
+    return StepRun(
+        step.name,
+        step,
+        config,
+        inputs=tuple(
+            StepInputBinding(
+                file_input,
+                Path(config["datadir"]) / "inputs" / file_input.name,
+            )
+            for file_input in step.spec.inputs
+        ),
+    )
+
+
+def _materializing_executor(*filenames, before_run=None):
     executor = MagicMock()
 
-    def run(cwl_path, _inputs, outdir):
+    def run(cwl_path, _job_path, outdir):
+        if before_run is not None:
+            before_run()
         outdir.mkdir(parents=True, exist_ok=True)
         layout = yaml.safe_load(
             (Path(cwl_path).parent / "output-layout.yml").read_text()
@@ -50,136 +89,243 @@ def _materializing_executor(*filenames):
     return executor
 
 
-def test_run_step_unknown_step(config):
-    with pytest.raises(ValueError, match="Unknown step 'nonexistent'"):
-        runner.run_step("nonexistent", config)
-
-
-def test_run_step_skips_when_outputs_exist(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+def _run_download(config, **kwargs):
+    """Run the download step through the generic runner entry point."""
     step = DownloadGenomeStep()
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+    return runner.run_all(
+        [step],
+        config,
+        registered_steps={step.name: step},
+        **kwargs,
+    )
+
+
+def test_runner_skips_execution_when_outputs_exist(config, tmp_path, caplog):
+    step = DownloadGenomeStep()
+    run = _step_run(step, config)
+    base = tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     base.mkdir(parents=True)
-    for p in step.output_paths(config).values():
+    for p in run.output_paths().values():
         p.touch()
+    run.validate_output_files()
+    record_validated_outputs(run)
 
+    caplog.set_level(logging.INFO)
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        result = runner.run_step("download-genome", config)
+        result = _run_download(config)
         mock_run.assert_not_called()
-    assert result is not None
+    assert (
+        caplog.records[-1]
+        .getMessage()
+        .startswith("[run] Nothing to run; all outputs already exist")
+    )
+    assert set(result) == {
+        "download-genome.dna",
+        "download-genome.cdna",
+        "download-genome.annotation",
+        "download-genome.db",
+    }
 
 
-def test_run_step_dry_run_returns_outputs(config):
-    result = runner.run_step("download-genome", config, dry_run=True, force=True)
-    assert result is not None
-    assert "dna" in result
-    assert "cdna" in result
-    assert "annotation" in result
+def test_dry_run_returns_outputs_without_executing(config):
+    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as execute:
+        result = _run_download(
+            config,
+            dry_run=True,
+            force=True,
+        )
+
+    execute.assert_not_called()
+    assert "download-genome.dna" in result
+    assert "download-genome.cdna" in result
+    assert "download-genome.annotation" in result
 
 
-def test_run_step_dry_run_does_not_call_default_executor(config):
-    with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        runner.run_step("download-genome", config, dry_run=True, force=True)
-        mock_run.assert_not_called()
+def test_output_report_uses_readable_run_names(config):
+    output = FileOutput("result", destination="result.txt")
+
+    class ReportStep(Step):
+        name = "report-step"
+        description = ""
+        result_output = output
+        spec = StepSpec(outputs=[output])
+
+    step = ReportStep()
+    first = StepRun("runs.testing", step, config)
+    second = StepRun("runs.report-step", step, config)
+    plan = ExecutionPlan(goals=(first, second), runs_to_execute=())
+
+    assert runner._output_report_lines(plan) == [
+        f"  testing.result    : {first.output_paths()['result']}",
+        f"  report-step.result: {second.output_paths()['result']}",
+    ]
 
 
-def test_run_step_uses_injected_executor(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
+def test_runner_writes_job_bundle_and_reports_outputs(config, tmp_path, caplog):
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
+    caplog.set_level(logging.INFO)
 
-    runner.run_step("download-genome", config, force=True, executor=executor)
-
-    executor.run.assert_called_once()
-
-
-def test_run_step_writes_job_bundle_before_execution(config, tmp_path):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
-
-    runner.run_step("download-genome", config, force=True, executor=executor)
+    _run_download(config, force=True, executor=executor)
 
     export_dirs = list((tmp_path / "jobs").glob("asokai-job-*"))
     assert len(export_dirs) == 1
-    job_path, inputs, output_dir = executor.run.call_args.args
-    assert job_path == str(export_dirs[0] / "run.cwl")
+    cwl_path, job_path, output_dir = executor.run.call_args.args
+    assert cwl_path == export_dirs[0] / "run.cwl"
+    assert job_path == export_dirs[0] / "job.yml"
     assert output_dir == tmp_path
     assert (export_dirs[0] / "job.yml").exists()
     assert (export_dirs[0] / "publish.cwl").exists()
     assert (export_dirs[0] / "output-layout.yml").exists()
     assert (export_dirs[0] / "steps" / "download-genome.cwl").exists()
-    assert inputs["assembly"] == "GRCh38"
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-    assert all(DownloadGenomeStep().output_paths(config)[name].exists() for name in (
-        "dna", "cdna", "annotation", "db"
-    ))
+    inputs = yaml.safe_load(job_path.read_text())
+    assert inputs["download-genome.assembly"] == "GRCh38"
+    paths = _step_run(DownloadGenomeStep(), config).output_paths()
+    assert all(paths[name].exists() for name in ("dna", "cdna", "annotation", "db"))
+    assert "[run] Running 1 step" in [record.getMessage() for record in caplog.records]
+    completion = caplog.records[-1].getMessage()
+    assert completion.startswith("[run] Completed successfully")
+    assert "\n\n[run] Outputs:" in completion
+    assert "\n[run]   dna" in completion
+    assert str(paths["dna"]) in completion
+    assert f"\n[run] Job bundle: {export_dirs[0]}" in completion
+    completed_run = _step_run(DownloadGenomeStep(), config)
+    assert receipt_path(completed_run).is_file()
+    assert reusable_output_paths(completed_run) == paths
 
 
-def test_run_step_rejects_missing_published_outputs(config):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+def test_verbose_executor_enables_debug_logging_in_generated_steps(config):
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
+    executor.verbose = True
 
+    _run_download(config, force=True, executor=executor)
+
+    cwl_path = executor.run.call_args.args[0]
+    step_doc = yaml.safe_load(
+        (cwl_path.parent / "steps" / "download-genome.cwl").read_text()
+    )
+    assert "--verbose" in step_doc["baseCommand"]
+
+
+def test_runner_rejects_missing_published_outputs(config):
     executor = _materializing_executor("dna.fa.gz")
 
     with pytest.raises(RuntimeError, match="did not publish expected output"):
-        runner.run_step("download-genome", config, force=True, executor=executor)
+        _run_download(config, force=True, executor=executor)
 
-    paths = DownloadGenomeStep().output_paths(config)
+    paths = _step_run(DownloadGenomeStep(), config).output_paths()
     assert paths["dna"].exists()
     assert not paths["cdna"].exists()
 
 
-def test_run_step_uses_config_download_source(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
+def test_runner_records_producer_validation_without_revalidating_publication(
+    config,
+):
+    run = _step_run(DownloadGenomeStep(), config)
 
-    runner.run_step("download-genome", config, force=True, executor=executor)
+    with (
+        patch.object(
+            StepRun,
+            "require_output_files",
+            return_value=run.output_paths(),
+        ) as require_outputs,
+        patch.object(
+            StepRun,
+            "validate_output_files",
+        ) as validate_outputs,
+        patch.object(
+            runner,
+            "record_validated_outputs",
+        ) as record_outputs,
+    ):
+        runner._record_published_outputs((run,))
 
-    _, inputs, _ = executor.run.call_args.args
-    assert inputs["source"] == "ensembl"
+    require_outputs.assert_called_once_with()
+    validate_outputs.assert_not_called()
+    record_outputs.assert_called_once_with(run)
 
 
-def test_run_step_uses_configured_download_source(config):
-    executor = _materializing_executor("dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db")
-    config["genome"]["source"] = "ucsc"
+def test_runner_rejects_unsupported_download_source(config):
+    executor = _materializing_executor(
+        "dna.fa.gz", "cdna.fa.gz", "annotation.gtf.gz", "annotation.db"
+    )
+    config["parameters"]["genome"]["source"] = "ucsc"
 
-    runner.run_step("download-genome", config, force=True, executor=executor)
+    with pytest.raises(ValueError, match=r"genome.source.*ensembl"):
+        _run_download(
+            config,
+            force=True,
+            executor=executor,
+        )
 
-    _, inputs, _ = executor.run.call_args.args
-    assert inputs["source"] == "ucsc"
+    executor.run.assert_not_called()
 
 
-def test_run_step_force_does_not_cleanup_on_dry_run(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
+def test_forced_dry_run_does_not_cleanup_outputs(config, tmp_path):
     step = DownloadGenomeStep()
-    base = tmp_path / "GRCh38" / "genomes" / "ensembl" / "114"
+    run = _step_run(step, config)
+    base = tmp_path / "GRCh38" / "ensembl" / "114" / "genome"
     base.mkdir(parents=True)
-    for p in step.output_paths(config).values():
+    for p in run.output_paths().values():
         p.touch()
 
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run"):
-        runner.run_step("download-genome", config, force=True, dry_run=True)
+        _run_download(config, force=True, dry_run=True)
 
-    assert step.outputs_exist(config) is True
+    assert all(path.exists() for path in run.output_paths().values())
 
 
-def test_run_step_missing_dependency_raises(config, monkeypatch):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
+def test_forced_runner_preserves_existing_output_when_execution_fails(config):
     step = DownloadGenomeStep()
-    monkeypatch.setattr(DownloadGenomeStep, "dependencies", ["build-genome"])
+    existing_output = _step_run(step, config).output_paths()["dna"]
+    existing_output.parent.mkdir(parents=True)
+    existing_output.write_text("stale")
 
-    # build-genome must conform to Step protocol to pass runner validation
-    class MockBuildStep:
+    executor = MagicMock()
+    executor.runner_name = "test-runner"
+    executor.run.side_effect = RuntimeError("execution failed")
+
+    with pytest.raises(RuntimeError, match="execution failed"):
+        _run_download(
+            config,
+            force=True,
+            executor=executor,
+        )
+
+    assert existing_output.read_text() == "stale"
+
+
+def test_non_recursive_run_rejects_missing_dependency(config, monkeypatch):
+    step = DownloadGenomeStep()
+
+    class MockBuildStep(Step):
         name = "build-genome"
         description = ""
-        cli_module = "tests.fake_step"
-        dependencies = []
-        spec = StepSpec()
-
-        def output_paths(self, c):
-            return {}
-
-        def outputs_exist(self, c):
-            return False
+        genome_output = FileOutput(
+            "genome",
+            destination="genome/genome.txt",
+        )
+        spec = StepSpec(outputs=[genome_output])
 
         def cleanup(self, c):
             return None
+
+    monkeypatch.setattr(
+        DownloadGenomeStep,
+        "spec",
+        replace(
+            DownloadGenomeStep.spec,
+            inputs=[
+                FileInput(
+                    "genome",
+                    source=MockBuildStep.genome_output,
+                )
+            ],
+        ),
+    )
 
     mock_build = MockBuildStep()
 
@@ -187,50 +333,101 @@ def test_run_step_missing_dependency_raises(config, monkeypatch):
         "download-genome": step,
         "build-genome": mock_build,
     }
-    with patch("ASOkai._pipeline.runner.get_steps", return_value=registry), \
-         patch("ASOkai._pipeline.registry.get_steps", return_value=registry):
-        with pytest.raises(RuntimeError, match="requires 'build-genome'"):
-            runner.run_step("download-genome", config, recursive=False)
+    with pytest.raises(RuntimeError, match="'build-genome'.*required"):
+        runner.run_all(
+            [step],
+            config,
+            non_recursive=True,
+            registered_steps=registry,
+        )
 
 
 @pytest.fixture
 def workflow_config(tmp_path):
     return {
         "datadir": str(tmp_path),
-        "genome": {
-            "assembly_id": "GRCh38",
-            "ensembl_release": 114,
-            "source": "ensembl",
-            "species": "Homo_sapiens",
-        },
-        "target": {
-            "target_id": "ENSG00000133703",
-            "target_name": "KRAS",
-            "k": 16,
-            "region": "pre-mrna",
-        },
-        "antisense": {
-            "modality": "aso",
-            "mechanism": "rnase-h1",
-            "chemistry": {"type": "gapmer", "layout": "3-10-3"},
+        "parameters": {
+            "genome": {
+                "assembly": "GRCh38",
+                "release": 114,
+                "source": "ensembl",
+                "species": "Homo_sapiens",
+            },
+            "target": {"target_id": "ENSG00000133703", "k": 16, "region": "pre-mrna"},
+            "antisense": {
+                "modality": {
+                    "type": "aso",
+                    "mechanism": "rnase-h1",
+                    "design": {
+                        "type": "gapmer",
+                        "left_wing_length": 3,
+                        "gap_length": 10,
+                        "right_wing_length": 3,
+                    },
+                },
+            },
         },
     }
 
 
-def test_run_workflow_unknown_raises(workflow_config):
-    with pytest.raises(ValueError, match="Unknown workflow 'nonexistent'"):
-        runner.run_workflow("nonexistent", workflow_config)
+def test_multiple_selected_steps_share_one_run_report_context(
+    workflow_config,
+    caplog,
+):
+    caplog.set_level(logging.INFO)
+    executor = _materializing_executor(
+        "dna.fa.gz",
+        "cdna.fa.gz",
+        "annotation.gtf.gz",
+        "annotation.db",
+        "target.json",
+        "target.fa",
+    )
+
+    runner.run_all(
+        [DownloadGenomeStep(), CreateTargetGeneStep()],
+        workflow_config,
+        force=True,
+        executor=executor,
+    )
+
+    completion = caplog.records[-1].getMessage()
+    assert completion.startswith("[run] Completed successfully")
+    assert "[run] Outputs:" in completion
+    assert "download-genome.dna" in completion
+    assert "create-target-gene.target_gene" in completion
+    assert "create-target-gene.fasta" in completion
+    assert all(line.startswith("[run] ") for line in completion.splitlines() if line)
 
 
-def test_run_workflow_dry_run_does_not_call_default_executor(workflow_config):
+def test_workflow_dry_run_reports_resources_without_executing(
+    workflow_config,
+    caplog,
+):
+    workflow_config["resources"] = {
+        "compute-intrinsic-features": {"n_workers": 4},
+    }
+    caplog.set_level(logging.INFO)
+
     with patch("ASOkai._cwl.executors.CwlToolExecutor.run") as mock_run:
-        runner.run_workflow("standard", workflow_config, dry_run=True)
+        runner.run_all(
+            [StandardWorkflow()],
+            workflow_config,
+            dry_run=True,
+        )
+
     mock_run.assert_not_called()
+    report = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("[run] Dry run:")
+    )
+    assert "[run] Dry run: 4 steps would execute:" in report
+    assert "[run]   4. compute-intrinsic-features" in report
+    assert ("[run]      Resources:\n" "[run]        workers: 4") in report
 
 
 def test_export_all_single_step_writes_job_bundle(config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     export_dir = runner.export_all(
         [DownloadGenomeStep()],
         config,
@@ -242,13 +439,11 @@ def test_export_all_single_step_writes_job_bundle(config, tmp_path):
     assert "step_download_genome:" in job_text
     assert (export_dir / "steps" / "download-genome.cwl").exists()
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["assembly"] == "GRCh38"
-    assert job["source"] == "ensembl"
+    assert job["download-genome.assembly"] == "GRCh38"
+    assert job["download-genome.source"] == "ensembl"
 
 
 def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
-    from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
-
     export_dir = runner.export_all(
         [InstantiateTargetGeneTask()],
         workflow_config,
@@ -260,8 +455,8 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert (export_dir / "run.cwl").exists()
     assert (export_dir / "publish.cwl").exists()
     assert (export_dir / "output-layout.yml").exists()
-    assert (export_dir / "steps" / "download-genome.cwl").exists()
-    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    assert (export_dir / "steps" / "instantiate-target-gene.genome.cwl").exists()
+    assert (export_dir / "steps" / "instantiate-target-gene.gene.cwl").exists()
     assert (export_dir / "job.yml").exists()
     assert (export_dir / "README.md").exists()
     assert "class: Workflow" in (export_dir / "run.cwl").read_text()
@@ -272,39 +467,111 @@ def test_export_all_writes_runnable_bundle(workflow_config, tmp_path):
     assert "Alternative runner" not in readme
 
     job = yaml.safe_load((export_dir / "job.yml").read_text())
-    assert job["assembly"] == "GRCh38"
-    assert job["release"] == 114
-    assert job["target_id"] == "ENSG00000133703"
-    assert "target_gene_output" not in job
+    assert job["instantiate-target-gene.genome.assembly"] == "GRCh38"
+    assert job["instantiate-target-gene.genome.release"] == 114
+    assert job["instantiate-target-gene.gene.target_id"] == "ENSG00000133703"
+    assert "instantiate-target-gene.gene.target_gene_output" not in job
 
 
-def test_export_all_readme_uses_toil_runner(workflow_config, tmp_path):
-    from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
+def test_export_all_writes_distinct_configured_step_runs(workflow_config, tmp_path):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    workflow_config["runs"] = [
+        {"step": create.name},
+        {"step": create.name, "parameters": {"region": "exonic"}},
+    ]
 
     export_dir = runner.export_all(
-        [InstantiateTargetGeneTask()],
+        [],
         workflow_config,
         outdir=tmp_path,
-        runner_name="toil-cwl-runner",
+        registered_steps={step.name: step for step in (download, create)},
+        config_schema_paths={},
     )
 
-    readme = (export_dir / "README.md").read_text()
-    assert "prepared for `toil-cwl-runner`" in readme
-    assert str(export_dir.resolve()) not in readme
-    assert "toil-cwl-runner --outdir /path/to/data run.cwl job.yml" in readme
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    layout = yaml.safe_load((export_dir / "output-layout.yml").read_text())
+    assert job["runs.create-target-gene.region"] == "pre-mrna"
+    assert job["runs.create-target-gene-2.region"] == "exonic"
+    assert {entry["id"] for entry in layout["outputs"]} == {
+        "runs.create-target-gene.target_gene",
+        "runs.create-target-gene.fasta",
+        "runs.create-target-gene-2.target_gene",
+        "runs.create-target-gene-2.fasta",
+    }
+    for run_id in ("runs.create-target-gene", "runs.create-target-gene-2"):
+        tool = yaml.safe_load((export_dir / "steps" / f"{run_id}.cwl").read_text())
+        command = tool["baseCommand"]
+        assert command[command.index("--run-id") + 1] == run_id
+
+
+def test_export_all_wires_named_run_output_to_selected_input(tmp_path):
+    source_output = FileOutput("result", destination="source/result.txt")
+    source_type = type(
+        "_NamedSourceStep",
+        (Step,),
+        {
+            "name": "named-source",
+            "description": "",
+            "result_output": source_output,
+            "spec": StepSpec(outputs=[source_output]),
+        },
+    )
+    source = source_type()
+    consumer_output = FileOutput("result", destination="consumer/result.txt")
+    consumer_type = type(
+        "_NamedConsumerStep",
+        (Step,),
+        {
+            "name": "named-consumer",
+            "description": "",
+            "result_output": consumer_output,
+            "spec": StepSpec(
+                inputs=[FileInput("input", file_type=FileType())],
+                outputs=[consumer_output],
+            ),
+        },
+    )
+    consumer = consumer_type()
+    config = {
+        "datadir": str(tmp_path),
+        "runs": [
+            {
+                "step": consumer.name,
+                "inputs": {"input": {"from": "run.source.result"}},
+            },
+            {"id": "source", "step": source.name},
+        ],
+    }
+
+    export_dir = runner.export_all(
+        [],
+        config,
+        outdir=tmp_path,
+        registered_steps={source.name: source, consumer.name: consumer},
+        config_schema_paths={},
+    )
+
+    workflow = yaml.safe_load((export_dir / "run.cwl").read_text())
+    assert workflow["steps"]["step_runs.named_consumer"]["in"]["input"] == (
+        "step_runs.source/result"
+    )
+    assert list(workflow["steps"])[:2] == ["step_runs.source", "step_runs.named_consumer"]
 
 
 def test_executor_from_name_uses_central_runner_configuration():
     assert isinstance(runner.executor_from_name("cwltool"), CwlToolExecutor)
     assert isinstance(runner.executor_from_name("toil"), ToilExecutor)
+    assert runner.executor_from_name("cwltool", verbose=True).verbose is True
+    assert runner.executor_from_name("toil", verbose=True).verbose is True
 
     with pytest.raises(ValueError, match="Unknown runner 'unknown'"):
         runner.executor_from_name("unknown")
 
 
-def test_runner_name_from_name_uses_central_runner_configuration():
-    assert runner.runner_name_from_name("cwltool") == "cwltool"
-    assert runner.runner_name_from_name("toil") == "toil-cwl-runner"
+def test_runner_executable_from_name_uses_central_runner_configuration():
+    assert runner.runner_executable_from_name("cwltool") == "cwltool"
+    assert runner.runner_executable_from_name("toil") == "toil-cwl-runner"
 
 
 def test_export_all_empty_runnables_raises(workflow_config):
@@ -313,10 +580,8 @@ def test_export_all_empty_runnables_raises(workflow_config):
 
 
 def test_export_all_includes_steps_even_when_outputs_exist(workflow_config, tmp_path):
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
     step = DownloadGenomeStep()
-    for path in step.output_paths(workflow_config).values():
+    for path in _step_run(step, workflow_config).output_paths().values():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
 
@@ -329,25 +594,112 @@ def test_export_all_includes_steps_even_when_outputs_exist(workflow_config, tmp_
     assert "step_download_genome:" in (export_dir / "run.cwl").read_text()
 
 
-def test_run_task_multistep_dry_run_returns_final_outputs(workflow_config):
+def test_export_all_includes_only_goal_steps_by_default(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    download_run = _step_run(download, workflow_config)
+    for path in download_run.output_paths().values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    assert not (export_dir / "steps" / "download-genome.cwl").exists()
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert job["download-genome.dna"]["path"] == str(
+        download_run.output_paths()["dna"].resolve()
+    )
+
+
+def test_recursive_export_includes_complete_producer_closure(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    for path in _step_run(download, workflow_config).output_paths().values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        recursive=True,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    assert (export_dir / "steps" / "download-genome.cwl").exists()
+    assert (export_dir / "steps" / "create-target-gene.cwl").exists()
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert "download-genome.dna" not in job
+
+
+def test_export_does_not_require_input_override_to_exist(
+    workflow_config,
+    tmp_path,
+):
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    registry = {download.name: download, create.name: create}
+    missing_override = tmp_path / "missing-dna.fa"
+    workflow_config["steps"] = {
+        create.name: {
+            "inputs": {
+                "dna": {"path": str(missing_override)},
+            },
+        },
+    }
+
+    export_dir = runner.export_all(
+        [create],
+        workflow_config,
+        outdir=tmp_path,
+        registered_steps=registry,
+    )
+
+    job = yaml.safe_load((export_dir / "job.yml").read_text())
+    assert job["create-target-gene.dna"]["path"] == str(missing_override.resolve())
+
+
+def test_task_dry_run_returns_requested_outputs(workflow_config):
     executor = MagicMock()
 
-    result = runner.run_task(
-        "instantiate-target-gene",
+    result = runner.run_all(
+        [InstantiateTargetGeneTask()],
         workflow_config,
         dry_run=True,
         executor=executor,
     )
 
-    assert result == {
-        "target_gene": (
-            Path(workflow_config["datadir"])
-            / "GRCh38"
-            / "targets"
-            / "ENSG00000133703"
-            / "ENSG00000133703_k16_pre-mrna.json"
-        )
+    assert set(result) == {
+        "instantiate-target-gene.genome.dna",
+        "instantiate-target-gene.genome.cdna",
+        "instantiate-target-gene.genome.annotation",
+        "instantiate-target-gene.genome.db",
+        "instantiate-target-gene.gene.target_gene",
+        "instantiate-target-gene.gene.fasta",
     }
+    assert result["instantiate-target-gene.gene.target_gene"] == (
+        Path(workflow_config["datadir"])
+        / "GRCh38"
+        / "ensembl"
+        / "114"
+        / "targets"
+        / "ENSG00000133703"
+        / "ENSG00000133703_k16_pre-mrna.json"
+    )
     executor.run.assert_not_called()
 
 
@@ -356,14 +708,14 @@ def test_run_all_empty_runnables_raises(workflow_config):
         runner.run_all([], workflow_config)
 
 
-def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-
+def test_run_plan_multistep_dry_run_returns_requested_outputs(workflow_config):
     executor = MagicMock()
-    plan = ExecutionPlan(
-        steps_to_run=[DownloadGenomeStep(), CreateTargetGeneStep()],
-        pre_resolved={},
+    download = DownloadGenomeStep()
+    create = CreateTargetGeneStep()
+    plan = build_plan(
+        [create],
+        workflow_config,
+        _registry={download.name: download, create.name: create},
     )
 
     result = runner.run_plan(
@@ -374,113 +726,39 @@ def test_run_plan_multistep_dry_run_returns_final_outputs(workflow_config):
         executor=executor,
     )
 
-    assert result == CreateTargetGeneStep().output_paths(workflow_config)
+    assert result == {
+        "create-target-gene.target_gene": plan.goals[0].output_paths()["target_gene"],
+        "create-target-gene.fasta": plan.goals[0].output_paths()["fasta"],
+    }
     executor.run.assert_not_called()
 
 
-def test_flatten_workflow_expands_task_then_step():
-    """A workflow with a Task followed by a Step flattens to their Steps in order."""
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
+def test_dry_run_groups_parameters_and_qualified_inputs(workflow_config, caplog):
+    caplog.set_level(logging.INFO)
 
-    download = DownloadGenomeStep()
-    create = CreateTargetGeneStep()
+    runner.run_all(
+        [InstantiateTargetGeneTask()],
+        workflow_config,
+        dry_run=True,
+        executor=MagicMock(),
+    )
 
-    class MiniTask:
-        name: ClassVar[str] = "mini"
-        description: ClassVar[str] = ""
-        steps: list[Step] = [download]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
-    class MiniWorkflow:
-        name: ClassVar[str] = "mw"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [MiniTask(), create]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
-    from ASOkai._pipeline.plan import _flatten_runnable
-
-    objs = _flatten_runnable(MiniWorkflow())
-    assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
-
-
-def test_flatten_workflow_expands_nested_workflow():
-    """A workflow containing a nested workflow flattens all steps recursively."""
-    from ASOkai._pipeline.steps.download_genome import DownloadGenomeStep
-    from ASOkai._pipeline.steps.create_target_gene import CreateTargetGeneStep
-
-    download = DownloadGenomeStep()
-    create = CreateTargetGeneStep()
-
-    class Inner:
-        name: ClassVar[str] = "inner"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [download]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
-    class Outer:
-        name: ClassVar[str] = "outer"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = [Inner(), create]
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
-    from ASOkai._pipeline.plan import _flatten_runnable
-
-    objs = _flatten_runnable(Outer())
-    assert [s.name for s in objs] == ["download-genome", "create-target-gene"]
-
-
-def test_flatten_workflow_cycle_raises():
-    """A workflow that references itself raises a ValueError."""
-    class SelfRef:
-        name: ClassVar[str] = "loop"
-        description: ClassVar[str] = ""
-        members: list[Runnable] = []
-
-        def output_paths(self, config: dict) -> dict[str, Path]:
-            return {}
-
-        def outputs_exist(self, config: dict) -> bool:
-            return False
-
-        def cleanup(self, config: dict) -> None:
-            return None
-
-    w = SelfRef()
-    w.members = [w]
-    from ASOkai._pipeline.plan import _flatten_runnable
-
-    with pytest.raises(ValueError, match="cycle"):
-        _flatten_runnable(w)
+    report = caplog.records[-1].getMessage()
+    assert report.startswith("[run] Dry run: 2 steps would execute:")
+    assert (
+        "\n[run]   1. instantiate-target-gene.genome (download-genome)\n"
+        "[run]      Parameters:"
+    ) in report
+    assert "[run]        assembly: GRCh38" in report
+    assert "target_name" not in report
+    assert (
+        "\n[run]   2. instantiate-target-gene.gene (create-target-gene)\n"
+        "[run]      Parameters:"
+    ) in report
+    assert "[run]      Inputs:" in report
+    assert (
+        "[run]        dna        " "<- instantiate-target-gene.genome.dna"
+    ) in report
+    assert (
+        "[run]        annotation " "<- instantiate-target-gene.genome.annotation"
+    ) in report

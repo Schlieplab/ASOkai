@@ -1,0 +1,470 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: ASOkai configuration
+type: object
+additionalProperties: true
+required:
+  - datadir
+$defs:
+  run_parameter_value:
+    type: [string, number, boolean, "null", object]
+    minProperties: 1
+    propertyNames:
+      type: string
+      minLength: 1
+    additionalProperties:
+      $ref: '#/$defs/run_parameter_value'
+  run_parameters:
+    type: object
+    description: >-
+      Run overrides using the same nested groups as shared configuration,
+      such as target: {region: exonic}.
+    propertyNames:
+      type: string
+      minLength: 1
+    additionalProperties:
+      $ref: '#/$defs/run_parameter_value'
+properties:
+  datadir:
+    type: string
+    minLength: 1
+    description: Directory that receives ASOkai data.
+
+  validation:
+    type: object
+    additionalProperties: false
+    properties:
+      existing_outputs:
+        type: string
+        enum:
+          - signature
+          - contract
+        default: signature
+        description: >-
+          How existing generated outputs are checked before reuse: match a
+          validation receipt signature or run full file-contract validation.
+
+  runs:
+    type: array
+    minItems: 1
+    description: Ordered step or task selections using shared configuration as fallback.
+    items:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_-]*$
+          description: Stable name for a step or task selection.
+        step:
+          type: string
+          minLength: 1
+        task:
+          type: string
+          minLength: 1
+        parameters:
+          $ref: '#/$defs/run_parameters'
+          description: Step parameters or task-wide child-step parameter overrides.
+        inputs:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required:
+                  - path
+                properties:
+                  path:
+                    type: string
+                    minLength: 1
+              - type: object
+                additionalProperties: false
+                required:
+                  - from
+                properties:
+                  from:
+                    type: string
+                    pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
+                    description: Named run or task output, as run.ID.OUTPUT.
+        runs:
+          type: array
+          minItems: 1
+          description: Overrides for child run IDs declared by the selected task.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - id
+            properties:
+              id:
+                type: string
+                pattern: ^[A-Za-z][A-Za-z0-9_-]*$
+              parameters:
+                $ref: '#/$defs/run_parameters'
+              inputs:
+                type: object
+                minProperties: 1
+                additionalProperties:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [path]
+                      properties:
+                        path: {type: string, minLength: 1}
+                    - type: object
+                      additionalProperties: false
+                      required: [from]
+                      properties:
+                        from:
+                          type: string
+                          pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
+      oneOf:
+        - required:
+            - step
+        - required:
+            - task
+      not:
+        anyOf:
+          - required:
+              - task
+              - inputs
+          - required:
+              - step
+              - runs
+
+  steps:
+    type: object
+    description: Optional configuration for individual step inputs.
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              path:
+                type: string
+                minLength: 1
+                description: Existing file supplied to the step input.
+              from:
+                type: string
+                pattern: ^run\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$
+                description: Named run output supplied to the step input.
+            oneOf:
+              - required: [path]
+              - required: [from]
+
+  parameters:
+    type: object
+    description: Shared scalar settings used as fallbacks for selected runs.
+    properties:
+      analysis:
+        type: object
+        additionalProperties: false
+        properties:
+          intrinsic_features:
+            type: object
+            additionalProperties: false
+            properties:
+              features:
+                type: string
+                minLength: 1
+                pattern: '^(?:all|(?!(?:.*?,\s*)?(GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*,.*?\b\1\b)\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*(?:,\s*(?:GC_content|AT_content|T_count|CpG_count|T_content|CpG_content)\s*)*)$(?!\n)'
+                default: all
+                description: >-
+                  Comma-separated intrinsic feature columns, or 'all' for every
+                  supported feature.
+          potential_repeated_sites:
+            type: object
+            additionalProperties: false
+            description: >-
+              Tree search for sequences that a gapmer binds as well as its
+              own target site.
+            properties:
+              max_ddg:
+                type: number
+                minimum: 0
+                default: 5.0
+                description: >-
+                  Largest accepted binding-energy loss in kcal/mol relative
+                  to the original site.
+              ddg_tolerance:
+                type: number
+                minimum: 0
+                default: 0.5
+                description: >-
+                  Extra binding-energy loss in kcal/mol that is still
+                  explored, because later mutations can have better binding.
+              energy_parameters:
+                enum:
+                  - RNA_Turner2004
+                  - RNA_Turner1999
+                  - RNA_Andronescu2007
+                  - RNA_Langdon2018
+                  - DNA_Mathews2004
+                  - DNA_Mathews1999
+                  - null
+                default: null
+                description: >-
+                  Built-in ViennaRNA energy parameter set. The DNA sets model
+                  a DNA duplex rather than the DNA-RNA hybrid a gapmer forms,
+                  so they are an approximation too.
+              energy_parameter_file:
+                type: [string, 'null']
+                minLength: 1
+                default: null
+                description: >-
+                  ViennaRNA parameter file to load instead of a named set. It
+                  is read where it lies rather than staged, so a run under CWL
+                  needs a path its job can reach.
+              model_settings:
+                type: string
+                default: ''
+                description: >-
+                  Extra ViennaRNA model arguments as comma-separated
+                  name=value pairs, such as 'temperature=37.0,noGU=1'.
+                  Accepted names are the fields of ViennaRNA's model
+                  details. An empty value keeps every ViennaRNA default values.
+            allOf:
+              - not:
+                  allOf:
+                    - required:
+                        - energy_parameters
+                      properties:
+                        energy_parameters:
+                          type: string
+                    - required:
+                        - energy_parameter_file
+                      properties:
+                        energy_parameter_file:
+                          type: string
+                x-error-message: >-
+                  set either energy_parameters or energy_parameter_file,
+                  not both
+      bowtie2:
+        type: object
+        additionalProperties: false
+        description: Bowtie 2 options shared by reference index builders.
+        properties:
+          large_index:
+            type: boolean
+            description: Force the large .bt2l index format.
+          offrate:
+            type: [integer, 'null']
+            minimum: 0
+            description: Suffix-array sampling rate.
+          packed:
+            type: boolean
+            description: Use packed representation while building.
+      kmc:
+        type: object
+        additionalProperties: false
+        description: KMC index options shared by index-builder runs.
+        properties:
+          f: {enum: [fa, fm], description: FASTA input format.}
+          sm: {type: boolean, description: Use strict memory mode.}
+          hc: {type: boolean, description: Count homopolymer-compressed k-mers.}
+          p: {type: [integer, 'null'], minimum: 5, maximum: 11, description: Signature length.}
+          ci: {type: integer, minimum: 1, description: Minimum count to retain.}
+          cs: {type: [integer, 'null'], minimum: 1, description: Maximum stored count.}
+          cx: {type: [integer, 'null'], minimum: 1, description: Maximum count to retain.}
+          b: {type: boolean, description: Disable canonical k-mers.}
+          r: {type: boolean, description: Use RAM-only mode.}
+          n: {type: [integer, 'null'], minimum: 1, description: Number of bins.}
+          sf: {type: [integer, 'null'], minimum: 1, description: Input-reading threads.}
+          sp: {type: [integer, 'null'], minimum: 1, description: Splitting threads.}
+          sr: {type: [integer, 'null'], minimum: 1, description: Second-stage threads.}
+          opt_out_size: {type: boolean, description: Optimize output database size.}
+      genome:
+        type: object
+        additionalProperties: false
+        properties:
+          assembly:
+            type: string
+            minLength: 1
+            description: Genome assembly ID, such as GRCh38.
+          release:
+            type: integer
+            minimum: 1
+            description: Genome data release number (currently Ensembl).
+          source:
+            const: ensembl
+            default: ensembl
+            description: Genome data source.
+          species:
+            type: string
+            minLength: 1
+            description: Ensembl species name, such as Homo_sapiens.
+      target:
+        type: object
+        additionalProperties: false
+        properties:
+          target_id:
+            type:
+              - string
+              - "null"
+            minLength: 1
+            description: Ensembl gene ID; use this or target_name, but not both.
+          target_name:
+            type:
+              - string
+              - "null"
+            minLength: 1
+            description: Gene name; use this or target_id, but not both.
+          k:
+            type: integer
+            minimum: 1
+            description: Target-site length.
+          region:
+            enum:
+              - exonic
+              - pre-mrna
+              - transcriptomic
+            description: Target region type.
+        allOf:
+          - oneOf:
+              - required:
+                  - target_id
+                properties:
+                  target_id:
+                    type: string
+              - required:
+                  - target_name
+                properties:
+                  target_name:
+                    type: string
+            x-error-message: >-
+              exactly one of these config values is required:
+              target_id, target_name
+      antisense:
+        type: object
+        additionalProperties: false
+        properties:
+          modality:
+            type: object
+            additionalProperties: false
+            required: [type]
+            properties:
+              type:
+                type: string
+                minLength: 1
+                description: Antisense therapeutic modality.
+              mechanism:
+                type: string
+                minLength: 1
+                description: Therapeutic mechanism of action for the selected modality.
+              design:
+                type: object
+                additionalProperties: true
+                required: [type]
+                properties:
+                  type:
+                    type: string
+                    minLength: 1
+                    description: Structural design of the antisense therapeutic.
+                  left_wing_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the left gapmer wing. Required for a
+                      gapmer design and not used by an unmodified design.
+                  gap_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the central gapmer gap. Required for a
+                      gapmer design and not used by an unmodified design.
+                  right_wing_length:
+                    type: integer
+                    minimum: 1
+                    description: >-
+                      Number of nucleotides in the right gapmer wing. Required for a
+                      gapmer design and not used by an unmodified design.
+            allOf:
+              - if:
+                  required: [type]
+                  properties:
+                    type:
+                      const: aso
+                then:
+                  properties:
+                    design:
+                      additionalProperties: false
+                      properties:
+                        type:
+                          enum: [unmodified, gapmer]
+                        left_wing_length: {}
+                        gap_length: {}
+                        right_wing_length: {}
+                      allOf:
+                        - x-error-message: >-
+                            A gapmer design requires left_wing_length, gap_length, and
+                            right_wing_length.
+                          if:
+                            required:
+                              - type
+                            properties:
+                              type:
+                                const: gapmer
+                          then:
+                            x-error-message: >-
+                              A gapmer design requires left_wing_length, gap_length, and
+                              right_wing_length.
+                            required:
+                              - left_wing_length
+                              - gap_length
+                              - right_wing_length
+                        - x-error-message: >-
+                            An unmodified design must not define gapmer segment lengths.
+                          if:
+                            required:
+                              - type
+                            properties:
+                              type:
+                                const: unmodified
+                          then:
+                            x-error-message: >-
+                              An unmodified design must not define gapmer segment lengths.
+                            not:
+                              anyOf:
+                                - required:
+                                    - left_wing_length
+                                - required:
+                                    - gap_length
+                                - required:
+                                    - right_wing_length
+
+  resources:
+    type: object
+    properties:
+      default:
+        type: object
+        additionalProperties: false
+        properties:
+          n_workers:
+            type: integer
+            minimum: 1
+            description: >-
+              Default number of workers for steps that support parallel
+              execution.
+          memory_mb:
+            type: integer
+            minimum: 1
+            description: Default memory in mebibytes for every step.
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        n_workers:
+          type: integer
+          minimum: 1
+          description: >-
+            Number of workers allocated to a step that supports parallel
+            execution.
+        memory_mb:
+          type: integer
+          minimum: 1
+          description: Memory in mebibytes allocated to this step.

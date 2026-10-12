@@ -3,56 +3,92 @@
 Filename: tests/unit/test_gapmer.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
-Description: Tests for gapmer chemistry and RNase-H1 candidate generation.
+Description: Tests for the Gapmer domain class.
 License: LGPL-3.0-or-later
 """
 
 import pytest
+from Bio.Seq import Seq
 
-from ASOkai.Antisense import ASOCandidateGenerator
-from ASOkai.Biochemistry import (
-    GapmerChemistry,
-    RNaseH1Mechanism,
-)
+from ASOkai.Antisense import ASO, Gapmer
+from ASOkai.Biochemistry import Chemistry, MechanismOfAction
+
+
+def make_gapmer(
+    left_wing_length: int = 3,
+    gap_length: int = 10,
+    right_wing_length: int = 3,
+) -> Gapmer:
+    return Gapmer(
+        sequence=Seq("A" * 16),
+        mechanism=MechanismOfAction("rnase-h1"),
+        left_wing_length=left_wing_length,
+        gap_length=gap_length,
+        right_wing_length=right_wing_length,
+    )
 
 
 def test_gapmer_stores_its_layout():
-    chemistry = GapmerChemistry(layout="3-6-3")
+    gapmer = make_gapmer(3, 10, 3)
 
-    assert chemistry.id == "gapmer-3-6-3"
+    assert isinstance(gapmer, ASO)
+    assert gapmer.layout == "3-10-3"
 
 
-@pytest.mark.parametrize("layout", ["3-0-3", "3--1-3", "3-10", "invalid"])
-def test_gapmer_rejects_invalid_layouts(layout):
-    with pytest.raises(ValueError, match="Gapmer layout"):
-        GapmerChemistry(layout=layout)
+def test_gapmer_chemistry_changes_design_id():
+    bare = make_gapmer()
+    modified = Gapmer(
+        sequence=bare.sequence,
+        mechanism=bare.mechanism,
+        left_wing_length=3,
+        gap_length=10,
+        right_wing_length=3,
+        chemistry=Chemistry("example-chemistry"),
+    )
+
+    assert modified.id != bare.id
+    assert modified.id.endswith("-c17:example-chemistry")
+
+
+@pytest.mark.parametrize("value", [True, 0, -1, 1.5, "3"])
+@pytest.mark.parametrize(
+    "field",
+    ["left_wing_length", "gap_length", "right_wing_length"],
+)
+def test_gapmer_rejects_invalid_segment_lengths(field, value):
+    lengths = {
+        "left_wing_length": 3,
+        "gap_length": 10,
+        "right_wing_length": 3,
+    }
+    lengths[field] = value
+
+    with pytest.raises(ValueError, match=rf"Gapmer {field}"):
+        make_gapmer(**lengths)
 
 
 def test_gapmer_supports_asymmetric_layouts():
-    chemistry = GapmerChemistry(layout="3-10-5")
+    gapmer = make_gapmer(3, 8, 5)
 
-    assert chemistry.lengths == (3, 10, 5)
-    assert chemistry.left_wing_length == 3
-    assert chemistry.gap_length == 10
-    assert chemistry.right_wing_length == 5
+    assert gapmer.lengths == (3, 8, 5)
+    assert gapmer.left_wing_length == 3
+    assert gapmer.gap_length == 8
+    assert gapmer.right_wing_length == 5
+
+
+def test_gapmer_requires_segments_to_cover_the_sequence():
+    with pytest.raises(
+        ValueError,
+        match=r"sequence length \(16\); received 3",
+    ):
+        make_gapmer(1, 1, 1)
 
 
 def test_gapmer_serialization_roundtrip():
-    reconstructed = GapmerChemistry.from_dict(
-        GapmerChemistry(layout="3-10-5").to_dict()
-    )
+    reconstructed = Gapmer.from_dict(make_gapmer(3, 8, 5).to_dict())
 
-    assert isinstance(reconstructed, GapmerChemistry)
-    assert reconstructed.layout == "3-10-5"
-    assert set(reconstructed.to_dict()) == {"__class__", "__module__", "layout"}
-
-
-def test_gapmer_and_rnase_h1_create_an_aso_generator():
-    chemistry = GapmerChemistry(layout="3-10-3")
-    mechanism = RNaseH1Mechanism()
-    generator = ASOCandidateGenerator(chemistry=chemistry, mechanism=mechanism)
-
-    assert isinstance(chemistry, GapmerChemistry)
-    assert isinstance(mechanism, RNaseH1Mechanism)
-    assert isinstance(generator, ASOCandidateGenerator)
+    assert isinstance(reconstructed, Gapmer)
+    assert reconstructed.layout == "3-8-5"
+    assert reconstructed.lengths == (3, 8, 5)
+    assert reconstructed.sequence == Seq("A" * 16)
+    assert isinstance(reconstructed.mechanism, MechanismOfAction)

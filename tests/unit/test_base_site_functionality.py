@@ -3,47 +3,38 @@
 Filename: tests/unit/test_base_site_functionality.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Functional tests for Site base class.
 License: LGPL-3.0-or-later
 """
 
-import pytest
-from Bio.Seq import Seq
+import inspect
+
 from ASOkai.Sites import Site
 
 
 class ConcreteSite(Site):
     """Concrete implementation of Site for testing."""
-    
-    def __repr__(self):
-        return f"ConcreteSite(id='{self.id}')"
+
+    def __repr__(self) -> str:
+        return f"ConcreteSite(id={self.id!r})"
 
 
-@pytest.mark.unit
 class TestSiteBase:
     """Test Site base class functionality."""
-    
-    def test_site_initialization(self, sample_sequence):
-        """Test Site initialization."""
-        site = ConcreteSite(id="test_site", sequence=sample_sequence)
-        
-        assert site.id == "test_site"
-        assert site.sequence == sample_sequence
-        assert isinstance(site._sequence, Seq)
-    
-    def test_site_sequence_property(self, sample_sequence):
-        """Test that sequence property returns _sequence."""
-        site = ConcreteSite(id="test_site", sequence=sample_sequence)
-        
-        assert site.sequence == site._sequence
-    
-    def test_site_with_kwargs(self, sample_sequence):
-        """Test Site initialization with additional kwargs."""
+
+    def test_site_is_abstract(self):
+        assert inspect.isabstract(Site)
+
+    def test_site_exposes_sequence_and_metadata_attributes(
+        self,
+        sample_sequence,
+    ):
         site = ConcreteSite(
             id="test_site",
             sequence=sample_sequence,
-            custom_attr="custom_value"
+            metadata={"tags": ["reviewed"]},
         )
-        
-        assert getattr(site, "custom_attr") == "custom_value"
+
+        assert site.id == "test_site"
+        assert site.sequence is sample_sequence
+        assert getattr(site, "metadata") == {"tags": ["reviewed"]}

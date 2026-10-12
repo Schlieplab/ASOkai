@@ -1,0 +1,122 @@
+Identify potential repeated sites
+=================================
+
+.. asokai-step-reference:: identify-potential-repeated-sites
+
+The step finds potential repeated sites: sequences that a target site's own
+gapmer still binds almost as strongly as the site itself. They are only
+potential. A later step aligns them to a reference, and only the sequences
+found there are repeated sites.
+
+Sites and strands
+-----------------
+
+The target sites come from the ``target_gene`` input, which defaults to
+``create-target-gene``. The step needs no therapeutic input: a gapmer is the
+reverse complement of its target site, so each site is searched against the
+reverse complement of that same site.
+
+The wing and gap lengths come from the configured gapmer design under
+``parameters.antisense.design``. Positions of the site that pair with the gap
+form the core, which is never mutated. Because the gapmer runs antiparallel to
+the site, its 5' left wing pairs with the site's 3' end, so the core covers
+site positions ``right_wing_length`` through
+``right_wing_length + gap_length - 1`` (zero-based). A 2-10-4 design on a
+16-nucleotide site therefore has its core at positions 4 to 13.
+
+Search
+------
+
+The search visits the flanking positions one at a time, 5' to 3'. At each
+position every variant kept so far is extended with each of the four
+nucleotides, and each new variant is scored against the unchanged gapmer:
+
+.. math::
+
+   \Delta\Delta G = \Delta G_\text{binding}(\text{variant}) -
+   \Delta G_\text{binding}(\text{site})
+
+where ``ΔG_binding = MFE(site&strand) - (MFE(site) + MFE(strand))`` is folded
+with ViennaRNA. The strand is the same for every sequence derived from one
+site, so its own folding energy is computed once per site.
+
+- A sequence with ``ΔΔG <= max_ddg`` is reported.
+- A variant with ``ΔΔG <= max_ddg + ddg_tolerance`` is explored further but
+  not reported, because a later substitution can restore binding.
+- Every other variant is pruned together with its subtree.
+
+The gap's base pairs are enforced while folding, so every sequence is scored
+in the RNase H1-competent alignment that the gapmer must form. The core is
+always an exact reverse complement of the gapmer gap and is never mutated.
+
+Energy parameters
+-----------------
+
+ViennaRNA folds with one energy parameter table per process.
+``energy_parameters`` selects a built-in set:
+
+``RNA_Turner2004`` (the default), ``RNA_Turner1999``, ``RNA_Andronescu2007``,
+``RNA_Langdon2018``, ``DNA_Mathews2004``, ``DNA_Mathews1999``.
+
+``energy_parameter_file`` loads a ViennaRNA parameter file instead. Supply one
+or the other, never both. The file is read where it lies rather than staged
+into the job, so a run under CWL needs a path its job can reach.
+
+A gapmer binds its RNA target as a DNA-RNA hybrid, and ViennaRNA ships
+parameters for neither RNA-DNA hybrids nor the modified wings. The RNA sets
+therefore model the duplex as RNA-RNA and the DNA sets model it as DNA-DNA;
+both are approximations, and switching between them moves every energy the
+step reports.
+
+Progress
+--------
+
+The step logs the number of target sites and workers before it starts, and
+then shows one progress bar over every site, counting the work of all
+workers together. The bar writes to the terminal, so a run whose output is
+redirected to a file, as under CWL, records nothing for it.
+
+Output
+------
+
+``potential_repeated_sites`` is a FASTA file with one record per result,
+ready to align against a reference. Each record is named by the site it came
+from and the substitutions applied to it, and carries nothing else::
+
+   >site:GRCh38:12:25250719-25250734:-
+   ATGACTGAATATAAAC
+   >site:GRCh38:12:25250719-25250734:-&1G
+   GTGACTGAATATAAAC
+   >site:GRCh38:12:25250719-25250734:-&1G_14G
+   GTGACTGAATATAGAC
+
+The identifier is the site ID, then ``&`` and one ``{position}{nucleotide}``
+group per substitution, separated by underscores, with one-based positions
+in the site sequence. ``&1G_14G`` therefore means ``G`` at position 1 and
+``G`` at position 14. The ``&`` separates the site ID, which
+contains colons and hyphens of its own, from the suffix. Applying the groups
+to the site sequence reproduces the result, so the identifier records the
+whole sequence and no side table is needed.
+
+The record carries no description, so an aligner keeps the identifier intact
+as the read name and a later step can recover each alignment's target site
+from that name alone. Every search also writes the unmutated site itself as a
+record with just the site ID, so exact copies of a site are found too. Within
+one site the remaining records are ordered by binding-energy loss. The energies
+themselves are neither written nor returned; the search uses them only to prune
+and to order its results.
+
+Limitations
+-----------
+
+- ViennaRNA's RNA energy parameters are applied to DNA sequences, so the
+  energies approximate an RNA-RNA duplex. They model neither the DNA-RNA
+  hybrid of the gap nor the modified chemistry of the wings. An RNA G·U wobble
+  counts as stabilizing, so some variants receive a negative ``ΔΔG``.
+- Wide thresholds produce many results. With the default ``max_ddg`` a
+  3-10-3 design can yield roughly a thousand sequences per site, and a
+  pre-mRNA target gene contributes tens of thousands of sites.
+- ViennaRNA holds the interpreter lock while folding, so the analysis opts
+  into worker processes. Where those are unavailable it falls back to threads,
+  which overlap very little, and the running time then scales with the number
+  of target sites.

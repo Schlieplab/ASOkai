@@ -3,46 +3,32 @@
 Filename: src/ASOkai/_pipeline/workflows/standard.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Defines the standard ASOkai workflow from genome download through intrinsic features.
 License: LGPL-3.0-or-later
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
 from ASOkai._pipeline.base import Runnable
-from ASOkai._pipeline.steps.intrinsic_features import IntrinsicFeaturesStep
-from ASOkai._pipeline.steps.generate_antisense_candidates import (
-    GenerateAntisenseCandidatesStep,
+from ASOkai._pipeline.steps.analysis.intrinsic_features import (
+    IntrinsicFeaturesStep,
+)
+from ASOkai._pipeline.steps.core.generate_therapeutic_candidates import (
+    GenerateTherapeuticCandidatesStep,
 )
 from ASOkai._pipeline.tasks.instantiate_target_gene import InstantiateTargetGeneTask
 
 
 class StandardWorkflow:
+    __slots__ = ()
+
     name: ClassVar[str] = "standard"
     description: ClassVar[str] = (
-        "Full pipeline: genome download → target gene creation → antisense "
-        "candidate generation → intrinsic features."
+        "Standard pipeline for Antisense therapeutics Design."
     )
-    members: list[Runnable] = [
+    members: tuple[Runnable, ...] = (
         InstantiateTargetGeneTask(),
-        GenerateAntisenseCandidatesStep(),
+        GenerateTherapeuticCandidatesStep(),
         IntrinsicFeaturesStep(),
-    ]
-
-    def output_paths(self, config: dict) -> dict[str, Path]:
-        paths = {}
-        paths.update(InstantiateTargetGeneTask().output_paths(config))
-        paths.update(GenerateAntisenseCandidatesStep().output_paths(config))
-        paths.update(IntrinsicFeaturesStep().output_paths(config))
-        return paths
-
-    def outputs_exist(self, config: dict) -> bool:
-        return all(p.exists() for p in self.output_paths(config).values())
-
-    def cleanup(self, config: dict) -> None:
-        for p in self.output_paths(config).values():
-            if p.exists():
-                p.unlink()
+    )

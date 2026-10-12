@@ -3,18 +3,24 @@
 Filename: src/ASOkai/Utils/__init__.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: Public exports for the Utils subpackage.
 License: LGPL-3.0-or-later
 """
-from . import _kmc_tools as KMCTools
-from ._kmc import KMC, KMCDatabase, KMCExecutionError
+from . import KMCTools
+from ._bowtie2 import Bowtie2, Bowtie2Build, Bowtie2ExecutionError, Bowtie2Inspect
+from ._kmc import KMC, KMCExecutionError
+from ._reference_sequences import ReferenceSequence, write_reference_fasta
 from ._serializer import Serializable
 
 __all__ = [
     "KMCTools",
+    "Bowtie2",
+    "Bowtie2Build",
+    "Bowtie2ExecutionError",
+    "Bowtie2Inspect",
     "KMC",
-    "KMCDatabase",
     "KMCExecutionError",
+    "ReferenceSequence",
     "Serializable",
+    "write_reference_fasta",
 ]

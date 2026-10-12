@@ -1,0 +1,390 @@
+#!/usr/bin/env python
+"""
+Filename: src/ASOkai/_pipeline/contracts/execution.py
+Author: Arash Ayat
+Copyright: 2026, Alexander Schliep
+Description: Immutable contracts for concrete step runs and execution plans.
+License: LGPL-3.0-or-later
+"""
+
+from __future__ import annotations
+
+import shutil
+from copy import deepcopy
+from dataclasses import dataclass, field
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any, Mapping
+
+from ASOkai._cwl.model import CwlCommandLineToolSpec
+from ASOkai._pipeline.base import is_valid_runnable_name
+from ASOkai._pipeline.contracts.files import FileInput, FileOutput
+from ASOkai._pipeline.contracts.paths import TemplateField
+from ASOkai._pipeline.steps.base import Step
+
+
+@dataclass(frozen=True, eq=False)
+class StepRun:
+    """One plan-local concrete execution of a configured step.
+
+    ``parameters`` accepts invocation overrides and stores the resolved values.
+    """
+
+    run_id: str
+    step: Step
+    config: Mapping[str, Any] = field(repr=False)
+    inputs: tuple[StepInputBinding, ...] = ()
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+    config_values: Mapping[str, Any] = field(init=False, repr=False)
+    config_conflicts: Mapping[str, str] = field(init=False, repr=False)
+    external_input_config: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if type(self.run_id) is not str or not all(
+            is_valid_runnable_name(name) for name in self.run_id.split(".")
+        ):
+            raise ValueError(
+                "StepRun.run_id must contain dot-separated names using only "
+                "letters, numbers, hyphens, and underscores."
+            )
+        if not isinstance(self.step, Step):
+            raise TypeError("StepRun.step must be a Step.")
+        if not isinstance(self.config, Mapping):
+            raise TypeError("StepRun.config must be a mapping.")
+
+        inputs = tuple(self.inputs)
+        if any(not isinstance(item, StepInputBinding) for item in inputs):
+            raise TypeError(
+                "StepRun.inputs must contain only StepInputBinding values."
+            )
+        input_names = [item.file_input.name for item in inputs]
+        duplicates = sorted(
+            {name for name in input_names if input_names.count(name) > 1}
+        )
+        if duplicates:
+            raise ValueError(
+                "StepRun input bindings contain duplicate name(s): "
+                f"{', '.join(duplicates)}."
+            )
+
+        declared_inputs = {
+            file_input.name: file_input
+            for file_input in self.step.spec.inputs
+        }
+        bound_inputs = {
+            binding.file_input.name: binding.file_input
+            for binding in inputs
+        }
+        if declared_inputs.keys() != bound_inputs.keys():
+            missing = ", ".join(
+                sorted(declared_inputs.keys() - bound_inputs.keys())
+            ) or "none"
+            unexpected = ", ".join(
+                sorted(bound_inputs.keys() - declared_inputs.keys())
+            ) or "none"
+            raise ValueError(
+                f"StepRun '{self.run_id}' input bindings do not match step "
+                f"'{self.step.name}' (missing: {missing}; "
+                f"unexpected: {unexpected})."
+            )
+        for name, file_input in bound_inputs.items():
+            if file_input is not declared_inputs[name]:
+                raise ValueError(
+                    f"StepRun '{self.run_id}' input binding '{name}' does not "
+                    f"use the declaration from step '{self.step.name}'."
+                )
+
+        from ASOkai._pipeline import config as cfg
+
+        external_values: dict[str, Any] = {}
+        for parameter in self.step.spec.params:
+            if parameter.config is None:
+                continue
+            if parameter.name in self.parameters:
+                value = self.parameters[parameter.name]
+            else:
+                try:
+                    value = cfg.resolve_parameter_value(self.config, parameter)
+                except KeyError:
+                    continue
+            external_values[parameter.config] = value
+        external_input_config = cfg.apply_overrides(
+            deepcopy(dict(self.config)), external_values
+        )
+        inherited_values: dict[str, Any] = {}
+        inherited_from: dict[str, str] = {}
+        config_conflicts: dict[str, str] = {}
+        consumed_paths = {
+            parameter.config
+            for parameter in self.step.spec.params
+            if parameter.config is not None
+        }
+        consumed_paths.update(self.step.spec.compatible_with)
+        for output in self.step.spec.outputs:
+            for field_rule in output.destination.fields.values():
+                if isinstance(field_rule, TemplateField):
+                    consumed_paths.update(field_rule.config_paths())
+        for binding in inputs:
+            source = binding.source
+            if not isinstance(source, StepRunOutput):
+                continue
+            for path, origin in source.run.config_conflicts.items():
+                if path in consumed_paths:
+                    raise ValueError(
+                        f"Run '{self.run_id}' needs '{path}', but linked input "
+                        f"'{binding.file_input.name}' carries conflicting values "
+                        f"from {origin}."
+                    )
+                config_conflicts[path] = origin
+                inherited_values.pop(path, None)
+                inherited_from.pop(path, None)
+            for path, value in source.run.config_values.items():
+                if path in config_conflicts:
+                    continue
+                if path in inherited_values and (
+                    type(inherited_values[path]) is not type(value)
+                    or inherited_values[path] != value
+                ):
+                    if path in consumed_paths:
+                        raise ValueError(
+                            f"Run '{self.run_id}' receives conflicting values for "
+                            f"'{path}' from inputs '{inherited_from[path]}' and "
+                            f"'{binding.file_input.name}'."
+                        )
+                    config_conflicts[path] = (
+                        f"inputs '{inherited_from[path]}' and "
+                        f"'{binding.file_input.name}' of run '{self.run_id}'"
+                    )
+                    del inherited_values[path]
+                    del inherited_from[path]
+                    continue
+                inherited_values[path] = value
+                inherited_from[path] = binding.file_input.name
+
+        effective_config = cfg.apply_overrides(
+            deepcopy(dict(self.config)), inherited_values
+        )
+        self.step._validate_standard_parameters()
+        try:
+            parameters = self.step.resolved_parameter_values(
+                effective_config, self.parameters
+            )
+        except ValueError as error:
+            label = self.run_id.removeprefix("runs.")
+            raise ValueError(f"Run '{label}': {error}") from error
+        config_values = dict(inherited_values)
+        config_values.update(
+            {
+                parameter.config: parameters[parameter.name]
+                for parameter in self.step.spec.params
+                if parameter.config is not None
+            }
+        )
+        object.__setattr__(
+            self,
+            "config",
+            MappingProxyType(
+                self.step._configuration_for_parameters(effective_config, parameters)
+            ),
+        )
+        object.__setattr__(self, "inputs", inputs)
+        object.__setattr__(self, "parameters", MappingProxyType(parameters))
+        object.__setattr__(self, "config_values", MappingProxyType(config_values))
+        object.__setattr__(self, "config_conflicts", MappingProxyType(config_conflicts))
+        object.__setattr__(
+            self, "external_input_config", MappingProxyType(external_input_config)
+        )
+
+    def output(self, output: FileOutput) -> StepRunOutput:
+        """Return one output port qualified by this concrete run."""
+        return StepRunOutput(self, output)
+
+    def input_paths(self) -> dict[str, Path]:
+        """Return the concrete file path selected for every input."""
+        paths: dict[str, Path] = {}
+        for binding in self.inputs:
+            source = binding.source
+            if isinstance(source, Path):
+                paths[binding.file_input.name] = source
+            else:
+                paths[binding.file_input.name] = source.run.output_path(
+                    source.output
+                )
+        return paths
+
+    def input_configurations(self) -> dict[str, Mapping[str, Any]]:
+        """Return the resolved producer configuration for every input."""
+        configurations: dict[str, Mapping[str, Any]] = {}
+        for binding in self.inputs:
+            source = binding.source
+            configurations[binding.file_input.name] = (
+                self.external_input_config
+                if isinstance(source, Path)
+                else source.run.config
+            )
+        return configurations
+
+    def cwl_spec(self) -> CwlCommandLineToolSpec:
+        """Return the generated CWL tool spec for this concrete run."""
+        return self.step._cwl_spec(
+            self.config,
+            self.input_configurations(),
+            self.parameters,
+        )
+
+    def _output_path(
+        self,
+        output: FileOutput,
+        input_configurations: Mapping[str, Mapping[str, Any]],
+    ) -> Path:
+        relative_path = output.destination.render(
+            self.config,
+            input_configurations,
+        )
+        return Path(self.config["datadir"], *relative_path.parts)
+
+    def output_path(self, output: FileOutput) -> Path:
+        """Return the concrete path for one output of this run."""
+        self.output(output)
+        return self._output_path(output, self.input_configurations())
+
+    def output_paths(self) -> dict[str, Path]:
+        """Return this concrete run's configured output paths."""
+        input_configurations = self.input_configurations()
+        return {
+            output.name: self._output_path(output, input_configurations)
+            for output in self.step.spec.outputs
+        }
+
+    def validate_output_files(self) -> dict[str, Path]:
+        """Validate every concrete output file and return its path."""
+        paths = self.require_output_files()
+        for output in self.step.spec.outputs:
+            output.validate(paths[output.name])
+        return paths
+
+    def require_output_files(self) -> dict[str, Path]:
+        """Require each output path to contain its declared artifact kind."""
+        paths = self.output_paths()
+        for output in self.step.spec.outputs:
+            path = paths[output.name]
+            expected = output.file_type.cwl_type
+            if not (path.is_dir() if expected == "Directory" else path.is_file()):
+                raise FileNotFoundError(
+                    f"Output '{self.run_id}/{output.name}' was not written "
+                    f"to {path}."
+                )
+        return paths
+
+    def cleanup_output_files(self) -> None:
+        """Remove every concrete output artifact that currently exists."""
+        for path in self.output_paths().values():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.exists() or path.is_symlink():
+                path.unlink()
+
+
+@dataclass(frozen=True)
+class StepRunOutput:
+    """One declared file output produced by one concrete step run."""
+
+    run: StepRun
+    output: FileOutput
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.run, StepRun):
+            raise TypeError("StepRunOutput.run must be a StepRun.")
+        if not isinstance(self.output, FileOutput):
+            raise TypeError("StepRunOutput.output must be a FileOutput.")
+        if all(
+            declared_output is not self.output
+            for declared_output in self.run.step.spec.outputs
+        ):
+            raise ValueError(
+                f"Output '{self.output.name}' does not belong to step "
+                f"'{self.run.step.name}'."
+            )
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the output name qualified by its concrete run."""
+        return f"{self.run.run_id}.{self.output.name}"
+
+
+@dataclass(frozen=True)
+class StepInputBinding:
+    """A step input resolved to an external path or producer-run output."""
+
+    file_input: FileInput
+    source: Path | StepRunOutput
+    selection_path: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.file_input, FileInput):
+            raise TypeError("StepInputBinding.file_input must be a FileInput.")
+        if self.selection_path is not None and (
+            type(self.selection_path) is not str or not self.selection_path
+        ):
+            raise ValueError("StepInputBinding.selection_path must be non-blank.")
+        if isinstance(self.source, Path):
+            object.__setattr__(self, "source", self.source.resolve())
+        elif isinstance(self.source, StepRunOutput):
+            if not self.file_input.accepts_output(self.source.output):
+                if self.file_input.source is None:
+                    raise ValueError(
+                        f"Input '{self.file_input.name}' requires "
+                        f"{self.file_input.file_type.format_name}, but received "
+                        f"{self.source.output.file_type.format_name} from "
+                        f"'{self.source.qualified_name}'."
+                    )
+                raise ValueError(
+                    f"Input '{self.file_input.name}' requires output "
+                    f"'{self.file_input.source.producer}."
+                    f"{self.file_input.source.name}', but received "
+                    f"'{self.source.qualified_name}'."
+                )
+        else:
+            raise TypeError(
+                "StepInputBinding.source must be a Path or StepRunOutput."
+            )
+
+
+@dataclass(frozen=True)
+class ExecutionPlan:
+    """Resolved goals, scheduled runs, and reusable run outputs."""
+
+    goals: tuple[StepRun, ...]
+    runs_to_execute: tuple[StepRun, ...]
+    resolved_outputs: Mapping[StepRunOutput, Path] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        goals = tuple(self.goals)
+        runs_to_execute = tuple(self.runs_to_execute)
+        if any(not isinstance(run, StepRun) for run in goals):
+            raise TypeError("ExecutionPlan.goals must contain only StepRun values.")
+        if any(not isinstance(run, StepRun) for run in runs_to_execute):
+            raise TypeError(
+                "ExecutionPlan.runs_to_execute must contain only StepRun values."
+            )
+
+        resolved_outputs: dict[StepRunOutput, Path] = {}
+        for output, path in self.resolved_outputs.items():
+            if not isinstance(output, StepRunOutput):
+                raise TypeError(
+                    "ExecutionPlan.resolved_outputs keys must be StepRunOutput "
+                    "values."
+                )
+            if not isinstance(path, Path):
+                raise TypeError(
+                    "ExecutionPlan.resolved_outputs values must be Path values."
+                )
+            resolved_outputs[output] = path.resolve()
+
+        object.__setattr__(self, "goals", goals)
+        object.__setattr__(self, "runs_to_execute", runs_to_execute)
+        object.__setattr__(
+            self,
+            "resolved_outputs",
+            MappingProxyType(resolved_outputs),
+        )

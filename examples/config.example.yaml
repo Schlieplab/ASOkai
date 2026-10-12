@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=./src/ASOkai/_pipeline/config.schema.yaml
+# Copy this file to config.yaml and adjust the values for your run.
+
+datadir: ./data
+
+parameters:
+  genome:
+    assembly: GRCh38
+    release: 114
+    source: ensembl
+    species: Homo_sapiens
+  target:
+    # Set exactly one of target_id or target_name.
+    target_id: ENSG00000133703
+    # target_name: KRAS
+    k: 16
+    region: pre-mrna  # exonic | pre-mrna | transcriptomic
+  antisense:
+    modality:
+      type: aso
+      mechanism: rnase-h1
+      design:
+        type: gapmer
+        left_wing_length: 3
+        gap_length: 10
+        right_wing_length: 3
+    # For unmodified DNA ASOs, set modality.design to {type: unmodified}.
+  # analysis:
+  #   intrinsic_features:
+  #     features: GC_content,CpG_count  # default: all
+  #   potential_repeated_sites:
+  #     max_ddg: 5.0               # kcal/mol; default: 5.0
+  #     ddg_tolerance: 0.5         # kcal/mol; default: 0.5
+  #     model_settings: temperature=37.0,noGU=1  # extra ViennaRNA arguments
+  #     energy_parameters: RNA_Turner2004   # or DNA_Mathews2004, ...
+  #     energy_parameter_file: /path/to/custom.par  # instead of a named set
+
+# How to check generated outputs before reusing them. "signature" is the default;
+# "contract" fully validates each existing output instead.
+validation:
+  existing_outputs: signature
+
+resources:
+  default:
+    n_workers: 1
+    memory_mb: 4096
+  compute-intrinsic-features:
+    n_workers: 4
+
+# Select ordered runs here and invoke `ASOkai run --configfile config.yaml`.
+# A run needs an ID only if another run refers to it. Task outputs are the
+# public names declared by the task; child IDs stay inside the task.
+# runs:
+#   - step: compute-intrinsic-features
+#     inputs:
+#       target_gene:
+#         from: run.gene.target_gene
+#   - task: instantiate-target-gene
+#     id: gene
+#   - step: create-target-gene
+#     parameters:
+#       target:
+#         region: exonic
+# An existing file can be selected instead with:
+#       target_gene:
+#         path: /path/to/target_gene.json

@@ -3,21 +3,24 @@
 Filename: src/ASOkai/Biochemistry/_chemistry.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
 Description: This file defines the base Chemistry class.
 License: LGPL-3.0-or-later
 """
 
-from abc import ABC, abstractmethod
-
 from ..Utils import Serializable
 
 
-class Chemistry(Serializable, ABC):
-    """Abstract base class for oligonucleotide chemistry."""
+class Chemistry(Serializable):
+    """Optional oligonucleotide chemistry with a stable design identity.
 
-    @property
-    @abstractmethod
-    def id(self) -> str:
-        """Return a stable identifier suitable for candidate IDs."""
-        raise NotImplementedError
+    The representation of individual nucleotide modifications is deferred.
+    """
+
+    id: str
+
+    def __init__(self, id: str, **kwargs):
+        """Attach a stable chemistry ID without defining its modifications."""
+        if not isinstance(id, str) or not id:
+            raise ValueError("Chemistry ID must be a non-empty string.")
+        self.id = id
+        super().__init__(**kwargs)

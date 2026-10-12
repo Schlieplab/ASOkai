@@ -10,43 +10,80 @@ Low-level CWL `CommandLineTool` documents are generated from each step's
 separated by role:
 
 - `params`: typed scalar `ScalarParam` values.
-- `inputs`: existing file/path `InputParam` values.
-- `outputs`: produced-file `OutputParam` values with stable temporary filenames.
+- `inputs`: `FileInput` values that point directly to producer outputs.
+- `outputs`: `FileOutput` values with destination templates and a `FileType`.
 
 ASOkai derives CWL inputs, CWL outputs, command-line parser options, config
 keys, and file override keys from that one spec.
 
 Plugin packages should import the supported step-authoring contracts from
-`ASOkai.plugin_api`, rather than importing the internal `ASOkai._cwl` package:
+`ASOkai.Plugins`, rather than importing the internal `ASOkai._cwl` package:
 
 ```python
-from ASOkai.plugin_api import InputParam, OutputParam, ScalarParam, StepSpec
-```
-
-```python
-StepSpec(
-    params=[
-        ScalarParam("assembly", str, config="genome.assembly_id"),
-    ],
-    inputs=[
-        InputParam("dna", override="genome.dna_path"),
-    ],
-    outputs=[
-        OutputParam(
-            "result",
-            temp_filename="result.json",
-            destination="{assembly}/results/{assembly}.result.json",
-        ),
-    ],
+from ASOkai.Plugins import (
+    FileInput,
+    FileOutput,
+    CoreStep,
+    JsonFile,
+    ScalarParam,
+    StepSpec,
 )
 ```
 
-The stable `result.json` filename is used only inside the CWL working directory.
+```python
+class ProducerStep(CoreStep):
+    name = "producer"
+    description = "Produces one result."
+    result_output = FileOutput(
+        "result",
+        destination="results/result.json",
+        file_type=JsonFile(),
+    )
+    spec = StepSpec(outputs=[result_output])
+
+
+class ConsumerStep(CoreStep):
+    name = "consumer"
+    description = "Consumes the result."
+    result_input = FileInput(
+        "result",
+        source=ProducerStep.result_output,
+    )
+    processed_output = FileOutput(
+        "processed",
+        destination="results/processed.json",
+        file_type=JsonFile(),
+    )
+    spec = StepSpec(
+        inputs=[result_input],
+        outputs=[processed_output],
+    )
+```
+
+The file type owns format-specific I/O and validation. `FileType` leaves an
+input as a `Path`, `JsonFile` handles JSON, and `CsvFile` handles tabular CSV.
+`JsonFile(SomeSerializableClass)` validates and reconstructs one domain value;
+`JsonFile(list[SomeSerializableClass])` does the same for a collection.
+The consumer inherits the exact file type from its source output and does not
+repeat the format or value class.
+
+Dependencies are not declared separately: `Step.dependencies` is derived from
+the producer outputs referenced by its inputs.
+
+Contributors implement `run_from_args(args)` for the step's work. The central
+`ASOkai step <name>` command invokes `run_cli` on the registered step; step
+modules do not declare a separate `main()` or module path. `run_cli` builds and
+parses the generated CLI, creates the parent directory for every declared
+output, runs the implementation, and validates each produced output before
+the command reports success.
+
 The structured `destination` template defines the complete path relative to
 `datadir`. The base `Step` derives output paths, existence checks, and cleanup
-from this declaration. The temporary filename becomes a fixed command-line
-argument and a static CWL output glob, so it is never exposed as a configurable
-input in `run.cwl` or `job.yml`.
+from this declaration. When a job is generated, the rendered destination's
+basename becomes the filename inside the isolated CWL working directory.
+ASOkai uses it for the fixed command-line argument and static output glob, so
+contributors do not declare a second filename and it is never exposed as a
+configurable input in `run.cwl` or `job.yml`.
 
 Generated step files are written into export/run bundles under:
 
@@ -67,17 +104,19 @@ Tasks and workflows are ASOkai CLI-level collections. They are not exported as
 their own CWL files. Export first resolves the selected steps, tasks, and/or
 workflow to an execution plan, then writes one top-level `run.cwl`.
 
-Exports always include the full selected runnable, even when outputs already
-exist locally. Missing dependencies can be included with `--recursive`.
+Exports include only the selected goals by default. Their omitted producer
+outputs become external file inputs in `job.yml`. Pass `--recursive` to include
+the complete producer closure. Export planning does not inspect existing input
+or output files.
 
 ## CLI
 
 Use `ASOkai export` to write a runnable CWL bundle:
 
 ```bash
-ASOkai export --steps download-genome create-target-gene --outdir data/jobs
-ASOkai export --tasks instantiate-target-gene --outdir data/jobs
-ASOkai export --workflow standard --outdir data/jobs
+ASOkai export --step download-genome --step create-target-gene --outdir data/jobs
+ASOkai export --task instantiate-target-gene --outdir data/jobs
+ASOkai export --workflow standard --recursive --outdir data/jobs
 ```
 
 Each bundle contains:

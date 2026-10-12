@@ -3,19 +3,18 @@
 Filename: src/ASOkai/_cwl/input_resolution.py
 Author: Arash Ayat
 Copyright: 2026, Alexander Schliep
-Version: 0.1.1
-Description: Resolve step config, dependency, override, and output inputs for CWL execution.
+Description: Resolve concrete step-run inputs for CWL execution.
 License: LGPL-3.0-or-later
 """
+
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import AbstractSet, Any, Literal
 
-from ASOkai._pipeline import config as cfg
-from ASOkai._pipeline.base import Step
-from ASOkai._pipeline.registry import get_steps
+from ASOkai._pipeline.contracts.execution import StepRun, StepRunOutput
 
 
 InputSource = Literal[
@@ -28,130 +27,130 @@ InputSource = Literal[
 
 @dataclass
 class ResolvedInput:
-    """
-    An input value annotated with its resolution source.
-
-    ``cwl_value`` is what gets passed to the executor. It is ``None`` for inputs
-    that are wired internally between steps in a generated CWL job and
-    therefore do not appear in the top-level inputs JSON.
-    """
+    """A CWL input value together with how ASOkai resolved it."""
 
     cwl_value: Any
     source: InputSource
     path: Path | None = None
-    dep_name: str | None = None
+    producer_output: StepRunOutput | None = None
     config_path: str | None = None
 
 
-def resolve_step_inputs(
-    step: Step,
-    config: dict,
+def resolve_run_inputs(
+    run: StepRun,
     *,
-    pre_resolved: dict[str, Path] | None = None,
-    steps_in_plan: set[str] | None = None,
+    resolved_outputs: Mapping[StepRunOutput, Path] | None = None,
+    runs_to_execute: AbstractSet[StepRun] | None = None,
 ) -> dict[str, ResolvedInput]:
-    """
-    Resolve all inputs for *step* and return them annotated with their source.
-
-    Priority, highest first:
-    1. input_overrides when the config dot-path is present.
-    2. dependency outputs, either internally wired or passed as File inputs.
-    3. scalar config_map values.
-    """
-    if pre_resolved is None:
-        pre_resolved = {}
-    if steps_in_plan is None:
-        steps_in_plan = set()
+    """Resolve every scalar and file input for one concrete step run."""
+    if resolved_outputs is None:
+        resolved_outputs = {}
+    if runs_to_execute is None:
+        runs_to_execute = set()
 
     resolved: dict[str, ResolvedInput] = {}
-    declared_inputs = step.cwl_spec.input_names()
+    for parameter in run.step.spec.params:
+        resolved[parameter.name] = ResolvedInput(
+            cwl_value=run.parameters[parameter.name],
+            source="scalar",
+            config_path=parameter.config,
+        )
 
-    for cwl_key, config_path in step.config_map.items():
-        try:
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value=cfg.resolve(config, config_path),
-                source="scalar",
-                config_path=config_path,
-            )
-        except KeyError:
-            pass
-
-    registry = get_steps()
-    for dep_name in step.dependencies:
-        dep = registry.get(dep_name)
-        if dep is None:
-            continue
-        for out_key, disk_path in dep.validated_output_paths(config).items():
-            if out_key not in declared_inputs:
-                continue
-            if dep_name in steps_in_plan:
-                resolved[out_key] = ResolvedInput(
-                    cwl_value=None,
-                    source="dep_wired",
-                    dep_name=dep_name,
-                )
-            elif out_key in pre_resolved:
-                p = pre_resolved[out_key]
-                resolved[out_key] = ResolvedInput(
-                    cwl_value={"class": "File", "path": str(p.resolve())},
-                    source="dep_disk",
-                    path=p,
-                    dep_name=dep_name,
-                )
-            else:
-                resolved[out_key] = ResolvedInput(
-                    cwl_value={"class": "File", "path": str(disk_path.resolve())},
-                    source="dep_disk",
-                    path=disk_path,
-                    dep_name=dep_name,
-                )
-
-    for cwl_key, config_path in step.input_overrides.items():
-        try:
-            p = Path(cfg.resolve(config, config_path)).resolve()
-            resolved[cwl_key] = ResolvedInput(
-                cwl_value={"class": "File", "path": str(p)},
+    bindings = {binding.file_input.name: binding for binding in run.inputs}
+    for file_input in run.step.spec.inputs:
+        binding = bindings[file_input.name]
+        source = binding.source
+        if isinstance(source, Path):
+            resolved[file_input.name] = ResolvedInput(
+                cwl_value={"class": file_input.file_type.cwl_type, "path": str(source)},
                 source="input_override",
-                path=p,
-                config_path=config_path,
+                path=source,
+                config_path=(
+                    binding.selection_path
+                    or f"{file_input.configuration_path(run.step.name)}.path"
+                ),
             )
-        except KeyError:
-            pass
+            continue
+
+        producer_run = source.run
+        if producer_run in runs_to_execute:
+            resolved[file_input.name] = ResolvedInput(
+                cwl_value=None,
+                source="dep_wired",
+                producer_output=source,
+            )
+            continue
+
+        path = resolved_outputs.get(source)
+        if path is None:
+            raise RuntimeError(
+                f"Run '{run.run_id}' input '{file_input.name}' requires "
+                f"resolved output '{source.qualified_name}'."
+            )
+        resolved[file_input.name] = ResolvedInput(
+            cwl_value={"class": file_input.file_type.cwl_type, "path": str(path)},
+            source="dep_disk",
+            path=path,
+            producer_output=source,
+        )
 
     return resolved
 
 
 def to_cwl_inputs(resolved: dict[str, ResolvedInput]) -> dict[str, Any]:
-    """Strip annotations and exclude internally wired inputs."""
-    return {k: ri.cwl_value for k, ri in resolved.items() if ri.cwl_value is not None}
+    """Strip resolution metadata and exclude internally wired values."""
+    return {
+        name: item.cwl_value
+        for name, item in resolved.items()
+        if item.source != "dep_wired"
+    }
 
 
-def resolve_step_sequence_inputs(
-    step_objs: list[Step],
-    config: dict,
-    pre_resolved: dict[str, Path],
+def workflow_input_id(run: StepRun, input_name: str) -> str:
+    """Qualify a top-level CWL input by its concrete run."""
+    return f"{run.run_id}.{input_name}"
+
+
+def workflow_file_input_id(
+    consumer_run: StepRun,
+    input_name: str,
+    source: Path | StepRunOutput,
+) -> str:
+    """Identify a top-level file input by its override or producer output."""
+    if isinstance(source, StepRunOutput):
+        return source.qualified_name
+    return workflow_input_id(consumer_run, input_name)
+
+
+def resolve_run_sequence_inputs(
+    runs: Sequence[StepRun],
+    resolved_outputs: Mapping[StepRunOutput, Path],
 ) -> dict[str, Any]:
-    """
-    Collect top-level inputs for a generated multi-step CWL job.
-
-    Internally wired inputs are excluded.
-    """
-    steps_in_plan = {s.name for s in step_objs}
-    merged: dict[str, Any] = {}
-    for step in step_objs:
-        resolved = resolve_step_inputs(
-            step,
-            config,
-            pre_resolved=pre_resolved,
-            steps_in_plan=steps_in_plan,
+    """Collect top-level inputs for a generated multi-run CWL workflow."""
+    runs_to_execute = set(runs)
+    workflow_inputs: dict[str, Any] = {}
+    for run in runs:
+        resolved = resolve_run_inputs(
+            run,
+            resolved_outputs=resolved_outputs,
+            runs_to_execute=runs_to_execute,
         )
-        for key, ri in resolved.items():
-            if ri.cwl_value is None:
+        for input_name, item in resolved.items():
+            if item.source == "dep_wired":
                 continue
-            if key in merged and merged[key] != ri.cwl_value:
-                raise ValueError(
-                    f"Workflow input '{key}' resolves to conflicting values. "
-                    "Use distinct parameter names for unrelated step inputs."
+            if item.source == "scalar":
+                input_id = workflow_input_id(run, input_name)
+            else:
+                file_source = (
+                    item.producer_output
+                    if item.producer_output is not None
+                    else item.path
                 )
-            merged.setdefault(key, ri.cwl_value)
-    return merged
+                assert file_source is not None
+                input_id = workflow_file_input_id(
+                    run,
+                    input_name,
+                    file_source,
+                )
+            workflow_inputs[input_id] = item.cwl_value
+    return workflow_inputs

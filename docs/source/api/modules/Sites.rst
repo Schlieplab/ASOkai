@@ -1,7 +1,10 @@
 Sites
 =====
 
-.. automodule:: ASOkai.Sites
-   :members:
-   :undoc-members:
-   :show-inheritance:
+The site hierarchy describes sequence locations in different coordinate
+systems.
+
+.. toctree::
+   :maxdepth: 2
+
+   Sites/site-types
